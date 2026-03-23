@@ -162,6 +162,13 @@ function Dashboard() {
           <span className="font-semibold text-sm">VibeAround</span>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => window.location.replace("/onboarding")}
+            className="text-xs text-primary hover:underline"
+            title="Open Config Wizard"
+          >
+            Config Wizard
+          </button>
           {connected ? (
             <span className="flex items-center gap-1 text-xs text-emerald-600">
               <Wifi className="w-3 h-3" /> Live
