@@ -8,9 +8,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::Manager;
-use tokio::sync::Notify;
+use tokio::sync::{Mutex, Notify};
 
-use onboarding::OnboardingGate;
+use onboarding::{OnboardingGate, OnboardingSessions};
 
 /// Shared ServiceStatusManager, injected into Tauri state for tray and IPC access.
 pub struct AppServiceManager(pub Arc<common::service::ServiceStatusManager>);
@@ -47,10 +47,17 @@ fn main() {
         }))
         .manage(AppServiceManager(services))
         .manage(OnboardingGate { notify: Arc::clone(&gate) })
+        .manage(OnboardingSessions {
+            plugin_sessions: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        })
         .manage(OnboardingActive(std::sync::atomic::AtomicBool::new(onboarding_needed)))
         .invoke_handler(tauri::generate_handler![
             onboarding::get_settings,
+            onboarding::list_channel_plugins,
             onboarding::save_settings,
+            onboarding::wechat_qr_start,
+            onboarding::wechat_qr_wait,
+            onboarding::wechat_qr_cancel,
             onboarding::finish_onboarding,
         ])
         .setup(move |app| {

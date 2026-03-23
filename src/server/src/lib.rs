@@ -11,6 +11,7 @@ use common::agent_manager::AgentManager;
 use common::channel_manager::channels::web::WebChannelManager;
 use common::channel_manager::ChannelManager;
 use common::config;
+use common::plugins;
 use common::service::ServiceStatusManager;
 use common::session_hub::types::HubEvent;
 use common::session_hub::SessionHub;
@@ -80,32 +81,16 @@ impl ServerDaemon {
         }
 
         // 2. Channel plugins — start plugins for each channel in settings.json
+        let discovered_plugins = plugins::discover_channel_plugins();
         for name in cfg.channel_names() {
-            let plugin_entry = "dist/main.js";
-            let candidates = [
-                config::data_dir().join("plugins").join(&name),
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .parent()
-                    .unwrap_or(std::path::Path::new("."))
-                    .join("plugins")
-                    .join(&name),
-                std::env::current_dir()
-                    .unwrap_or_default()
-                    .join("src")
-                    .join("plugins")
-                    .join(&name),
-            ];
-
-            let plugin_dir = match candidates.iter().find(|d| d.join(plugin_entry).exists()) {
-                Some(d) => d.clone(),
-                None => {
-                    eprintln!("[VibeAround][daemon] no plugin found for channel '{}', skipping", name);
-                    continue;
-                }
+            let Some(plugin) = discovered_plugins.get(&name) else {
+                eprintln!("[VibeAround][daemon] no plugin found for channel '{}', skipping", name);
+                continue;
             };
 
-            if let Some(abort_handle) =
-                channel_hub.start_plugin(plugin_dir, &name).await
+            if let Some(abort_handle) = channel_hub
+                .start_plugin(plugin.dir.clone(), plugin.entry_path(), &name)
+                .await
             {
                 services.register_channel(&name, abort_handle);
             }

@@ -83,11 +83,14 @@ impl ChannelManager {
                 cli_session_id,
                 profile,
             } => {
+                let agent_name = crate::agent_manager::agents::AgentKind::from_str_loose(&cli_kind)
+                    .map(|kind| kind.display_name())
+                    .unwrap_or(cli_kind.as_str());
                 let text = format!(
                     "CLI session is now active.\n\nAgent: {}\nSession ID: {}\nProfile: {}",
-                    cli_kind, cli_session_id, profile
+                    agent_name, cli_session_id, profile
                 );
-                self.send_notification(ChannelNotification::SendText {
+                self.send_notification(ChannelNotification::SendSystemText {
                     channel_kind,
                     chat_id,
                     text,
@@ -135,7 +138,7 @@ impl ChannelManager {
                 text,
                 reply_to,
             } => {
-                self.send_notification(ChannelNotification::SendText {
+                self.send_notification(ChannelNotification::SendSystemText {
                     channel_kind,
                     chat_id,
                     text,
@@ -218,6 +221,7 @@ impl ChannelManager {
     pub async fn start_plugin(
         self: &Arc<Self>,
         plugin_dir: PathBuf,
+        entry_point: PathBuf,
         channel_name: &str,
     ) -> Option<AbortHandle> {
         let prefix = format!("[{}]", channel_name);
@@ -231,7 +235,6 @@ impl ChannelManager {
             }
         };
 
-        let entry_point = plugin_dir.join("dist").join("main.js");
         if !entry_point.exists() {
             eprintln!(
                 "{} plugin entry not found: {} — run `npm run build` in {}",
@@ -441,7 +444,7 @@ fn channel_kind_of_notification(notif: &ChannelNotification) -> &str {
         ChannelNotification::AgentToolResult { channel_kind, .. } => channel_kind,
         ChannelNotification::AgentEnd { channel_kind, .. } => channel_kind,
         ChannelNotification::AgentError { channel_kind, .. } => channel_kind,
-        ChannelNotification::SendText { channel_kind, .. } => channel_kind,
+        ChannelNotification::SendSystemText { channel_kind, .. } => channel_kind,
     }
 }
 

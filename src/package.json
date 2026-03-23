@@ -14,10 +14,11 @@
     "server:build": "cargo build -p server",
     "desktop:dev": "bun run --filter @vibearound/tauri dev",
     "desktop:build": "bun run --filter @vibearound/tauri build",
-    "plugins:install": "cd plugins/feishu && npm install && cd ../telegram && npm install",
-    "plugins:build": "cd plugins/feishu && npm run build && cd ../telegram && npm run build",
-    "plugin:feishu:build": "cd plugins/feishu && npm run build",
-    "plugin:telegram:build": "cd plugins/telegram && npm run build"
+    "plugins:install": "node scripts/plugin-runner.mjs install",
+    "plugins:build": "node scripts/plugin-runner.mjs build",
+    "plugin:feishu:build": "node scripts/plugin-runner.mjs build feishu",
+    "plugin:telegram:build": "node scripts/plugin-runner.mjs build telegram",
+    "plugin:weixin-openclaw-bridge:build": "node scripts/plugin-runner.mjs build weixin-openclaw-bridge"
   },
   "devDependencies": {}
 }
