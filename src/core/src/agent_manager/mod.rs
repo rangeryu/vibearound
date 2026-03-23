@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use tokio::sync::{broadcast, OnceCell};
+use tokio::task::JoinHandle;
 
 pub mod agents;
 
@@ -32,6 +33,7 @@ pub struct AgentManager {
     agents: DashMap<String, AgentProcess>,
     session_hub: OnceCell<Arc<SessionHub>>,
     hub_tx: broadcast::Sender<HubEvent>,
+    event_bridge: OnceCell<JoinHandle<()>>,
 }
 
 impl AgentManager {
@@ -41,6 +43,7 @@ impl AgentManager {
             agents: DashMap::new(),
             session_hub: OnceCell::new(),
             hub_tx,
+            event_bridge: OnceCell::new(),
         }
     }
 
@@ -60,7 +63,7 @@ impl AgentManager {
     fn spawn_agent_event_bridge(self: &Arc<Self>, session_hub: Arc<SessionHub>) {
         let this = Arc::clone(self);
         let mut rx = session_hub.subscribe_agent_events();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Ok(event) => this.handle_agent_event(event).await,
@@ -71,6 +74,7 @@ impl AgentManager {
                 }
             }
         });
+        let _ = self.event_bridge.set(handle);
     }
 
     async fn handle_agent_event(self: &Arc<Self>, event: crate::session_hub::types::AgentEvent) {
@@ -421,6 +425,17 @@ impl AgentManager {
             .collect();
         for key in keys {
             self.kill_agent(&key).await;
+        }
+    }
+
+    pub async fn shutdown_all(&self) {
+        let keys: Vec<String> = self.agents.iter().map(|entry| entry.key().clone()).collect();
+        for key in keys {
+            self.kill_agent(&key).await;
+        }
+
+        if let Some(handle) = self.event_bridge.get() {
+            handle.abort();
         }
     }
 

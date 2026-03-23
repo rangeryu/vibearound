@@ -84,7 +84,7 @@ impl TunnelGuard {
 /// Returns (guard, public URL). Caller must keep the guard and await `guard.wait()` to keep the tunnel alive.
 pub async fn start_web_tunnel() -> Result<(TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
     let config = crate::config::ensure_loaded();
-    start_web_tunnel_with_provider(TunnelProvider::default(), config).await
+    start_web_tunnel_with_provider(TunnelProvider::default(), &config).await
 }
 
 /// Start the web tunnel with the given provider and config (unified dispatch via TunnelBackend).

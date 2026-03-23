@@ -1,10 +1,9 @@
-//! Global config singleton. Load settings.json once; desktop and server both call
-//! `ensure_loaded()` so the first caller does the work, later callers get the same instance.
+//! Config loading helpers.
 //! All config comes from ~/.vibearound/settings.json.
+//! Callers load a fresh Config when they need one.
 
 use std::path::PathBuf;
 use std::sync::Once;
-use std::sync::OnceLock;
 
 use crate::tunnels::TunnelProvider;
 
@@ -53,8 +52,6 @@ fn ensure_rustls_provider() {
             .expect("rustls default crypto provider");
     });
 }
-
-static CONFIG: OnceLock<Config> = OnceLock::new();
 
 /// Per-channel verbose/output settings for IM.
 #[derive(Debug, Clone)]
@@ -109,14 +106,12 @@ impl Config {
     }
 }
 
-/// Ensure config is loaded (idempotent).
-pub fn ensure_loaded() -> &'static Config {
+/// Load config from disk.
+pub fn ensure_loaded() -> Config {
     ensure_rustls_provider();
-    CONFIG.get_or_init(|| {
-        init_data_dir();
-        let path = data_dir().join("settings.json");
-        load_settings_from(&path)
-    })
+    init_data_dir();
+    let path = data_dir().join("settings.json");
+    load_settings_from(&path)
 }
 
 fn load_settings_from(path: &std::path::Path) -> Config {

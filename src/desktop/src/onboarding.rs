@@ -13,6 +13,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{Mutex, Notify};
 
+use crate::{restart_daemon, OnboardingActive};
 use common::config;
 use common::plugins;
 
@@ -359,8 +360,17 @@ pub async fn finish_onboarding<R: Runtime>(
 
     let _ = app.emit("onboarding-complete", ());
 
-    if let Some(gate) = app.try_state::<OnboardingGate>() {
-        gate.notify.notify_one();
+    if let Some(active) = app.try_state::<OnboardingActive>() {
+        let was_onboarding = active
+            .0
+            .swap(false, std::sync::atomic::Ordering::Relaxed);
+        if was_onboarding {
+            if let Some(gate) = app.try_state::<OnboardingGate>() {
+                gate.notify.notify_one();
+            }
+        } else {
+            restart_daemon(&app).await?;
+        }
     }
 
     Ok(())

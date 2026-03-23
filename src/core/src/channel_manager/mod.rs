@@ -16,7 +16,7 @@ use dashmap::DashMap;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, OnceCell};
-use tokio::task::AbortHandle;
+use tokio::task::{AbortHandle, JoinHandle};
 
 use crate::config;
 use crate::session_hub::types::*;
@@ -38,6 +38,7 @@ enum ChannelHandle {
 pub struct ChannelManager {
     channels: DashMap<ChannelKind, ChannelHandle>,
     session_hub: OnceCell<Arc<SessionHub>>,
+    event_bridge: OnceCell<JoinHandle<()>>,
 }
 
 impl ChannelManager {
@@ -45,6 +46,7 @@ impl ChannelManager {
         Self {
             channels: DashMap::new(),
             session_hub: OnceCell::new(),
+            event_bridge: OnceCell::new(),
         }
     }
 
@@ -60,7 +62,7 @@ impl ChannelManager {
     fn spawn_channel_event_bridge(self: &Arc<Self>, session_hub: Arc<SessionHub>) {
         let this = Arc::clone(self);
         let mut rx = session_hub.subscribe_channel_events();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Ok(event) => this.handle_channel_event(event).await,
@@ -71,6 +73,7 @@ impl ChannelManager {
                 }
             }
         });
+        let _ = self.event_bridge.set(handle);
     }
 
     async fn handle_channel_event(&self, event: ChannelEvent) {
@@ -431,6 +434,23 @@ impl ChannelManager {
             }
         } else {
             eprintln!("[ChannelManager] no channel for kind '{}'", channel_kind);
+        }
+    }
+
+    pub async fn shutdown_all(&self) {
+        let channel_names: Vec<String> = self.channels.iter().map(|entry| entry.key().clone()).collect();
+
+        for channel_name in channel_names {
+            if let Some((_, handle)) = self.channels.remove(&channel_name) {
+                match handle {
+                    ChannelHandle::External { abort, .. } => abort.abort(),
+                    ChannelHandle::Internal { .. } => {}
+                }
+            }
+        }
+
+        if let Some(handle) = self.event_bridge.get() {
+            handle.abort();
         }
     }
 }

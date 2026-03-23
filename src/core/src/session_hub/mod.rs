@@ -370,4 +370,26 @@ impl SessionHub {
             message: dispatch_msg,
         });
     }
+
+    pub async fn shutdown_all(&self) {
+        let routes: Vec<(String, String)> = {
+            let sessions = self.sessions.lock().await;
+            sessions
+                .keys()
+                .filter_map(|key| key.split_once(':').map(|(channel_kind, chat_id)| {
+                    (channel_kind.to_string(), chat_id.to_string())
+                }))
+                .collect()
+        };
+
+        for (channel_kind, chat_id) in routes {
+            self.publish_agent_event(AgentEvent::OnStopRuntime {
+                channel_kind,
+                chat_id,
+            });
+        }
+
+        let mut sessions = self.sessions.lock().await;
+        sessions.clear();
+    }
 }

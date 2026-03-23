@@ -7,7 +7,7 @@ mod tray;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::Manager;
+use tauri::{AppHandle, Manager, Runtime};
 use tokio::sync::{Mutex, Notify};
 
 use onboarding::{OnboardingGate, OnboardingSessions};
@@ -17,6 +17,70 @@ pub struct AppServiceManager(pub Arc<common::service::ServiceStatusManager>);
 
 /// Whether the app is currently in onboarding mode (tray reads this).
 pub struct OnboardingActive(pub std::sync::atomic::AtomicBool);
+
+pub struct DaemonController {
+    daemon: Arc<server::ServerDaemon>,
+    dist_path: PathBuf,
+    running: Mutex<Option<server::RunningDaemon>>,
+}
+
+impl DaemonController {
+    pub fn new(daemon: Arc<server::ServerDaemon>, dist_path: PathBuf) -> Self {
+        Self {
+            daemon,
+            dist_path,
+            running: Mutex::new(None),
+        }
+    }
+
+    pub async fn start(&self) -> Result<(), String> {
+        let mut running = self.running.lock().await;
+        if running.is_some() {
+            return Ok(());
+        }
+
+        let daemon = self
+            .daemon
+            .start_background(self.dist_path.clone())
+            .await?;
+        *running = Some(daemon);
+        Ok(())
+    }
+
+    pub async fn stop(&self) {
+        let mut running = self.running.lock().await;
+        if let Some(daemon) = running.take() {
+            daemon.stop().await;
+        }
+    }
+
+    pub async fn restart(&self) -> Result<(), String> {
+        self.stop().await;
+        self.start().await
+    }
+}
+
+pub async fn start_daemon<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let controller = app
+        .try_state::<DaemonController>()
+        .ok_or_else(|| "daemon controller state is missing".to_string())?;
+    controller.start().await
+}
+
+pub async fn stop_daemon<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let controller = app
+        .try_state::<DaemonController>()
+        .ok_or_else(|| "daemon controller state is missing".to_string())?;
+    controller.stop().await;
+    Ok(())
+}
+
+pub async fn restart_daemon<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let controller = app
+        .try_state::<DaemonController>()
+        .ok_or_else(|| "daemon controller state is missing".to_string())?;
+    controller.restart().await
+}
 
 fn main() {
     // Early check: if the port is already in use, another instance is likely running.
@@ -29,11 +93,12 @@ fn main() {
         );
     }
 
-    let daemon = server::ServerDaemon::new(port);
+    let daemon = Arc::new(server::ServerDaemon::new(port));
     let services = daemon.services();
 
     let onboarding_needed = onboarding::needs_onboarding();
     let gate = Arc::new(Notify::new());
+    let dist_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/dist");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -46,6 +111,7 @@ fn main() {
             }
         }))
         .manage(AppServiceManager(services))
+        .manage(DaemonController::new(Arc::clone(&daemon), dist_path.clone()))
         .manage(OnboardingGate { notify: Arc::clone(&gate) })
         .manage(OnboardingSessions {
             plugin_sessions: Arc::new(Mutex::new(std::collections::HashMap::new())),
@@ -75,7 +141,6 @@ fn main() {
 
             // Start the daemon — immediately if no onboarding needed,
             // otherwise wait for the onboarding gate signal.
-            let dist_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/dist");
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if onboarding_needed {
@@ -89,7 +154,7 @@ fn main() {
                     }
                 }
 
-                if let Err(e) = daemon.start(dist_path).await {
+                if let Err(e) = start_daemon(&app_handle).await {
                     eprintln!("[VibeAround] Daemon error: {}", e);
                 }
             });

@@ -7,11 +7,14 @@ pub use web_server::run_web_server;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tokio::task::JoinHandle;
+
 use common::agent_manager::AgentManager;
 use common::channel_manager::channels::web::WebChannelManager;
 use common::channel_manager::ChannelManager;
 use common::config;
 use common::plugins;
+use common::pty::{PtySessionManager, SessionId};
 use common::service::ServiceStatusManager;
 use common::session_hub::types::HubEvent;
 use common::session_hub::SessionHub;
@@ -22,6 +25,37 @@ use common::tunnels;
 pub struct ServerDaemon {
     pub services: Arc<ServiceStatusManager>,
     pub port: u16,
+}
+
+pub struct RunningDaemon {
+    pub channel_hub: Arc<ChannelManager>,
+    pub session_hub: Arc<SessionHub>,
+    pub agent_hub: Arc<AgentManager>,
+    pub web_channel: Arc<WebChannelManager>,
+    pub web_handle: JoinHandle<Result<(), String>>,
+    pub tunnel_handle: JoinHandle<()>,
+    pub web_dispatch_handle: JoinHandle<()>,
+    pub agent_status_sync_handle: JoinHandle<()>,
+    pub services: Arc<ServiceStatusManager>,
+}
+
+impl RunningDaemon {
+    pub async fn stop(&self) {
+        self.session_hub.shutdown_all().await;
+        self.agent_hub.shutdown_all().await;
+        self.channel_hub.shutdown_all().await;
+
+        let pty_manager = PtySessionManager::from_registry(Arc::clone(&self.services.pty));
+        let session_ids: Vec<SessionId> = self.services.pty.iter().map(|entry| entry.key().clone()).collect();
+        for session_id in session_ids {
+            let _ = pty_manager.delete_session(session_id);
+        }
+
+        self.web_dispatch_handle.abort();
+        self.agent_status_sync_handle.abort();
+        self.web_handle.abort();
+        self.tunnel_handle.abort();
+    }
 }
 
 impl ServerDaemon {
@@ -37,15 +71,7 @@ impl ServerDaemon {
         Arc::clone(&self.services)
     }
 
-    /// Start all services and wait for shutdown (ctrl_c or web server exit).
-    ///
-    /// Services started:
-    /// 1. Core runtime architecture (ChannelManager + SessionHub + AgentManager)
-    /// 2. Channel plugins (driven by settings.json channels config)
-    /// 3. Hub event subscriber (syncs hub state → ServiceStatusManager → Dashboard)
-    /// 4. Web server (Axum: HTTP API + WebSocket + SPA)
-    /// 5. Tunnel (cloudflare / localtunnel / ngrok)
-    pub async fn start(&self, dist_path: PathBuf) -> Result<(), String> {
+    pub async fn start_background(&self, dist_path: PathBuf) -> Result<RunningDaemon, String> {
         // Check if another instance is already running on the same port
         if let Ok(_) = tokio::net::TcpStream::connect(("127.0.0.1", self.port)).await {
             eprintln!(
@@ -56,7 +82,7 @@ impl ServerDaemon {
         }
 
         let cfg = config::ensure_loaded();
-        let services = &self.services;
+        let services = Arc::clone(&self.services);
 
         // 1. Initialize hub architecture (two-phase init to avoid circular Arc)
         let channel_hub = Arc::new(ChannelManager::new());
@@ -71,14 +97,14 @@ impl ServerDaemon {
         // Register built-in internal channels.
         let (web_outbound_tx, mut web_outbound_rx) = web_channel.sender();
         channel_hub.start_internal_plugin("web", web_outbound_tx);
-        {
+        let web_dispatch_handle = {
             let web_channel = Arc::clone(&web_channel);
             tokio::spawn(async move {
                 while let Some(notif) = web_outbound_rx.recv().await {
                     web_channel.dispatch_notification(notif);
                 }
-            });
-        }
+            })
+        };
 
         // 2. Channel plugins — start plugins for each channel in settings.json
         let discovered_plugins = plugins::discover_channel_plugins();
@@ -97,9 +123,9 @@ impl ServerDaemon {
         }
 
         // 3. Subscribe to hub events → sync to ServiceStatusManager → Dashboard
-        let hub_services = Arc::clone(services);
+        let hub_services = Arc::clone(&services);
         let mut agent_hub_rx = agent_hub.subscribe();
-        tokio::spawn(async move {
+        let agent_status_sync_handle = tokio::spawn(async move {
             while let Ok(event) = agent_hub_rx.recv().await {
                 match event {
                     HubEvent::OnAgentSpawned { key, kind } => {
@@ -116,7 +142,7 @@ impl ServerDaemon {
         });
 
         // 4. Web server (Axum)
-        let web_services = Arc::clone(services);
+        let web_services = Arc::clone(&services);
         let web_channel_hub = Arc::clone(&channel_hub);
         let web_channel_manager = Arc::clone(&web_channel);
         let web_handle = tokio::spawn(async move {
@@ -128,14 +154,15 @@ impl ServerDaemon {
                 web_channel_manager,
             )
             .await
+            .map_err(|e| e.to_string())
         });
 
         // 5. Tunnel
         let tunnel_provider = cfg.tunnel_provider;
         eprintln!("[VibeAround][daemon] Tunnel ({})", tunnel_provider.as_str());
-        let tunnel_services = Arc::clone(services);
+        let tunnel_services = Arc::clone(&services);
         let tunnel_handle = tokio::spawn(async move {
-            match tunnels::start_web_tunnel_with_provider(tunnel_provider, cfg).await {
+            match tunnels::start_web_tunnel_with_provider(tunnel_provider, &cfg).await {
                 Ok((guard, url)) => {
                     eprintln!("[VibeAround][daemon] Tunnel URL: {}", url);
                     tunnel_services.set_tunnel_url(tunnel_provider.as_str(), &url);
@@ -148,17 +175,35 @@ impl ServerDaemon {
         });
         services.register_tunnel(tunnel_provider, tunnel_handle.abort_handle());
 
-        // Wait for web server or ctrl_c
+        Ok(RunningDaemon {
+            channel_hub,
+            session_hub,
+            agent_hub,
+            web_channel,
+            web_handle,
+            tunnel_handle,
+            web_dispatch_handle,
+            agent_status_sync_handle,
+            services,
+        })
+    }
+
+    /// Start all services and wait for shutdown (ctrl_c or web server exit).
+    pub async fn start(&self, dist_path: PathBuf) -> Result<(), String> {
+        let mut running = self.start_background(dist_path).await?;
+
         tokio::select! {
-            result = web_handle => {
+            result = &mut running.web_handle => {
                 match result {
                     Ok(Ok(())) => eprintln!("[VibeAround][daemon] web server stopped"),
                     Ok(Err(e)) => eprintln!("[VibeAround][daemon] web server error: {}", e),
                     Err(e) => eprintln!("[VibeAround][daemon] web server panic: {}", e),
                 }
+                running.tunnel_handle.abort();
             }
             _ = tokio::signal::ctrl_c() => {
                 eprintln!("\n[VibeAround][daemon] shutting down...");
+                running.stop().await;
             }
         }
 
