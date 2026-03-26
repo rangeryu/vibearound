@@ -1,13 +1,11 @@
-//! Compatibility exports for legacy imports.
+//! Shared agent helpers.
 //!
-//! New ACP-native code should prefer `crate::agent_manager::provider` and
-//! `crate::agent_manager::runtime` directly.
+//! Current live implementations:
+//! - `runtime_context`: shared MCP config and system prompt helpers
+//!
+//! Gemini and OpenCode use the generic `StdioAcpProvider` in `provider.rs`.
+//! Claude and Codex are currently placeholders and intentionally unimplemented.
 
-pub mod claude_acp;
-pub mod claude_sdk;
-pub mod codex_acp;
-pub mod gemini_acp;
-pub mod opencode_acp;
 pub mod runtime_context;
 
 pub use crate::agent_manager::provider::AgentKind;

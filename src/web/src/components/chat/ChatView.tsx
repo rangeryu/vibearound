@@ -22,11 +22,20 @@ export type ChatMessage = {
   mode?: "standalone" | "stream";
 };
 
+type ChatMeta = {
+  channelId?: string;
+  sessionId?: string;
+  agentTitle?: string;
+  agentVersion?: string;
+  agentName?: string;
+};
+
 export function ChatView() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [meta, setMeta] = useState<ChatMeta>({});
 
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("claude");
@@ -50,6 +59,7 @@ export function ChatView() {
     ws.onmessage = (event) => {
       if (typeof event.data !== "string") return;
       const s = event.data as string;
+      console.debug("[ChatView] ws.onmessage", s);
 
       let j: Record<string, unknown>;
       try {
@@ -61,10 +71,30 @@ export function ChatView() {
 
       if (j.type === "config" && Array.isArray(j.agents)) {
         setAgents(j.agents as AgentInfo[]);
+        setMeta((prev) => ({
+          ...prev,
+          channelId: typeof j.channelId === "string" ? (j.channelId as string) : prev.channelId,
+        }));
         if (typeof j.default_agent === "string") {
           setSelectedAgent(j.default_agent as string);
         }
         return;
+      }
+
+      if (typeof j.protocolVersion === "string" || typeof j.agentInfo === "object") {
+        const agentInfo = (j.agentInfo ?? {}) as Record<string, unknown>;
+        setMeta((prev) => ({
+          ...prev,
+          agentName: typeof agentInfo.name === "string" ? (agentInfo.name as string) : prev.agentName,
+          agentTitle: typeof agentInfo.title === "string" ? (agentInfo.title as string) : prev.agentTitle,
+          agentVersion:
+            typeof agentInfo.version === "string" ? (agentInfo.version as string) : prev.agentVersion,
+        }));
+        return;
+      }
+
+      if (typeof j.sessionId === "string") {
+        setMeta((prev) => ({ ...prev, sessionId: j.sessionId as string }));
       }
 
       if (j.kind === "start") {
@@ -209,6 +239,15 @@ export function ChatView() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
+      <div className="border-b border-border/60 bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono">
+          <span>channel: web</span>
+          <span>chat: {meta.channelId ?? "-"}</span>
+          <span>agent: {meta.agentTitle ?? meta.agentName ?? agentLabel}</span>
+          <span>version: {meta.agentVersion ?? "-"}</span>
+          <span>sessionId: {meta.sessionId ?? "-"}</span>
+        </div>
+      </div>
       <Conversation className="flex-1">
         <ConversationContent>
           {messages.length === 0 ? (

@@ -48,4 +48,5 @@ pub struct RouteRuntimeState {
     pub cli_session_id: Option<String>,
     pub cli_kind: Option<String>,
     pub profile: Option<String>,
+    pub initialize: Option<agent_client_protocol::InitializeResponse>,
 }

@@ -12,11 +12,10 @@ use dashmap::DashMap;
 
 pub mod agents;
 pub mod provider;
-pub mod providers;
 pub mod runtime;
 
 use self::provider::{provider_for_kind, AgentKind};
-use self::runtime::{AcpBridge, BridgeClientHandler};
+use self::runtime::{AcpBridge, BridgeClientHandler, BridgeReady};
 use crate::config;
 
 fn agent_key(channel_kind: &str, chat_id: &str, profile: &str, cli_kind: &str) -> String {
@@ -36,7 +35,7 @@ impl AgentManager {
 
     /// Get or create an AcpBridge for the given route parameters.
     ///
-    /// Returns `(bridge, provider_session_id)`.
+    /// Returns bridge readiness info including ACP initialize response.
     pub async fn get_or_create_bridge(
         &self,
         channel_kind: &str,
@@ -45,12 +44,16 @@ impl AgentManager {
         cli_kind: &str,
         resume_session_id: Option<String>,
         client_handler: Arc<dyn BridgeClientHandler>,
-    ) -> Result<(Arc<AcpBridge>, Option<String>), String> {
+    ) -> Result<BridgeReady, String> {
         let key = agent_key(channel_kind, chat_id, profile, cli_kind);
 
         if let Some(entry) = self.bridges.get(&key) {
             let sid = entry.session_id().await;
-            return Ok((Arc::clone(&entry), sid));
+            return Ok(BridgeReady {
+                bridge: Arc::clone(&entry),
+                startup_session_id: sid,
+                initialize: entry.initialize_response(),
+            });
         }
 
         let workspace = config::data_dir().join("workspaces");
@@ -62,7 +65,7 @@ impl AgentManager {
         let system_prompt = Some(agents::runtime_context::build_runtime_context(channel_kind));
         let port = config::DEFAULT_PORT;
 
-        let (bridge, provider_sid) = AcpBridge::spawn(
+        let ready = AcpBridge::spawn(
             provider,
             kind,
             &workspace,
@@ -73,10 +76,10 @@ impl AgentManager {
         )
         .await?;
 
-        self.bridges.insert(key.clone(), Arc::clone(&bridge));
+        self.bridges.insert(key.clone(), Arc::clone(&ready.bridge));
         eprintln!("[AgentManager] spawned bridge: {}", key);
 
-        Ok((bridge, provider_sid))
+        Ok(ready)
     }
 
     pub fn get_bridge(

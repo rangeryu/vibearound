@@ -34,11 +34,19 @@ pub trait BridgeClientHandler: Send + Sync + 'static {
     ) -> acp::Result<acp::RequestPermissionResponse>;
 }
 
+pub struct BridgeReady {
+    pub bridge: Arc<AcpBridge>,
+    pub startup_session_id: Option<String>,
+    pub initialize: acp::InitializeResponse,
+}
+
 /// A flat ACP bridge: one northbound Agent surface, one southbound Client connection.
 pub struct AcpBridge {
     /// The southbound ACP connection to the real agent process.
     conn: acp::ClientSideConnection,
     kind: AgentKind,
+    /// ACP initialize response from first bridge startup.
+    initialize: acp::InitializeResponse,
     /// ACP session ID obtained from new_session / load_session.
     session_id: Mutex<Option<String>>,
     /// Provider session ID discovered out-of-band (e.g. Claude's session ID).
@@ -50,7 +58,7 @@ pub struct AcpBridge {
 impl AcpBridge {
     /// Spawn a new bridge on a dedicated thread with its own tokio runtime + LocalSet.
     ///
-    /// Returns `(Arc<AcpBridge>, Option<provider_session_id>)`.
+    /// Returns bridge readiness info including ACP initialize response.
     /// The bridge is ready for ACP calls immediately after this returns.
     pub async fn spawn(
         provider: Arc<dyn AgentProvider>,
@@ -60,13 +68,13 @@ impl AcpBridge {
         resume_session_id: Option<String>,
         mcp_port: u16,
         client_handler: Arc<dyn BridgeClientHandler>,
-    ) -> Result<(Arc<Self>, Option<String>), String> {
+    ) -> Result<BridgeReady, String> {
         provider.prepare_workspace(workspace, system_prompt, mcp_port)?;
 
         let cwd = workspace.to_path_buf();
         let system_prompt_owned = system_prompt.map(str::to_string);
         let (ready_tx, ready_rx) =
-            tokio::sync::oneshot::channel::<Result<(Arc<AcpBridge>, Option<String>), String>>();
+            tokio::sync::oneshot::channel::<Result<BridgeReady, String>>();
 
         std::thread::Builder::new()
             .name(format!("{}-bridge", kind))
@@ -90,6 +98,10 @@ impl AcpBridge {
 
     pub fn kind(&self) -> AgentKind {
         self.kind
+    }
+
+    pub fn initialize_response(&self) -> acp::InitializeResponse {
+        self.initialize.clone()
     }
 
     pub async fn session_id(&self) -> Option<String> {
@@ -186,7 +198,7 @@ fn run_bridge_thread(
     provider: Arc<dyn AgentProvider>,
     kind: AgentKind,
     cwd: PathBuf,
-    ready_tx: tokio::sync::oneshot::Sender<Result<(Arc<AcpBridge>, Option<String>), String>>,
+    ready_tx: tokio::sync::oneshot::Sender<Result<BridgeReady, String>>,
     system_prompt: Option<String>,
     resume_session_id: Option<String>,
     client_handler: Arc<dyn BridgeClientHandler>,
@@ -211,8 +223,8 @@ fn run_bridge_thread(
                 )
                 .await
                 {
-                    Ok((bridge, provider_sid)) => {
-                        let _ = ready_tx.send(Ok((bridge, provider_sid)));
+                    Ok(ready) => {
+                        let _ = ready_tx.send(Ok(ready));
                         std::future::pending::<()>().await;
                     }
                     Err(e) => {
@@ -231,7 +243,7 @@ async fn init_bridge(
     system_prompt: Option<String>,
     resume_session_id: Option<String>,
     client_handler: Arc<dyn BridgeClientHandler>,
-) -> Result<(Arc<AcpBridge>, Option<String>), String> {
+) -> Result<BridgeReady, String> {
     use acp::Agent as _;
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
@@ -258,7 +270,8 @@ async fn init_bridge(
     let init_req = acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(
         acp::Implementation::new("vibearound", env!("CARGO_PKG_VERSION")).title("VibeAround"),
     );
-    conn.initialize(init_req)
+    let initialize = conn
+        .initialize(init_req)
         .await
         .map_err(|e| format!("ACP initialize failed: {}", e))?;
 
@@ -286,11 +299,16 @@ async fn init_bridge(
     let bridge = Arc::new(AcpBridge {
         conn,
         kind,
+        initialize: initialize.clone(),
         session_id: Mutex::new(startup_session_id.clone()),
         provider_session_id_rx: Mutex::new(provider_session_id_rx),
         _worker_thread: Mutex::new(worker_thread),
     });
 
-    Ok((bridge, startup_session_id))
+    Ok(BridgeReady {
+        bridge,
+        startup_session_id,
+        initialize,
+    })
 }
 

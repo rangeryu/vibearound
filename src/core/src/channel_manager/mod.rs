@@ -227,18 +227,22 @@ pub async fn handle_channel_input(
                 "[ChannelManager] handle_channel_input Message route={} cli_kind={:?} text_len={}",
                 route, cli_kind, text.len()
             );
-            let handler: Arc<dyn BridgeClientHandler> = Arc::new(ChannelBridgeHandler {
+            let handler = Arc::new(ChannelBridgeHandler {
                 plugin_host: Arc::clone(plugin_host),
                 route: route.clone(),
             });
+            let bridge_handler: Arc<dyn BridgeClientHandler> = handler.clone();
             match session_hub
-                .prompt_on_route(route.clone(), cli_kind, text, handler)
+                .prompt_on_route_with_initialize(route.clone(), cli_kind, text, bridge_handler)
                 .await
             {
-                Ok(_resp) => eprintln!(
-                    "[ChannelManager] prompt_on_route OK route={}",
-                    route
-                ),
+                Ok((_resp, initialize)) => {
+                    let _ = handler.send_raw_acp(&initialize).await;
+                    eprintln!(
+                        "[ChannelManager] prompt_on_route OK route={}",
+                        route
+                    );
+                }
                 Err(e) => eprintln!(
                     "[ChannelManager] prompt_on_route ERR route={} error={}",
                     route, e
@@ -258,13 +262,20 @@ pub async fn handle_channel_input(
             let route = route_envelope.route_key();
             let text = route_envelope.text.clone();
             let cli_kind = route_envelope.cli_kind.clone();
-            let handler: Arc<dyn BridgeClientHandler> = Arc::new(ChannelBridgeHandler {
+            let handler = Arc::new(ChannelBridgeHandler {
                 plugin_host: Arc::clone(plugin_host),
                 route: route.clone(),
             });
-            let _ = session_hub
-                .prompt_on_route(route, cli_kind, text, handler)
-                .await;
+            let bridge_handler: Arc<dyn BridgeClientHandler> = handler.clone();
+            match session_hub
+                .prompt_on_route_with_initialize(route.clone(), cli_kind, text, bridge_handler)
+                .await
+            {
+                Ok((_resp, initialize)) => {
+                    let _ = handler.send_raw_acp(&initialize).await;
+                }
+                Err(_e) => {}
+            }
         }
         ChannelInput::Stop { route } => {
             if let Some(route_state) = session_hub.route_state(&route) {
@@ -298,14 +309,9 @@ struct ChannelBridgeHandler {
     route: RouteKey,
 }
 
-#[async_trait::async_trait(?Send)]
-impl BridgeClientHandler for ChannelBridgeHandler {
-    async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
-        eprintln!(
-            "[ChannelBridgeHandler] session_notification route={} session={}",
-            self.route, args.session_id
-        );
-        let payload = serde_json::to_value(&args)
+impl ChannelBridgeHandler {
+    async fn send_raw_acp<T: serde::Serialize>(&self, value: &T) -> acp::Result<()> {
+        let payload = serde_json::to_value(value)
             .map_err(|e| acp::Error::new(-32603, format!("serialize: {}", e)))?;
         self.plugin_host
             .send_output(ChannelOutput::RawAcp {
@@ -314,6 +320,17 @@ impl BridgeClientHandler for ChannelBridgeHandler {
             })
             .await;
         Ok(())
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl BridgeClientHandler for ChannelBridgeHandler {
+    async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
+        eprintln!(
+            "[ChannelBridgeHandler] session_notification route={} session={}",
+            self.route, args.session_id
+        );
+        self.send_raw_acp(&args).await
     }
 
     async fn request_permission(

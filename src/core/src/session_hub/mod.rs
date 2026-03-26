@@ -54,13 +54,14 @@ impl SessionHub {
 
     /// Ensure a bridge exists for the given route, creating one if needed.
     /// The `northbound_handler` receives southbound ACP events (session_notification, request_permission).
+    /// Returns `(bridge, initialize_response_if_new_or_cached)`.
     pub async fn ensure_bridge(
         &self,
         route: RouteKey,
         cli_kind: Option<String>,
         resume_session_id: Option<String>,
         northbound_handler: Arc<dyn BridgeClientHandler>,
-    ) -> Result<Arc<AcpBridge>, String> {
+    ) -> Result<(Arc<AcpBridge>, acp::InitializeResponse), String> {
         let route_state = self.get_or_create_route(route.clone());
         let cli_kind = cli_kind.unwrap_or_else(|| config::ensure_loaded().default_agent.clone());
         let profile = route_state
@@ -75,13 +76,17 @@ impl SessionHub {
             let runtime = route_state.runtime.lock().await;
             if let Some(existing) = runtime.bridge.clone() {
                 eprintln!("[SessionHub] ensure_bridge reusing existing bridge route={}", route);
-                return Ok(existing);
+                let initialize = runtime
+                    .initialize
+                    .clone()
+                    .ok_or_else(|| "missing initialize response on cached bridge".to_string())?;
+                return Ok((existing, initialize));
             }
         }
 
         eprintln!("[SessionHub] ensure_bridge creating new bridge route={} cli_kind={}", route, cli_kind);
 
-        let (bridge, provider_sid) = self
+        let ready = self
             .agent_manager
             .get_or_create_bridge(
                 &route.channel_kind,
@@ -94,15 +99,15 @@ impl SessionHub {
             .await?;
 
         let mut runtime = route_state.runtime.lock().await;
-        runtime.bridge = Some(Arc::clone(&bridge));
+        runtime.bridge = Some(Arc::clone(&ready.bridge));
         runtime.cli_kind = Some(cli_kind);
-        if let Some(sid) = provider_sid {
+        runtime.initialize = Some(ready.initialize.clone());
+        if let Some(sid) = ready.startup_session_id {
             runtime.cli_session_id = Some(sid);
         }
-        Ok(bridge)
+        Ok((ready.bridge, ready.initialize))
     }
 
-    /// Run a prompt with per-route queueing: only one active turn per route.
     pub async fn prompt_on_route(
         &self,
         route: RouteKey,
@@ -110,6 +115,19 @@ impl SessionHub {
         text: String,
         northbound_handler: Arc<dyn BridgeClientHandler>,
     ) -> acp::Result<acp::PromptResponse> {
+        self.prompt_on_route_with_initialize(route, cli_kind, text, northbound_handler)
+            .await
+            .map(|(resp, _initialize)| resp)
+    }
+
+    /// Run a prompt with per-route queueing and return the initialize response for the bridge.
+    pub async fn prompt_on_route_with_initialize(
+        &self,
+        route: RouteKey,
+        cli_kind: Option<String>,
+        text: String,
+        northbound_handler: Arc<dyn BridgeClientHandler>,
+    ) -> acp::Result<(acp::PromptResponse, acp::InitializeResponse)> {
         let route_state = self.get_or_create_route(route.clone());
 
         // Acquire turn slot or queue
@@ -129,13 +147,17 @@ impl SessionHub {
             queued.notify.notified().await;
         }
 
-        let bridge = self
+        let (bridge, initialize) = self
             .ensure_bridge(route.clone(), cli_kind, None, northbound_handler)
             .await
             .map_err(|e| {
                 eprintln!("[SessionHub] prompt_on_route ensure_bridge failed route={}: {}", route, e);
                 acp::Error::internal_error()
             })?;
+        eprintln!(
+            "[SessionHub] prompt_on_route initialize route={} agent_info={:?}",
+            route, initialize.agent_info
+        );
 
         // Ensure a session exists on the bridge
         let session_id = {
@@ -175,7 +197,7 @@ impl SessionHub {
             *route_state.in_flight.lock().await = false;
         }
 
-        result
+        result.map(|resp| (resp, initialize))
     }
 
     /// Cancel the active turn on a route.

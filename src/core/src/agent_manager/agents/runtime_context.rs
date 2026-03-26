@@ -17,13 +17,6 @@ pub fn ensure_mcp_config(kind: AgentKind, workspace: &Path, port: u16) {
     let url = format!("http://127.0.0.1:{}/mcp", port);
 
     let (rel_path, content) = match kind {
-        AgentKind::Claude => (
-            ".mcp.json",
-            format!(
-                r#"{{"mcpServers":{{"vibearound":{{"type":"http","url":"{}"}}}}}}"#,
-                url
-            ),
-        ),
         AgentKind::Gemini => (
             ".gemini/settings.json",
             format!(
@@ -38,10 +31,9 @@ pub fn ensure_mcp_config(kind: AgentKind, workspace: &Path, port: u16) {
                 url
             ),
         ),
-        AgentKind::Codex => (
-            ".codex/config.toml",
-            format!("[mcp_servers.vibearound]\nurl = \"{}\"\n", url),
-        ),
+        AgentKind::Claude | AgentKind::Codex => {
+            return;
+        }
     };
 
     let path = workspace.join(rel_path);
