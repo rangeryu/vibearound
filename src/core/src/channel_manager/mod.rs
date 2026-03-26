@@ -1,539 +1,333 @@
-//! ChannelManager: manages channel transports and protocol I/O.
+//! ACP-native channel manager: hosts channel plugins and routes traffic.
 //!
-//! Responsibilities:
-//! - Spawn external channel plugin processes (Node.js)
-//! - Register internal channel transports
-//! - Parse JSON-RPC messages from channel transports → InboundMessage
-//! - Forward ChannelNotification → channel transport
-//! - Route inbound messages to SessionHub
+//! The web channel path uses ACP directly (ws_chat calls SessionHub methods).
+//! Stdio plugins still use the legacy ChannelInput/ChannelOutput for now.
 
-pub mod channels;
+pub mod manifest;
+pub mod plugin_host;
+pub mod plugin_runtime;
+pub mod transport_stdio;
+pub mod transport_websocket;
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
-use dashmap::DashMap;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
-use tokio::sync::{broadcast, mpsc, oneshot, Mutex, OnceCell};
-use tokio::task::{AbortHandle, JoinHandle};
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tokio::task::AbortHandle;
 
-use crate::config;
-use crate::session_hub::types::*;
+use crate::acp::routing::{Attachment, MessageId, RouteEnvelope, RouteKey, TurnId};
+use crate::agent_manager::runtime::BridgeClientHandler;
+use crate::plugins::DiscoveredPlugin;
 use crate::session_hub::SessionHub;
 
-type StdinWriter = Arc<Mutex<tokio::process::ChildStdin>>;
-type PendingRequests = Arc<DashMap<u64, oneshot::Sender<Result<serde_json::Value, String>>>>;
+use agent_client_protocol as acp;
 
-enum ChannelHandle {
-    External {
-        stdin: StdinWriter,
-        abort: AbortHandle,
+use self::manifest::ChannelPluginManifest;
+use self::plugin_host::PluginHost;
+
+pub use self::transport_websocket::WebChannelManager;
+
+/// Legacy envelope kept for stdio plugin compatibility.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelEnvelope {
+    pub route: RouteKey,
+    #[serde(default)]
+    pub message_id: MessageId,
+    #[serde(default)]
+    pub turn_id: Option<TurnId>,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub sender_id: String,
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub cli_kind: Option<String>,
+}
+
+impl ChannelEnvelope {
+    pub fn into_route_envelope(self) -> RouteEnvelope {
+        RouteEnvelope {
+            channel_kind: self.route.channel_kind,
+            chat_id: self.route.chat_id,
+            message_id: self.message_id,
+            turn_id: self.turn_id,
+            text: self.text,
+            sender_id: self.sender_id,
+            attachments: self.attachments,
+            parent_id: self.parent_id,
+            cli_kind: self.cli_kind,
+        }
+    }
+}
+
+/// Legacy stdio plugin input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum ChannelInput {
+    Message {
+        #[serde(flatten)]
+        envelope: ChannelEnvelope,
     },
-    Internal {
-        outbound_tx: mpsc::UnboundedSender<ChannelNotification>,
+    Callback {
+        #[serde(flatten)]
+        envelope: ChannelEnvelope,
+        #[serde(default)]
+        action_value: Option<String>,
     },
+    Stop {
+        route: RouteKey,
+    },
+    Close {
+        route: RouteKey,
+        #[serde(default)]
+        reason: Option<String>,
+    },
+    SwitchAgent {
+        route: RouteKey,
+        agent_kind: String,
+    },
+    Log {
+        #[serde(default)]
+        level: Option<String>,
+        message: String,
+    },
+}
+
+/// Legacy stdio plugin output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum ChannelOutput {
+    RawAcp {
+        route: RouteKey,
+        payload: serde_json::Value,
+    },
+    SystemText {
+        route: RouteKey,
+        text: String,
+        reply_to: Option<MessageId>,
+    },
+}
+
+impl ChannelOutput {
+    pub fn route_key(&self) -> &RouteKey {
+        match self {
+            Self::RawAcp { route, .. } | Self::SystemText { route, .. } => route,
+        }
+    }
 }
 
 pub struct ChannelManager {
-    channels: DashMap<ChannelKind, ChannelHandle>,
-    session_hub: OnceCell<Arc<SessionHub>>,
-    event_bridge: OnceCell<JoinHandle<()>>,
+    plugin_host: Arc<PluginHost>,
+    /// Channel for fire-and-forget input dispatch.
+    /// `handle_input` sends here; the processing loop runs on a dedicated
+    /// `spawn_local` task so that `!Send` ACP futures are allowed.
+    input_tx: mpsc::UnboundedSender<ChannelInput>,
+    input_rx: StdMutex<Option<mpsc::UnboundedReceiver<ChannelInput>>>,
+    session_hub: Arc<SessionHub>,
 }
 
 impl ChannelManager {
-    pub fn new() -> Self {
+    pub fn new(session_hub: Arc<SessionHub>) -> Self {
+        let (input_tx, input_rx) = mpsc::unbounded_channel();
         Self {
-            channels: DashMap::new(),
-            session_hub: OnceCell::new(),
-            event_bridge: OnceCell::new(),
+            plugin_host: Arc::new(PluginHost::new(input_tx.clone())),
+            input_tx,
+            input_rx: StdMutex::new(Some(input_rx)),
+            session_hub,
         }
     }
 
-    pub fn set_session_hub(self: &Arc<Self>, hub: Arc<SessionHub>) {
-        let _ = self.session_hub.set(Arc::clone(&hub));
-        self.spawn_channel_event_bridge(hub);
+    pub fn plugin_host(&self) -> Arc<PluginHost> {
+        Arc::clone(&self.plugin_host)
     }
 
-    fn session_hub(&self) -> &Arc<SessionHub> {
-        self.session_hub.get().expect("SessionHub not initialized")
-    }
-
-    fn spawn_channel_event_bridge(self: &Arc<Self>, session_hub: Arc<SessionHub>) {
-        let this = Arc::clone(self);
-        let mut rx = session_hub.subscribe_channel_events();
-        let handle = tokio::spawn(async move {
-            loop {
-                match rx.recv().await {
-                    Ok(event) => this.handle_channel_event(event).await,
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        eprintln!("[ChannelManager] channel event stream lagged by {} events", n);
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
-                }
-            }
-        });
-        let _ = self.event_bridge.set(handle);
-    }
-
-    async fn handle_channel_event(&self, event: ChannelEvent) {
-        match event {
-            ChannelEvent::OnAgentSessionReady {
-                channel_kind,
-                chat_id,
-                message_id,
-                cli_kind,
-                cli_session_id,
-                profile,
-            } => {
-                let agent_name = crate::agent_manager::agents::AgentKind::from_str_loose(&cli_kind)
-                    .map(|kind| kind.display_name())
-                    .unwrap_or(cli_kind.as_str());
-                let text = format!(
-                    "CLI session is now active.\n\nAgent: {}\nSession ID: {}\nProfile: {}",
-                    agent_name, cli_session_id, profile
-                );
-                self.send_notification(ChannelNotification::SendSystemText {
-                    channel_kind,
-                    chat_id,
-                    text,
-                    reply_to: Some(message_id),
-                })
-                .await;
-            }
-            ChannelEvent::OnTurnStarted {
-                channel_kind,
-                chat_id,
-                message_id,
-            } => {
-                self.send_notification(ChannelNotification::AgentStart {
-                    channel_kind,
-                    chat_id,
-                    message_id,
-                })
-                .await;
-            }
-            ChannelEvent::OnTurnCompleted {
-                channel_kind,
-                chat_id,
-            } => {
-                self.send_notification(ChannelNotification::AgentEnd {
-                    channel_kind,
-                    chat_id,
-                })
-                .await;
-            }
-            ChannelEvent::OnSessionError {
-                channel_kind,
-                chat_id,
-                error,
-            } => {
-                self.send_notification(ChannelNotification::AgentError {
-                    channel_kind,
-                    chat_id,
-                    error,
-                })
-                .await;
-            }
-            ChannelEvent::OnSystemText {
-                channel_kind,
-                chat_id,
-                text,
-                reply_to,
-            } => {
-                self.send_notification(ChannelNotification::SendSystemText {
-                    channel_kind,
-                    chat_id,
-                    text,
-                    reply_to,
-                })
-                .await;
-            }
-            ChannelEvent::OnAcpEvent {
-                channel_kind,
-                chat_id,
-                message_id,
-                payload,
-            } => {
-                if let Some(kind) = payload.get("kind").and_then(|v| v.as_str()) {
-                    match kind {
-                        "token" => {
-                            if let Some(delta) = payload.get("delta").and_then(|v| v.as_str()) {
-                                self.send_notification(ChannelNotification::AgentToken {
-                                    channel_kind,
-                                    chat_id,
-                                    delta: delta.to_string(),
-                                })
-                                .await;
-                            }
-                        }
-                        "thinking" => {
-                            if let Some(text) = payload.get("text").and_then(|v| v.as_str()) {
-                                self.send_notification(ChannelNotification::AgentThinking {
-                                    channel_kind,
-                                    chat_id,
-                                    text: text.to_string(),
-                                })
-                                .await;
-                            }
-                        }
-                        "tool_use" => {
-                            self.send_notification(ChannelNotification::AgentToolUse {
-                                channel_kind,
-                                chat_id,
-                                tool: payload
-                                    .get("tool")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                input: payload
-                                    .get("input")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                            })
-                            .await;
-                        }
-                        "tool_result" => {
-                            self.send_notification(ChannelNotification::AgentToolResult {
-                                channel_kind,
-                                chat_id,
-                                tool: payload
-                                    .get("tool")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                output: payload
-                                    .get("output")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                            })
-                            .await;
-                        }
-                        _ => {
-                            let _ = message_id;
-                        }
-                    }
-                }
-            }
-            ChannelEvent::OnSessionStarted { .. } | ChannelEvent::OnSessionClosed { .. } => {}
-        }
+    /// Take the input receiver so the caller can drive the processing loop.
+    /// This must be called exactly once (typically during daemon startup).
+    pub fn take_input_rx(&self) -> Option<mpsc::UnboundedReceiver<ChannelInput>> {
+        self.input_rx.lock().unwrap().take()
     }
 
     pub async fn start_plugin(
-        self: &Arc<Self>,
-        plugin_dir: PathBuf,
-        entry_point: PathBuf,
+        &self,
         channel_name: &str,
+        plugin: &DiscoveredPlugin,
     ) -> Option<AbortHandle> {
-        let prefix = format!("[{}]", channel_name);
-        let cfg = config::ensure_loaded();
-
-        let raw_config = match cfg.channel_raw_config(channel_name) {
-            Some(v) => v,
+        let manifest = match ChannelPluginManifest::from_discovered(channel_name.to_string(), plugin) {
+            Some(manifest) => manifest,
             None => {
-                eprintln!("{} config=missing channels.{} — plugin disabled", prefix, channel_name);
+                eprintln!(
+                    "[{}] config=missing channels.{} — plugin disabled",
+                    channel_name, channel_name
+                );
                 return None;
             }
         };
 
-        if !entry_point.exists() {
-            eprintln!(
-                "{} plugin entry not found: {} — run `npm run build` in {}",
-                prefix,
-                entry_point.display(),
-                plugin_dir.display()
-            );
-            return None;
+        match self.plugin_host.register_stdio_plugin(manifest).await {
+            Ok(abort_handle) => Some(abort_handle),
+            Err(error) => {
+                eprintln!("[{}] failed to start plugin: {}", channel_name, error);
+                None
+            }
         }
-
-        eprintln!("{} spawning plugin process: node {}", prefix, entry_point.display());
-
-        let mut child = match Command::new("node")
-            .arg(entry_point.to_str().unwrap())
-            .current_dir(&plugin_dir)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{} failed to spawn plugin: {}", prefix, e);
-                return None;
-            }
-        };
-
-        let stdin = child.stdin.take().expect("stdin piped");
-        let stdout = child.stdout.take().expect("stdout piped");
-        let stderr = child.stderr.take().expect("stderr piped");
-
-        let stdin_writer: StdinWriter = Arc::new(Mutex::new(stdin));
-        let pending: PendingRequests = Arc::new(DashMap::new());
-
-        let init_req = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "config": raw_config,
-                "hostVersion": env!("CARGO_PKG_VERSION"),
-            }
-        });
-        {
-            let mut guard = stdin_writer.lock().await;
-            let line = serde_json::to_string(&init_req).unwrap() + "\n";
-            if let Err(e) = guard.write_all(line.as_bytes()).await {
-                eprintln!("{} failed to write initialize: {}", prefix, e);
-                return None;
-            }
-            let _ = guard.flush().await;
-        }
-
-        let prefix_stderr = prefix.clone();
-        tokio::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                eprintln!("{} [plugin] {}", prefix_stderr, line);
-            }
-        });
-
-        let channel_name_owned = channel_name.to_string();
-        let prefix_stdout = prefix.clone();
-        let hub = Arc::clone(self);
-        let handle = tokio::spawn(async move {
-            let _child = child;
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
-
-            while let Ok(Some(line)) = lines.next_line().await {
-                let line = line.trim().to_string();
-                if line.is_empty() {
-                    continue;
-                }
-
-                let msg: serde_json::Value = match serde_json::from_str(&line) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        eprintln!(
-                            "{} invalid JSON from plugin: {} — {}",
-                            prefix_stdout,
-                            e,
-                            &line[..line.len().min(120)]
-                        );
-                        continue;
-                    }
-                };
-
-                if let Some(id) = msg.get("id") {
-                    if let Some(id_val) = id.as_u64() {
-                        if let Some((_, tx)) = pending.remove(&id_val) {
-                            if let Some(err) = msg.get("error") {
-                                let err_msg = err
-                                    .get("message")
-                                    .and_then(|m| m.as_str())
-                                    .unwrap_or("unknown error")
-                                    .to_string();
-                                let _ = tx.send(Err(err_msg));
-                            } else {
-                                let result = msg.get("result").cloned().unwrap_or(serde_json::Value::Null);
-                                let _ = tx.send(Ok(result));
-                            }
-                        }
-                    }
-                    if id.as_u64() == Some(1) {
-                        eprintln!("{} event=plugin_ready", prefix_stdout);
-                    }
-                    continue;
-                }
-
-                hub.handle_inbound_jsonrpc(&channel_name_owned, msg).await;
-            }
-
-            eprintln!("{} stdout reader exited", prefix_stdout);
-        });
-
-        let abort = handle.abort_handle();
-
-        self.channels.insert(
-            channel_name.to_string(),
-            ChannelHandle::External {
-                stdin: stdin_writer,
-                abort: abort.clone(),
-            },
-        );
-
-        eprintln!("{} registered external channel", prefix);
-        Some(abort)
     }
 
     pub fn start_internal_plugin(
         &self,
         channel_name: &str,
-        outbound_tx: mpsc::UnboundedSender<ChannelNotification>,
+        outbound_tx: mpsc::UnboundedSender<ChannelOutput>,
     ) {
-        self.channels.insert(
-            channel_name.to_string(),
-            ChannelHandle::Internal { outbound_tx },
-        );
-        eprintln!("[{}] registered internal channel", channel_name);
+        self.plugin_host
+            .register_websocket_plugin(channel_name.to_string(), outbound_tx);
+        eprintln!("[{}] registered internal ACP plugin", channel_name);
     }
 
-    pub async fn handle_inbound_jsonrpc(&self, channel_name: &str, msg: serde_json::Value) {
-        let prefix = format!("[{}]", channel_name);
-        let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
-        let params = msg.get("params").cloned().unwrap_or(serde_json::Value::Null);
-
-        match method {
-            "on_message" => {
-                if let Some(inbound) = parse_on_message(&params, channel_name) {
-                    eprintln!("{} on_message text={}", prefix, truncate(&inbound.text, 80));
-                    self.session_hub().channel_request_message(inbound).await;
-                }
-            }
-            "on_callback" => {
-                if let Some(inbound) = parse_on_callback(&params, channel_name) {
-                    eprintln!("{} on_callback text={}", prefix, truncate(&inbound.text, 80));
-                    self.session_hub().channel_request_message(inbound).await;
-                }
-            }
-            "plugin_log" => {
-                let level = params.get("level").and_then(|v| v.as_str()).unwrap_or("info");
-                let message = params.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                eprintln!("{} [channel][{}] {}", prefix, level, message);
-            }
-            other => {
-                eprintln!("{} unknown notification: {}", prefix, other);
-            }
-        }
+    /// Fire-and-forget: enqueue input for async processing.
+    /// This is `Send`-safe because it only does a channel send.
+    pub fn handle_input(&self, input: ChannelInput) {
+        let _ = self.input_tx.send(input);
     }
 
-    pub async fn send_notification(&self, notif: ChannelNotification) {
-        let channel_kind = channel_kind_of_notification(&notif).to_string();
+    /// Process a single input on the current executor.
+    /// This may await `!Send` ACP futures, so callers should run it on a
+    /// `LocalSet` or other non-`Send`-compatible context when needed.
+    pub async fn process_input(&self, input: ChannelInput) {
+        handle_channel_input(&self.session_hub, &self.plugin_host, input).await;
+    }
 
-        if let Some(handle) = self.channels.get(&channel_kind) {
-            match handle.value() {
-                ChannelHandle::External { stdin, abort } => {
-                    let _keep_alive = abort;
-                    let json = notif.to_jsonrpc();
-                    let line = serde_json::to_string(&json).unwrap() + "\n";
-                    let mut guard = stdin.lock().await;
-                    if let Err(e) = guard.write_all(line.as_bytes()).await {
-                        eprintln!("[{}] failed to write to channel stdin: {}", channel_kind, e);
-                    }
-                    let _ = guard.flush().await;
-                }
-                ChannelHandle::Internal { outbound_tx } => {
-                    if let Err(e) = outbound_tx.send(notif) {
-                        eprintln!("[{}] failed to send to internal channel: {}", channel_kind, e);
-                    }
-                }
-            }
-        } else {
-            eprintln!("[ChannelManager] no channel for kind '{}'", channel_kind);
-        }
+    pub fn session_hub_ref(&self) -> Arc<SessionHub> {
+        Arc::clone(&self.session_hub)
+    }
+
+    pub async fn send_output(&self, output: ChannelOutput) {
+        self.plugin_host.send_output(output).await;
     }
 
     pub async fn shutdown_all(&self) {
-        let channel_names: Vec<String> = self.channels.iter().map(|entry| entry.key().clone()).collect();
+        self.plugin_host.shutdown_all().await;
+    }
+}
 
-        for channel_name in channel_names {
-            if let Some((_, handle)) = self.channels.remove(&channel_name) {
-                match handle {
-                    ChannelHandle::External { abort, .. } => abort.abort(),
-                    ChannelHandle::Internal { .. } => {}
+pub async fn handle_channel_input(
+    session_hub: &Arc<SessionHub>,
+    plugin_host: &Arc<PluginHost>,
+    input: ChannelInput,
+) {
+    match input {
+        ChannelInput::Message { envelope } => {
+            let route_envelope = envelope.into_route_envelope();
+            let route = route_envelope.route_key();
+            let text = route_envelope.text.clone();
+            let cli_kind = route_envelope.cli_kind.clone();
+            eprintln!(
+                "[ChannelManager] handle_channel_input Message route={} cli_kind={:?} text_len={}",
+                route, cli_kind, text.len()
+            );
+            let handler: Arc<dyn BridgeClientHandler> = Arc::new(ChannelBridgeHandler {
+                plugin_host: Arc::clone(plugin_host),
+                route: route.clone(),
+            });
+            match session_hub
+                .prompt_on_route(route.clone(), cli_kind, text, handler)
+                .await
+            {
+                Ok(_resp) => eprintln!(
+                    "[ChannelManager] prompt_on_route OK route={}",
+                    route
+                ),
+                Err(e) => eprintln!(
+                    "[ChannelManager] prompt_on_route ERR route={} error={}",
+                    route, e
+                ),
+            }
+        }
+        ChannelInput::Callback {
+            envelope,
+            action_value,
+        } => {
+            let mut route_envelope = envelope.into_route_envelope();
+            if route_envelope.text.is_empty() {
+                route_envelope.text = action_value
+                    .map(|value| format!("[button:{}]", value))
+                    .unwrap_or_else(|| "[button]".to_string());
+            }
+            let route = route_envelope.route_key();
+            let text = route_envelope.text.clone();
+            let cli_kind = route_envelope.cli_kind.clone();
+            let handler: Arc<dyn BridgeClientHandler> = Arc::new(ChannelBridgeHandler {
+                plugin_host: Arc::clone(plugin_host),
+                route: route.clone(),
+            });
+            let _ = session_hub
+                .prompt_on_route(route, cli_kind, text, handler)
+                .await;
+        }
+        ChannelInput::Stop { route } => {
+            if let Some(route_state) = session_hub.route_state(&route) {
+                if let Some(session_id) = route_state.runtime.lock().await.session_id.clone() {
+                    let _ = session_hub
+                        .cancel_on_route(&route, acp::CancelNotification::new(session_id))
+                        .await;
                 }
             }
         }
-
-        if let Some(handle) = self.event_bridge.get() {
-            handle.abort();
+        ChannelInput::Close { route, reason: _ } => {
+            session_hub.kill_route(&route).await;
+        }
+        ChannelInput::SwitchAgent { route, agent_kind } => {
+            if let Some(route_state) = session_hub.route_state(&route) {
+                route_state.runtime.lock().await.cli_kind = Some(agent_kind);
+            }
+        }
+        ChannelInput::Log { level, message } => {
+            eprintln!(
+                "[ChannelManager][channel][{}] {}",
+                level.unwrap_or_else(|| "info".to_string()),
+                message
+            );
         }
     }
 }
 
-fn channel_kind_of_notification(notif: &ChannelNotification) -> &str {
-    match notif {
-        ChannelNotification::AgentStart { channel_kind, .. } => channel_kind,
-        ChannelNotification::AgentThinking { channel_kind, .. } => channel_kind,
-        ChannelNotification::AgentToken { channel_kind, .. } => channel_kind,
-        ChannelNotification::AgentToolUse { channel_kind, .. } => channel_kind,
-        ChannelNotification::AgentToolResult { channel_kind, .. } => channel_kind,
-        ChannelNotification::AgentEnd { channel_kind, .. } => channel_kind,
-        ChannelNotification::AgentError { channel_kind, .. } => channel_kind,
-        ChannelNotification::SendSystemText { channel_kind, .. } => channel_kind,
-    }
+struct ChannelBridgeHandler {
+    plugin_host: Arc<PluginHost>,
+    route: RouteKey,
 }
 
-fn parse_on_message(params: &serde_json::Value, channel_name: &str) -> Option<InboundMessage> {
-    let raw_channel_id = params.get("channelId")?.as_str()?.to_string();
-    let text = params.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let message_id = params.get("messageId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let sender_id = params
-        .get("sender")
-        .and_then(|s| s.get("id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let reply_to = params.get("replyTo").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let cli_kind = params.get("agent").and_then(|v| v.as_str()).map(|s| s.to_string());
-
-    if text.is_empty() {
-        return None;
+#[async_trait::async_trait(?Send)]
+impl BridgeClientHandler for ChannelBridgeHandler {
+    async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
+        eprintln!(
+            "[ChannelBridgeHandler] session_notification route={} session={}",
+            self.route, args.session_id
+        );
+        let payload = serde_json::to_value(&args)
+            .map_err(|e| acp::Error::new(-32603, format!("serialize: {}", e)))?;
+        self.plugin_host
+            .send_output(ChannelOutput::RawAcp {
+                route: self.route.clone(),
+                payload,
+            })
+            .await;
+        Ok(())
     }
 
-    let chat_id = raw_channel_id
-        .strip_prefix(&format!("{}:", channel_name))
-        .unwrap_or(&raw_channel_id)
-        .to_string();
-
-    Some(InboundMessage {
-        channel_kind: channel_name.to_string(),
-        chat_id,
-        message_id,
-        text,
-        sender_id,
-        attachments: vec![],
-        parent_id: reply_to,
-        cli_kind,
-    })
-}
-
-fn parse_on_callback(params: &serde_json::Value, channel_name: &str) -> Option<InboundMessage> {
-    let raw_channel_id = params.get("channelId")?.as_str()?.to_string();
-    let sender_id = params
-        .get("sender")
-        .and_then(|s| s.get("id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let action_value = params
-        .get("data")
-        .and_then(|d| d.get("value"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let action_text = format!("[button:{}]", action_value);
-
-    let chat_id = raw_channel_id
-        .strip_prefix(&format!("{}:", channel_name))
-        .unwrap_or(&raw_channel_id)
-        .to_string();
-
-    Some(InboundMessage {
-        channel_kind: channel_name.to_string(),
-        chat_id,
-        message_id: String::new(),
-        text: action_text,
-        sender_id,
-        attachments: vec![],
-        parent_id: None,
-        cli_kind: None,
-    })
-}
-
-fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
+    async fn request_permission(
+        &self,
+        args: acp::RequestPermissionRequest,
+    ) -> acp::Result<acp::RequestPermissionResponse> {
+        if let Some(first) = args.options.first() {
+            Ok(acp::RequestPermissionResponse::new(
+                acp::RequestPermissionOutcome::Selected(
+                    acp::SelectedPermissionOutcome::new(first.option_id.clone()),
+                ),
+            ))
+        } else {
+            Err(acp::Error::method_not_found())
+        }
+    }
 }

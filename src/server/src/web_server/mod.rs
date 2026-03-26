@@ -21,8 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
-use common::channel_manager::channels::web::WebChannelManager;
-use common::channel_manager::ChannelManager;
+use common::channel_manager::{ChannelManager, WebChannelManager};
 use common::config;
 use common::pty::PtySessionManager;
 

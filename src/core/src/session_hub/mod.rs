@@ -1,395 +1,205 @@
-//! SessionHub: session lifecycle, per-session message buffering, and event fan-out.
+//! SessionHub: ACP Agent surface with route state + prompt queueing.
 //!
-//! Responsibilities:
-//! - Own session state keyed by channel_kind + chat_id
-//! - Buffer inbound messages per session and advance the active turn when idle
-//! - Expose request-style APIs for ChannelManager and AgentManager
-//! - Publish session events for ChannelManager and AgentManager subscribers
-//! - Provide lightweight read-only session runtime queries
+//! Implements `acp::Agent` so that upstream callers (ChannelManager, ws_chat)
+//! can use standard ACP methods. Internally delegates to `AcpBridge` instances
+//! obtained from `AgentManager`. Only the prompt path has queueing logic;
+//! everything else is passthrough.
 
+use std::sync::Arc;
+
+use dashmap::DashMap;
+
+use agent_client_protocol as acp;
+
+use crate::acp::routing::RouteKey;
+use crate::agent_manager::runtime::{AcpBridge, BridgeClientHandler};
+use crate::agent_manager::AgentManager;
+use crate::config;
+
+pub mod command;
+pub mod routing;
+pub mod state;
 pub mod types;
 
-use std::collections::{HashMap, VecDeque};
-use tokio::sync::{broadcast, Mutex};
-
-use crate::session_hub::types::*;
-
-/// Unique key for a session: "{channel_kind}:{chat_id}".
-fn session_key(channel_kind: &str, chat_id: &str) -> String {
-    format!("{}:{}", channel_kind, chat_id)
-}
-
-/// Per-session state.
-struct Session {
-    /// CLI session id (set after agent spawn, updated on CLI switch).
-    cli_session_id: Option<CliSessionId>,
-    /// Agent CLI kind (e.g. "claude").
-    cli_kind: Option<String>,
-    /// Profile name (e.g. "default").
-    profile: String,
-    /// Whether the agent is currently processing a message.
-    busy: bool,
-    /// FIFO message queue for this session.
-    queue: VecDeque<QueuedMessage>,
-}
-
-impl Session {
-    fn new() -> Self {
-        Self {
-            cli_session_id: None,
-            cli_kind: None,
-            profile: "default".to_string(),
-            busy: false,
-            queue: VecDeque::new(),
-        }
-    }
-}
+use self::state::{QueuedPrompt, RouteState};
 
 pub struct SessionHub {
-    /// Sessions keyed by "{channel_kind}:{chat_id}".
-    sessions: Mutex<HashMap<String, Session>>,
-    /// Broadcast channel for SessionHub -> ChannelManager events.
-    channel_event_tx: broadcast::Sender<ChannelEvent>,
-    /// Broadcast channel for SessionHub -> AgentManager events.
-    agent_event_tx: broadcast::Sender<AgentEvent>,
+    agent_manager: Arc<AgentManager>,
+    routes: DashMap<RouteKey, Arc<RouteState>>,
 }
 
 impl SessionHub {
-    pub fn new() -> Self {
-        let (channel_event_tx, _) = broadcast::channel(128);
-        let (agent_event_tx, _) = broadcast::channel(128);
+    pub fn new(agent_manager: Arc<AgentManager>) -> Self {
         Self {
-            sessions: Mutex::new(HashMap::new()),
-            channel_event_tx,
-            agent_event_tx,
+            agent_manager,
+            routes: DashMap::new(),
         }
-    }
-
-    pub fn subscribe_channel_events(&self) -> broadcast::Receiver<ChannelEvent> {
-        self.channel_event_tx.subscribe()
-    }
-
-    pub fn subscribe_agent_events(&self) -> broadcast::Receiver<AgentEvent> {
-        self.agent_event_tx.subscribe()
-    }
-
-    fn publish_channel_event(&self, event: ChannelEvent) {
-        let _ = self.channel_event_tx.send(event);
-    }
-
-    pub fn publish_agent_event(&self, event: AgentEvent) {
-        let _ = self.agent_event_tx.send(event);
-    }
-
-    pub async fn get_session_cli_kind(&self, channel_kind: &str, chat_id: &str) -> Option<String> {
-        let key = session_key(channel_kind, chat_id);
-        let sessions = self.sessions.lock().await;
-        sessions.get(&key).and_then(|session| session.cli_kind.clone())
-    }
-
-    pub async fn get_session_profile(&self, channel_kind: &str, chat_id: &str) -> Option<String> {
-        let key = session_key(channel_kind, chat_id);
-        let sessions = self.sessions.lock().await;
-        sessions.get(&key).map(|session| session.profile.clone())
-    }
-
-    /// Called by ChannelManager when a message arrives from a channel plugin.
-    pub async fn channel_request_message(&self, msg: InboundMessage) {
-        let key = session_key(&msg.channel_kind, &msg.chat_id);
-        let pfx = format!("[SessionHub][{}]", key);
-
-        {
-            let mut sessions = self.sessions.lock().await;
-
-            if !sessions.contains_key(&key) {
-                eprintln!("{} creating new session", pfx);
-                sessions.insert(key.clone(), Session::new());
-            }
-
-            let session = sessions.get_mut(&key).unwrap();
-            session.queue.push_back(QueuedMessage {
-                message: msg.clone(),
-                status: MessageStatus::Unreplied,
-            });
-
-            eprintln!("{} enqueued msg_id={} queue_len={}", pfx, msg.message_id, session.queue.len());
-
-            if session.busy {
-                eprintln!("{} agent busy, message queued", pfx);
-            }
-        }
-
-        self.try_advance_session_queue(&key).await;
-    }
-
-    /// Called by AgentManager when an agent session becomes usable.
-    pub async fn agent_session_id_ready(&self, ready: AgentReady) {
-        let key = session_key(&ready.channel_kind, &ready.chat_id);
-        let first_ready = {
-            let mut sessions = self.sessions.lock().await;
-            if let Some(session) = sessions.get_mut(&key) {
-                let first_ready = session.cli_session_id.is_none();
-                session.cli_session_id = Some(ready.cli_session_id.clone());
-                session.cli_kind = Some(ready.cli_kind.clone());
-                session.profile = ready.profile.clone();
-                first_ready
-            } else {
-                false
-            }
-        };
-
-        if first_ready {
-            self.publish_channel_event(ChannelEvent::OnAgentSessionReady {
-                channel_kind: ready.channel_kind,
-                chat_id: ready.chat_id,
-                message_id: ready.message_id,
-                cli_kind: ready.cli_kind,
-                cli_session_id: ready.cli_session_id,
-                profile: ready.profile,
-            });
-        }
-    }
-
-    /// Called by AgentManager when an agent starts processing a turn.
-    pub async fn agent_started(&self, reply: AgentReply) {
-        self.agent_acp_event(reply).await;
-    }
-
-    /// Called by AgentManager when an agent event arrives.
-    pub async fn agent_acp_event(&self, reply: AgentReply) {
-        match &reply.event {
-            AgentReplyEvent::Start => {
-                self.publish_channel_event(ChannelEvent::OnTurnStarted {
-                    channel_kind: reply.channel_kind.clone(),
-                    chat_id: reply.chat_id.clone(),
-                    message_id: reply.message_id.clone(),
-                });
-            }
-            AgentReplyEvent::Token { delta } => {
-                self.publish_channel_event(ChannelEvent::OnAcpEvent {
-                    channel_kind: reply.channel_kind.clone(),
-                    chat_id: reply.chat_id.clone(),
-                    message_id: reply.message_id.clone(),
-                    payload: serde_json::json!({ "kind": "token", "delta": delta }),
-                });
-            }
-            AgentReplyEvent::Thinking { text } => {
-                self.publish_channel_event(ChannelEvent::OnAcpEvent {
-                    channel_kind: reply.channel_kind.clone(),
-                    chat_id: reply.chat_id.clone(),
-                    message_id: reply.message_id.clone(),
-                    payload: serde_json::json!({ "kind": "thinking", "text": text }),
-                });
-            }
-            AgentReplyEvent::ToolUse { tool, input } => {
-                self.publish_channel_event(ChannelEvent::OnAcpEvent {
-                    channel_kind: reply.channel_kind.clone(),
-                    chat_id: reply.chat_id.clone(),
-                    message_id: reply.message_id.clone(),
-                    payload: serde_json::json!({ "kind": "tool_use", "tool": tool, "input": input }),
-                });
-            }
-            AgentReplyEvent::ToolResult { tool, output } => {
-                self.publish_channel_event(ChannelEvent::OnAcpEvent {
-                    channel_kind: reply.channel_kind.clone(),
-                    chat_id: reply.chat_id.clone(),
-                    message_id: reply.message_id.clone(),
-                    payload: serde_json::json!({ "kind": "tool_result", "tool": tool, "output": output }),
-                });
-            }
-            AgentReplyEvent::Error { error } => {
-                self.publish_channel_event(ChannelEvent::OnSessionError {
-                    channel_kind: reply.channel_kind.clone(),
-                    chat_id: reply.chat_id.clone(),
-                    error: error.clone(),
-                });
-            }
-            AgentReplyEvent::Complete => {
-                self.publish_channel_event(ChannelEvent::OnTurnCompleted {
-                    channel_kind: reply.channel_kind.clone(),
-                    chat_id: reply.chat_id.clone(),
-                });
-            }
-        }
-    }
-
-    /// Called by AgentManager when the current turn is complete.
-    pub async fn agent_turn_completed(&self, channel_kind: &str, chat_id: &str) {
-        let session_key = session_key(channel_kind, chat_id);
-        {
-            let mut sessions = self.sessions.lock().await;
-            if let Some(session) = sessions.get_mut(&session_key) {
-                if let Some(front) = session.queue.front() {
-                    if front.status == MessageStatus::Processing {
-                        session.queue.pop_front();
-                    }
-                }
-                session.busy = false;
-            }
-        }
-
-        self.try_advance_session_queue(&session_key).await;
-    }
-
-    /// Called by AgentManager when a turn fails.
-    pub async fn agent_failed(&self, reply: AgentReply) {
-        self.agent_acp_event(reply).await;
-    }
-
-    /// Called by AgentManager when an agent session closes.
-    pub async fn agent_stopped(&self, closed: AgentClosed) {
-        eprintln!(
-            "[SessionHub][{}] agent closed reason={} cli_kind={:?} cli_session_id={:?} profile={:?}",
-            session_key(&closed.channel_kind, &closed.chat_id),
-            closed.reason,
-            closed.cli_kind,
-            closed.cli_session_id,
-            closed.profile,
-        );
-    }
-
-    /// Requested by ChannelManager to stop the current runtime for a route.
-    pub async fn channel_request_stop(&self, channel_kind: &str, chat_id: &str) {
-        let key = session_key(channel_kind, chat_id);
-        let had_session = {
-            let sessions = self.sessions.lock().await;
-            sessions.contains_key(&key)
-        };
-
-        self.publish_agent_event(AgentEvent::OnStopRuntime {
-            channel_kind: channel_kind.to_string(),
-            chat_id: chat_id.to_string(),
-        });
-
-        {
-            let mut sessions = self.sessions.lock().await;
-            if let Some(session) = sessions.get_mut(&key) {
-                session.busy = false;
-                for queued in session.queue.iter_mut() {
-                    queued.status = MessageStatus::Unreplied;
-                }
-            }
-        }
-
-        eprintln!("[SessionHub][{}] channel requested stop handled had_session={}", key, had_session);
-    }
-
-    /// Requested by ChannelManager to close the current route.
-    pub async fn channel_request_close(&self, channel_kind: &str, chat_id: &str) {
-        let key = session_key(channel_kind, chat_id);
-        self.publish_agent_event(AgentEvent::OnStopRuntime {
-            channel_kind: channel_kind.to_string(),
-            chat_id: chat_id.to_string(),
-        });
-
-        let removed = {
-            let mut sessions = self.sessions.lock().await;
-            sessions.remove(&key).is_some()
-        };
-
-        eprintln!("[SessionHub][{}] channel requested close handled removed_session={}", key, removed);
-    }
-
-    /// Requested by ChannelManager to switch runtime kind for a route.
-    pub async fn channel_request_switch_agent_kind(
-        &self,
-        channel_kind: &str,
-        chat_id: &str,
-        agent_kind: &str,
-    ) {
-        let key = session_key(channel_kind, chat_id);
-        let Some(kind) = crate::agent_manager::agents::AgentKind::from_str_loose(agent_kind) else {
-            self.publish_channel_event(ChannelEvent::OnSystemText {
-                channel_kind: channel_kind.to_string(),
-                chat_id: chat_id.to_string(),
-                text: format!("Unknown agent: {}", agent_kind),
-                reply_to: None,
-            });
-            return;
-        };
-
-        if !kind.is_enabled() {
-            self.publish_channel_event(ChannelEvent::OnSystemText {
-                channel_kind: channel_kind.to_string(),
-                chat_id: chat_id.to_string(),
-                text: format!("Agent is disabled: {}", kind),
-                reply_to: None,
-            });
-            return;
-        }
-
-        self.publish_agent_event(AgentEvent::OnStopRuntime {
-            channel_kind: channel_kind.to_string(),
-            chat_id: chat_id.to_string(),
-        });
-
-        {
-            let mut sessions = self.sessions.lock().await;
-            let session = sessions.entry(key.clone()).or_insert_with(Session::new);
-            session.cli_kind = Some(kind.to_string());
-            session.cli_session_id = None;
-            session.busy = false;
-        }
-
-        self.publish_channel_event(ChannelEvent::OnSystemText {
-            channel_kind: channel_kind.to_string(),
-            chat_id: chat_id.to_string(),
-            text: format!("Switched agent to {}.", kind),
-            reply_to: None,
-        });
-
-        eprintln!(
-            "[SessionHub][{}] channel requested switch_agent_kind handled new_kind={}",
-            key, kind,
-        );
-    }
-
-    async fn try_advance_session_queue(&self, key: &str) {
-        let dispatch_msg = {
-            let mut sessions = self.sessions.lock().await;
-            let Some(session) = sessions.get_mut(key) else {
-                return;
-            };
-
-            if session.busy {
-                return;
-            }
-
-            let Some(front) = session.queue.front_mut() else {
-                return;
-            };
-
-            front.status = MessageStatus::Processing;
-            session.busy = true;
-            front.message.clone()
-        };
-
-        self.publish_agent_event(AgentEvent::OnReceiveMessage {
-            channel_kind: dispatch_msg.channel_kind.clone(),
-            chat_id: dispatch_msg.chat_id.clone(),
-            message: dispatch_msg,
-        });
     }
 
     pub async fn shutdown_all(&self) {
-        let routes: Vec<(String, String)> = {
-            let sessions = self.sessions.lock().await;
-            sessions
-                .keys()
-                .filter_map(|key| key.split_once(':').map(|(channel_kind, chat_id)| {
-                    (channel_kind.to_string(), chat_id.to_string())
-                }))
-                .collect()
-        };
+        self.agent_manager.shutdown_all().await;
+        self.routes.clear();
+    }
 
-        for (channel_kind, chat_id) in routes {
-            self.publish_agent_event(AgentEvent::OnStopRuntime {
-                channel_kind,
-                chat_id,
-            });
+    pub fn route_state(&self, route: &RouteKey) -> Option<Arc<RouteState>> {
+        self.routes.get(route).map(|entry| Arc::clone(&entry))
+    }
+
+    fn get_or_create_route(&self, route: RouteKey) -> Arc<RouteState> {
+        self.routes
+            .entry(route.clone())
+            .or_insert_with(|| Arc::new(RouteState::new(route)))
+            .clone()
+    }
+
+    /// Ensure a bridge exists for the given route, creating one if needed.
+    /// The `northbound_handler` receives southbound ACP events (session_notification, request_permission).
+    pub async fn ensure_bridge(
+        &self,
+        route: RouteKey,
+        cli_kind: Option<String>,
+        resume_session_id: Option<String>,
+        northbound_handler: Arc<dyn BridgeClientHandler>,
+    ) -> Result<Arc<AcpBridge>, String> {
+        let route_state = self.get_or_create_route(route.clone());
+        let cli_kind = cli_kind.unwrap_or_else(|| config::ensure_loaded().default_agent.clone());
+        let profile = route_state
+            .runtime
+            .lock()
+            .await
+            .profile
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+
+        {
+            let runtime = route_state.runtime.lock().await;
+            if let Some(existing) = runtime.bridge.clone() {
+                eprintln!("[SessionHub] ensure_bridge reusing existing bridge route={}", route);
+                return Ok(existing);
+            }
         }
 
-        let mut sessions = self.sessions.lock().await;
-        sessions.clear();
+        eprintln!("[SessionHub] ensure_bridge creating new bridge route={} cli_kind={}", route, cli_kind);
+
+        let (bridge, provider_sid) = self
+            .agent_manager
+            .get_or_create_bridge(
+                &route.channel_kind,
+                &route.chat_id,
+                &profile,
+                &cli_kind,
+                resume_session_id,
+                northbound_handler,
+            )
+            .await?;
+
+        let mut runtime = route_state.runtime.lock().await;
+        runtime.bridge = Some(Arc::clone(&bridge));
+        runtime.cli_kind = Some(cli_kind);
+        if let Some(sid) = provider_sid {
+            runtime.cli_session_id = Some(sid);
+        }
+        Ok(bridge)
+    }
+
+    /// Run a prompt with per-route queueing: only one active turn per route.
+    pub async fn prompt_on_route(
+        &self,
+        route: RouteKey,
+        cli_kind: Option<String>,
+        text: String,
+        northbound_handler: Arc<dyn BridgeClientHandler>,
+    ) -> acp::Result<acp::PromptResponse> {
+        let route_state = self.get_or_create_route(route.clone());
+
+        // Acquire turn slot or queue
+        let wait_turn = {
+            let mut in_flight = route_state.in_flight.lock().await;
+            if !*in_flight {
+                *in_flight = true;
+                None
+            } else {
+                let queued = Arc::new(QueuedPrompt::new());
+                route_state.pending.lock().await.push_back(Arc::clone(&queued));
+                Some(queued)
+            }
+        };
+
+        if let Some(queued) = wait_turn {
+            queued.notify.notified().await;
+        }
+
+        let bridge = self
+            .ensure_bridge(route.clone(), cli_kind, None, northbound_handler)
+            .await
+            .map_err(|e| {
+                eprintln!("[SessionHub] prompt_on_route ensure_bridge failed route={}: {}", route, e);
+                acp::Error::internal_error()
+            })?;
+
+        // Ensure a session exists on the bridge
+        let session_id = {
+            let runtime = route_state.runtime.lock().await;
+            runtime.session_id.clone()
+        };
+        let session_id = match session_id {
+            Some(sid) => {
+                eprintln!("[SessionHub] prompt_on_route reusing session={} route={}", sid, route);
+                sid
+            }
+            None => {
+                let workspace = crate::config::data_dir().join("workspaces");
+                eprintln!("[SessionHub] prompt_on_route creating new_session route={}", route);
+                let resp = acp::Agent::new_session(&*bridge, acp::NewSessionRequest::new(workspace))
+                    .await?;
+                let sid = resp.session_id.to_string();
+                eprintln!("[SessionHub] prompt_on_route new_session OK session={} route={}", sid, route);
+                route_state.runtime.lock().await.session_id = Some(sid.clone());
+                sid
+            }
+        };
+
+        eprintln!("[SessionHub] prompt_on_route sending prompt session={} route={}", session_id, route);
+        let request = acp::PromptRequest::new(
+            session_id,
+            vec![acp::ContentBlock::Text(acp::TextContent::new(text))],
+        );
+        let result = acp::Agent::prompt(&*bridge, request).await;
+        eprintln!("[SessionHub] prompt_on_route result={:?} route={}", result.is_ok(), route);
+
+        // Advance queue
+        let next = route_state.pending.lock().await.pop_front();
+        if let Some(next) = next {
+            next.notify.notify_one();
+        } else {
+            *route_state.in_flight.lock().await = false;
+        }
+
+        result
+    }
+
+    /// Cancel the active turn on a route.
+    pub async fn cancel_on_route(
+        &self,
+        route: &RouteKey,
+        args: acp::CancelNotification,
+    ) -> acp::Result<()> {
+        let route_state = self
+            .routes
+            .get(route)
+            .map(|e| Arc::clone(&e))
+            .ok_or_else(acp::Error::method_not_found)?;
+        let runtime = route_state.runtime.lock().await;
+        let bridge = runtime.bridge.clone().ok_or_else(acp::Error::method_not_found)?;
+        drop(runtime);
+        acp::Agent::cancel(&*bridge, args).await
+    }
+
+    /// Kill all bridges for a chat (e.g. when ws disconnects).
+    pub async fn kill_route(&self, route: &RouteKey) {
+        self.agent_manager
+            .kill_chat_bridges(&route.channel_kind, &route.chat_id)
+            .await;
+        self.routes.remove(route);
     }
 }

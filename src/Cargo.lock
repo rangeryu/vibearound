@@ -4420,6 +4420,8 @@ dependencies = [
 name = "server"
 version = "0.0.1"
 dependencies = [
+ "agent-client-protocol",
+ "async-trait",
  "axum",
  "bytes",
  "chrono",

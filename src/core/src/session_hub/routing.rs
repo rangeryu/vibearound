@@ -1,8 +1,4 @@
-//! Compatibility re-exports for the ACP-native SessionHub.
-
 pub use crate::acp::routing::{
     AgentSessionRef, Attachment, ChannelKind, ChatId, CliSessionId, MessageId, RouteEnvelope,
     RouteKey, RuntimeId, SessionId, TurnId,
 };
-pub use super::command::HubEvent;
-pub use super::state::{QueuedPrompt, RouteRuntimeState, RouteState};

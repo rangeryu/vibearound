@@ -10,13 +10,11 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 use common::agent_manager::AgentManager;
-use common::channel_manager::channels::web::WebChannelManager;
-use common::channel_manager::ChannelManager;
+use common::channel_manager::{handle_channel_input, ChannelManager, WebChannelManager};
 use common::config;
 use common::plugins;
 use common::pty::{PtySessionManager, SessionId};
 use common::service::ServiceStatusManager;
-use common::session_hub::types::HubEvent;
 use common::session_hub::SessionHub;
 use common::tunnels;
 
@@ -35,7 +33,6 @@ pub struct RunningDaemon {
     pub web_handle: JoinHandle<Result<(), String>>,
     pub tunnel_handle: JoinHandle<()>,
     pub web_dispatch_handle: JoinHandle<()>,
-    pub agent_status_sync_handle: JoinHandle<()>,
     pub services: Arc<ServiceStatusManager>,
 }
 
@@ -52,7 +49,6 @@ impl RunningDaemon {
         }
 
         self.web_dispatch_handle.abort();
-        self.agent_status_sync_handle.abort();
         self.web_handle.abort();
         self.tunnel_handle.abort();
     }
@@ -84,15 +80,11 @@ impl ServerDaemon {
         let cfg = config::ensure_loaded();
         let services = Arc::clone(&self.services);
 
-        // 1. Initialize hub architecture (two-phase init to avoid circular Arc)
-        let channel_hub = Arc::new(ChannelManager::new());
-        let session_hub = Arc::new(SessionHub::new());
+        // 1. Initialize hub architecture with explicit handles.
         let agent_hub = Arc::new(AgentManager::new());
+        let session_hub = Arc::new(SessionHub::new(Arc::clone(&agent_hub)));
+        let channel_hub = Arc::new(ChannelManager::new(Arc::clone(&session_hub)));
         let web_channel = WebChannelManager::new();
-
-        // Wire up cross-references
-        channel_hub.set_session_hub(Arc::clone(&session_hub));
-        agent_hub.set_session_hub(Arc::clone(&session_hub));
 
         // Register built-in internal channels.
         let (web_outbound_tx, mut web_outbound_rx) = web_channel.sender();
@@ -100,11 +92,38 @@ impl ServerDaemon {
         let web_dispatch_handle = {
             let web_channel = Arc::clone(&web_channel);
             tokio::spawn(async move {
-                while let Some(notif) = web_outbound_rx.recv().await {
-                    web_channel.dispatch_notification(notif);
+                while let Some(output) = web_outbound_rx.recv().await {
+                    web_channel.dispatch_output(output);
                 }
             })
         };
+
+        // Start channel input processing loop on a dedicated thread with LocalSet.
+        // This allows !Send ACP futures to run.
+        let mut input_rx = channel_hub.take_input_rx().expect("input_rx already taken");
+        let session_hub_for_input = Arc::clone(&session_hub);
+        let plugin_host_for_input = channel_hub.plugin_host();
+        std::thread::Builder::new()
+            .name("channel-input".to_string())
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to build input runtime");
+                runtime.block_on(async move {
+                    let local = tokio::task::LocalSet::new();
+                    local.run_until(async move {
+                        while let Some(input) = input_rx.recv().await {
+                            let session_hub = Arc::clone(&session_hub_for_input);
+                            let plugin_host = Arc::clone(&plugin_host_for_input);
+                            tokio::task::spawn_local(async move {
+                                handle_channel_input(&session_hub, &plugin_host, input).await;
+                            });
+                        }
+                    }).await;
+                });
+            })
+            .expect("Failed to spawn channel input thread");
 
         // 2. Channel plugins — start plugins for each channel in settings.json
         let discovered_plugins = plugins::discover_channel_plugins();
@@ -114,34 +133,12 @@ impl ServerDaemon {
                 continue;
             };
 
-            if let Some(abort_handle) = channel_hub
-                .start_plugin(plugin.dir.clone(), plugin.entry_path(), &name)
-                .await
-            {
+            if let Some(abort_handle) = channel_hub.start_plugin(&name, plugin).await {
                 services.register_channel(&name, abort_handle);
             }
         }
 
-        // 3. Subscribe to hub events → sync to ServiceStatusManager → Dashboard
-        let hub_services = Arc::clone(&services);
-        let mut agent_hub_rx = agent_hub.subscribe();
-        let agent_status_sync_handle = tokio::spawn(async move {
-            while let Ok(event) = agent_hub_rx.recv().await {
-                match event {
-                    HubEvent::OnAgentSpawned { key, kind } => {
-                        eprintln!("[daemon] agent spawned: {} ({})", key, kind);
-                        hub_services.add_agent(key, kind);
-                    }
-                    HubEvent::OnAgentKilled { key } => {
-                        eprintln!("[daemon] agent killed: {}", key);
-                        hub_services.remove_agent(&key);
-                    }
-                    _ => {}
-                }
-            }
-        });
-
-        // 4. Web server (Axum)
+        // 3. Web server (Axum)
         let web_services = Arc::clone(&services);
         let web_channel_hub = Arc::clone(&channel_hub);
         let web_channel_manager = Arc::clone(&web_channel);
@@ -157,7 +154,7 @@ impl ServerDaemon {
             .map_err(|e| e.to_string())
         });
 
-        // 5. Tunnel
+        // 4. Tunnel
         let tunnel_provider = cfg.tunnel_provider;
         eprintln!("[VibeAround][daemon] Tunnel ({})", tunnel_provider.as_str());
         let tunnel_services = Arc::clone(&services);
@@ -183,7 +180,6 @@ impl ServerDaemon {
             web_handle,
             tunnel_handle,
             web_dispatch_handle,
-            agent_status_sync_handle,
             services,
         })
     }

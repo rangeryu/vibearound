@@ -1,6 +1,10 @@
 //! WebSocket handler for web chat channel.
 //!
-//! - GET /ws/chat — websocket adapter for the internal `web` channel
+//! - GET /ws/chat — ACP-native websocket adapter
+//!
+//! Inbound user messages are dispatched to SessionHub via the channel-input
+//! thread (fire-and-forget through ChannelManager).  ACP events flow back
+//! through the WebChannelManager outbound channel to the websocket.
 
 use axum::extract::{
     ws::{Message, WebSocket, WebSocketUpgrade},
@@ -10,8 +14,9 @@ use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use uuid::Uuid;
 
+use common::acp::routing::RouteKey;
+use common::channel_manager::{ChannelEnvelope, ChannelInput, ChannelOutput};
 use common::config;
-use common::session_hub::types::ChannelNotification;
 
 use super::AppState;
 
@@ -23,12 +28,15 @@ pub async fn ws_chat_handler(State(state): State<AppState>, ws: WebSocketUpgrade
 async fn handle_chat_socket(socket: WebSocket, state: AppState) {
     let chat_id = Uuid::new_v4().to_string();
     let channel_id = format!("web:{}", chat_id);
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ChannelNotification>();
+    let route = RouteKey::new("web", &chat_id);
+
+    // Register this connection for outbound ACP events
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ChannelOutput>();
     state.web_channel.register_connection(chat_id.clone(), tx);
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 
-    // Push config on connect so current UI can still render target info.
+    // Send initial config
     let cfg = config::ensure_loaded();
     let agents: Vec<serde_json::Value> = cfg
         .enabled_agents
@@ -49,20 +57,23 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
     });
     let _ = ws_tx.send(Message::Text(config_msg.to_string().into())).await;
 
+    // Outbound: drain ACP events from WebChannelManager → websocket
     let outbound_task = tokio::spawn(async move {
-        while let Some(notif) = rx.recv().await {
-            let msg = notification_to_client_json(notif);
+        while let Some(output) = rx.recv().await {
+            let msg = output_to_client_json(output);
+            eprintln!("[ws_chat] outbound → ws: {}", msg);
             if ws_tx.send(Message::Text(msg.to_string().into())).await.is_err() {
                 break;
             }
         }
     });
 
+    // Inbound: ws messages → ChannelInput → channel-input thread → SessionHub
     while let Some(Ok(msg)) = ws_rx.next().await {
         match msg {
             Message::Text(text) => {
-                if let Some(value) = client_message_to_channel_json(&chat_id, &text) {
-                    state.channel_hub.handle_inbound_jsonrpc("web", value).await;
+                if let Some(input) = parse_channel_input(&chat_id, &text) {
+                    state.channel_hub.handle_input(input);
                 }
             }
             Message::Close(_) => break,
@@ -70,11 +81,15 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
         }
     }
 
+    // Cleanup
     outbound_task.abort();
     state.web_channel.unregister_connection(&chat_id);
+    state.channel_hub.session_hub_ref().kill_route(&route).await;
 }
 
-fn client_message_to_channel_json(chat_id: &str, text: &str) -> Option<serde_json::Value> {
+// --- PLACEHOLDER_REST ---
+
+fn parse_channel_input(chat_id: &str, text: &str) -> Option<ChannelInput> {
     let parsed = serde_json::from_str::<serde_json::Value>(text);
 
     match parsed {
@@ -91,18 +106,23 @@ fn client_message_to_channel_json(chat_id: &str, text: &str) -> Option<serde_jso
                         .and_then(|x| x.as_str())
                         .map(ToOwned::to_owned)
                         .unwrap_or_else(|| Uuid::new_v4().to_string());
-                    let agent = v.get("agent").and_then(|x| x.as_str()).map(str::trim).filter(|x| !x.is_empty());
-                    Some(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "method": "on_message",
-                        "params": {
-                            "channelId": format!("web:{}", chat_id),
-                            "messageId": message_id,
-                            "text": text,
-                            "agent": agent,
-                            "sender": { "id": "web-user" }
-                        }
-                    }))
+                    let agent = v
+                        .get("agent")
+                        .and_then(|x| x.as_str())
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty());
+                    Some(ChannelInput::Message {
+                        envelope: ChannelEnvelope {
+                            route: RouteKey::new("web", chat_id),
+                            message_id,
+                            turn_id: None,
+                            text: text.to_string(),
+                            sender_id: "web-user".to_string(),
+                            attachments: vec![],
+                            parent_id: None,
+                            cli_kind: agent.map(ToOwned::to_owned),
+                        },
+                    })
                 }
                 _ => None,
             }
@@ -112,40 +132,87 @@ fn client_message_to_channel_json(chat_id: &str, text: &str) -> Option<serde_jso
             if trimmed.is_empty() {
                 None
             } else {
-                Some(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "method": "on_message",
-                    "params": {
-                        "channelId": format!("web:{}", chat_id),
-                        "messageId": Uuid::new_v4().to_string(),
-                        "text": trimmed,
-                        "sender": { "id": "web-user" }
-                    }
-                }))
+                Some(ChannelInput::Message {
+                    envelope: ChannelEnvelope {
+                        route: RouteKey::new("web", chat_id),
+                        message_id: Uuid::new_v4().to_string(),
+                        turn_id: None,
+                        text: trimmed.to_string(),
+                        sender_id: "web-user".to_string(),
+                        attachments: vec![],
+                        parent_id: None,
+                        cli_kind: None,
+                    },
+                })
             }
         }
     }
 }
 
-fn notification_to_client_json(notif: ChannelNotification) -> serde_json::Value {
-    match notif {
-        ChannelNotification::AgentStart { .. } => serde_json::json!({ "kind": "start" }),
-        ChannelNotification::AgentThinking { text, .. } => {
-            serde_json::json!({ "kind": "thinking", "text": text })
+fn output_to_client_json(output: ChannelOutput) -> serde_json::Value {
+    match output {
+        ChannelOutput::RawAcp { payload, .. } => acp_to_frontend(payload),
+        ChannelOutput::SystemText { text, .. } => {
+            serde_json::json!({ "kind": "text", "text": text })
         }
-        ChannelNotification::AgentToken { delta, .. } => {
-            serde_json::json!({ "kind": "token", "delta": delta })
-        }
-        ChannelNotification::AgentToolUse { tool, input, .. } => {
-            serde_json::json!({ "kind": "tool_use", "tool": tool, "input": input })
-        }
-        ChannelNotification::AgentToolResult { tool, output, .. } => {
-            serde_json::json!({ "kind": "tool_result", "tool": tool, "output": output })
-        }
-        ChannelNotification::AgentEnd { .. } => serde_json::json!({ "kind": "turn_complete" }),
-        ChannelNotification::AgentError { error, .. } => {
-            serde_json::json!({ "kind": "error", "error": error })
-        }
-        ChannelNotification::SendSystemText { text, .. } => serde_json::json!({ "kind": "text", "text": text }),
     }
 }
+
+/// Translate ACP session_notification payload into the frontend's expected format.
+///
+/// ACP shape:  { "sessionId": "...", "update": { "sessionUpdate": "<variant>", ... } }
+/// Frontend expects:  { "kind": "token"|"thinking"|"tool_use"|"tool_result"|"turn_complete"|"error", ... }
+fn acp_to_frontend(payload: serde_json::Value) -> serde_json::Value {
+    let update = match payload.get("update") {
+        Some(u) => u,
+        None => return payload, // not a session_notification, pass through
+    };
+
+    let variant = update
+        .get("sessionUpdate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    match variant {
+        "agent_message_chunk" => {
+            let text = update
+                .pointer("/content/text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            serde_json::json!({ "kind": "token", "delta": text })
+        }
+        "agent_thought_chunk" => {
+            let text = update
+                .pointer("/content/text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            serde_json::json!({ "kind": "thinking", "text": text })
+        }
+        "tool_call_update" => {
+            let title = update
+                .pointer("/fields/title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("tool");
+            let status = update
+                .pointer("/fields/status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            match status {
+                "completed" | "error" => serde_json::json!({ "kind": "tool_result" }),
+                _ => serde_json::json!({ "kind": "tool_use", "tool": title }),
+            }
+        }
+        "turn_complete" => {
+            serde_json::json!({ "kind": "turn_complete" })
+        }
+        "error" => {
+            let text = update
+                .pointer("/content/text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown error");
+            serde_json::json!({ "kind": "error", "error": text })
+        }
+        _ => payload, // unknown variant, pass through raw
+    }
+}
+
