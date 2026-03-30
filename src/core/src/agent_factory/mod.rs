@@ -20,11 +20,11 @@ use crate::config;
 pub async fn spawn_bridge(
     channel_kind: &str,
     cli_kind: &str,
+    workspace: &std::path::Path,
     resume_session_id: Option<String>,
     client_handler: Arc<dyn BridgeClientHandler>,
 ) -> Result<BridgeReady, String> {
-    let workspace = config::data_dir().join("workspaces");
-    std::fs::create_dir_all(&workspace)
+    std::fs::create_dir_all(workspace)
         .map_err(|e| format!("Failed to create workspace {:?}: {}", workspace, e))?;
 
     let kind = AgentKind::from_str_loose(cli_kind).unwrap_or(AgentKind::Claude);

@@ -45,7 +45,7 @@ struct WsQuery {
 pub(crate) struct AppState {
     pty_manager: Arc<PtySessionManager>,
     dist_for_fallback: PathBuf,
-    working_dir: PathBuf,
+    all_workspaces: Vec<PathBuf>,
     services: Arc<common::service::ServiceStatusManager>,
     channel_hub: Arc<ChannelManager>,
     web_channel: Arc<WebChannelManager>,
@@ -103,11 +103,11 @@ pub async fn run_web_server(
     );
 
     let assets_dir = web_dist.join("assets");
-    let working_dir = config::ensure_loaded().working_dir.clone();
+    let all_workspaces = config::ensure_loaded().all_workspaces();
     let state = AppState {
         pty_manager: Arc::new(PtySessionManager::from_registry(Arc::clone(&services.pty))),
         dist_for_fallback: web_dist.clone(),
-        working_dir,
+        all_workspaces,
         services,
         channel_hub,
         web_channel,

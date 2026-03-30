@@ -12,7 +12,8 @@ pub const DEFAULT_PORT: u16 = 12358;
 
 /// Minimal default settings.json content, embedded at compile time.
 const DEFAULT_SETTINGS_JSON: &str = r#"{
-  "working_dir": ""
+  "workspaces": [],
+  "default_workspace": ""
 }"#;
 
 /// Data directory: ~/.vibearound
@@ -74,8 +75,11 @@ pub struct Config {
     pub ngrok_domain: Option<String>,
     pub cloudflare_tunnel_token: Option<String>,
     pub cloudflare_hostname: Option<String>,
-    // --- Working dir ---
-    pub working_dir: PathBuf,
+    // --- Workspaces ---
+    /// User-added project folders (not including the built-in ~/.vibearound/workspaces/).
+    pub workspaces: Vec<PathBuf>,
+    /// User override for default workspace. None = use built-in per-agent default.
+    pub default_workspace: Option<PathBuf>,
     pub preview_base_url: Option<String>,
     pub tmux_detach_others: bool,
     // --- Agents ---
@@ -103,6 +107,29 @@ impl Config {
     /// Get verbose config for a specific channel.
     pub fn channel_verbose(&self, name: &str) -> ImVerboseConfig {
         parse_verbose_config(self.raw_channels.get(name))
+    }
+
+    /// Resolve the workspace directory for an agent session.
+    /// - If user set a default_workspace → use it directly
+    /// - Otherwise → ~/.vibearound/workspaces/{agent_kind}-default
+    pub fn resolve_workspace(&self, agent_kind: &str) -> PathBuf {
+        if let Some(ref ws) = self.default_workspace {
+            ws.clone()
+        } else {
+            let subdir = format!("{}-default", agent_kind);
+            data_dir().join("workspaces").join(subdir)
+        }
+    }
+
+    /// All available workspaces: the built-in root + user-added paths.
+    pub fn all_workspaces(&self) -> Vec<PathBuf> {
+        let mut all = vec![builtin_workspaces_dir()];
+        for ws in &self.workspaces {
+            if !all.contains(ws) {
+                all.push(ws.clone());
+            }
+        }
+        all
     }
 }
 
@@ -158,12 +185,35 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         .cloned()
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-    let working_dir = root
-        .get("working_dir")
+    // --- Workspaces (new format) with backward compat for old working_dir ---
+    let workspaces: Vec<PathBuf> = root
+        .get("workspaces")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| expand_home(s.trim()))
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let default_workspace: Option<PathBuf> = root
+        .get("default_workspace")
         .and_then(|v| v.as_str())
-        .map(|s| PathBuf::from(s.trim()))
+        .map(|s| expand_home(s.trim()))
         .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(default_working_dir);
+        // Backward compat: if old "working_dir" exists and no new fields, use it
+        .or_else(|| {
+            if root.get("workspaces").is_none() {
+                root.get("working_dir")
+                    .and_then(|v| v.as_str())
+                    .map(|s| expand_home(s.trim()))
+                    .filter(|p| !p.as_os_str().is_empty())
+            } else {
+                None
+            }
+        });
 
     let preview_base_url = root
         .get("preview_base_url")
@@ -203,7 +253,8 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         ngrok_domain,
         cloudflare_tunnel_token,
         cloudflare_hostname,
-        working_dir,
+        workspaces,
+        default_workspace,
         preview_base_url,
         tmux_detach_others,
         default_agent,
@@ -238,8 +289,31 @@ fn parse_verbose_config(channel_obj: Option<&serde_json::Value>) -> ImVerboseCon
     }
 }
 
-fn default_working_dir() -> PathBuf {
-    data_dir()
+/// Expand ~ to home directory in a path string.
+fn expand_home(s: &str) -> PathBuf {
+    if s.starts_with("~/") || s == "~" {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| "/tmp".into());
+        PathBuf::from(home).join(&s[2..])
+    } else {
+        PathBuf::from(s)
+    }
+}
+
+/// The built-in workspaces root: ~/.vibearound/workspaces/
+pub fn builtin_workspaces_dir() -> PathBuf {
+    data_dir().join("workspaces")
+}
+
+/// Read + write settings.json atomically (for API-driven updates).
+pub fn update_settings_json(mutator: impl FnOnce(&mut serde_json::Value)) -> Result<(), String> {
+    let path = data_dir().join("settings.json");
+    let data = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string());
+    let mut root: serde_json::Value = serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
+    mutator(&mut root);
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty).map_err(|e| e.to_string())
 }
 
 impl Default for Config {
@@ -250,7 +324,8 @@ impl Default for Config {
             ngrok_domain: None,
             cloudflare_tunnel_token: None,
             cloudflare_hostname: None,
-            working_dir: default_working_dir(),
+            workspaces: vec![],
+            default_workspace: None,
             preview_base_url: None,
             tmux_detach_others: true,
             default_agent: "claude".to_string(),

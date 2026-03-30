@@ -18,10 +18,10 @@ pub async fn preview_page_handler(
     State(state): State<AppState>,
     Path(project_id): Path<String>,
 ) -> Result<Response, (StatusCode, String)> {
-    let p = state.working_dir.join("workspaces").join(&project_id);
-    if !p.exists() {
+    let p = find_project_in_workspaces(&state.all_workspaces, &project_id);
+    let Some(p) = p else {
         return Err((StatusCode::NOT_FOUND, format!("Project not found: {}", project_id)));
-    }
+    };
     let iframe_src = format!("/raw/{}", project_id);
     let html = format!(
         r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Preview</title></head>
@@ -41,18 +41,16 @@ async fn raw_impl(
     project_id: String,
     path: Option<String>,
 ) -> Result<Response, (StatusCode, String)> {
-    let base = state.working_dir.join("workspaces").join(&project_id);
-    if !base.exists() {
-        return Err((StatusCode::NOT_FOUND, format!("Project not found: {}", project_id)));
-    }
+    let base = find_project_in_workspaces(&state.all_workspaces, &project_id)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Project not found: {}", project_id)))?;
     let base = base
         .canonicalize()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let workspaces_root = state.working_dir.join("workspaces");
-    let workspaces_root = workspaces_root
-        .canonicalize()
-        .unwrap_or_else(|_| state.working_dir.join("workspaces"));
-    if !base.starts_with(&workspaces_root) {
+    // Security: verify resolved path is inside one of the registered workspaces
+    let valid = state.all_workspaces.iter().any(|ws| {
+        ws.canonicalize().map_or(false, |ws_canon| base.starts_with(&ws_canon))
+    });
+    if !valid {
         return Err((StatusCode::FORBIDDEN, "Invalid project path".into()));
     }
     let sub = path.as_deref().unwrap_or("").trim_start_matches('/');
@@ -117,4 +115,15 @@ pub async fn raw_path_handler(
     Path((project_id, path)): Path<(String, String)>,
 ) -> Result<Response, (StatusCode, String)> {
     raw_impl(state, project_id, Some(path)).await
+}
+
+/// Search all workspace roots for a project directory with the given ID.
+fn find_project_in_workspaces(workspaces: &[std::path::PathBuf], project_id: &str) -> Option<std::path::PathBuf> {
+    for ws in workspaces {
+        let candidate = ws.join(project_id);
+        if candidate.exists() && candidate.is_dir() {
+            return Some(candidate);
+        }
+    }
+    None
 }

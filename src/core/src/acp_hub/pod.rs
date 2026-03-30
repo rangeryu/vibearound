@@ -312,9 +312,13 @@ impl ACPPod {
             downstream: downstream_handler,
         });
 
+        // Resolve workspace for this agent
+        let workspace = config::ensure_loaded().resolve_workspace(&cli_kind);
+
         let ready = match crate::agent_factory::spawn_bridge(
             &self.route.channel_kind,
             &cli_kind,
+            &workspace,
             resume_session_id.clone(),
             handler,
         )
@@ -372,7 +376,8 @@ impl ACPPod {
             return Ok(session_id);
         }
 
-        let workspace = config::data_dir().join("workspaces");
+        let agent_kind = self.cli_kind.lock().await.clone().unwrap_or_else(|| "claude".to_string());
+        let workspace = config::ensure_loaded().resolve_workspace(&agent_kind);
         let response =
             acp::Agent::new_session(&**bridge, acp::NewSessionRequest::new(workspace)).await?;
         let session_id = response.session_id.to_string();
