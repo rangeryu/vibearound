@@ -297,7 +297,6 @@ export default function Onboarding() {
 
     if (wechatEnabled) {
       channels["weixin-openclaw-bridge"] = {
-        base_url: wechatBaseUrl.trim() || DEFAULT_WECHAT_BASE_URL,
         bot_token: wechatBotToken.trim() || undefined,
         account_id: wechatAccountId.trim() || undefined,
         verbose: settings.channels?.["weixin-openclaw-bridge"]?.verbose ?? {
@@ -448,8 +447,6 @@ export default function Onboarding() {
             onDiscordToken={setDiscordToken}
             wechatEnabled={wechatEnabled}
             onWechatEnabledChange={setWechatEnabled}
-            wechatBaseUrl={wechatBaseUrl}
-            onWechatBaseUrl={setWechatBaseUrl}
             wechatQrStatus={wechatQrStatus}
             wechatQrCodeUrl={wechatQrCodeUrl}
             wechatQrMessage={wechatQrMessage}

@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { MessageSquare } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
-import { DEFAULT_WECHAT_BASE_URL } from "../constants";
+// DEFAULT_WECHAT_BASE_URL is used internally but not exposed in the UI
 import type { StepChannelsProps } from "../types";
 
 export function StepChannels({
@@ -23,8 +23,6 @@ export function StepChannels({
   onDiscordToken,
   wechatEnabled,
   onWechatEnabledChange,
-  wechatBaseUrl,
-  onWechatBaseUrl,
   wechatQrStatus,
   wechatQrCodeUrl,
   wechatQrMessage,
@@ -149,17 +147,6 @@ export function StepChannels({
         onEnabledChange={onWechatEnabledChange}
       >
         <div className="space-y-3">
-          <label className="block">
-            <span className="text-xs text-muted-foreground">Provider Base URL</span>
-            <input
-              type="text"
-              value={wechatBaseUrl}
-              onChange={(event) => onWechatBaseUrl(event.target.value)}
-              placeholder={DEFAULT_WECHAT_BASE_URL}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/40"
-            />
-          </label>
-
           <div className="rounded-lg border border-border p-3 space-y-3 bg-muted/20">
             <div className="flex items-center justify-between gap-3">
               <div>

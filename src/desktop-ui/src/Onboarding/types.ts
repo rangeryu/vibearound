@@ -99,8 +99,6 @@ export interface StepChannelsProps {
   onDiscordToken: (value: string) => void;
   wechatEnabled: boolean;
   onWechatEnabledChange: (enabled: boolean) => void;
-  wechatBaseUrl: string;
-  onWechatBaseUrl: (value: string) => void;
   wechatQrStatus: WechatQrStatus;
   wechatQrCodeUrl: string;
   wechatQrMessage: string;
