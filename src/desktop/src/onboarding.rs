@@ -304,8 +304,22 @@ pub async fn install_plugin(request: InstallPluginRequest) -> Result<InstallPlug
     // Create plugins dir if needed
     std::fs::create_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
 
-    // Clone if not already present
-    if !target_dir.exists() {
+    // If the directory exists but has no dist/ (e.g. a previous failed install), wipe it so
+    // we get a clean clone. Otherwise skip cloning an already-built plugin.
+    let needs_clone = if target_dir.exists() {
+        if target_dir.join("dist").exists() {
+            eprintln!("[install_plugin] {} already built, skipping clone", request.plugin_id);
+            false
+        } else {
+            eprintln!("[install_plugin] {} has no dist (stale/failed install), re-cloning", request.plugin_id);
+            std::fs::remove_dir_all(&target_dir).map_err(|e| format!("failed to remove stale dir: {}", e))?;
+            true
+        }
+    } else {
+        true
+    };
+
+    if needs_clone {
         eprintln!("[install_plugin] cloning {} → {:?}", request.github_url, target_dir);
         let output = tokio::process::Command::new("git")
             .args(["clone", "--depth", "1", &request.github_url, &target_dir.to_string_lossy()])
@@ -318,8 +332,6 @@ pub async fn install_plugin(request: InstallPluginRequest) -> Result<InstallPlug
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("git clone failed: {}", stderr));
         }
-    } else {
-        eprintln!("[install_plugin] {} already exists, skipping clone", request.plugin_id);
     }
 
     // npm install
@@ -338,6 +350,17 @@ pub async fn install_plugin(request: InstallPluginRequest) -> Result<InstallPlug
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("npm run build failed: {}", stderr));
+    }
+
+    // Verify the auth script was produced by the build (missing = build emitted partial output)
+    let auth_script = target_dir.join("dist").join("auth-standalone.js");
+    if !auth_script.exists() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "build succeeded but auth-standalone.js was not produced — tsc may have emitted errors.\nstdout: {}\nstderr: {}",
+            stdout, stderr
+        ));
     }
 
     // Verify the plugin is discoverable after build
