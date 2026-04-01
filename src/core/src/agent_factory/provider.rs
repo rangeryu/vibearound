@@ -67,14 +67,14 @@ impl AgentKind {
 
     pub fn display_name(&self) -> &str {
         crate::resources::agent_by_id(&self.to_string())
-            .map(|a| a.display_name.as_str())
-            .unwrap_or("Unknown")
+            .expect("AgentKind variant missing from agents.json")
+            .display_name.as_str()
     }
 
     pub fn description(&self) -> &str {
         crate::resources::agent_by_id(&self.to_string())
-            .map(|a| a.description.as_str())
-            .unwrap_or("Unknown agent")
+            .expect("AgentKind variant missing from agents.json")
+            .description.as_str()
     }
 }
 

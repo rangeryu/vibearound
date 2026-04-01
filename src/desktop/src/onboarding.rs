@@ -631,7 +631,7 @@ fn install_agent_integrations(settings: &Value) -> Result<(), String> {
     let port = common::config::DEFAULT_PORT;
     let mcp_url = format!("http://127.0.0.1:{}/mcp", port);
 
-    let all_agents = ["claude", "gemini", "opencode", "codex"];
+    let all_agents = common::resources::agent_ids();
     let enabled_agents: Vec<String> = settings
         .get("enabled_agents")
         .and_then(|v| v.as_array())
