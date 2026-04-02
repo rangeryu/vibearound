@@ -1,36 +1,47 @@
 //! Environment utilities for distributed desktop app.
 //!
-//! When launched from Finder / Start Menu, the process inherits a minimal PATH
-//! that lacks user-installed tools (node, npx, gemini, etc.).  This module
-//! probes the user's login shell (Unix) or well-known install locations (Windows)
-//! once at startup, caches the result, and exposes helpers that create child
-//! process Commands with the enriched PATH.
+//! When launched from Finder, the process inherits a minimal environment
+//! that lacks user-configured variables (API keys, PATH with NVM, etc.).
+//! This module probes the user's login shell once at startup to capture
+//! their full environment, caches it, and exposes helpers that create
+//! child process Commands with the enriched environment.
+//!
+//! On Windows, GUI apps already inherit the full registry-based environment,
+//! so only well-known PATH directories are appended as a safety net.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
-static ENRICHED_PATH: OnceLock<String> = OnceLock::new();
+/// Cached full environment from the user's login shell.
+static ENRICHED_ENV: OnceLock<HashMap<String, String>> = OnceLock::new();
 
-/// Return the enriched PATH string.  Probed once on first call, cached forever.
-pub fn enriched_path() -> &'static str {
-    ENRICHED_PATH.get_or_init(|| {
-        let result = probe_enriched_path();
-        eprintln!("[env] enriched PATH ({} entries)", result.matches(':').count() + 1);
+/// Return the enriched environment.  Probed once on first call, cached forever.
+pub fn enriched_env() -> &'static HashMap<String, String> {
+    ENRICHED_ENV.get_or_init(|| {
+        let result = probe_enriched_env();
+        eprintln!(
+            "[env] enriched environment ({} vars, PATH has {} entries)",
+            result.len(),
+            result.get("PATH").map(|p| p.matches(':').count() + 1).unwrap_or(0)
+        );
         result
     })
 }
 
-/// Create a `tokio::process::Command` with the enriched PATH pre-set.
+/// Create a `tokio::process::Command` with the enriched environment pre-set.
 /// Drop-in replacement for `tokio::process::Command::new(program)`.
 pub fn command(program: &str) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(program);
-    cmd.env("PATH", enriched_path());
+    cmd.env_clear();
+    cmd.envs(enriched_env());
     cmd
 }
 
-/// Create a `std::process::Command` with the enriched PATH pre-set.
+/// Create a `std::process::Command` with the enriched environment pre-set.
 pub fn std_command(program: &str) -> std::process::Command {
     let mut cmd = std::process::Command::new(program);
-    cmd.env("PATH", enriched_path());
+    cmd.env_clear();
+    cmd.envs(enriched_env());
     cmd
 }
 
@@ -105,79 +116,37 @@ pub fn resolve_acp_agent_bin(bin_name: &str) -> anyhow::Result<std::path::PathBu
 }
 
 // ---------------------------------------------------------------------------
-// Platform-specific PATH probing
+// Platform-specific environment probing
 // ---------------------------------------------------------------------------
 
-fn probe_enriched_path() -> String {
-    let current = std::env::var("PATH").unwrap_or_default();
+fn probe_enriched_env() -> HashMap<String, String> {
+    // Start with the current process environment as baseline
+    let mut env: HashMap<String, String> = std::env::vars().collect();
 
     #[cfg(unix)]
     {
-        if let Some(shell_path) = probe_unix_login_shell() {
-            return shell_path;
+        if let Some(shell_env) = probe_unix_login_shell_env() {
+            // Shell env takes precedence (has user's full setup)
+            env.extend(shell_env);
+            return env;
         }
-        // Fallback: append well-known Unix paths
-        let extras = [
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-        ];
-        let mut parts: Vec<&str> = current.split(':').collect();
-        for extra in &extras {
-            if !parts.contains(extra) && std::path::Path::new(extra).is_dir() {
-                parts.push(extra);
-            }
-        }
-        // Probe NVM default
-        if let Ok(home) = std::env::var("HOME") {
-            let nvm_default = format!("{}/.nvm/alias/default", home);
-            if let Ok(version_alias) = std::fs::read_to_string(&nvm_default) {
-                let version = version_alias.trim();
-                // Find matching directory
-                let nvm_versions = format!("{}/.nvm/versions/node", home);
-                if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
-                    for entry in entries.flatten() {
-                        let name = entry.file_name();
-                        let name_str = name.to_string_lossy();
-                        if name_str.starts_with(version) || name_str.contains(version) {
-                            let bin = entry.path().join("bin");
-                            if bin.is_dir() {
-                                let bin_str = bin.to_string_lossy().to_string();
-                                if !current.contains(&bin_str) {
-                                    parts.insert(0, Box::leak(bin_str.into_boxed_str()));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return parts.join(":");
+        // Fallback: at least enrich PATH with well-known directories
+        enrich_unix_path_fallback(&mut env);
     }
 
     #[cfg(windows)]
     {
-        let sep = ";";
-        let mut parts: Vec<String> = current.split(sep).map(String::from).collect();
-        let candidates: Vec<String> = vec![
-            std::env::var("APPDATA").map(|d| format!("{}\\npm", d)).unwrap_or_default(),
-            std::env::var("ProgramFiles").map(|d| format!("{}\\nodejs", d)).unwrap_or_default(),
-            std::env::var("LOCALAPPDATA").map(|d| format!("{}\\Volta\\bin", d)).unwrap_or_default(),
-        ];
-        for candidate in candidates {
-            if !candidate.is_empty()
-                && !parts.iter().any(|p| p.eq_ignore_ascii_case(&candidate))
-                && std::path::Path::new(&candidate).is_dir()
-            {
-                parts.push(candidate);
-            }
-        }
-        return parts.join(sep);
+        // Windows GUI apps already inherit the full registry env.
+        // Just append well-known node directories to PATH as safety net.
+        enrich_windows_path(&mut env);
     }
+
+    env
 }
 
-/// Probe the user's login shell for their full PATH.
+/// Probe the user's login shell for their full environment.
 #[cfg(unix)]
-fn probe_unix_login_shell() -> Option<String> {
+fn probe_unix_login_shell_env() -> Option<HashMap<String, String>> {
     let shells_to_try: Vec<String> = {
         let mut shells = Vec::new();
         if let Ok(user_shell) = std::env::var("SHELL") {
@@ -192,20 +161,42 @@ fn probe_unix_login_shell() -> Option<String> {
         if !std::path::Path::new(shell).exists() {
             continue;
         }
+        // Use `env -0` for null-separated output (handles values with newlines)
         let result = std::process::Command::new(shell)
-            .args(["-lc", "echo $PATH"])
+            .args(["-ilc", "env -0"])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .output();
 
         match result {
-            Ok(output) => {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() && path.contains('/') {
-                    eprintln!("[env] probed PATH from {}", shell);
-                    return Some(path);
+            Ok(output) if output.status.success() => {
+                let raw = String::from_utf8_lossy(&output.stdout);
+                let parsed: HashMap<String, String> = raw
+                    .split('\0')
+                    .filter(|s| !s.is_empty())
+                    .filter_map(|entry| {
+                        let (key, value) = entry.split_once('=')?;
+                        // Skip shell-internal vars that would pollute child envs
+                        if key.starts_with("_=")
+                            || key == "SHLVL"
+                            || key == "PWD"
+                            || key == "OLDPWD"
+                            || key == "ZSH_EVAL_CONTEXT"
+                        {
+                            return None;
+                        }
+                        Some((key.to_string(), value.to_string()))
+                    })
+                    .collect();
+
+                if parsed.contains_key("PATH") && parsed.len() > 5 {
+                    eprintln!("[env] probed {} vars from {}", parsed.len(), shell);
+                    return Some(parsed);
                 }
+            }
+            Ok(_) => {
+                eprintln!("[env] shell {} exited with non-zero status", shell);
             }
             Err(e) => {
                 eprintln!("[env] failed to probe {}: {}", shell, e);
@@ -213,4 +204,66 @@ fn probe_unix_login_shell() -> Option<String> {
         }
     }
     None
+}
+
+/// Fallback: append well-known Unix paths to PATH if shell probe fails.
+#[cfg(unix)]
+fn enrich_unix_path_fallback(env: &mut HashMap<String, String>) {
+    let current = env.get("PATH").cloned().unwrap_or_default();
+    let extras = ["/opt/homebrew/bin", "/usr/local/bin"];
+    let mut parts: Vec<&str> = current.split(':').collect();
+
+    for extra in &extras {
+        if !parts.contains(extra) && std::path::Path::new(extra).is_dir() {
+            parts.push(extra);
+        }
+    }
+
+    // Probe NVM default
+    if let Ok(home) = std::env::var("HOME") {
+        let nvm_default = format!("{}/.nvm/alias/default", home);
+        if let Ok(version_alias) = std::fs::read_to_string(&nvm_default) {
+            let version = version_alias.trim();
+            let nvm_versions = format!("{}/.nvm/versions/node", home);
+            if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.starts_with(version) || name_str.contains(version) {
+                        let bin = entry.path().join("bin");
+                        if bin.is_dir() {
+                            let bin_str = bin.to_string_lossy().to_string();
+                            if !current.contains(&bin_str) {
+                                parts.insert(0, Box::leak(bin_str.into_boxed_str()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    env.insert("PATH".to_string(), parts.join(":"));
+}
+
+/// Windows: append well-known Node.js install directories to PATH.
+#[cfg(windows)]
+fn enrich_windows_path(env: &mut HashMap<String, String>) {
+    let current = env.get("PATH").cloned().unwrap_or_default();
+    let sep = ";";
+    let mut parts: Vec<String> = current.split(sep).map(String::from).collect();
+    let candidates: Vec<String> = vec![
+        std::env::var("APPDATA").map(|d| format!("{}\\npm", d)).unwrap_or_default(),
+        std::env::var("ProgramFiles").map(|d| format!("{}\\nodejs", d)).unwrap_or_default(),
+        std::env::var("LOCALAPPDATA").map(|d| format!("{}\\Volta\\bin", d)).unwrap_or_default(),
+    ];
+    for candidate in candidates {
+        if !candidate.is_empty()
+            && !parts.iter().any(|p| p.eq_ignore_ascii_case(&candidate))
+            && std::path::Path::new(&candidate).is_dir()
+        {
+            parts.push(candidate);
+        }
+    }
+    env.insert("PATH".to_string(), parts.join(sep));
 }
