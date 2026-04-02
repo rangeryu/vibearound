@@ -71,18 +71,16 @@ impl ACPHub {
         }
     }
 
-    /// Switch agent kind on a route.
+    /// Switch agent kind on a route (creates pod if needed).
     pub async fn switch_agent(&self, route: &RouteKey, agent_kind: String) {
-        if let Some(pod) = self.get_pod(route) {
-            pod.switch_agent(agent_kind).await;
-        }
+        let pod = self.get_or_create_pod(route.clone());
+        pod.switch_agent(agent_kind).await;
     }
 
-    /// Switch profile on a route.
+    /// Switch profile on a route (creates pod if needed).
     pub async fn switch_profile(&self, route: &RouteKey, profile: String) {
-        if let Some(pod) = self.get_pod(route) {
-            pod.switch_profile(profile).await;
-        }
+        let pod = self.get_or_create_pod(route.clone());
+        pod.switch_profile(profile).await;
     }
 
     /// Reset session on a route (new conversation, same agent).
