@@ -130,22 +130,26 @@ fn home_dir() -> anyhow::Result<PathBuf> {
         .map_err(|_| anyhow!("Cannot determine home directory"))
 }
 
-/// Check if a JSON value has `_vibearound.managed: true`.
+/// Metadata string format: "vibearound <version>"
+const METADATA_PREFIX: &str = "vibearound";
+
+/// Check if a JSON value has `_metadata` starting with "vibearound".
 fn is_vibearound_managed(value: &serde_json::Value) -> bool {
     value
-        .get("_vibearound")
-        .and_then(|m| m.get("managed"))
-        .and_then(|v| v.as_bool())
+        .get("_metadata")
+        .and_then(|v| v.as_str())
+        .map(|s| s.starts_with(METADATA_PREFIX))
         .unwrap_or(false)
 }
 
-/// Get the version from a `_vibearound` metadata block.
-fn get_vibearound_version(value: &serde_json::Value) -> Option<String> {
-    value
-        .get("_vibearound")
-        .and_then(|m| m.get("version"))
-        .and_then(|v| v.as_str())
-        .map(String::from)
+/// Get the metadata string (e.g. "vibearound 0.0.1") from a JSON value.
+fn get_metadata(value: &serde_json::Value) -> Option<String> {
+    value.get("_metadata").and_then(|v| v.as_str()).map(String::from)
+}
+
+/// The metadata string for the current version.
+fn current_metadata() -> String {
+    format!("{} {}", METADATA_PREFIX, VERSION)
 }
 
 /// Remove any vibearound-managed MCP entries that don't match the current key.
@@ -237,11 +241,8 @@ fn install_mcp_config(agent: &str, mcp_url: &str) -> anyhow::Result<()> {
         serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
 
     // Check if already installed with current version
-    if let Some(existing) = root
-        .get(mcp_key)
-        .and_then(|s| s.get("vibearound"))
-    {
-        if get_vibearound_version(existing).as_deref() == Some(VERSION) {
+    if let Some(existing) = root.get(mcp_key).and_then(|s| s.get("vibearound")) {
+        if get_metadata(existing).as_deref() == Some(&current_metadata()) {
             return Ok(()); // already up-to-date
         }
     }
@@ -352,10 +353,10 @@ fn install_skill(agent: &str) -> anyhow::Result<()> {
     let skill_dir = home.join(skill_dir_rel);
     let target = skill_dir.join("SKILL.md");
 
-    // Check installed version via frontmatter
+    // Check installed version via frontmatter metadata
     if target.exists() {
         if let Ok(content) = std::fs::read_to_string(&target) {
-            if content.contains(&format!("version: \"{}\"", VERSION)) {
+            if content.contains(&current_metadata()) {
                 return Ok(()); // already up-to-date
             }
         }
