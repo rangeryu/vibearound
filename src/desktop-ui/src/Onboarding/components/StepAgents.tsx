@@ -1,6 +1,12 @@
-import { Bot, Check } from "lucide-react";
+import { Bot, Check, Settings } from "lucide-react";
 
 import type { StepAgentsProps } from "../types";
+
+/** What gets installed per agent when enabled. */
+const AGENT_INTEGRATION_NOTES: Record<string, string[]> = {
+  claude: ["MCP server config", "Skill file (session handover)"],
+  gemini: ["MCP server config"],
+};
 
 export function StepAgents({
   agents,
@@ -24,6 +30,7 @@ export function StepAgents({
         {agents.map((agent) => {
           const isEnabled = enabled.has(agent.id);
           const isDefault = defaultAgent === agent.id;
+          const notes = AGENT_INTEGRATION_NOTES[agent.id];
           return (
             <div
               key={agent.id}
@@ -68,6 +75,19 @@ export function StepAgents({
                 >
                   {isDefault ? "★ default" : "set default"}
                 </button>
+              )}
+              {isEnabled && notes && (
+                <div className="flex flex-col gap-0.5 mt-0.5">
+                  {notes.map((note) => (
+                    <span
+                      key={note}
+                      className="text-[10px] text-muted-foreground/70 flex items-center gap-1"
+                    >
+                      <Settings className="w-2.5 h-2.5 shrink-0" />
+                      {note}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           );
