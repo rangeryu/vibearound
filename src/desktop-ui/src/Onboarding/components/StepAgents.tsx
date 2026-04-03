@@ -5,7 +5,9 @@ import type { StepAgentsProps } from "../types";
 /** What gets installed per agent when enabled. */
 const AGENT_INTEGRATION_NOTES: Record<string, string[]> = {
   claude: ["MCP server config", "Skill file (session handover)"],
-  gemini: ["MCP server config"],
+  gemini: ["MCP server config", "Skill file (session handover)"],
+  codex: ["MCP server config (TOML)", "Skill file (session handover)"],
+  opencode: ["No session handover (archived project)"],
 };
 
 export function StepAgents({
