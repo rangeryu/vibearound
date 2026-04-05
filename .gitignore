@@ -47,6 +47,7 @@ tests/
 *.temp
 .turbo
 .vite/
+demo*/
 
 # Tooling
 *.tsbuildinfo

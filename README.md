@@ -1,14 +1,12 @@
 <div align="center">
 
+<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.1/banner.webp" width="100%" alt="VibeAround — Unified runtime for AI coding agents" />
+
 # VibeAround
 
-**Code with AI agents from anywhere — terminal, browser, phone, or chat.**
+**Unified runtime for AI coding agents — terminal, browser, phone, or chat.**
 
 [English](README.md) | [简体中文](README_CN.md) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki)
-
-<p>
-  <img src="Logo.png" width="120" alt="VibeAround" />
-</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.82+-000?style=flat-square&logo=rust&logoColor=fff" alt="Rust" />
@@ -20,19 +18,14 @@
 
 </div>
 
-VibeAround is a unified runtime for AI coding agents. Start a session with Claude Code on your laptop, pick it up on Feishu from your phone, switch to Codex mid-conversation, and come back to the terminal — all on the same session.
+VibeAround is a unified runtime for AI coding agents. It connects real agents (Claude Code, Gemini CLI, Codex, OpenCode) to every surface you use: desktop, browser, Telegram, Feishu, Discord, and WeChat. Not a wrapper — a runtime with full streaming, tool use, and thinking display.
 
-It connects real agents (Claude Code, Gemini CLI, Codex, OpenCode) to every surface you use: desktop, browser, Telegram, Feishu, Discord, and WeChat. Not a wrapper — a runtime with full streaming, tool use, and thinking display.
-
-## Screenshots
-
-| Desktop | Mobile |
-|---------|--------|
-| <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/screenshots/pc.webp" width="720" alt="VibeAround web dashboard on desktop" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/screenshots/mobile-claude.webp" width="200" alt="VibeAround web dashboard on mobile" /> |
+Start a task with Claude Code on your Mac, hand it over to Telegram on your phone, continue the conversation with full context, and hand it back when you're at your desk.
 
 ## Key features
 
-- **Session handover** — hand off a coding session from Claude Code CLI to any IM channel and continue on your phone *(currently Claude Code only; more agents coming)*
+- **Web terminal** — full PTY-based terminal in the browser with tmux integration, run shell sessions alongside agent chat
+- **Session handover** — hand off a coding session from any agent to any IM channel and continue on your phone
 - **Agent switching** — `/switch claude`, `/switch codex`, `/switch gemini` mid-conversation from any channel
 - **Web dashboard** — terminals, tmux, and agent chat at `localhost:12358`
 - **IM channels** — Telegram, Feishu, Discord, WeChat — each a standalone plugin
@@ -47,8 +40,8 @@ All agents communicate via [ACP (Agent Client Protocol)](https://agentclientprot
 | Agent | ACP | Session Handover |
 |---|---|---|
 | **Claude Code** | Working | Supported |
-| **Gemini CLI** | Working | Coming soon |
-| **Codex** | Working | Coming soon |
+| **Gemini CLI** | Working | Supported |
+| **Codex** | Working | Supported |
 | **OpenCode** | Working | Coming soon |
 
 ## Channel plugins
@@ -62,6 +55,21 @@ Each channel is a standalone Node.js plugin built with [@vibearound/plugin-chann
 | **Discord** | Bot token | Yes | Working |
 | **WeChat** | QR code login | No | Working |
 | **WhatsApp** | Pairing code | No | Blocked ([upstream](https://github.com/WhiskeySockets/Baileys/issues/2422)) |
+
+## Prerequisites
+
+| Tool | Version | Install |
+|------|---------|---------|
+| **Rust** | 1.82+ | [rustup.rs](https://rustup.rs/) |
+| **Node.js** | 20+ | [nodejs.org](https://nodejs.org/) |
+| **Bun** | 1.1+ | [bun.sh](https://bun.sh/) |
+| **npm** | 10+ | Included with Node.js |
+
+macOS only. Xcode Command Line Tools required:
+
+```bash
+xcode-select --install
+```
 
 ## Quick start
 
@@ -79,17 +87,17 @@ bun run dev
 
 ## Session handover
 
-Hand off your Claude Code session to any connected IM channel:
+Hand off your coding session to any connected IM channel — works with Claude Code, Gemini CLI, and Codex:
 
 ```
-you (Claude Code) > /vibearound handover
-Claude Code       > Session ready. Send this in your IM chat:
-                    /pickup claude abc123-session-id
+you (terminal)  > /handover
+Agent           > Handover ready. Copied to clipboard:
+                  /pickup V5RX
+                  Paste it in any IM chat connected to VibeAround.
+                  The code expires in 2 minutes.
 ```
 
-Paste the `/pickup` command in Feishu, Telegram, Discord, or WeChat — continue the conversation right there. Works great for reviewing code on mobile.
-
-> Session handover currently supports **Claude Code** only. Support for Gemini CLI, Codex, and OpenCode is in progress.
+Paste the `/pickup` command in Telegram, Feishu, Discord, or WeChat — continue the conversation with full context. When you're done, `/handover` again to return the session to your terminal.
 
 ## Architecture
 
@@ -161,7 +169,34 @@ See the [SDK README](https://github.com/jazzenchen/vibearound-plugin-channel-sdk
 
 ## Project status
 
-VibeAround is actively evolving and usable for daily work. Pull requests and feature requests are not being accepted at this time.
+VibeAround is actively evolving and usable for daily work.
+
+## Roadmap
+
+### More agents
+
+| Agent | Status |
+|---|---|
+| [Kiro CLI](https://kiro.dev/docs/cli/acp/) | Planned |
+| Cursor | Planned |
+| Qoder | Planned |
+| Qwen Code | Planned |
+
+### More IM channels
+
+| Channel | Status |
+|---|---|
+| Slack | Planned |
+| DingTalk | Planned |
+| LINE | Planned |
+| QQ | Planned |
+| Microsoft Teams | Under consideration |
+
+### Workspace management
+
+- Multi-project workspace switching and persistence
+- Per-workspace agent and channel configuration
+- Workspace-level session history and context
 
 ## License
 
