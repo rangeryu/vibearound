@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ChevronLeft, ChevronRight, Rocket } from "lucide-react";
 
 import { STEPS } from "./constants";
@@ -12,6 +13,8 @@ import type {
   AgentSummary,
   AuthFlowState,
   DiscoveredChannelPlugin,
+  InstallTaskInfo,
+  InstallTaskProgress,
   PluginRegistryEntry,
   Settings,
   TunnelSummary,
@@ -47,6 +50,12 @@ export default function Onboarding() {
   const [cfHostname, setCfHostname] = useState("");
 
   const [finishing, setFinishing] = useState(false);
+
+  // Install progress state
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [installComplete, setInstallComplete] = useState(false);
+  const [installTasks, setInstallTasks] = useState<InstallTaskProgress[]>([]);
+  const unlistenRefs = useRef<UnlistenFn[]>([]);
 
   // ---- Load existing settings + resources ----
   useEffect(() => {
@@ -328,11 +337,84 @@ export default function Onboarding() {
     setFinishing(true);
     try {
       const finalSettings = buildSettings();
-      await invoke("finish_onboarding", { settings: finalSettings });
+
+      // Get install manifest to pre-populate the task list
+      const manifest = await invoke<InstallTaskInfo[]>("get_install_manifest", {
+        settings: finalSettings,
+      });
+      setInstallTasks(
+        manifest.map((t) => ({
+          id: t.id,
+          label: t.label,
+          status: "pending" as const,
+        })),
+      );
+      setIsInstalling(true);
+
+      // Set up event listeners for progress
+      const unlistenProgress = await listen<{
+        id: string;
+        label: string;
+        status: string;
+        message?: string;
+      }>("onboarding-install-progress", (event) => {
+        const { id, status, message } = event.payload;
+        setInstallTasks((prev) =>
+          prev.map((task) =>
+            task.id === id
+              ? { ...task, status: status as InstallTaskProgress["status"], message }
+              : task,
+          ),
+        );
+      });
+
+      const unlistenComplete = await listen<{ status: string }>(
+        "onboarding-install-complete",
+        () => {
+          setInstallComplete(true);
+        },
+      );
+
+      unlistenRefs.current = [unlistenProgress, unlistenComplete];
+
+      // Fire-and-forget: start the install
+      await invoke("start_onboarding_install", { settings: finalSettings });
+    } catch (error) {
+      console.error("start_onboarding_install failed:", error);
+      setFinishing(false);
+      setIsInstalling(false);
+    }
+  };
+
+  const handleCancelInstall = async () => {
+    try {
+      await invoke("cancel_onboarding_install");
+      // Mark remaining pending tasks as cancelled
+      setInstallTasks((prev) =>
+        prev.map((task) =>
+          task.status === "pending" || task.status === "running"
+            ? { ...task, status: "cancelled" as const, message: "Cancelled" }
+            : task,
+        ),
+      );
+      setInstallComplete(true);
+    } catch (error) {
+      console.error("cancel failed:", error);
+    }
+  };
+
+  const handleInstallComplete = async () => {
+    // Clean up event listeners
+    for (const unlisten of unlistenRefs.current) {
+      unlisten();
+    }
+    unlistenRefs.current = [];
+
+    try {
+      await invoke("finish_onboarding");
       window.location.replace("/");
     } catch (error) {
       console.error("finish_onboarding failed:", error);
-      setFinishing(false);
     }
   };
 
@@ -432,45 +514,52 @@ export default function Onboarding() {
             defaultAgent={defaultAgent}
             tunnelProvider={tunnelProvider}
             enabledChannels={enabledChannels}
+            isInstalling={isInstalling}
+            installComplete={installComplete}
+            installTasks={installTasks}
+            onCancel={handleCancelInstall}
+            onComplete={handleInstallComplete}
           />
         )}
       </div>
 
-      <div className="flex items-center justify-between px-6 py-4 border-t border-border shrink-0">
-        <button
-          onClick={() => setStep((v) => Math.max(0, v - 1))}
-          disabled={step === 0}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          Back
-        </button>
-        {isLast ? (
+      {!isInstalling && (
+        <div className="flex items-center justify-between px-6 py-4 border-t border-border shrink-0">
           <button
-            onClick={handleFinish}
-            disabled={finishing}
-            className="flex items-center gap-2 px-5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+            onClick={() => setStep((v) => Math.max(0, v - 1))}
+            disabled={step === 0}
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            {finishing ? (
-              <>Launching…</>
-            ) : (
-              <>
-                <Rocket className="w-4 h-4" />
-                Launch VibeAround
-              </>
-            )}
+            <ChevronLeft className="w-4 h-4" />
+            Back
           </button>
-        ) : (
-          <button
-            onClick={() => setStep((v) => Math.min(STEPS.length - 1, v + 1))}
-            disabled={!canNext}
-            className="flex items-center gap-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-          >
-            {currentStep === "Welcome" ? "Get Started" : "Next"}
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        )}
-      </div>
+          {isLast ? (
+            <button
+              onClick={handleFinish}
+              disabled={finishing}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {finishing ? (
+                <>Launching…</>
+              ) : (
+                <>
+                  <Rocket className="w-4 h-4" />
+                  Launch VibeAround
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={() => setStep((v) => Math.min(STEPS.length - 1, v + 1))}
+              disabled={!canNext}
+              className="flex items-center gap-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {currentStep === "Welcome" ? "Get Started" : "Next"}
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@
     "display_name": "Claude Code",
     "description": "Anthropic Claude Code",
     "aliases": ["claude", "claude-code"],
+    "install": { "type": "npm" },
     "acp": {
       "program": "node",
       "npm_package": "@agentclientprotocol/claude-agent-acp",
@@ -26,6 +27,7 @@
     "display_name": "Gemini CLI",
     "description": "Google Gemini CLI",
     "aliases": ["gemini", "gemini-cli"],
+    "install": { "type": "path" },
     "acp": {
       "program": "gemini",
       "args": ["--experimental-acp"]
@@ -46,6 +48,7 @@
     "display_name": "Opencode",
     "description": "OpenCode AI Agent",
     "aliases": ["opencode", "open-code"],
+    "install": { "type": "path" },
     "acp": {
       "program": "opencode",
       "args": ["acp"]
@@ -59,6 +62,7 @@
     "display_name": "Codex CLI",
     "description": "OpenAI Codex CLI",
     "aliases": ["codex", "openai-codex"],
+    "install": { "type": "npm" },
     "acp": {
       "program": "node",
       "npm_package": "@zed-industries/codex-acp",
@@ -78,9 +82,10 @@
   },
   {
     "id": "cursor",
-    "display_name": "Cursor",
+    "display_name": "Cursor CLI",
     "description": "Cursor AI IDE",
     "aliases": ["cursor"],
+    "install": { "type": "path" },
     "acp": {
       "program": "cursor-agent",
       "args": ["acp"],
@@ -100,9 +105,10 @@
   },
   {
     "id": "kiro",
-    "display_name": "Kiro",
+    "display_name": "Kiro CLI",
     "description": "Amazon Kiro AI IDE",
     "aliases": ["kiro", "kiro-cli"],
+    "install": { "type": "path" },
     "acp": {
       "program": "kiro-cli",
       "args": ["acp"],
@@ -125,6 +131,7 @@
     "display_name": "Qwen Code",
     "description": "Alibaba Qwen Code",
     "aliases": ["qwen-code", "qwen"],
+    "install": { "type": "path" },
     "acp": {
       "program": "qwen",
       "args": ["--acp"]

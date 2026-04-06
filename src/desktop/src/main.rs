@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime};
 use tokio::sync::{Mutex, Notify};
 
-use onboarding::{OnboardingGate, OnboardingSessions};
+use onboarding::{OnboardingGate, OnboardingInstallState, OnboardingSessions};
 
 /// Shared ServiceStatusManager, injected into Tauri state for tray and IPC access.
 pub struct AppServiceManager(pub Arc<common::service::ServiceStatusManager>);
@@ -121,6 +121,7 @@ fn main() {
             plugin_sessions: Arc::new(Mutex::new(std::collections::HashMap::new())),
         })
         .manage(OnboardingActive(std::sync::atomic::AtomicBool::new(onboarding_needed)))
+        .manage(OnboardingInstallState::default())
         .invoke_handler(tauri::generate_handler![
             onboarding::get_settings,
             onboarding::list_channel_plugins,
@@ -134,6 +135,9 @@ fn main() {
             onboarding::list_agents,
             onboarding::list_tunnels,
             onboarding::list_plugin_registry,
+            onboarding::get_install_manifest,
+            onboarding::start_onboarding_install,
+            onboarding::cancel_onboarding_install,
         ])
         .setup(move |app| {
             tray::setup(app)?;

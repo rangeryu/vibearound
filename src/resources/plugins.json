@@ -33,5 +33,26 @@
     "description": "Connect via pairing code (Baileys). Currently blocked by upstream issue.",
     "github": "https://github.com/jazzenchen/vibearound-plugin-whatsapp",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
+  },
+  {
+    "id": "slack",
+    "name": "Slack",
+    "description": "Use a Slack bot with Socket Mode to chat via DM.",
+    "github": "https://github.com/jazzenchen/vibearound-plugin-slack",
+    "install_steps": ["git_clone", "npm_install", "npm_build"]
+  },
+  {
+    "id": "line",
+    "name": "LINE",
+    "description": "Connect via LINE Messaging API with webhook integration.",
+    "github": "https://github.com/jazzenchen/vibearound-plugin-line",
+    "install_steps": ["git_clone", "npm_install", "npm_build"]
+  },
+  {
+    "id": "teams",
+    "name": "Microsoft Teams",
+    "description": "Use a Bot Framework app to chat via Microsoft Teams.",
+    "github": "https://github.com/jazzenchen/vibearound-plugin-teams",
+    "install_steps": ["git_clone", "npm_install", "npm_build"]
   }
 ]

@@ -39,13 +39,27 @@ pub(super) async fn npm_command(args: &[&str], cwd: &std::path::Path) -> std::io
             "cannot determine node install directory",
         ))?;
 
-    let npm_cli = node_dir.join("node_modules").join("npm").join("bin").join("npm-cli.js");
-    if !npm_cli.exists() {
-        return Err(std::io::Error::new(
+    // Try multiple known locations for npm-cli.js:
+    // 1. Next to node binary (nvm, volta, default installs)
+    // 2. Homebrew global lib (brew install node on macOS)
+    // 3. Homebrew prefix /opt/homebrew or /usr/local
+    let candidates = [
+        node_dir.join("node_modules").join("npm").join("bin").join("npm-cli.js"),
+        node_dir.join("../lib/node_modules/npm/bin/npm-cli.js").into(),
+        std::path::PathBuf::from("/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js"),
+        std::path::PathBuf::from("/usr/local/lib/node_modules/npm/bin/npm-cli.js"),
+    ];
+    let npm_cli = candidates
+        .iter()
+        .find(|p| p.exists())
+        .cloned()
+        .ok_or_else(|| std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("npm-cli.js not found at {:?} — is npm installed with Node.js?", npm_cli),
-        ));
-    }
+            format!(
+                "npm-cli.js not found in any of: {:?} — is npm installed with Node.js?",
+                candidates
+            ),
+        ))?;
 
     let mut node_args: Vec<String> = vec![npm_cli.to_string_lossy().to_string()];
     node_args.extend(args.iter().map(|s| s.to_string()));
@@ -62,11 +76,12 @@ pub(super) async fn npm_command(args: &[&str], cwd: &std::path::Path) -> std::io
 
 #[tauri::command]
 pub async fn install_plugin(request: InstallPluginRequest) -> Result<InstallPluginResponse, String> {
-    run_install(request).await.map_err(|e| e.to_string())
+    run_install_inner(request).await.map_err(|e| e.to_string())
 }
 
 /// Internal implementation — uses anyhow for ergonomic error chaining.
-async fn run_install(request: InstallPluginRequest) -> anyhow::Result<InstallPluginResponse> {
+/// Also callable from the onboarding install orchestrator in mod.rs.
+pub(super) async fn run_install_inner(request: InstallPluginRequest) -> anyhow::Result<InstallPluginResponse> {
     let plugins_dir = config::data_dir().join("plugins");
     let target_dir = plugins_dir.join(&request.plugin_id);
 
@@ -112,11 +127,11 @@ async fn run_install(request: InstallPluginRequest) -> anyhow::Result<InstallPlu
         bail!("npm run build failed: {}", String::from_utf8_lossy(&output.stderr));
     }
 
-    // Build must produce auth-standalone.js — its absence means tsc had silent errors.
-    let auth_script = target_dir.join("dist").join("auth-standalone.js");
-    if !auth_script.exists() {
+    // Build must produce dist/main.js — its absence means tsc had silent errors.
+    let main_script = target_dir.join("dist").join("main.js");
+    if !main_script.exists() {
         bail!(
-            "build succeeded but auth-standalone.js was not produced (tsc may have emitted errors).\nstdout: {}\nstderr: {}",
+            "build succeeded but dist/main.js was not produced (tsc may have emitted errors).\nstdout: {}\nstderr: {}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr),
         );

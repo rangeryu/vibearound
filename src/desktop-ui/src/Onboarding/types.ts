@@ -5,6 +5,7 @@ export interface AgentSummary {
   id: string;
   display_name: string;
   description: string;
+  install_type?: "npm" | "script" | "path";
 }
 
 export interface TunnelSummary {
@@ -131,4 +132,24 @@ export interface StepConfirmProps {
   defaultAgent: AgentId;
   tunnelProvider: TunnelProvider;
   enabledChannels: Set<string>;
+  // Install progress state
+  isInstalling: boolean;
+  installComplete: boolean;
+  installTasks: InstallTaskProgress[];
+  onCancel: () => void;
+  onComplete: () => void;
+}
+
+export type InstallTaskStatus = "pending" | "running" | "done" | "error" | "skipped" | "cancelled";
+
+export interface InstallTaskProgress {
+  id: string;
+  label: string;
+  status: InstallTaskStatus;
+  message?: string;
+}
+
+export interface InstallTaskInfo {
+  id: string;
+  label: string;
 }

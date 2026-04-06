@@ -667,29 +667,35 @@ async fn send_system_text(plugin_host: &Arc<PluginHost>, route: &RouteKey, text:
         .await;
 }
 
-/// Format cached agent commands into a readable text message.
+/// Format help text: always show system commands, optionally show agent commands.
 fn format_agent_commands(commands: &serde_json::Value) -> String {
-    let arr = match commands.as_array() {
-        Some(arr) if !arr.is_empty() => arr,
-        _ => return "No agent commands available. Send a message first to initialize the agent.".to_string(),
-    };
-
-    let mut lines = vec!["Available agent commands (use /agent <command>):".to_string()];
-    for cmd in arr {
-        let name = cmd.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-        let desc = cmd.get("description").and_then(|v| v.as_str()).unwrap_or("");
-        // Truncate long descriptions (char-safe)
-        let short_desc = if desc.chars().count() > 80 {
-            let truncated: String = desc.chars().take(77).collect();
-            format!("{}...", truncated)
-        } else {
-            desc.to_string()
-        };
-        lines.push(format!("  /{} — {}", name, short_desc));
-    }
-
-    lines.push("\nSystem commands:".to_string());
+    let mut lines = vec!["System commands:".to_string()];
     lines.push(crate::resources::format_system_commands_help());
+
+    let has_agent_commands = commands
+        .as_array()
+        .map(|arr| !arr.is_empty())
+        .unwrap_or(false);
+
+    if has_agent_commands {
+        lines.push(String::new());
+        lines.push("Agent commands (use /agent <command>):".to_string());
+        for cmd in commands.as_array().unwrap() {
+            let name = cmd.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+            let desc = cmd.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            // Truncate long descriptions (char-safe)
+            let short_desc = if desc.chars().count() > 80 {
+                let truncated: String = desc.chars().take(77).collect();
+                format!("{}...", truncated)
+            } else {
+                desc.to_string()
+            };
+            lines.push(format!("  /{} — {}", name, short_desc));
+        }
+    } else {
+        lines.push(String::new());
+        lines.push("Agent commands will appear after sending your first message.".to_string());
+    }
 
     lines.join("\n")
 }

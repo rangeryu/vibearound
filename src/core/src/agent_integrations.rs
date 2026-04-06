@@ -45,8 +45,19 @@ pub fn sync_integrations(settings: &serde_json::Value) {
     }
 }
 
+/// Output captured from an install command.
+pub struct InstallOutput {
+    pub stdout: String,
+    pub stderr: String,
+}
+
 /// Auto-install an npm ACP agent package into `~/.vibearound/plugins/`.
 pub async fn auto_install_npm_agent(npm_package: &str) -> anyhow::Result<()> {
+    auto_install_npm_agent_with_output(npm_package).await.map(|_| ())
+}
+
+/// Like `auto_install_npm_agent` but returns captured stdout/stderr.
+pub async fn auto_install_npm_agent_with_output(npm_package: &str) -> anyhow::Result<InstallOutput> {
     let plugins_dir = crate::env::acp_agents_dir();
     std::fs::create_dir_all(&plugins_dir)
         .with_context(|| format!("creating {:?}", plugins_dir))?;
@@ -67,16 +78,23 @@ pub async fn auto_install_npm_agent(npm_package: &str) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("running npm install {}", npm_package))?;
 
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("npm install {} failed: {}", npm_package, stderr.trim());
     }
     eprintln!("[integrations] installed {}", npm_package);
-    Ok(())
+    Ok(InstallOutput { stdout, stderr })
 }
 
 /// Install a native agent CLI by running its official install command.
 pub async fn auto_install_agent_cmd(install_cmd: &str, agent: &str) -> anyhow::Result<()> {
+    auto_install_agent_cmd_with_output(install_cmd, agent).await.map(|_| ())
+}
+
+/// Like `auto_install_agent_cmd` but returns captured stdout/stderr.
+pub async fn auto_install_agent_cmd_with_output(install_cmd: &str, agent: &str) -> anyhow::Result<InstallOutput> {
     eprintln!("[integrations] running install for {}: {}", agent, install_cmd);
 
     let output = crate::env::command("sh")
@@ -87,13 +105,15 @@ pub async fn auto_install_agent_cmd(install_cmd: &str, agent: &str) -> anyhow::R
         .await
         .with_context(|| format!("running install cmd for {}", agent))?;
 
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("install {} failed: {}", agent, stderr.trim());
     }
 
     eprintln!("[integrations] installed {}", agent);
-    Ok(())
+    Ok(InstallOutput { stdout, stderr })
 }
 
 /// Check if a program is available in PATH.

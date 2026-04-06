@@ -31,12 +31,21 @@ pub struct AgentDef {
     pub description: String,
     #[serde(default)]
     pub aliases: Vec<String>,
+    #[serde(default)]
+    pub install: Option<AgentInstallInfo>,
     pub acp: AgentAcpConfig,
     pub pty: AgentPtyConfig,
     #[serde(default)]
     pub resume_template: Option<String>,
     #[serde(default)]
     pub global_config: Option<AgentGlobalConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentInstallInfo {
+    /// Install type: "npm" | "script" | "path"
+    #[serde(rename = "type")]
+    pub install_type: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
