@@ -71,7 +71,15 @@ impl PluginHost {
         if let Some(runtime) = runtime {
             runtime.send_output(output).await;
         } else {
-            eprintln!("[ChannelManager] no plugin runtime for route {}", route);
+            let known: Vec<String> = self
+                .runtimes
+                .iter()
+                .map(|e| format!("{:?}", e.key()))
+                .collect();
+            eprintln!(
+                "[ChannelManager] no plugin runtime for route {} (looking up channel_kind={:?}, known={:?})",
+                route, route.channel_kind, known
+            );
         }
     }
 

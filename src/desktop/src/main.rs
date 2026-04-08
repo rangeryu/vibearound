@@ -83,6 +83,39 @@ pub async fn restart_daemon<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
     controller.restart().await
 }
 
+/// Return the current web-server auth token + port so the desktop-ui (a
+/// cross-origin Tauri webview) can authenticate against the daemon.
+///
+/// Reads directly from `~/.vibearound/auth.json`, which `ServerDaemon` writes
+/// on every start. Returns `None` before the daemon has started for the
+/// first time.
+#[tauri::command]
+fn get_auth_token() -> Option<common::auth::AuthFile> {
+    common::auth::read_token_file()
+}
+
+/// Open an HTTP URL in the user's default external browser.
+///
+/// We can't use `window.open` from the desktop-ui because it creates a
+/// Tauri child webview instead of hitting the OS-level handler. This
+/// command shells out via the `open` crate, which is what the tray also
+/// uses for "Open Local Dashboard".
+///
+/// Used for dashboard + tunnel links that need the session auth token
+/// appended — the desktop-ui calls `authedDashboardUrl()` to build the
+/// URL, then passes it here.
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    // Minimal guard: only allow http/https schemes. Prevents a rogue
+    // caller from asking us to execute `file://` or `javascript:` URIs.
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err(format!("refused to open non-http URL: {url}"));
+    }
+    open::that(&url)
+        .map(|_| ())
+        .map_err(|e| format!("failed to open url: {e}"))
+}
+
 fn main() {
     // Fast-path: if our port is already in use, exit immediately before
     // allocating Tauri resources. tauri_plugin_single_instance (below) is the
@@ -99,7 +132,31 @@ fn main() {
     let daemon = Arc::new(server::ServerDaemon::new(port));
     let services = daemon.services();
 
+    // Persist the auth token immediately so the desktop-ui (which runs in
+    // a Tauri webview that starts rendering before the daemon has fully
+    // booted) can read `~/.vibearound/auth.json` from its first render.
+    if let Err(e) = daemon.persist_auth_token() {
+        eprintln!("[VibeAround] Failed to persist auth token: {}", e);
+    }
+
     let onboarding_needed = onboarding::needs_onboarding();
+
+    // Rewrite each enabled coding agent's MCP config with the fresh
+    // token-bearing URL *before* the HTTP listener binds. This closes a
+    // race window where auth.json already carries the new token but the
+    // MCP config files on disk still reference the previous run's token:
+    // a coding agent that happens to boot during that window would cache
+    // the stale URL and 401 on every tool call until restarted.
+    //
+    // Skipped on first run (onboarding_needed) because no agents are
+    // enabled yet — the onboarding install flow calls sync_integrations
+    // itself with the freshly populated settings. Skipping here also
+    // avoids a pointless uninstall sweep over files that don't exist yet.
+    if !onboarding_needed {
+        common::agent_integrations::sync_integrations(
+            &onboarding::get_settings_value(),
+        );
+    }
     let gate = Arc::new(Notify::new());
     let dist_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/dist");
 
@@ -123,6 +180,8 @@ fn main() {
         .manage(OnboardingActive(std::sync::atomic::AtomicBool::new(onboarding_needed)))
         .manage(OnboardingInstallState::default())
         .invoke_handler(tauri::generate_handler![
+            get_auth_token,
+            open_external_url,
             onboarding::get_settings,
             onboarding::list_channel_plugins,
             onboarding::save_settings,
@@ -171,12 +230,16 @@ fn main() {
                     eprintln!("[VibeAround] Daemon error: {}", e);
                 }
 
-                // Sync agent integrations on every startup: reinstall skills + MCP
-                // config for enabled agents, remove for disabled ones. This ensures
-                // the SKILL.md and MCP config stay up-to-date after app upgrades.
-                common::agent_integrations::sync_integrations(
-                    &onboarding::get_settings_value(),
-                );
+                // Onboarding path: settings were empty when we ran the
+                // early sync before Tauri started, so run it now that
+                // the user has picked their enabled agents. The
+                // steady-state path already ran this pre-binding, so
+                // re-running would be wasted work.
+                if onboarding_needed {
+                    common::agent_integrations::sync_integrations(
+                        &onboarding::get_settings_value(),
+                    );
+                }
             });
 
             Ok(())

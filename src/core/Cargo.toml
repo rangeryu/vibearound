@@ -28,3 +28,5 @@ tokio-util = { version = "0.7", features = ["compat"] }
 anyhow = "1"
 toml = "0.8"
 toml_edit = "0.22"
+rand = "0.8"
+parking_lot = "0.12"

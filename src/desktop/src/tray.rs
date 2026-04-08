@@ -16,6 +16,28 @@ use crate::{AppServiceManager, OnboardingActive};
 const MAIN_WINDOW_LABEL: &str = "main";
 const LOCAL_DASHBOARD_URL: &str = "http://127.0.0.1:12358";
 
+/// Build the dashboard URL with the session auth token.
+///
+/// The SPA reads `?token=` on load, stores it in `sessionStorage`, and
+/// strips the query from the address bar so it never ends up in history
+/// or referer headers. Without the token, the dashboard's API requests
+/// all return 401.
+fn dashboard_url_with_token(base: &str) -> String {
+    match common::auth::read_token_file() {
+        Some(f) => format!("{base}/?token={}", f.token),
+        None => base.to_string(),
+    }
+}
+
+/// Build a tunnel URL with the session auth token appended.
+fn tunnel_url_with_token(tunnel_url: &str) -> String {
+    let Some(file) = common::auth::read_token_file() else {
+        return tunnel_url.to_string();
+    };
+    let sep = if tunnel_url.contains('?') { '&' } else { '?' };
+    format!("{tunnel_url}{sep}token={}", file.token)
+}
+
 pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>> {
     let is_onboarding = app
         .try_state::<OnboardingActive>()
@@ -52,12 +74,12 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
                 }
             }
             "open_local" => {
-                let _ = open::that(LOCAL_DASHBOARD_URL);
+                let _ = open::that(dashboard_url_with_token(LOCAL_DASHBOARD_URL));
             }
             "open_tunnel" => {
                 if let Some(state) = app.try_state::<AppServiceManager>() {
                     if let Some(url) = state.0.get_tunnel_url() {
-                        let _ = open::that(&url);
+                        let _ = open::that(tunnel_url_with_token(&url));
                     }
                 }
             }

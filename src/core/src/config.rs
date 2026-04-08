@@ -36,6 +36,8 @@ fn init_data_dir() {
         eprintln!("[VibeAround] Creating default settings.json at {:?}", settings_path);
         if let Err(e) = std::fs::write(&settings_path, DEFAULT_SETTINGS_JSON) {
             eprintln!("[VibeAround] Failed to write settings.json: {}", e);
+        } else if let Err(e) = crate::auth::set_owner_only(&settings_path) {
+            eprintln!("[VibeAround] Failed to chmod settings.json: {}", e);
         }
     }
     let ws_dir = dir.join("workspaces");

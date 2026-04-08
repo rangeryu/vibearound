@@ -12,9 +12,16 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use parking_lot::RwLock;
 use serde::Serialize;
 use tokio::sync::broadcast;
 use tokio::task::AbortHandle;
+
+// parking_lot locks used throughout this module are fast, uncontended, and
+// cover very short critical sections. They are _blocking_ locks, so the
+// invariant across every call site below is: NEVER hold a guard across an
+// `.await` point. If a lock needs to be held longer, convert that specific
+// site to `tokio::sync::RwLock` — do not yield while holding parking_lot.
 
 use crate::pty::{unix_now_secs, Registry, SessionId};
 use crate::runtime_status::RuntimeStatusStore;
@@ -40,7 +47,7 @@ impl ServiceStatus {
 
 /// Common metadata shared by all service entry types.
 pub struct ServiceMeta {
-    pub status: Arc<std::sync::RwLock<ServiceStatus>>,
+    pub status: Arc<RwLock<ServiceStatus>>,
     pub started_at: u64,
     /// Kill function — aborts the backing task.
     kill_fn: Option<Box<dyn Fn() + Send + Sync>>,
@@ -52,14 +59,14 @@ impl ServiceMeta {
             Box::new(move || h.abort()) as Box<dyn Fn() + Send + Sync>
         });
         Self {
-            status: Arc::new(std::sync::RwLock::new(ServiceStatus::Running)),
+            status: Arc::new(RwLock::new(ServiceStatus::Running)),
             started_at: unix_now_secs(),
             kill_fn,
         }
     }
 
     pub fn current_status(&self) -> ServiceStatus {
-        self.status.read().unwrap().clone()
+        self.status.read().clone()
     }
 
     pub fn uptime_secs(&self) -> u64 {
@@ -70,11 +77,11 @@ impl ServiceMeta {
         if let Some(f) = &self.kill_fn {
             f();
         }
-        if let Ok(mut s) = self.status.write() {
-            *s = ServiceStatus::Stopped {
-                reason: "killed".into(),
-            };
-        }
+        // Never hold this write guard across an .await — we drop it at end of scope.
+        let mut s = self.status.write();
+        *s = ServiceStatus::Stopped {
+            reason: "killed".into(),
+        };
     }
 }
 
@@ -110,7 +117,7 @@ pub struct TunnelEntry {
 /// Data is synced by ServerDaemon via hub events.
 pub struct ServiceStatusManager {
     /// Runtime status store (event-driven, from ACPHub HubEvent stream).
-    runtime_status: std::sync::RwLock<Option<Arc<RuntimeStatusStore>>>,
+    runtime_status: RwLock<Option<Arc<RuntimeStatusStore>>>,
     /// Channel plugin status (keyed by channel kind).
     channels: DashMap<String, ChannelEntry>,
     /// Tunnel status (at most one).
@@ -136,7 +143,7 @@ impl ServiceStatusManager {
     pub fn new(port: u16) -> Self {
         let (change_tx, _) = broadcast::channel(64);
         Self {
-            runtime_status: std::sync::RwLock::new(None),
+            runtime_status: RwLock::new(None),
             channels: DashMap::new(),
             tunnels: DashMap::new(),
             pty: Arc::new(DashMap::new()),
@@ -155,7 +162,7 @@ impl ServiceStatusManager {
         self.channels.clear();
         self.tunnels.clear();
         self.pty.clear();
-        *self.runtime_status.write().unwrap() = None;
+        *self.runtime_status.write() = None;
         self.notify_change();
     }
 
@@ -181,7 +188,7 @@ impl ServiceStatusManager {
     // -----------------------------------------------------------------------
 
     pub fn set_runtime_status(&self, store: Arc<RuntimeStatusStore>) {
-        *self.runtime_status.write().unwrap() = Some(store);
+        *self.runtime_status.write() = Some(store);
     }
 
     // -----------------------------------------------------------------------
@@ -268,7 +275,6 @@ impl ServiceStatusManager {
         let agents = self
             .runtime_status
             .read()
-            .unwrap()
             .as_ref()
             .map(|store| store.snapshot_agents())
             .unwrap_or_default();
@@ -349,7 +355,7 @@ fn capitalize(s: &str) -> String {
 
 /// Spawn a task that auto-updates the ServiceMeta status on completion.
 pub fn spawn_tracked<F>(
-    meta_status: Arc<std::sync::RwLock<ServiceStatus>>,
+    meta_status: Arc<RwLock<ServiceStatus>>,
     future: F,
 ) -> tokio::task::JoinHandle<()>
 where
@@ -358,12 +364,13 @@ where
     let status = meta_status;
     tokio::spawn(async move {
         future.await;
-        if let Ok(mut s) = status.write() {
-            if s.is_running() {
-                *s = ServiceStatus::Stopped {
-                    reason: "completed".into(),
-                };
-            }
+        // The future has finished — we're past the last await. Safe to take
+        // the blocking parking_lot write guard inside this async block.
+        let mut s = status.write();
+        if s.is_running() {
+            *s = ServiceStatus::Stopped {
+                reason: "completed".into(),
+            };
         }
     })
 }

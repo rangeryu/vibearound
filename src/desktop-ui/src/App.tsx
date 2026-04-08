@@ -3,6 +3,7 @@ import {
   Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen,
 } from "lucide-react";
 import { useServices, type ServiceInfo } from "./hooks/useServices";
+import { openDashboardUrl } from "./lib/api";
 import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Workspaces } from "./Workspaces";
@@ -51,15 +52,17 @@ function ServiceRow({
         </span>
       )}
       {service.url && (
-        <a
-          href={service.url}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            void openDashboardUrl(service.url!);
+          }}
           className="text-muted-foreground/50 hover:text-primary"
           title={service.url}
         >
           <ExternalLink className="w-3 h-3" />
-        </a>
+        </button>
       )}
       {service.status === "running" && (
         <button
@@ -285,14 +288,16 @@ function Dashboard() {
             <span className="text-sm text-muted-foreground">
               {data.pty_session_count} active session{data.pty_session_count !== 1 ? "s" : ""}
             </span>
-            <a
-              href={`http://127.0.0.1:${data.server.port}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                void openDashboardUrl(`http://127.0.0.1:${data.server.port}`);
+              }}
               className="text-xs text-primary hover:underline flex items-center gap-1"
             >
               Open Web Dashboard <ExternalLink className="w-3 h-3" />
-            </a>
+            </button>
           </div>
         </Section>
       </div>

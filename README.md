@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.1/banner.webp" width="100%" alt="VibeAround — Unified runtime for AI coding agents" />
+<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.1/banner.webp" width="100%" alt="VibeAround — Talk to your AI coding agent anywhere from your IM" />
 
 # VibeAround
 
-**Unified runtime for AI coding agents — terminal, browser, phone, or chat.**
+**Talk to your AI coding agent anywhere from your IM — no coding plan required.**
 
 [English](README.md) | [简体中文](README_CN.md) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki)
 
@@ -18,17 +18,26 @@
 
 </div>
 
-VibeAround is a unified runtime for AI coding agents. It connects real agents (Claude Code, Gemini CLI, Codex CLI, Cursor CLI, Kiro CLI, Qwen Code, OpenCode) to every surface you use: desktop, browser, Telegram, Feishu, Discord, Slack, WeChat, DingTalk, WeCom, and QQ. Not a wrapper — a runtime with full streaming, tool use, and thinking display.
+VibeAround is a friendly bridge for mainstream AI coding agents — **Claude Code, Codex CLI, Cursor CLI, Gemini CLI, Kiro CLI, Qwen Code, OpenCode** — connecting them to the IM tools you already use every day: **Telegram, Feishu, Discord, Slack, WeChat, DingTalk, WeCom, and QQ Bot**. No official paid subscription required — bring your own third-party API key and you're done.
 
-Start a task with Claude Code on your Mac, hand it over to Telegram on your phone, continue the conversation with full context, and hand it back when you're at your desk.
+Start a task with Claude Code on your Mac, hand it over to Telegram on your phone with a single `/handover`, continue the conversation with full context, and hand it back when you're at your desk. Switch agents mid-conversation with `/switch codex` from any channel. Run Claude on Telegram and Codex on Slack at the same time — they don't collide.
+
+A Tauri-packaged desktop app walks you through setup with a one-click wizard. Each IM channel and each agent is a downloadable plugin, so the core stays small and clean. A built-in web dashboard at `localhost:12358` gives you a full PTY + tmux web terminal, and an embedded tunnel (Cloudflare / Ngrok / Localtunnel) exposes it when you want to reach it from your phone.
+
+## Demo
+
+[![VibeAround demo — session handover, agent switching, multi-channel concurrency](https://img.youtube.com/vi/6kxNKTMz-AM/maxresdefault.jpg)](https://youtu.be/6kxNKTMz-AM)
+
+*Watch VibeAround in action — session handover between terminal and IM, agent switching mid-conversation, and multi-channel concurrency.*
 
 ## Key features
 
-- **Web terminal** — full PTY-based terminal in the browser with tmux integration, run shell sessions alongside agent chat
 - **Session handover** — hand off a coding session from any agent to any IM channel and continue on your phone
 - **Agent switching** — `/switch claude`, `/switch codex`, `/switch cursor` mid-conversation from any channel
-- **Web dashboard** — terminals, tmux, and agent chat at `localhost:12358`
 - **IM channels** — Telegram, Feishu, Discord, Slack, WeChat, DingTalk, WeCom, QQ Bot — each a standalone plugin
+- **Native IM experience** — Feishu interactive cards, Slack Block Kit, Discord embeds, WeCom markdown streaming — each channel uses the richest native formatting it supports
+- **Web terminal** — full PTY-based terminal in the browser with tmux integration, run shell sessions alongside agent chat
+- **Web dashboard** — terminals, tmux, and agent chat at `localhost:12358`
 - **Desktop app** — onboarding with install progress, service monitoring, workspace management, system tray
 - **Multi-workspace** — manage project folders, set defaults, switch contexts
 - **Tunnel access** — expose your dashboard via Cloudflare Tunnel, Ngrok, or Localtunnel
@@ -102,7 +111,9 @@ In Slack, the `/` prefix is intercepted by the client. Use `/va` or `/vibearound
 | **Bun** | 1.1+ | [bun.sh](https://bun.sh/) |
 | **npm** | 10+ | Included with Node.js |
 
-macOS only. Xcode Command Line Tools required:
+**Platforms:** The codebase supports macOS, Linux, and Windows. Prebuilt binaries are currently bundled for macOS only — I only have a Mac, so Linux and Windows users need to build from source for now. Contributions to add Linux and Windows CI and release bundles are very welcome.
+
+On macOS, Xcode Command Line Tools are required:
 
 ```bash
 xcode-select --install
@@ -215,8 +226,19 @@ VibeAround is actively evolving and usable for daily work.
 
 | Channel | Status |
 |---|---|
+| WhatsApp | In development |
 | LINE | In development |
 | Microsoft Teams | In development |
+
+### Live preview
+
+- Preview files, screenshots, and artifacts your agent just created directly inside the IM chat
+- No need to switch back to your desktop to inspect what the agent produced
+
+### More IM native features
+
+- Deeper per-channel integrations using each IM's native capabilities — reactions, threads, interactive buttons, forms, voice messages
+- Expanding file, image, and rich media support across channels that don't yet support them
 
 ### Workspace management
 

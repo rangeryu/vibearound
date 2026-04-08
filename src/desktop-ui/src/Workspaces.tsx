@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, Star, Trash2, RefreshCw } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-
-const API_BASE = "http://127.0.0.1:12358";
+import { apiFetch } from "./lib/api";
 
 interface WorkspaceItem {
   path: string;
@@ -25,7 +24,7 @@ export function Workspaces() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/workspaces`);
+      const res = await apiFetch(`/api/workspaces`);
       if (!res.ok) throw new Error(await res.text());
       setData(await res.json());
     } catch (e) {
@@ -46,7 +45,7 @@ export function Workspaces() {
       if (!selected) { setAdding(false); return; }
       const path = typeof selected === "string" ? selected : selected[0];
       if (!path) { setAdding(false); return; }
-      const res = await fetch(`${API_BASE}/api/workspaces`, {
+      const res = await apiFetch(`/api/workspaces`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
@@ -62,7 +61,7 @@ export function Workspaces() {
 
   const removeWorkspace = async (path: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/workspaces/remove`, {
+      const res = await apiFetch(`/api/workspaces/remove`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
@@ -76,7 +75,7 @@ export function Workspaces() {
 
   const setDefault = async (path: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/workspaces/default`, {
+      const res = await apiFetch(`/api/workspaces/default`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),

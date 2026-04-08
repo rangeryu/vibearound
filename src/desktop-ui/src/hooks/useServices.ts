@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { apiFetch, authedWsUrl } from "../lib/api";
 
-const API_BASE = "http://127.0.0.1:12358";
-const WS_URL = "ws://127.0.0.1:12358/ws/services";
 const POLL_INTERVAL = 5000;
 const WS_RECONNECT_DELAY = 3000;
 
@@ -43,7 +42,7 @@ export function useServices() {
   // HTTP fallback fetch
   const fetchServices = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/services`);
+      const res = await apiFetch(`/api/services`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: ServicesSnapshot = await res.json();
       setData(json);
@@ -71,10 +70,11 @@ export function useServices() {
   }, []);
 
   // WebSocket connection
-  const connectWs = useCallback(() => {
+  const connectWs = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const ws = new WebSocket(WS_URL);
+    const url = await authedWsUrl("/ws/services");
+    const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -99,7 +99,9 @@ export function useServices() {
       wsRef.current = null;
       // Fallback to polling, then try to reconnect WS
       startPolling();
-      setTimeout(connectWs, WS_RECONNECT_DELAY);
+      setTimeout(() => {
+        void connectWs();
+      }, WS_RECONNECT_DELAY);
     };
 
     ws.onerror = () => {
@@ -108,7 +110,7 @@ export function useServices() {
   }, [stopPolling, startPolling]);
 
   useEffect(() => {
-    connectWs();
+    void connectWs();
     return () => {
       stopPolling();
       if (wsRef.current) {
@@ -122,8 +124,8 @@ export function useServices() {
   const killService = useCallback(
     async (category: string, id: string) => {
       try {
-        const res = await fetch(
-          `${API_BASE}/api/services/${encodeURIComponent(category)}/${encodeURIComponent(id)}`,
+        const res = await apiFetch(
+          `/api/services/${encodeURIComponent(category)}/${encodeURIComponent(id)}`,
           { method: "DELETE" }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

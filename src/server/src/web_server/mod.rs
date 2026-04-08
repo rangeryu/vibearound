@@ -3,27 +3,29 @@
 //! and MCP endpoint at /mcp.
 
 mod api;
+mod auth;
 mod mcp;
 mod preview;
 mod ws_chat;
 mod ws_pty;
 mod ws_services;
 
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::{any, delete, get, post},
-    Router,
-};
 use axum::body::Body;
+use axum::http::{HeaderValue, Method, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{any, delete, get, post};
+use axum::Router;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
+use common::auth::AuthToken;
 use common::channel_manager::{ChannelManager, WebChannelManager};
 use common::config;
 use common::pty::PtySessionManager;
+
+use self::auth::{require_auth, AuthState};
 
 /// Client sends this as JSON over Text frame to resize the PTY (e.g. after xterm-addon-fit).
 #[derive(serde::Deserialize)]
@@ -38,6 +40,9 @@ struct ResizeMessage {
 #[derive(serde::Deserialize)]
 struct WsQuery {
     session_id: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)] // consumed by the auth middleware, not the handler
+    token: Option<String>,
 }
 
 /// Shared app state: registry, SPA fallback path, working dir, service manager.
@@ -71,7 +76,9 @@ async fn spa_fallback(dist_path: PathBuf) -> Response {
             .status(StatusCode::OK)
             .header("Content-Type", "text/html; charset=utf-8")
             .body(Body::from(content))
-            .unwrap(),
+            .unwrap_or_else(|_| {
+                (StatusCode::INTERNAL_SERVER_ERROR, "failed to build response").into_response()
+            }),
         Err(e) => {
             eprintln!("[VibeAround] Failed to read index.html: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load index.html: {}", e)).into_response()
@@ -91,6 +98,7 @@ pub async fn run_web_server(
     services: Arc<common::service::ServiceStatusManager>,
     channel_hub: Arc<ChannelManager>,
     web_channel: Arc<WebChannelManager>,
+    auth_token: Arc<AuthToken>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     verify_web_dist(&dist_path)?;
     let web_dist = dist_path
@@ -113,9 +121,25 @@ pub async fn run_web_server(
         web_channel,
     };
 
-    let app = Router::new()
-        .route("/api/sessions", get(api::list_sessions_handler).post(api::create_session_handler))
-        .route("/api/sessions/{session_id}", delete(api::delete_session_handler))
+    let auth_state = AuthState(Arc::clone(&auth_token));
+
+    // --- Protected routes: require a valid token on every request. ----------
+    //
+    // Everything that can mutate state, execute code, attach to a PTY, or
+    // surface sensitive workspace data goes behind the auth middleware.
+    // The SPA shell + static assets are left open so the browser can fetch
+    // the initial HTML/JS with the token supplied as `?token=...` by the
+    // opener (Tauri tray). The SPA then attaches `Authorization: Bearer` on
+    // every subsequent API/WS call.
+    let protected = Router::new()
+        .route(
+            "/api/sessions",
+            get(api::list_sessions_handler).post(api::create_session_handler),
+        )
+        .route(
+            "/api/sessions/{session_id}",
+            delete(api::delete_session_handler),
+        )
         .route("/api/tmux/sessions", get(api::list_tmux_sessions_handler))
         .route("/api/agents", get(api::list_agents_handler))
         .route("/preview/{project_id}", get(preview::preview_page_handler))
@@ -125,20 +149,39 @@ pub async fn run_web_server(
         .route("/ws/chat", get(ws_chat::ws_chat_handler))
         .route("/ws/services", get(ws_services::ws_services_handler))
         .route("/api/services", get(api::list_services_handler))
-        .route("/api/services/{category}/{id}", delete(api::kill_service_handler))
-        .route("/api/workspaces", get(api::list_workspaces_handler).post(api::add_workspace_handler))
+        .route(
+            "/api/services/{category}/{id}",
+            delete(api::kill_service_handler),
+        )
+        .route(
+            "/api/workspaces",
+            get(api::list_workspaces_handler).post(api::add_workspace_handler),
+        )
         .route("/api/workspaces/remove", post(api::remove_workspace_handler))
-        .route("/api/workspaces/default", axum::routing::put(api::set_default_workspace_handler))
+        .route(
+            "/api/workspaces/default",
+            axum::routing::put(api::set_default_workspace_handler),
+        )
         .route("/mcp", post(mcp::mcp_handler))
+        .route_layer(axum::middleware::from_fn_with_state(
+            auth_state.clone(),
+            require_auth,
+        ));
+
+    // --- Open routes: the SPA shell + static assets only. -------------------
+    //
+    // These are intentionally un-authed so the initial page load can boot
+    // and read the `?token=` parameter from its own URL. Nothing here
+    // exposes sensitive data — index.html is a compiled SPA bundle.
+    let public = Router::new()
         .nest_service("/assets", ServeDir::new(assets_dir))
-        .fallback(any(spa_fallback_handler))
+        .fallback(any(spa_fallback_handler));
+
+    let app = Router::new()
+        .merge(protected)
+        .merge(public)
         .with_state(state)
-        .layer(
-            tower_http::cors::CorsLayer::new()
-                .allow_origin(tower_http::cors::Any)
-                .allow_methods(tower_http::cors::Any)
-                .allow_headers(tower_http::cors::Any),
-        );
+        .layer(build_cors_layer(port));
 
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
@@ -152,4 +195,46 @@ pub async fn run_web_server(
     println!("[VibeAround] Web server listening on http://127.0.0.1:{}", port);
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Build a tight CORS layer.
+///
+/// Allowed origins:
+/// - `http://127.0.0.1:{port}` / `http://localhost:{port}` — the SPA served
+///   from this same server, opened in a regular browser.
+/// - `tauri://localhost` / `http://tauri.localhost` — the Tauri webview
+///   on macOS/Linux and Windows respectively.
+/// - `http://localhost:5181` — the desktop-ui Vite dev server during
+///   development.
+///
+/// Everything else is rejected, so random websites the user visits cannot
+/// fetch from the loopback port.
+fn build_cors_layer(port: u16) -> tower_http::cors::CorsLayer {
+    let origins: Vec<HeaderValue> = [
+        format!("http://127.0.0.1:{port}"),
+        format!("http://localhost:{port}"),
+        "tauri://localhost".to_string(),
+        "http://tauri.localhost".to_string(),
+        "http://localhost:5181".to_string(),
+    ]
+    .into_iter()
+    .filter_map(|s| HeaderValue::from_str(&s).ok())
+    .collect();
+
+    tower_http::cors::CorsLayer::new()
+        .allow_origin(origins)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+            // `bypass-tunnel-reminder` is set by the SPA for loca.lt tunnels.
+            axum::http::HeaderName::from_static("bypass-tunnel-reminder"),
+        ])
 }

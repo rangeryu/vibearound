@@ -743,14 +743,32 @@ impl ChannelBridgeHandler {
 #[async_trait::async_trait(?Send)]
 impl BridgeClientHandler for ChannelBridgeHandler {
     async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
-        eprintln!(
-            "[ChannelBridgeHandler] session_notification route={} session={}",
-            self.route, args.session_id
-        );
-
         // Cache available_commands_update in the pod for later query
         let payload = serde_json::to_value(&args)
             .map_err(|e| acp::Error::new(-32603, format!("serialize: {}", e)))?;
+
+        // Log the update variant so we can tell whether an agent is
+        // emitting real assistant text or only tool/thinking chunks.
+        // Claude Agent v0.25.x sometimes end-turns after only tool_call
+        // updates and never yields a user-visible message; this log
+        // surfaces that case immediately.
+        let update_kind = payload
+            .get("update")
+            .and_then(|u| u.get("sessionUpdate"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("<none>");
+        let preview = payload
+            .get("update")
+            .and_then(|u| u.get("content"))
+            .and_then(|c| c.get("text"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.chars().take(60).collect::<String>())
+            .unwrap_or_default();
+        eprintln!(
+            "[ChannelBridgeHandler] session_notification route={} session={} kind={} preview={:?}",
+            self.route, args.session_id, update_kind, preview
+        );
+
         if let Some(update) = payload.get("update") {
             if update.get("sessionUpdate").and_then(|v| v.as_str()) == Some("available_commands_update") {
                 if let Some(commands) = update.get("availableCommands") {

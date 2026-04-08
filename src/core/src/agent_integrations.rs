@@ -20,7 +20,31 @@ use crate::{config, resources};
 /// - Disabled agents: remove MCP config + skills.
 pub fn sync_integrations(settings: &serde_json::Value) {
     let port = config::DEFAULT_PORT;
-    let mcp_url = format!("http://127.0.0.1:{}/mcp", port);
+    // The /mcp endpoint is bearer-gated by the web server auth middleware
+    // (see server/src/web_server/auth.rs). Coding agents (Claude Code,
+    // Gemini, Codex, Cursor, Kiro, Qwen) drive MCP over plain HTTP and
+    // rarely support attaching Authorization headers uniformly from a
+    // config file — particularly Codex which reads TOML. The middleware
+    // already accepts the same token via `?token=<hex>` (same path that
+    // the SPA and WebSocket clients use), so we bake it into the URL we
+    // write into each agent's config. The token rotates on every daemon
+    // start, so `sync_integrations` runs on every startup and rewrites
+    // all configs with the fresh value. `auth.json` is 0600 on disk and
+    // the config files inherit the same mode when we control writes, so
+    // leaking the token via `ps` / loopback-only traffic is acceptable.
+    let mcp_url = match crate::auth::read_token_file() {
+        Some(auth) => format!(
+            "http://127.0.0.1:{}/mcp?token={}",
+            port, auth.token
+        ),
+        None => {
+            eprintln!(
+                "[integrations] auth.json missing — writing MCP config without token; \
+                 coding agents will get 401 until the daemon rewrites it"
+            );
+            format!("http://127.0.0.1:{}/mcp", port)
+        }
+    };
 
     let all_agents = resources::agent_ids();
     let enabled_agents = resolve_enabled_agents(settings, &all_agents);

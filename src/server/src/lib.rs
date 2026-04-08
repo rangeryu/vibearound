@@ -12,6 +12,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 use common::acp_hub::ACPHub;
+use common::auth::{self, AuthToken};
 use common::channel_manager::{handle_channel_input, ChannelManager, WebChannelManager};
 use common::config;
 use common::plugins;
@@ -25,6 +26,9 @@ use common::tunnels;
 pub struct ServerDaemon {
     pub services: Arc<ServiceStatusManager>,
     pub port: u16,
+    /// Per-session auth token, regenerated on every daemon start.
+    /// Exposed so Tauri can append `?token=` when opening the dashboard.
+    pub auth_token: Arc<AuthToken>,
 }
 
 pub struct RunningDaemon {
@@ -62,11 +66,30 @@ impl ServerDaemon {
         Self {
             services: Arc::new(ServiceStatusManager::new(port)),
             port,
+            auth_token: Arc::new(AuthToken::generate()),
         }
     }
 
     pub fn services(&self) -> Arc<ServiceStatusManager> {
         Arc::clone(&self.services)
+    }
+
+    /// Borrow the session auth token. Tauri uses this to open the dashboard
+    /// with a `?token=` query parameter.
+    pub fn auth_token(&self) -> Arc<AuthToken> {
+        Arc::clone(&self.auth_token)
+    }
+
+    /// Write the auth token file to `~/.vibearound/auth.json` so that
+    /// out-of-process consumers (tray, cross-origin desktop-ui) can read
+    /// the current token without an IPC round-trip.
+    ///
+    /// Safe to call before `start_background()` — the file will be
+    /// overwritten there too, but the contents are identical, so the early
+    /// write avoids a race where the desktop-ui queries the token before
+    /// the daemon's start path has finished persisting it.
+    pub fn persist_auth_token(&self) -> std::io::Result<()> {
+        auth::write_token_file(self.port, &self.auth_token)
     }
 
     pub async fn start_background(&self, dist_path: PathBuf) -> anyhow::Result<RunningDaemon> {
@@ -79,6 +102,16 @@ impl ServerDaemon {
 
         let cfg = config::ensure_loaded();
         let services = Arc::clone(&self.services);
+
+        // Persist the auth token so the Tauri side (tray, desktop-ui) can
+        // read it without a separate IPC channel. Overwrites any stale file
+        // from a previous run — older tokens are invalidated immediately.
+        if let Err(e) = auth::write_token_file(self.port, &self.auth_token) {
+            eprintln!(
+                "[VibeAround][daemon] Failed to write auth token file: {} (the dashboard will reject requests without it)",
+                e
+            );
+        }
 
         // 1. Initialize hub architecture: ACPHub → ChannelManager
         let acp_hub = Arc::new(ACPHub::new());
@@ -159,6 +192,7 @@ impl ServerDaemon {
         let web_services = Arc::clone(&services);
         let web_channel_hub = Arc::clone(&channel_hub);
         let web_channel_manager = Arc::clone(&web_channel);
+        let web_auth_token = Arc::clone(&self.auth_token);
         let web_handle = tokio::spawn(async move {
             run_web_server(
                 common::config::DEFAULT_PORT,
@@ -166,6 +200,7 @@ impl ServerDaemon {
                 web_services,
                 web_channel_hub,
                 web_channel_manager,
+                web_auth_token,
             )
             .await
             .map_err(|e| e.to_string())
