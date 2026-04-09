@@ -96,6 +96,26 @@ impl StdioPluginRuntime {
         // Channel for outbound ChannelOutput → ACP session_notification
         let (output_tx, output_rx) = mpsc::unbounded_channel::<ChannelOutput>();
 
+        // Guardian task — owns the `Child` handle. When this task is aborted
+        // (via `shutdown()` → `abort_handle.abort()`), its future is dropped,
+        // which drops `_child`. Because the command was spawned with
+        // `kill_on_drop(true)`, the node plugin process is killed at that
+        // point. Its stdin/stdout close, `handle_io` inside the bridge thread
+        // returns on EOF, and the bridge thread exits naturally.
+        //
+        // This replaces the previous fake `abort_handle` that pointed at an
+        // unrelated `pending::<()>` future and did nothing on abort, leaving
+        // orphaned plugin processes after a daemon restart.
+        let guardian_channel = channel_kind.clone();
+        let guardian_task = tokio::spawn(async move {
+            let _child = child;
+            // Park forever; abort drops `_child` → kill_on_drop kills node.
+            std::future::pending::<()>().await;
+            // Unreachable, but names the binding so rustc doesn't warn.
+            drop(guardian_channel);
+        });
+        let abort_handle = guardian_task.abort_handle();
+
         // Spawn the ACP bridge on a dedicated thread (requires LocalSet for !Send futures)
         let acp_channel = channel_kind.clone();
         let raw_config = manifest.raw_config.clone();
@@ -107,7 +127,6 @@ impl StdioPluginRuntime {
                     .build()
                     .expect("Failed to build plugin runtime");
                 runtime.block_on(async move {
-                    let _child = child; // keep process alive
                     run_acp_plugin_bridge(
                         acp_channel,
                         raw_config,
@@ -126,7 +145,7 @@ impl StdioPluginRuntime {
         Ok(Self {
             channel_kind,
             output_tx,
-            abort_handle: tokio::task::spawn(std::future::pending::<()>()).abort_handle(),
+            abort_handle,
         })
     }
 
@@ -179,17 +198,10 @@ async fn run_acp_plugin_bridge(
                 },
             );
 
-            // Spawn IO handler
-            let io_channel = channel_kind.clone();
-            tokio::task::spawn_local(async move {
-                if let Err(error) = handle_io.await {
-                    eprintln!("[{}] ACP plugin IO terminated: {}", io_channel, error);
-                }
-            });
-
-            // Forward ChannelOutput → ACP Client methods
+            // Forward ChannelOutput → ACP Client methods.
+            // Spawn so it runs concurrently with handle_io below.
             let fwd_channel = channel_kind.clone();
-            tokio::task::spawn_local(async move {
+            let forwarder = tokio::task::spawn_local(async move {
                 eprintln!("[{}] output forwarder started", fwd_channel);
                 while let Some(output) = output_rx.recv().await {
                     forward_output_to_plugin(&conn, &fwd_channel, output).await;
@@ -197,8 +209,14 @@ async fn run_acp_plugin_bridge(
                 eprintln!("[{}] output forwarder ended", fwd_channel);
             });
 
-            // Keep alive until connection closes
-            std::future::pending::<()>().await;
+            // Drive ACP IO on this task. When the child plugin process dies
+            // its stdin/stdout close, `handle_io` returns, and the LocalSet
+            // exits — letting the block_on runtime drop, the std::thread
+            // exit, and the bridge thread's resources release cleanly.
+            if let Err(error) = handle_io.await {
+                eprintln!("[{}] ACP plugin IO terminated: {}", channel_kind, error);
+            }
+            forwarder.abort();
         })
         .await;
 }
