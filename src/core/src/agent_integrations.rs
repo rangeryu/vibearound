@@ -448,20 +448,42 @@ fn uninstall_mcp_config_toml(
 // Private — skill file install/uninstall
 // ---------------------------------------------------------------------------
 
-/// Per-agent skill content, embedded at compile time.
-fn agent_skill_content(agent: &str) -> &'static str {
+/// All skills to deploy, per agent. Returns (skill_name, content) pairs.
+/// `skill_name` is used to derive both the target directory and filename.
+fn agent_skills(agent: &str) -> Vec<(&'static str, &'static str)> {
     match agent {
-        "claude" => include_str!("../../skills/claude/vibearound/SKILL.md"),
-        "gemini" => include_str!("../../skills/gemini/vibearound/SKILL.md"),
-        "codex" => include_str!("../../skills/codex/vibearound/SKILL.md"),
-        "cursor" => include_str!("../../skills/cursor/vibearound/SKILL.md"),
-        "kiro" => include_str!("../../skills/kiro/vibearound/SKILL.md"),
-        "qwen-code" => include_str!("../../skills/qwen-code/vibearound/SKILL.md"),
-        _ => include_str!("../../skills/vibearound/SKILL.md"),
+        "claude" => vec![
+            ("vibearound", include_str!("../../skills/claude/vibearound/SKILL.md")),
+            ("va-preview", include_str!("../../skills/claude/va-preview/SKILL.md")),
+        ],
+        "gemini" => vec![
+            ("vibearound", include_str!("../../skills/gemini/vibearound/SKILL.md")),
+            ("va-preview", include_str!("../../skills/gemini/va-preview/SKILL.md")),
+        ],
+        "codex" => vec![
+            ("vibearound", include_str!("../../skills/codex/vibearound/SKILL.md")),
+            ("va-preview", include_str!("../../skills/codex/va-preview/SKILL.md")),
+        ],
+        "cursor" => vec![
+            ("vibearound", include_str!("../../skills/cursor/vibearound/SKILL.md")),
+            ("va-preview", include_str!("../../skills/cursor/va-preview/SKILL.md")),
+        ],
+        "kiro" => vec![
+            ("vibearound", include_str!("../../skills/kiro/vibearound/SKILL.md")),
+            ("va-preview", include_str!("../../skills/kiro/va-preview/SKILL.md")),
+        ],
+        "qwen-code" => vec![
+            ("vibearound", include_str!("../../skills/qwen-code/vibearound/SKILL.md")),
+            ("va-preview", include_str!("../../skills/qwen-code/va-preview/SKILL.md")),
+        ],
+        _ => vec![
+            ("vibearound", include_str!("../../skills/vibearound/SKILL.md")),
+            ("va-preview", include_str!("../../skills/va-preview/SKILL.md")),
+        ],
     }
 }
 
-/// Install the vibearound skill file for a given agent.
+/// Install all skill files for a given agent.
 fn install_skill(agent: &str) -> anyhow::Result<()> {
     let agent_def = match resources::agent_by_id(agent) {
         Some(def) => def,
@@ -477,26 +499,53 @@ fn install_skill(agent: &str) -> anyhow::Result<()> {
     };
 
     let home = home_dir()?;
-    let skill_dir = home.join(skill_dir_rel);
-    let filename = global_config.skill_filename.as_deref().unwrap_or("SKILL.md");
-    let target = skill_dir.join(filename);
+    let primary_skill_dir = home.join(skill_dir_rel);
 
-    // Always replace (full replace on every startup)
-    let _ = std::fs::create_dir_all(&skill_dir);
-    std::fs::write(&target, agent_skill_content(agent))
-        .with_context(|| format!("Write {:?}", target))?;
+    // Derive the parent directory for skill deployment.
+    // e.g. ".claude/skills/vibearound" → ".claude/skills"
+    // For agents with skill_filename (shared dirs like .cursor/rules/),
+    // the skill_dir IS the parent.
+    let has_skill_filename = global_config.skill_filename.is_some();
+    let skill_base = if has_skill_filename {
+        primary_skill_dir.clone()
+    } else {
+        primary_skill_dir
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or(primary_skill_dir.clone())
+    };
 
-    eprintln!(
-        "[integrations] Installed {} skill at {:?}",
-        agent, target
-    );
+    for (skill_name, content) in agent_skills(agent) {
+        if has_skill_filename {
+            // Shared directory (e.g. .cursor/rules/) — use skill-specific filename
+            let ext = global_config
+                .skill_filename
+                .as_deref()
+                .and_then(|f| f.rsplit('.').next())
+                .unwrap_or("md");
+            let filename = format!("{}.{}", skill_name, ext);
+            let target = skill_base.join(&filename);
+            let _ = std::fs::create_dir_all(&skill_base);
+            std::fs::write(&target, content)
+                .with_context(|| format!("Write {:?}", target))?;
+            eprintln!("[integrations] Installed {}/{} skill at {:?}", agent, skill_name, target);
+        } else {
+            // Dedicated directory per skill (e.g. .claude/skills/vibearound/)
+            let skill_dir = skill_base.join(skill_name);
+            let target = skill_dir.join("SKILL.md");
+            let _ = std::fs::create_dir_all(&skill_dir);
+            std::fs::write(&target, content)
+                .with_context(|| format!("Write {:?}", target))?;
+            eprintln!("[integrations] Installed {}/{} skill at {:?}", agent, skill_name, target);
+        }
+    }
     Ok(())
 }
 
-/// Remove the vibearound skill for a given agent.
-/// If `skill_filename` is set, removes only the specific file (shared directories
+/// Remove all skill files for a given agent.
+/// If `skill_filename` is set, removes only skill-specific files (shared directories
 /// like `.cursor/rules/` may contain other user files).
-/// Otherwise, removes the entire skill directory.
+/// Otherwise, removes each skill's dedicated directory.
 fn uninstall_skill(agent: &str) -> anyhow::Result<()> {
     let agent_def = match resources::agent_by_id(agent) {
         Some(def) => def,
@@ -512,20 +561,36 @@ fn uninstall_skill(agent: &str) -> anyhow::Result<()> {
     };
 
     let home = home_dir()?;
-    let skill_dir = home.join(skill_dir_rel);
-
-    if let Some(filename) = &global_config.skill_filename {
-        // Remove only the specific file (shared directory like .cursor/rules/)
-        let target = skill_dir.join(filename);
-        if target.exists() {
-            let _ = std::fs::remove_file(&target);
-            eprintln!("[integrations] Removed {} skill at {:?}", agent, target);
-        }
+    let primary_skill_dir = home.join(skill_dir_rel);
+    let has_skill_filename = global_config.skill_filename.is_some();
+    let skill_base = if has_skill_filename {
+        primary_skill_dir.clone()
     } else {
-        // Remove the entire dedicated skill directory (e.g. .claude/skills/vibearound/)
-        if skill_dir.exists() {
-            let _ = std::fs::remove_dir_all(&skill_dir);
-            eprintln!("[integrations] Removed {} skill at {:?}", agent, skill_dir);
+        primary_skill_dir
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or(primary_skill_dir.clone())
+    };
+
+    for (skill_name, _) in agent_skills(agent) {
+        if has_skill_filename {
+            let ext = global_config
+                .skill_filename
+                .as_deref()
+                .and_then(|f| f.rsplit('.').next())
+                .unwrap_or("md");
+            let filename = format!("{}.{}", skill_name, ext);
+            let target = skill_base.join(&filename);
+            if target.exists() {
+                let _ = std::fs::remove_file(&target);
+                eprintln!("[integrations] Removed {}/{} skill at {:?}", agent, skill_name, target);
+            }
+        } else {
+            let skill_dir = skill_base.join(skill_name);
+            if skill_dir.exists() {
+                let _ = std::fs::remove_dir_all(&skill_dir);
+                eprintln!("[integrations] Removed {}/{} skill at {:?}", agent, skill_name, skill_dir);
+            }
         }
     }
     Ok(())

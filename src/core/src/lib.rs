@@ -10,6 +10,7 @@ pub mod child_registry;
 pub mod config;
 pub mod env;
 pub mod pickup_codes;
+pub mod preview_entries;
 pub mod plugins;
 pub mod pty;
 pub mod resources;

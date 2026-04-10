@@ -110,6 +110,7 @@ async fn mcp_tools_call(
     match tool_name {
         "prepare_handover" => mcp_prepare_handover(id, arguments).await,
         "register_workspace" => mcp_register_workspace(id, arguments).await,
+        "preview_start" => mcp_preview_start(id, arguments, state).await,
         "dispatch_task" => mcp_dispatch_task(id, arguments, state).await,
         _ => jsonrpc_err(id, -32602, &format!("Unknown tool: {}", tool_name)),
     }
@@ -246,6 +247,74 @@ async fn mcp_register_workspace(
     mcp_text(id, &format!(
         "Workspace {} registered successfully.",
         cwd
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// preview_start — register a live preview for a running local server
+// ---------------------------------------------------------------------------
+
+async fn mcp_preview_start(
+    id: Option<serde_json::Value>,
+    arguments: &serde_json::Value,
+    state: &AppState,
+) -> Json<serde_json::Value> {
+    let port = match arguments.get("port").and_then(|v| v.as_u64()) {
+        Some(p) if p > 0 && p <= 65535 => p as u16,
+        _ => return jsonrpc_err(id, -32602, "Missing or invalid required argument: port (1-65535)"),
+    };
+    let cwd = match arguments.get("cwd").and_then(|v| v.as_str()) {
+        Some(c) => c,
+        None => return jsonrpc_err(id, -32602, "Missing required argument: cwd"),
+    };
+
+    // Validate cwd is a known workspace (same logic as prepare_handover).
+    let config = common::config::ensure_loaded();
+    let cwd_path = std::path::PathBuf::from(cwd);
+    let builtin_dir = common::config::builtin_workspaces_dir();
+    let is_builtin = cwd_path.starts_with(&builtin_dir);
+    let is_registered = config
+        .all_workspaces()
+        .iter()
+        .any(|ws| ws == &cwd_path);
+
+    if !is_builtin && !is_registered {
+        return mcp_error_text(id, &format!(
+            "Workspace {} is not registered in VibeAround.\n\
+             Use the `register_workspace` tool to add it first, then retry.",
+            cwd
+        ));
+    }
+
+    // Title: use provided value, or derive from workspace directory name.
+    let title = arguments
+        .get("title")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| {
+            cwd_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Preview")
+                .to_string()
+        });
+
+    let slug = common::preview_entries::store(port, cwd_path, title);
+
+    // Build the full preview URL using the tunnel URL if available.
+    let base_url = state
+        .services
+        .get_tunnel_url()
+        .unwrap_or_else(|| format!("http://127.0.0.1:{}", state.services.port));
+
+    let preview_url = format!("{}/preview/{}", base_url.trim_end_matches('/'), slug);
+
+    mcp_text(id, &format!(
+        "Preview ready.\n\n\
+         URL: {}\n\n\
+         The link expires in 5 minutes. Share it with the user so they can see the live preview.",
+        preview_url
     ))
 }
 
