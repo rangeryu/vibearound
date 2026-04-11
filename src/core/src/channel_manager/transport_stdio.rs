@@ -273,29 +273,36 @@ async fn forward_output_to_plugin(
                 channel_kind,
                 "channel/system_text",
                 &serde_json::json!({
-                    "channelId": format!("{}:{}", channel_kind, route.chat_id),
+                    "chatId": route.chat_id,
                     "text": text,
                 }),
             )
             .await;
         }
         ChannelOutput::AgentReady {
-            agent, version, ..
+            route, agent, version, ..
         } => {
             send_ext_notification(
                 conn,
                 channel_kind,
                 "channel/agent_ready",
-                &serde_json::json!({ "agent": agent, "version": version }),
+                &serde_json::json!({
+                    "chatId": route.chat_id,
+                    "agent": agent,
+                    "version": version,
+                }),
             )
             .await;
         }
-        ChannelOutput::SessionReady { session_id, .. } => {
+        ChannelOutput::SessionReady { route, session_id, .. } => {
             send_ext_notification(
                 conn,
                 channel_kind,
                 "channel/session_ready",
-                &serde_json::json!({ "sessionId": session_id }),
+                &serde_json::json!({
+                    "chatId": route.chat_id,
+                    "sessionId": session_id,
+                }),
             )
             .await;
         }
@@ -442,13 +449,16 @@ impl acp::Agent for PluginAgentHandler {
 
         match method.as_str() {
             "channel/callback" => {
-                let channel_id = params_obj
-                    .get("channelId")
+                // Accept both chatId (new) and channelId (legacy, "kind:chatId") for compat.
+                let chat_id = params_obj
+                    .get("chatId")
                     .and_then(|v| v.as_str())
+                    .or_else(|| {
+                        params_obj.get("channelId").and_then(|v| v.as_str()).map(|cid| {
+                            cid.strip_prefix(&format!("{}:", self.channel_kind)).unwrap_or(cid)
+                        })
+                    })
                     .unwrap_or("");
-                let chat_id = channel_id
-                    .strip_prefix(&format!("{}:", self.channel_kind))
-                    .unwrap_or(channel_id);
                 let route = RouteKey::new(&self.channel_kind, chat_id);
                 let action_value = params_obj
                     .get("data")
@@ -490,6 +500,21 @@ impl acp::Agent for PluginAgentHandler {
                     .and_then(|v| v.as_str())
                     .map(String::from);
                 let _ = self.input_tx.send(ChannelInput::Close { route, reason });
+            }
+            "channel/bot_identity" => {
+                let bot_id = params_obj
+                    .get("botId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let bot_name = params_obj
+                    .get("botName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                eprintln!(
+                    "[{}] bot_identity: id={} name={}",
+                    self.channel_kind, bot_id, bot_name
+                );
+                // TODO: store bot_id on the plugin runtime so RouteKey can use it
             }
             other => {
                 eprintln!(
