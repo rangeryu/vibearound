@@ -122,6 +122,11 @@ pub enum ChannelOutput {
         route: RouteKey,
         session_id: String,
     },
+    CommandMenu {
+        route: RouteKey,
+        system_commands: serde_json::Value,
+        agent_commands: serde_json::Value,
+    },
 }
 
 impl ChannelOutput {
@@ -130,7 +135,8 @@ impl ChannelOutput {
             Self::RawAcp { route, .. }
             | Self::SystemText { route, .. }
             | Self::AgentReady { route, .. }
-            | Self::SessionReady { route, .. } => route,
+            | Self::SessionReady { route, .. }
+            | Self::CommandMenu { route, .. } => route,
         }
     }
 }
@@ -554,9 +560,16 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::ListAgentCommands => {
-                let commands = acp_hub.list_agent_commands(&route).await;
-                let text = format_agent_commands(&commands);
-                send_system_text(plugin_host, &route, &text).await;
+                let agent_commands = acp_hub.list_agent_commands(&route).await;
+                let system_commands = serde_json::to_value(&crate::resources::COMMANDS.system_commands)
+                    .unwrap_or(serde_json::json!([]));
+                plugin_host
+                    .send_output(ChannelOutput::CommandMenu {
+                        route: route.clone(),
+                        system_commands,
+                        agent_commands,
+                    })
+                    .await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::PickupCode(code) => {
@@ -685,39 +698,6 @@ async fn send_system_text(plugin_host: &Arc<PluginHost>, route: &RouteKey, text:
             reply_to: None,
         })
         .await;
-}
-
-/// Format help text: always show system commands, optionally show agent commands.
-fn format_agent_commands(commands: &serde_json::Value) -> String {
-    let mut lines = vec!["System commands:".to_string()];
-    lines.push(crate::resources::format_system_commands_help());
-
-    let has_agent_commands = commands
-        .as_array()
-        .map(|arr| !arr.is_empty())
-        .unwrap_or(false);
-
-    if has_agent_commands {
-        lines.push(String::new());
-        lines.push("Agent commands (use /agent <command>):".to_string());
-        for cmd in commands.as_array().unwrap() {
-            let name = cmd.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-            let desc = cmd.get("description").and_then(|v| v.as_str()).unwrap_or("");
-            // Truncate long descriptions (char-safe)
-            let short_desc = if desc.chars().count() > 80 {
-                let truncated: String = desc.chars().take(77).collect();
-                format!("{}...", truncated)
-            } else {
-                desc.to_string()
-            };
-            lines.push(format!("  /{} — {}", name, short_desc));
-        }
-    } else {
-        lines.push(String::new());
-        lines.push("Agent commands will appear after sending your first message.".to_string());
-    }
-
-    lines.join("\n")
 }
 
 struct ChannelBridgeHandler {
