@@ -184,6 +184,15 @@ fn output_to_client_json(output: ChannelOutput, verbose: &common::config::ImVerb
                 "sessionId": session_id,
             })
         }
+        ChannelOutput::CommandMenu {
+            system_commands, agent_commands, ..
+        } => {
+            serde_json::json!({
+                "kind": "command_menu",
+                "systemCommands": system_commands,
+                "agentCommands": agent_commands,
+            })
+        }
     }
 }
 

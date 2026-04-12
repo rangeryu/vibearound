@@ -271,31 +271,51 @@ async fn forward_output_to_plugin(
             send_ext_notification(
                 conn,
                 channel_kind,
-                "channel/system_text",
+                "va/system_text",
                 &serde_json::json!({
-                    "channelId": format!("{}:{}", channel_kind, route.chat_id),
+                    "chatId": route.chat_id,
                     "text": text,
                 }),
             )
             .await;
         }
         ChannelOutput::AgentReady {
-            agent, version, ..
+            route, agent, version, ..
         } => {
             send_ext_notification(
                 conn,
                 channel_kind,
-                "channel/agent_ready",
-                &serde_json::json!({ "agent": agent, "version": version }),
+                "va/agent_ready",
+                &serde_json::json!({
+                    "chatId": route.chat_id,
+                    "agent": agent,
+                    "version": version,
+                }),
             )
             .await;
         }
-        ChannelOutput::SessionReady { session_id, .. } => {
+        ChannelOutput::SessionReady { route, session_id, .. } => {
             send_ext_notification(
                 conn,
                 channel_kind,
-                "channel/session_ready",
-                &serde_json::json!({ "sessionId": session_id }),
+                "va/session_ready",
+                &serde_json::json!({
+                    "chatId": route.chat_id,
+                    "sessionId": session_id,
+                }),
+            )
+            .await;
+        }
+        ChannelOutput::CommandMenu { route, system_commands, agent_commands } => {
+            send_ext_notification(
+                conn,
+                channel_kind,
+                "va/command_menu",
+                &serde_json::json!({
+                    "chatId": route.chat_id,
+                    "systemCommands": system_commands,
+                    "agentCommands": agent_commands,
+                }),
             )
             .await;
         }
@@ -334,7 +354,7 @@ async fn send_ext_notification(
 struct PluginAgentHandler {
     channel_kind: String,
     config: serde_json::Value,
-    /// Still used for fire-and-forget operations: cancel, callback, close.
+    /// Still used for fire-and-forget operations: cancel, callback.
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     acp_hub: Arc<ACPHub>,
     plugin_host: Arc<PluginHost>,
@@ -435,20 +455,24 @@ impl acp::Agent for PluginAgentHandler {
     }
 
     async fn ext_notification(&self, args: acp::ExtNotification) -> acp::Result<()> {
+        // Rust ACP SDK already strips the "_" prefix before dispatching here.
         let method = args.method.to_string();
         let params: serde_json::Value = serde_json::from_str(args.params.get())
             .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
         let params_obj = params.as_object().cloned().unwrap_or_default();
 
         match method.as_str() {
-            "channel/callback" => {
-                let channel_id = params_obj
-                    .get("channelId")
+            "va/callback" => {
+                // Accept both chatId (new) and channelId (legacy, "kind:chatId") for compat.
+                let chat_id = params_obj
+                    .get("chatId")
                     .and_then(|v| v.as_str())
+                    .or_else(|| {
+                        params_obj.get("channelId").and_then(|v| v.as_str()).map(|cid| {
+                            cid.strip_prefix(&format!("{}:", self.channel_kind)).unwrap_or(cid)
+                        })
+                    })
                     .unwrap_or("");
-                let chat_id = channel_id
-                    .strip_prefix(&format!("{}:", self.channel_kind))
-                    .unwrap_or(channel_id);
                 let route = RouteKey::new(&self.channel_kind, chat_id);
                 let action_value = params_obj
                     .get("data")
@@ -479,18 +503,6 @@ impl acp::Agent for PluginAgentHandler {
                 };
                 let _ = self.input_tx.send(input);
             }
-            "channel/close" => {
-                let chat_id = params_obj
-                    .get("chatId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let route = RouteKey::new(&self.channel_kind, chat_id);
-                let reason = params_obj
-                    .get("reason")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let _ = self.input_tx.send(ChannelInput::Close { route, reason });
-            }
             other => {
                 eprintln!(
                     "[{}] unhandled ext_notification: {}",
@@ -503,28 +515,7 @@ impl acp::Agent for PluginAgentHandler {
 
     async fn ext_method(&self, args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
         let method = args.method.to_string();
-        let params: serde_json::Value = serde_json::from_str(args.params.get())
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-        match method.as_str() {
-            "channel/list_agent_commands" => {
-                let chat_id = params
-                    .get("chatId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let route = RouteKey::new(&self.channel_kind, chat_id);
-                let commands = self.acp_hub.list_agent_commands(&route).await;
-                let raw = serde_json::value::RawValue::from_string(
-                    serde_json::to_string(&serde_json::json!({ "commands": commands }))
-                        .unwrap_or_default(),
-                )
-                .map_err(|e| acp::Error::new(-32603, format!("serialize: {}", e)))?;
-                Ok(acp::ExtResponse::new(Arc::from(raw)))
-            }
-            other => {
-                eprintln!("[{}] unhandled ext_method: {}", self.channel_kind, other);
-                Err(acp::Error::method_not_found())
-            }
-        }
+        eprintln!("[{}] unhandled ext_method: {}", self.channel_kind, method);
+        Err(acp::Error::method_not_found())
     }
 }

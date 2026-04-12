@@ -4,8 +4,9 @@
     { "name": "switch", "args": "<agent>", "description": "Switch agent (claude, gemini, codex, opencode, cursor, kiro, qwen-code)" },
     { "name": "profile", "args": "<profile>", "description": "Switch profile" },
     { "name": "close", "description": "Close conversation" },
+    { "name": "agent", "description": "Show agent commands" },
     { "name": "pickup", "args": "<session_id> <cwd>", "description": "Resume a coding agent session here" },
     { "name": "handover", "description": "Export session to a coding agent CLI" },
-    { "name": "help", "aliases": ["commands", "list_agent_commands"], "description": "Show this list" }
+    { "name": "help", "description": "Show this list" }
   ]
 }
