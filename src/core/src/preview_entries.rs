@@ -12,7 +12,7 @@
 //! - `share_key`       — ephemeral random token with 10-min TTL. Regenerated
 //!                       once the previous key expires.
 //!
-//! URL structure (all routes under `/_va_/`):
+//! URL structure (all routes under `/va/`):
 //!
 //! - Owner: `/preview/u/{slug}`        — permanent for the daemon lifetime
 //! - Share: `/preview/s/{share_key}`   — 10-minute rotating token

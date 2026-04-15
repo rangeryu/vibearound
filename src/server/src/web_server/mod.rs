@@ -107,7 +107,7 @@ pub async fn run_web_server(
         .map_err(|e| format!("Failed to resolve web dist path: {}", e))?;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     println!(
-        "[VibeAround] Web dashboard: http://127.0.0.1:{}/_va_/, serving from {:?}",
+        "[VibeAround] Web dashboard: http://127.0.0.1:{}/va/, serving from {:?}",
         port, web_dist
     );
 
@@ -191,13 +191,13 @@ pub async fn run_web_server(
         .nest_service("/assets", ServeDir::new(assets_dir))
         .fallback(any(spa_fallback_handler));
 
-    // ALL VibeAround routes live under `/_va_/` — the root `/` namespace is
+    // ALL VibeAround routes live under `/va/` — the root `/` namespace is
     // reserved exclusively for the cookie-based dev-server preview proxy.
     let dashboard = Router::new().merge(protected).merge(public);
 
     let app = Router::new()
-        .nest("/_va_", dashboard)
-        // Root fallback: cookie → proxy to dev server, else → /_va_/.
+        .nest("/va", dashboard)
+        // Root fallback: cookie → proxy to dev server, else → /va/.
         .fallback(any(preview::cookie_proxy_fallback))
         .with_state(state)
         .layer(build_cors_layer(port));

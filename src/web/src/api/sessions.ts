@@ -2,9 +2,9 @@
  * Sessions API: list, create, delete. Base URL follows current page (works with tunnel).
  */
 
-/** All dashboard routes live under /_va_/ to keep the root namespace free for
+/** All dashboard routes live under /va/ to keep the root namespace free for
  *  cookie-based dev-server preview proxying. */
-const VA_PREFIX = "/_va_";
+const VA_PREFIX = "/va";
 
 function getBaseUrl(): string {
   if (typeof window === "undefined") return `http://127.0.0.1:12358${VA_PREFIX}`;

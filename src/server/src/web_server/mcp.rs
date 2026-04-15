@@ -405,13 +405,13 @@ fn derive_title(arguments: &serde_json::Value, cwd_path: &std::path::Path) -> St
 }
 
 /// Build a full preview URL from the tunnel (or localhost fallback).
-/// All preview routes live under `/_va_/` to avoid conflicts with dev servers.
+/// All preview routes live under `/va/` to avoid conflicts with dev servers.
 fn build_preview_url(state: &AppState, route: &str, slug: &str) -> String {
     let base = state
         .services
         .get_tunnel_url()
         .unwrap_or_else(|| format!("http://127.0.0.1:{}", state.services.port));
-    format!("{}/_va_/{}/{}", base.trim_end_matches('/'), route, slug)
+    format!("{}/va/{}/{}", base.trim_end_matches('/'), route, slug)
 }
 
 // ---------------------------------------------------------------------------

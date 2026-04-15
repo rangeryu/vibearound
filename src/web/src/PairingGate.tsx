@@ -45,7 +45,7 @@ export function PairingGate() {
     setRemaining(CODE_TTL_SECS);
 
     try {
-      const res = await fetch("/_va_/api/pair/start", { method: "POST" });
+      const res = await fetch("/va/api/pair/start", { method: "POST" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setCode(data.code);
@@ -66,7 +66,7 @@ export function PairingGate() {
       // Start polling for verification
       pollRef.current = setInterval(async () => {
         try {
-          const r = await fetch(`/_va_/api/pair/status?sid=${encodeURIComponent(data.sid)}`);
+          const r = await fetch(`/va/api/pair/status?sid=${encodeURIComponent(data.sid)}`);
           if (!r.ok) return;
           const d = await r.json();
           if (d.status === "verified") {

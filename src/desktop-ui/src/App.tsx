@@ -292,7 +292,7 @@ function Dashboard() {
               type="button"
               onClick={(e) => {
                 e.preventDefault();
-                void openDashboardUrl(`http://127.0.0.1:${data.server.port}/_va_/`);
+                void openDashboardUrl(`http://127.0.0.1:${data.server.port}/va/`);
               }}
               className="text-xs text-primary hover:underline flex items-center gap-1"
             >

@@ -8,9 +8,9 @@
  */
 import { getAuthToken } from "./auth";
 
-/** All dashboard routes live under /_va_/ to keep the root namespace free for
+/** All dashboard routes live under /va/ to keep the root namespace free for
  *  cookie-based dev-server preview proxying. */
-const VA_PREFIX = "/_va_";
+const VA_PREFIX = "/va";
 
 export function getWebSocketUrl(path: string): string {
   const base =

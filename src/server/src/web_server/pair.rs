@@ -1,7 +1,7 @@
 //! Browser pairing API endpoints.
 //!
-//! - POST /_va_/api/pair/start  — generate a 6-digit code + session ID
-//! - GET  /_va_/api/pair/status — poll for verification + receive auth token
+//! - POST /va/api/pair/start  — generate a 6-digit code + session ID
+//! - GET  /va/api/pair/status — poll for verification + receive auth token
 
 use axum::{
     extract::Query,
@@ -11,7 +11,7 @@ use axum::{
 };
 use axum::body::Body;
 
-/// POST /_va_/api/pair/start — generate a pairing code.
+/// POST /va/api/pair/start — generate a pairing code.
 ///
 /// Returns `{ "code": "847291", "sid": "uuid" }`.
 /// The code expires in 1 minute.
@@ -31,7 +31,7 @@ pub struct StatusQuery {
 /// Cookie name for the authenticated owner session.
 const OWNER_COOKIE: &str = "va_owner";
 
-/// GET /_va_/api/pair/status?sid={sid} — poll for pairing status.
+/// GET /va/api/pair/status?sid={sid} — poll for pairing status.
 ///
 /// Returns:
 /// - `{ "status": "pending" }` — waiting for `/pair` command
@@ -52,7 +52,7 @@ pub async fn status_handler(Query(q): Query<StatusQuery>) -> Response {
             match common::auth::pair::consume_verified(&q.sid) {
                 Some(token) => {
                     let cookie = format!(
-                        "{}={}; Path=/_va_/; HttpOnly; SameSite=Lax",
+                        "{}={}; Path=/va/; HttpOnly; SameSite=Lax",
                         OWNER_COOKIE, token
                     );
                     // Return the token in the body so the SPA can store it in
