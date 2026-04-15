@@ -39,19 +39,45 @@ const OWNER_COOKIE: &str = "va_owner";
 ///
 /// Dispatches by session target: Server → iframe + cookie proxy,
 /// File → rendered markdown. If the cookie is missing or invalid,
-/// redirects to `/va/` which shows the pairing gate.
+/// redirects to `/va/?next=<original-url>` so the pairing gate can
+/// send the user back to their intended destination.
 pub async fn owner_preview_handler(
     Path(slug): Path<String>,
     req: Request,
 ) -> Result<Response, (StatusCode, String)> {
     if !owner_cookie_valid(&req) {
+        // `req.uri().path_and_query()` sees the path AFTER the `/va` nest
+        // prefix has been stripped by axum, so prepend `/va` to rebuild the
+        // absolute URL the browser should land on after pairing.
+        let inner = req
+            .uri()
+            .path_and_query()
+            .map(|pq| pq.as_str().to_string())
+            .unwrap_or_else(|| format!("/preview/u/{}", slug));
+        let next = format!("/va{}", inner);
+        let location = format!("/va/?next={}", url_encode_query(&next));
         return Ok(Response::builder()
             .status(StatusCode::FOUND)
-            .header("Location", "/va/")
+            .header("Location", location)
             .body(Body::empty())
             .unwrap());
     }
     render_preview(&slug).await
+}
+
+/// Minimal percent-encoder for query-string values: encodes anything
+/// outside the unreserved set so the URL stays well-formed.
+fn url_encode_query(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
 }
 
 /// GET /preview/s/{slug} — share preview. Slug itself is the auth.

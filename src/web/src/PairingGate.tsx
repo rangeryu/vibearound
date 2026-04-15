@@ -14,6 +14,15 @@ const STORAGE_KEY = "vibearound.auth.token";
 const POLL_INTERVAL_MS = 2000;
 const CODE_TTL_SECS = 60;
 
+/**
+ * Only allow same-origin redirects after pairing. Anything else (absolute
+ * URL, protocol-relative, or scheme like `javascript:`) is rejected to
+ * prevent open-redirect / phishing.
+ */
+function isSafeNext(next: string): boolean {
+  return next.startsWith("/") && !next.startsWith("//");
+}
+
 type PairStatus = "loading" | "pending" | "expired" | "verified";
 
 export function PairingGate() {
@@ -77,7 +86,14 @@ export function PairingGate() {
             if (d.token) {
               window.sessionStorage.setItem(STORAGE_KEY, d.token);
             }
-            setTimeout(() => window.location.reload(), 500);
+            // Honor ?next=<url> from the gate URL so the user lands on
+            // the page they originally tried to open. Default to dashboard.
+            const params = new URLSearchParams(window.location.search);
+            const nextRaw = params.get("next");
+            const next = nextRaw && isSafeNext(nextRaw) ? nextRaw : "/va/";
+            setTimeout(() => {
+              window.location.replace(next);
+            }, 500);
           } else if (d.status === "expired") {
             stopPolling();
             setStatus("expired");
