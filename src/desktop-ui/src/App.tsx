@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen,
+  Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen, Eye,
 } from "lucide-react";
 import { useServices, type ServiceInfo } from "./hooks/useServices";
 import { openDashboardUrl } from "./lib/api";
 import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Workspaces } from "./Workspaces";
+import { Previews } from "./Previews";
 
 function formatUptime(secs: number): string {
   if (secs < 60) return `${secs}s`;
@@ -95,7 +96,7 @@ function App() {
   return <Dashboard />;
 }
 
-type DashboardPage = "services" | "workspaces";
+type DashboardPage = "services" | "workspaces" | "previews";
 
 function Dashboard() {
   const [page, setPage] = useState<DashboardPage>("services");
@@ -170,6 +171,15 @@ function Dashboard() {
             <FolderOpen className="w-3 h-3" />
             Workspaces
           </button>
+          <button
+            onClick={() => setPage("previews")}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
+              page === "previews" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Eye className="w-3 h-3" />
+            Previews
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -212,6 +222,10 @@ function Dashboard() {
       {page === "workspaces" ? (
         <div className="flex-1 overflow-y-auto">
           <Workspaces />
+        </div>
+      ) : page === "previews" ? (
+        <div className="flex-1 overflow-y-auto">
+          <Previews />
         </div>
       ) : (
       <div className="flex-1 overflow-y-auto p-4 space-y-3">

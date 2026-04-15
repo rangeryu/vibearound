@@ -248,6 +248,112 @@ fn entry_from(session: &PreviewSession, expires_at: Instant) -> PreviewEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Listing + removal
+// ---------------------------------------------------------------------------
+
+/// Serializable snapshot of a session for API responses.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PreviewSnapshot {
+    pub slug: String,
+    pub id: PathBuf,
+    pub workspace: PathBuf,
+    pub title: String,
+    /// Kind tag + port (for Server previews).
+    pub kind: &'static str,
+    pub port: Option<u16>,
+    pub share_key: Option<String>,
+    /// Unix millis; `null` for owner-only sessions (no share key generated).
+    pub share_expires_at_ms: Option<u64>,
+    pub created_at_ms: u64,
+}
+
+/// Snapshot every live session for UI display.
+pub fn list_snapshots() -> Vec<PreviewSnapshot> {
+    let sessions = SESSIONS.lock();
+    let now_inst = Instant::now();
+    let now_sys = std::time::SystemTime::now();
+
+    sessions
+        .values()
+        .map(|s| {
+            let (kind, port) = match s.target {
+                PreviewTarget::Server { port } => ("server", Some(port)),
+                PreviewTarget::File => ("file", None),
+            };
+            let share_expires_at_ms = match (&s.share_key, s.share_expires_at) {
+                (Some(_), Some(exp)) if exp > now_inst => {
+                    Some(instant_to_unix_ms(exp, now_inst, now_sys))
+                }
+                _ => None,
+            };
+            let share_key = match (&s.share_key, s.share_expires_at) {
+                (Some(k), Some(exp)) if exp > now_inst => Some(k.clone()),
+                _ => None,
+            };
+            let created_at_ms = instant_to_unix_ms(s.created_at, now_inst, now_sys);
+            PreviewSnapshot {
+                slug: s.slug.clone(),
+                id: s.id.clone(),
+                workspace: s.workspace.clone(),
+                title: s.title.clone(),
+                kind,
+                port,
+                share_key,
+                share_expires_at_ms,
+                created_at_ms,
+            }
+        })
+        .collect()
+}
+
+/// Convert an `Instant` to unix-epoch milliseconds, using `now` as the pivot.
+fn instant_to_unix_ms(
+    point: Instant,
+    now_inst: Instant,
+    now_sys: std::time::SystemTime,
+) -> u64 {
+    let unix_now_ms = now_sys
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    if point >= now_inst {
+        unix_now_ms + (point - now_inst).as_millis() as u64
+    } else {
+        unix_now_ms.saturating_sub((now_inst - point).as_millis() as u64)
+    }
+}
+
+/// Close a single preview session: if it's a Server target, SIGKILL the
+/// process currently listening on its port (via `lsof` + `sysinfo::kill`).
+/// Then remove the session from the store. Returns `true` when a matching
+/// slug was found and removed.
+pub fn delete_session(slug: &str) -> bool {
+    // Find and remove the matching session.
+    let removed = {
+        let mut sessions = SESSIONS.lock();
+        let key = sessions
+            .iter()
+            .find(|(_, s)| s.slug == slug)
+            .map(|(k, _)| k.clone());
+        match key {
+            Some(k) => sessions.remove(&k),
+            None => None,
+        }
+    };
+
+    let Some(session) = removed else {
+        return false;
+    };
+
+    // Kill the port if Server — best effort.
+    if let PreviewTarget::Server { port } = session.target {
+        kill_port(port);
+    }
+    true
+}
+
+// ---------------------------------------------------------------------------
 // Shutdown — kill tracked dev-server ports
 // ---------------------------------------------------------------------------
 
@@ -266,22 +372,23 @@ pub fn tracked_ports() -> Vec<u16> {
 /// Send SIGKILL to every process listening on a tracked Server port.
 /// Best-effort; failures are logged. Clears the session map.
 pub fn shutdown_kill_all_ports() {
+    let ports = tracked_ports();
+    if !ports.is_empty() {
+        eprintln!(
+            "[preview] shutdown: killing dev servers on ports {:?}",
+            ports
+        );
+        kill_pids_on_ports(&ports);
+    }
+    SESSIONS.lock().clear();
+}
+
+/// SIGKILL every process listening on any of the given ports.
+fn kill_pids_on_ports(ports: &[u16]) {
     use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 
-    let ports = tracked_ports();
-    if ports.is_empty() {
-        SESSIONS.lock().clear();
-        return;
-    }
-    eprintln!(
-        "[preview] shutdown: killing dev servers on ports {:?}",
-        ports
-    );
-
-    let pids = pids_listening_on(&ports);
+    let pids = pids_listening_on(ports);
     if pids.is_empty() {
-        eprintln!("[preview] shutdown: no live processes on tracked ports");
-        SESSIONS.lock().clear();
         return;
     }
 
@@ -293,15 +400,18 @@ pub fn shutdown_kill_all_ports() {
         if let Some(proc_) = sys.process(sysinfo::Pid::from_u32(pid)) {
             let ok = proc_.kill();
             eprintln!(
-                "[preview] shutdown: kill pid={} name={:?} ok={}",
+                "[preview] kill pid={} name={:?} ok={}",
                 pid,
                 proc_.name().to_string_lossy(),
                 ok
             );
         }
     }
+}
 
-    SESSIONS.lock().clear();
+/// Convenience wrapper for a single port.
+fn kill_port(port: u16) {
+    kill_pids_on_ports(&[port]);
 }
 
 #[cfg(unix)]

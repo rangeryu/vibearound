@@ -154,6 +154,8 @@ pub async fn run_web_server(
             "/api/services/{category}/{id}",
             delete(api::kill_service_handler),
         )
+        .route("/api/previews", get(api::list_previews_handler))
+        .route("/api/previews/{slug}", delete(api::delete_preview_handler))
         .route(
             "/api/workspaces",
             get(api::list_workspaces_handler).post(api::add_workspace_handler),
