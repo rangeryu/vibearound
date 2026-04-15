@@ -4,7 +4,7 @@ import path from "path";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  base: "/_va_/",
+  base: "/va/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },

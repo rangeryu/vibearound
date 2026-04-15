@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { Unauthorized } from "./Unauthorized";
+import { PairingGate } from "./PairingGate";
 import { initTheme } from "./lib/theme";
 import { initAuthFromUrl, getAuthToken } from "./lib/auth";
 import "./index.css";
@@ -78,5 +78,5 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit) {
 const hasToken = getAuthToken() !== null;
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>{hasToken ? <App /> : <Unauthorized />}</StrictMode>
+  <StrictMode>{hasToken ? <App /> : <PairingGate />}</StrictMode>
 );

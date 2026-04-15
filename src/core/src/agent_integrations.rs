@@ -34,7 +34,7 @@ pub fn sync_integrations(settings: &serde_json::Value) {
     // leaking the token via `ps` / loopback-only traffic is acceptable.
     let mcp_url = match crate::auth::read_token_file() {
         Some(auth) => format!(
-            "http://127.0.0.1:{}/_va_/mcp?token={}",
+            "http://127.0.0.1:{}/va/mcp?token={}",
             port, auth.token
         ),
         None => {
@@ -42,7 +42,7 @@ pub fn sync_integrations(settings: &serde_json::Value) {
                 "[integrations] auth.json missing — writing MCP config without token; \
                  coding agents will get 401 until the daemon rewrites it"
             );
-            format!("http://127.0.0.1:{}/_va_/mcp", port)
+            format!("http://127.0.0.1:{}/va/mcp", port)
         }
     };
 

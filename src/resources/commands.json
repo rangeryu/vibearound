@@ -5,6 +5,7 @@
     { "name": "profile", "args": "<profile>", "description": "Switch profile" },
     { "name": "close", "description": "Close conversation" },
     { "name": "agent", "description": "Show agent commands" },
+    { "name": "pair", "args": "<code>", "description": "Pair a browser with this VibeAround instance" },
     { "name": "pickup", "args": "<session_id> <cwd>", "description": "Resume a coding agent session here" },
     { "name": "handover", "description": "Export session to a coding agent CLI" },
     { "name": "help", "description": "Show this list" }

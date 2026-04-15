@@ -286,6 +286,7 @@ fn main() {
             // runtime has been able to drain its tasks).
             if let tauri::RunEvent::Exit = event {
                 common::child_registry::ChildRegistry::global().kill_all();
+                common::preview_entries::shutdown_kill_all_ports();
             }
         });
 }

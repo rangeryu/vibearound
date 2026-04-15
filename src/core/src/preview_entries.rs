@@ -1,18 +1,30 @@
-//! Short-lived preview entries for live preview URLs.
+//! Preview sessions — one per workspace (server) or file path (file).
 //!
-//! Two modes:
-//! - **Server mode**: `store_server(port, workspace, title)` — proxies to `localhost:{port}`
-//! - **File mode**: `store_file(file, workspace, title)` — serves a file directly
-//!   (markdown files get rendered client-side with marked.js + GitHub CSS)
+//! A unified [`PreviewSession`] models both live dev-server previews and
+//! static file previews (e.g. rendered markdown). Each session has:
 //!
-//! Entries expire after 5 minutes. Unlike pickup codes, lookups are multi-use —
-//! the same slug can be accessed repeatedly within the TTL window.
+//! - `id`              — the canonical path that identifies this preview
+//!                       (workspace dir for `Server`, file path for `File`).
+//! - `target`          — what to serve: `Server { port }` or `File`.
+//! - `slug`            — stable, readable URL segment derived from `id`.
+//!                       Full-path-based (slashes → `-`), so slugs are
+//!                       globally unique and collision-proof.
+//! - `share_key`       — ephemeral random token with 10-min TTL. Regenerated
+//!                       once the previous key expires.
 //!
-//! Cleanup: expired entries are purged on each `store*()` and `lookup()` call.
-//! No background loop — stale entries are tiny and cleared on next access.
+//! URL structure (all routes under `/va/`):
+//!
+//! - Owner: `/preview/u/{slug}`        — permanent for the daemon lifetime
+//! - Share: `/preview/s/{share_key}`   — 10-minute rotating token
+//!
+//! One `HashMap<PathBuf, PreviewSession>` backs everything. Lookups by
+//! `slug` or `share_key` scan values — `n` is tiny (<20 typical).
+//!
+//! On daemon shutdown, [`shutdown_kill_all_ports`] SIGKILLs any process
+//! listening on a tracked `Server` port so dev servers don't leak.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
@@ -20,165 +32,475 @@ use parking_lot::Mutex;
 use rand::rngs::OsRng;
 use rand::Rng;
 
+// ---------------------------------------------------------------------------
+// Public data model
+// ---------------------------------------------------------------------------
+
 /// What the preview serves.
 #[derive(Debug, Clone)]
-pub enum PreviewKind {
-    /// Reverse proxy to a running local server.
+pub enum PreviewTarget {
+    /// Reverse proxy to a running local dev server on `port`.
     Server { port: u16 },
-    /// Serve a file directly (markdown rendered client-side).
-    File { path: PathBuf },
+    /// Render a file directly (e.g. markdown).
+    File,
 }
 
-/// Data associated with a live preview slug.
+/// Legacy alias kept for callers that still use `PreviewKind`.
+/// New code should prefer [`PreviewTarget`].
+pub type PreviewKind = PreviewTarget;
+
+/// Public view of a preview session, returned from lookups.
 #[derive(Debug, Clone)]
 pub struct PreviewEntry {
-    pub kind: PreviewKind,
+    /// Identity of the preview (workspace dir or file path).
+    pub id: PathBuf,
+    /// Containing workspace (== `id` for `Server`; parent dir for `File`).
     pub workspace: PathBuf,
+    /// Human-readable display name.
     pub title: String,
+    /// What to serve.
+    pub target: PreviewTarget,
+    /// When the session was created.
     pub created_at: Instant,
+    /// When the current share key expires. For owner-slug lookups, a
+    /// far-future sentinel (sessions themselves never expire until daemon exit).
     pub expires_at: Instant,
 }
 
-static PREVIEW_ENTRIES: LazyLock<Mutex<HashMap<String, PreviewEntry>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+// ---------------------------------------------------------------------------
+// Internal storage
+// ---------------------------------------------------------------------------
 
-const TTL: Duration = Duration::from_secs(300);
+#[derive(Debug, Clone)]
+struct PreviewSession {
+    id: PathBuf,
+    workspace: PathBuf,
+    title: String,
+    target: PreviewTarget,
+    slug: String,
+    share_key: Option<String>,
+    share_expires_at: Option<Instant>,
+    created_at: Instant,
+}
 
-/// Character set for slugs: uppercase + digits, excluding ambiguous I/O/0/1.
+const SHARE_TTL: Duration = Duration::from_secs(600);
+const OWNER_FAR_FUTURE: Duration = Duration::from_secs(86_400);
+
+/// Alphabet for random share keys: uppercase + digits, with ambiguous
+/// I/O/0/1 removed.
 const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/// Generate a cryptographically random 8-character slug.
-fn generate_slug() -> String {
+static SESSIONS: LazyLock<Mutex<HashMap<PathBuf, PreviewSession>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+// ---------------------------------------------------------------------------
+// Slug + key generation
+// ---------------------------------------------------------------------------
+
+/// Random 8-char share key (for `/s/{key}` URLs).
+fn generate_share_key() -> String {
     let mut rng = OsRng;
     (0..8)
-        .map(|_| {
-            let idx = rng.gen_range(0..CHARSET.len());
-            CHARSET[idx] as char
+        .map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char)
+        .collect()
+}
+
+/// Derive a stable, collision-free owner slug from a full path.
+///
+/// Strategy: lowercase the path, replace every non-alphanumeric character
+/// with `-`, and collapse repeated dashes. Because the full path is
+/// unique per session, two sessions can never share a slug.
+///
+/// Examples:
+///
+/// - `/Users/foo/my-app`              → `users-foo-my-app`
+/// - `/Users/foo/my-app/README.md`    → `users-foo-my-app-readme-md`
+fn slug_from_path(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    let mut out = String::with_capacity(raw.len());
+    let mut last_dash = true; // drops leading '-'
+    for c in raw.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.extend(c.to_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "preview".to_string()
+    } else {
+        trimmed
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public API — create / refresh
+// ---------------------------------------------------------------------------
+
+/// Ensure a Server preview session exists for `workspace`. Returns
+/// `(owner_slug, share_key)`. Calling twice for the same workspace
+/// reuses the owner slug; the share key is refreshed if expired.
+pub fn ensure_server(port: u16, workspace: PathBuf, title: String) -> (String, String) {
+    let workspace = canonical(&workspace);
+    ensure_session(workspace.clone(), workspace, title, PreviewTarget::Server { port })
+}
+
+/// Ensure a File preview session exists for `file`. Returns
+/// `(owner_slug, share_key)`. Same file → same owner slug.
+pub fn ensure_file(file: PathBuf, workspace: PathBuf, title: String) -> (String, String) {
+    let file = canonical(&file);
+    let workspace = canonical(&workspace);
+    ensure_session(file, workspace, title, PreviewTarget::File)
+}
+
+fn canonical(p: &Path) -> PathBuf {
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+}
+
+fn ensure_session(
+    id: PathBuf,
+    workspace: PathBuf,
+    title: String,
+    target: PreviewTarget,
+) -> (String, String) {
+    let slug = slug_from_path(&id);
+    let now = Instant::now();
+
+    let mut sessions = SESSIONS.lock();
+    let session = sessions
+        .entry(id.clone())
+        .or_insert_with(|| PreviewSession {
+            id: id.clone(),
+            workspace: workspace.clone(),
+            title: title.clone(),
+            target: target.clone(),
+            slug: slug.clone(),
+            share_key: None,
+            share_expires_at: None,
+            created_at: now,
+        });
+
+    // Refresh mutable fields on every call.
+    session.workspace = workspace;
+    session.title = title;
+    session.target = target;
+
+    // Reuse share key if still valid; otherwise rotate.
+    let share_key = match (&session.share_key, session.share_expires_at) {
+        (Some(k), Some(exp)) if exp > now => k.clone(),
+        _ => {
+            let k = generate_share_key();
+            session.share_key = Some(k.clone());
+            session.share_expires_at = Some(now + SHARE_TTL);
+            k
+        }
+    };
+
+    (slug, share_key)
+}
+
+// ---------------------------------------------------------------------------
+// Public API — lookup
+// ---------------------------------------------------------------------------
+
+/// Look up a session by its permanent owner slug.
+pub fn lookup_owner(slug: &str) -> Option<PreviewEntry> {
+    let sessions = SESSIONS.lock();
+    sessions
+        .values()
+        .find(|s| s.slug == slug)
+        .map(|s| entry_from(s, Instant::now() + OWNER_FAR_FUTURE))
+}
+
+/// Look up a session by its ephemeral share key. Expired keys return `None`.
+pub fn lookup_share(key: &str) -> Option<PreviewEntry> {
+    let sessions = SESSIONS.lock();
+    let now = Instant::now();
+    sessions
+        .values()
+        .find(|s| match (&s.share_key, s.share_expires_at) {
+            (Some(k), Some(exp)) => k == key && exp > now,
+            _ => false,
+        })
+        .map(|s| entry_from(s, s.share_expires_at.unwrap_or(now)))
+}
+
+/// Unified lookup: tries owner slug then share key.
+///
+/// Used by the cookie-proxy fallback, which only knows the cookie value
+/// and not which kind of slug it came from.
+pub fn lookup(slug: &str) -> Option<PreviewEntry> {
+    lookup_owner(slug).or_else(|| lookup_share(slug))
+}
+
+fn entry_from(session: &PreviewSession, expires_at: Instant) -> PreviewEntry {
+    PreviewEntry {
+        id: session.id.clone(),
+        workspace: session.workspace.clone(),
+        title: session.title.clone(),
+        target: session.target.clone(),
+        created_at: session.created_at,
+        expires_at,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Listing + removal
+// ---------------------------------------------------------------------------
+
+/// Serializable snapshot of a session for API responses.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PreviewSnapshot {
+    pub slug: String,
+    pub id: PathBuf,
+    pub workspace: PathBuf,
+    pub title: String,
+    /// Kind tag + port (for Server previews).
+    pub kind: &'static str,
+    pub port: Option<u16>,
+    pub share_key: Option<String>,
+    /// Unix millis; `null` for owner-only sessions (no share key generated).
+    pub share_expires_at_ms: Option<u64>,
+    pub created_at_ms: u64,
+}
+
+/// Snapshot every live session for UI display.
+pub fn list_snapshots() -> Vec<PreviewSnapshot> {
+    let sessions = SESSIONS.lock();
+    let now_inst = Instant::now();
+    let now_sys = std::time::SystemTime::now();
+
+    sessions
+        .values()
+        .map(|s| {
+            let (kind, port) = match s.target {
+                PreviewTarget::Server { port } => ("server", Some(port)),
+                PreviewTarget::File => ("file", None),
+            };
+            let share_expires_at_ms = match (&s.share_key, s.share_expires_at) {
+                (Some(_), Some(exp)) if exp > now_inst => {
+                    Some(instant_to_unix_ms(exp, now_inst, now_sys))
+                }
+                _ => None,
+            };
+            let share_key = match (&s.share_key, s.share_expires_at) {
+                (Some(k), Some(exp)) if exp > now_inst => Some(k.clone()),
+                _ => None,
+            };
+            let created_at_ms = instant_to_unix_ms(s.created_at, now_inst, now_sys);
+            PreviewSnapshot {
+                slug: s.slug.clone(),
+                id: s.id.clone(),
+                workspace: s.workspace.clone(),
+                title: s.title.clone(),
+                kind,
+                port,
+                share_key,
+                share_expires_at_ms,
+                created_at_ms,
+            }
         })
         .collect()
 }
 
-/// Store a server-mode preview and return the 8-char slug.
-pub fn store_server(port: u16, workspace: PathBuf, title: String) -> String {
-    store_entry(PreviewKind::Server { port }, workspace, title)
+/// Convert an `Instant` to unix-epoch milliseconds, using `now` as the pivot.
+fn instant_to_unix_ms(
+    point: Instant,
+    now_inst: Instant,
+    now_sys: std::time::SystemTime,
+) -> u64 {
+    let unix_now_ms = now_sys
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    if point >= now_inst {
+        unix_now_ms + (point - now_inst).as_millis() as u64
+    } else {
+        unix_now_ms.saturating_sub((now_inst - point).as_millis() as u64)
+    }
 }
 
-/// Store a file-mode preview and return the 8-char slug.
-pub fn store_file(path: PathBuf, workspace: PathBuf, title: String) -> String {
-    store_entry(PreviewKind::File { path }, workspace, title)
-}
-
-/// Internal: insert an entry with a fresh slug.
-///
-/// Retries generation on the rare case of a collision with an already-live
-/// entry. The keyspace is ~31^8 ≈ 852 billion slugs against a handful of live
-/// entries, so the loop terminates in a single iteration with overwhelming
-/// probability.
-fn store_entry(kind: PreviewKind, workspace: PathBuf, title: String) -> String {
-    let mut map = PREVIEW_ENTRIES.lock();
-    let now = Instant::now();
-    map.retain(|_, e| e.expires_at > now);
-
-    let slug = loop {
-        let s = generate_slug();
-        if !map.contains_key(&s) {
-            break s;
+/// Close a single preview session: if it's a Server target, SIGKILL the
+/// process currently listening on its port (via `lsof` + `sysinfo::kill`).
+/// Then remove the session from the store. Returns `true` when a matching
+/// slug was found and removed.
+pub fn delete_session(slug: &str) -> bool {
+    // Find and remove the matching session.
+    let removed = {
+        let mut sessions = SESSIONS.lock();
+        let key = sessions
+            .iter()
+            .find(|(_, s)| s.slug == slug)
+            .map(|(k, _)| k.clone());
+        match key {
+            Some(k) => sessions.remove(&k),
+            None => None,
         }
     };
-    map.insert(
-        slug.clone(),
-        PreviewEntry {
-            kind,
-            workspace,
-            title,
-            created_at: now,
-            expires_at: now + TTL,
-        },
+
+    let Some(session) = removed else {
+        return false;
+    };
+
+    // Kill the port if Server — best effort.
+    if let PreviewTarget::Server { port } = session.target {
+        kill_port(port);
+    }
+    true
+}
+
+// ---------------------------------------------------------------------------
+// Shutdown — kill tracked dev-server ports
+// ---------------------------------------------------------------------------
+
+/// Snapshot of ports held by Server-kind sessions.
+pub fn tracked_ports() -> Vec<u16> {
+    SESSIONS
+        .lock()
+        .values()
+        .filter_map(|s| match s.target {
+            PreviewTarget::Server { port } => Some(port),
+            PreviewTarget::File => None,
+        })
+        .collect()
+}
+
+/// Send SIGKILL to every process listening on a tracked Server port.
+/// Best-effort; failures are logged. Clears the session map.
+pub fn shutdown_kill_all_ports() {
+    let ports = tracked_ports();
+    if !ports.is_empty() {
+        eprintln!(
+            "[preview] shutdown: killing dev servers on ports {:?}",
+            ports
+        );
+        kill_pids_on_ports(&ports);
+    }
+    SESSIONS.lock().clear();
+}
+
+/// SIGKILL every process listening on any of the given ports.
+fn kill_pids_on_ports(ports: &[u16]) {
+    use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+
+    let pids = pids_listening_on(ports);
+    if pids.is_empty() {
+        return;
+    }
+
+    let mut sys = System::new_with_specifics(
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
     );
-    slug
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    for pid in pids {
+        if let Some(proc_) = sys.process(sysinfo::Pid::from_u32(pid)) {
+            let ok = proc_.kill();
+            eprintln!(
+                "[preview] kill pid={} name={:?} ok={}",
+                pid,
+                proc_.name().to_string_lossy(),
+                ok
+            );
+        }
+    }
 }
 
-/// Look up a preview entry by slug. Returns `None` if unknown or expired.
-///
-/// Multi-use: the entry is NOT consumed — repeated lookups succeed until TTL.
-pub fn lookup(slug: &str) -> Option<PreviewEntry> {
-    let mut map = PREVIEW_ENTRIES.lock();
-    let now = Instant::now();
-    map.retain(|_, e| e.expires_at > now);
-    map.get(&slug.to_uppercase()).cloned()
+/// Convenience wrapper for a single port.
+fn kill_port(port: u16) {
+    kill_pids_on_ports(&[port]);
 }
 
-/// Explicitly remove a preview entry (e.g. when the agent session ends).
-pub fn remove(slug: &str) -> bool {
-    let mut map = PREVIEW_ENTRIES.lock();
-    map.remove(&slug.to_uppercase()).is_some()
+#[cfg(unix)]
+fn pids_listening_on(ports: &[u16]) -> Vec<u32> {
+    use std::process::Command;
+    let mut pids = Vec::new();
+    for port in ports {
+        let out = match Command::new("lsof")
+            .args(["-nP", "-ti", &format!("tcp:{}", port), "-sTCP:LISTEN"])
+            .output()
+        {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            if let Ok(pid) = line.trim().parse::<u32>() {
+                pids.push(pid);
+            }
+        }
+    }
+    pids.sort_unstable();
+    pids.dedup();
+    pids
 }
+
+#[cfg(not(unix))]
+fn pids_listening_on(_ports: &[u16]) -> Vec<u32> {
+    // TODO: Windows via `netstat -ano` parsing.
+    Vec::new()
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn generated_slug_is_eight_chars_from_alphabet() {
-        for _ in 0..100 {
-            let slug = generate_slug();
-            assert_eq!(slug.len(), 8);
-            for b in slug.bytes() {
-                assert!(CHARSET.contains(&b), "char {b:?} not in alphabet");
-            }
-        }
-    }
-
-    #[test]
-    fn store_server_and_lookup_roundtrip() {
-        let slug = store_server(3000, PathBuf::from("/tmp/project"), "My App".into());
-        let entry = lookup(&slug).expect("slug should resolve");
-        assert!(matches!(entry.kind, PreviewKind::Server { port: 3000 }));
-        assert_eq!(entry.workspace, PathBuf::from("/tmp/project"));
-        assert_eq!(entry.title, "My App");
-    }
-
-    #[test]
-    fn store_file_and_lookup_roundtrip() {
-        let slug = store_file(
-            PathBuf::from("/tmp/project/README.md"),
-            PathBuf::from("/tmp/project"),
-            "README".into(),
+    fn slug_from_full_path_is_stable_and_unique() {
+        assert_eq!(slug_from_path(Path::new("/tmp/my-app")), "tmp-my-app");
+        assert_eq!(
+            slug_from_path(Path::new("/tmp/my-app/README.md")),
+            "tmp-my-app-readme-md"
         );
-        let entry = lookup(&slug).expect("slug should resolve");
-        match &entry.kind {
-            PreviewKind::File { path } => assert_eq!(path, &PathBuf::from("/tmp/project/README.md")),
-            _ => panic!("expected File kind"),
-        }
+        // Two different paths never produce the same slug.
+        assert_ne!(
+            slug_from_path(Path::new("/a/readme.md")),
+            slug_from_path(Path::new("/b/readme.md")),
+        );
     }
 
     #[test]
-    fn lookup_is_multi_use() {
-        let slug = store_server(8080, PathBuf::from("/home"), "Test".into());
+    fn ensure_server_is_idempotent() {
+        let path = std::env::temp_dir().join("va-preview-test-server");
+        std::fs::create_dir_all(&path).unwrap();
+
+        let (slug_a, share_a) = ensure_server(3000, path.clone(), "t".into());
+        let (slug_b, share_b) = ensure_server(3000, path.clone(), "t".into());
+        assert_eq!(slug_a, slug_b);
+        assert_eq!(share_a, share_b);
+    }
+
+    #[test]
+    fn ensure_file_is_idempotent_and_independent_of_server() {
+        let dir = std::env::temp_dir().join("va-preview-test-file");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("README.md");
+        std::fs::write(&file, "hi").unwrap();
+
+        let (srv_slug, _) = ensure_server(4000, dir.clone(), "srv".into());
+        let (file_slug_a, file_share_a) = ensure_file(file.clone(), dir.clone(), "md".into());
+        let (file_slug_b, file_share_b) = ensure_file(file.clone(), dir.clone(), "md".into());
+
+        assert_ne!(srv_slug, file_slug_a, "server and file share different ids");
+        assert_eq!(file_slug_a, file_slug_b);
+        assert_eq!(file_share_a, file_share_b);
+    }
+
+    #[test]
+    fn lookup_resolves_owner_and_share() {
+        let path = std::env::temp_dir().join("va-preview-test-lookup");
+        std::fs::create_dir_all(&path).unwrap();
+
+        let (slug, share) = ensure_server(4100, path.clone(), "x".into());
+        assert!(lookup_owner(&slug).is_some());
+        assert!(lookup_share(&share).is_some());
         assert!(lookup(&slug).is_some());
-        assert!(lookup(&slug).is_some(), "second lookup must also succeed");
-    }
-
-    #[test]
-    fn lookup_is_case_insensitive() {
-        let slug = store_server(9090, PathBuf::from("/root"), "CI".into());
-        assert!(lookup(&slug.to_lowercase()).is_some());
-    }
-
-    #[test]
-    fn unknown_slug_returns_none() {
-        assert!(lookup("ZZZZZZZZ").is_none());
-    }
-
-    #[test]
-    fn remove_deletes_entry() {
-        let slug = store_server(4000, PathBuf::from("/tmp"), "Remove Test".into());
-        assert!(remove(&slug));
-        assert!(lookup(&slug).is_none());
-    }
-
-    #[test]
-    fn remove_unknown_returns_false() {
-        assert!(!remove("NONEXIST"));
+        assert!(lookup(&share).is_some());
     }
 }

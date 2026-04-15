@@ -52,6 +52,10 @@ impl RunningDaemon {
         // tasks didn't get a chance to poll their drop handlers.
         ChildRegistry::global().kill_all();
 
+        // Kill any user-started dev servers we were previewing so they don't
+        // outlive the daemon. Best-effort; failures are logged.
+        common::preview_entries::shutdown_kill_all_ports();
+
         let pty_manager = PtySessionManager::from_registry(Arc::clone(&self.services.pty));
         let session_ids: Vec<SessionId> = self.services.pty.iter().map(|entry| entry.key().clone()).collect();
         for session_id in session_ids {

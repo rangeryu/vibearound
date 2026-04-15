@@ -318,6 +318,8 @@ enum SlashAction {
     Pickup { agent_kind: String, session_id: String, cwd: Option<String> },
     /// /pickup <CODE> — short code lookup
     PickupCode(String),
+    /// /pair <CODE> — pair a browser with this VibeAround instance
+    Pair(String),
     /// /handover — export current session to a coding agent (Direction 2)
     Handover,
     /// Unknown slash command
@@ -433,6 +435,10 @@ fn parse_slash_command(text: &str) -> Option<SlashAction> {
             }
         }
         "/handover" => Some(SlashAction::Handover),
+        "/pair" => match arg {
+            Some(code) if !code.is_empty() => Some(SlashAction::Pair(code)),
+            _ => Some(SlashAction::Unknown(trimmed.to_string())),
+        },
         _ => Some(SlashAction::Unknown(trimmed.to_string())),
     }
 }
@@ -632,6 +638,27 @@ pub(crate) async fn handle_prompt(
                     ),
                 )
                 .await;
+                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+            }
+            SlashAction::Pair(code) => {
+                match crate::auth::pair::validate(&code) {
+                    Some(_token) => {
+                        send_system_text(
+                            plugin_host,
+                            &route,
+                            "✅ Browser paired successfully. You can now access the dashboard.",
+                        )
+                        .await;
+                    }
+                    None => {
+                        send_system_text(
+                            plugin_host,
+                            &route,
+                            "❌ Invalid or expired pairing code. Please refresh the dashboard page and try again.",
+                        )
+                        .await;
+                    }
+                }
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::Handover => {

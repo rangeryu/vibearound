@@ -5,6 +5,7 @@
 mod api;
 mod auth;
 mod mcp;
+mod pair;
 mod preview;
 mod ws_chat;
 mod ws_pty;
@@ -106,7 +107,7 @@ pub async fn run_web_server(
         .map_err(|e| format!("Failed to resolve web dist path: {}", e))?;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     println!(
-        "[VibeAround] Web dashboard: http://127.0.0.1:{}/_va_/, serving from {:?}",
+        "[VibeAround] Web dashboard: http://127.0.0.1:{}/va/, serving from {:?}",
         port, web_dist
     );
 
@@ -153,6 +154,8 @@ pub async fn run_web_server(
             "/api/services/{category}/{id}",
             delete(api::kill_service_handler),
         )
+        .route("/api/previews", get(api::list_previews_handler))
+        .route("/api/previews/{slug}", delete(api::delete_preview_handler))
         .route(
             "/api/workspaces",
             get(api::list_workspaces_handler).post(api::add_workspace_handler),
@@ -176,21 +179,27 @@ pub async fn run_web_server(
     // Preview routes are also un-authed — the 8-char slug itself acts as a
     // short-lived authentication token (5-min TTL, cryptographically random).
     let public = Router::new()
-        // Preview iframe pages: set cookie + render iframe with src="/".
-        // /u = owner, /s = share — same handler, permissions differ later.
-        .route("/preview/u/{slug}", get(preview::iframe_preview_handler))
-        .route("/preview/s/{slug}", get(preview::iframe_preview_handler))
+        // Pairing API: no auth required (pairing IS the auth flow).
+        .route("/api/pair/start", post(pair::start_handler))
+        .route("/api/pair/status", get(pair::status_handler))
+        // Preview pages dispatch by session target:
+        //   Server → iframe + `/`-scoped cookie proxy
+        //   File   → rendered markdown page
+        // /u = owner (requires va_owner cookie), /s = share (slug is auth).
+        .route("/preview/u/{slug}", get(preview::owner_preview_handler))
+        .route("/preview/s/{slug}", get(preview::share_preview_handler))
+        // Legacy markdown route (kept for backward compatibility).
         .route("/md-preview/{slug}", get(preview::md_preview_handler))
         .nest_service("/assets", ServeDir::new(assets_dir))
         .fallback(any(spa_fallback_handler));
 
-    // ALL VibeAround routes live under `/_va_/` — the root `/` namespace is
+    // ALL VibeAround routes live under `/va/` — the root `/` namespace is
     // reserved exclusively for the cookie-based dev-server preview proxy.
     let dashboard = Router::new().merge(protected).merge(public);
 
     let app = Router::new()
-        .nest("/_va_", dashboard)
-        // Root fallback: cookie → proxy to dev server, else → /_va_/.
+        .nest("/va", dashboard)
+        // Root fallback: cookie → proxy to dev server, else → /va/.
         .fallback(any(preview::cookie_proxy_fallback))
         .with_state(state)
         .layer(build_cors_layer(port));

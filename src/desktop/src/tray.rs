@@ -14,7 +14,7 @@ use tauri::{
 use crate::{AppServiceManager, OnboardingActive};
 
 const MAIN_WINDOW_LABEL: &str = "main";
-const LOCAL_DASHBOARD_URL: &str = "http://127.0.0.1:12358/_va_";
+const LOCAL_DASHBOARD_URL: &str = "http://127.0.0.1:12358/va";
 
 /// Build the dashboard URL with the session auth token.
 ///
@@ -88,7 +88,7 @@ pub fn setup<R: Runtime>(app: &App<R>) -> Result<(), Box<dyn std::error::Error>>
             "open_tunnel" => {
                 if let Some(state) = app.try_state::<AppServiceManager>() {
                     if let Some(url) = state.0.get_tunnel_url() {
-                        let dashboard_url = format!("{}/_va_", url.trim_end_matches('/'));
+                        let dashboard_url = format!("{}/va", url.trim_end_matches('/'));
                         let _ = open::that(tunnel_url_with_token(&dashboard_url));
                     }
                 }
