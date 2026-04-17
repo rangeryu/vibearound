@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen, Eye,
+  Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen, Eye, Play,
 } from "lucide-react";
 import { useServices, type ServiceInfo } from "./hooks/useServices";
 import { openDashboardUrl } from "./lib/api";
@@ -9,33 +9,61 @@ import Onboarding from "./Onboarding";
 import { Workspaces } from "./Workspaces";
 import { Previews } from "./Previews";
 
-function formatUptime(secs: number): string {
-  if (secs < 60) return `${secs}s`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+/** Normalize the free-form `status` string (which may be "stopped: killed"
+ *  on legacy entries) into a short label + dot color + whether it's the
+ *  "healthy" running state. */
+function statusPresentation(status: string): {
+  label: string;
+  color: string;
+  running: boolean;
+} {
+  // Strip legacy "stopped: <reason>" / "failed: <error>" prefix.
+  const head = status.split(":")[0].trim();
+  switch (head) {
+    case "running":
+      return { label: "Running", color: "bg-emerald-500", running: true };
+    case "spawning":
+      return { label: "Spawning", color: "bg-amber-500", running: false };
+    case "not_started":
+      return { label: "Not started", color: "bg-zinc-400", running: false };
+    case "stopped":
+      return { label: "Stopped", color: "bg-zinc-400", running: false };
+    case "crashed":
+      return { label: "Crashed", color: "bg-red-500", running: false };
+    case "failed":
+      return { label: "Failed", color: "bg-red-500", running: false };
+    default:
+      return { label: head || "Unknown", color: "bg-zinc-400", running: false };
+  }
 }
 
 function StatusDot({ status }: { status: string }) {
-  const color =
-    status === "running"
-      ? "bg-emerald-500"
-      : status === "failed"
-        ? "bg-red-500"
-        : "bg-zinc-400";
   return (
-    <span className={`inline-block w-2 h-2 rounded-full ${color}`} />
+    <span
+      className={`inline-block w-2 h-2 rounded-full ${statusPresentation(status).color}`}
+    />
   );
 }
 
 function ServiceRow({
   service,
+  category,
   onKill,
+  onStart,
 }: {
   service: ServiceInfo;
+  category: "tunnels" | "agents" | "channels" | "pty";
   onKill: () => void;
+  onStart?: () => void;
 }) {
+  const pres = statusPresentation(service.status);
+  // Auto-respawn countdown is only meaningful for crashed channels.
+  const showRestartIn =
+    category === "channels" &&
+    pres.label === "Crashed" &&
+    typeof service.restart_in_secs === "number" &&
+    service.restart_in_secs > 0;
+
   return (
     <div className="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 transition-colors group">
       <StatusDot status={service.status} />
@@ -47,11 +75,20 @@ function ServiceRow({
           {service.provider}
         </span>
       )}
-      {service.status === "running" && service.uptime_secs > 0 && (
-        <span className="text-[10px] text-muted-foreground/50 tabular-nums">
-          {formatUptime(service.uptime_secs)}
-        </span>
-      )}
+      <span
+        className={`text-[10px] tabular-nums ${
+          pres.running ? "text-muted-foreground/60" : "text-muted-foreground/80"
+        }`}
+        title={service.reason || service.status}
+      >
+        {pres.label}
+        {showRestartIn && (
+          <span className="text-muted-foreground/50">
+            {" "}
+            · retry {service.restart_in_secs}s
+          </span>
+        )}
+      </span>
       {service.url && (
         <button
           type="button"
@@ -65,7 +102,18 @@ function ServiceRow({
           <ExternalLink className="w-3 h-3" />
         </button>
       )}
-      {service.status === "running" && (
+      {/* Start — only for channels, only when not running */}
+      {category === "channels" && !pres.running && onStart && (
+        <button
+          onClick={onStart}
+          className="text-muted-foreground/40 hover:text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Start"
+        >
+          <Play className="w-3 h-3" />
+        </button>
+      )}
+      {/* Stop — when running */}
+      {pres.running && (
         <button
           onClick={onKill}
           className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
@@ -100,7 +148,7 @@ type DashboardPage = "services" | "workspaces" | "previews";
 
 function Dashboard() {
   const [page, setPage] = useState<DashboardPage>("services");
-  const { data, error, connected, refresh, killService } = useServices();
+  const { data, error, connected, refresh, killService, channelAction } = useServices();
   const everHadData = useRef(false);
   const [startTime] = useState(() => Date.now());
   const [timedOut, setTimedOut] = useState(false);
@@ -244,6 +292,7 @@ function Dashboard() {
               <ServiceRow
                 key={s.id}
                 service={s}
+                category="tunnels"
                 onKill={() => killService("tunnels", s.id)}
               />
             ))
@@ -265,6 +314,7 @@ function Dashboard() {
               <ServiceRow
                 key={s.id}
                 service={s}
+                category="agents"
                 onKill={() => killService("agents", s.id)}
               />
             ))
@@ -286,7 +336,9 @@ function Dashboard() {
               <ServiceRow
                 key={s.id}
                 service={s}
-                onKill={() => killService("channels", s.id)}
+                category="channels"
+                onKill={() => channelAction(s.id, "stop")}
+                onStart={() => channelAction(s.id, "start")}
               />
             ))
           )}

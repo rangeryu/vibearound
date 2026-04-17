@@ -4,11 +4,32 @@ import { apiFetch, authedWsUrl } from "../lib/api";
 const POLL_INTERVAL = 5000;
 const WS_RECONNECT_DELAY = 3000;
 
+/** Full channel lifecycle state from ChannelMonitor.
+ *
+ * - `running`      — process up, heartbeats fresh
+ * - `spawning`     — spawn in flight
+ * - `not_started`  — registered but never spawned (brief window at boot)
+ * - `stopped`      — user-initiated stop (no auto-respawn; needs `start`)
+ * - `crashed`      — involuntary exit or watchdog timeout; auto-respawns
+ *                    after `restart_in_secs`
+ *
+ * Non-channel entries still use the legacy "stopped: <reason>" /
+ * "failed: <error>" strings — kept as fallbacks on the same field.
+ */
+export type ServiceStatus =
+  | "running"
+  | "spawning"
+  | "not_started"
+  | "stopped"
+  | "crashed"
+  | "failed"
+  | string; // legacy free-form, e.g. "stopped: killed"
+
 export interface ServiceInfo {
   id: string;
   category: string;
   name: string;
-  status: "running" | "stopped" | "failed";
+  status: ServiceStatus;
   status_detail?: string;
   uptime_secs: number;
   provider?: string;
@@ -16,6 +37,11 @@ export interface ServiceInfo {
   kind?: string;
   workspace?: string;
   role?: "manager" | "worker";
+  // --- Channel-only extras from ChannelMonitor snapshot ---
+  reason?: string;
+  crash_count?: number;
+  last_seen_age_secs?: number;
+  restart_in_secs?: number;
 }
 
 export interface ServerMeta {
@@ -139,5 +165,33 @@ export function useServices() {
     [connected, fetchServices]
   );
 
-  return { data, error, loading, connected, refresh: fetchServices, killService };
+  /** Channel-specific lifecycle controls backed by ChannelMonitor.
+   *  `start`   — transition a Stopped channel back to Crashed(restart_at=now)
+   *              so the next tick respawns it.
+   *  `restart` — kill current runtime + immediate respawn (intent=Restart). */
+  const channelAction = useCallback(
+    async (kind: string, action: "start" | "restart" | "stop") => {
+      try {
+        const res = await apiFetch(
+          `/api/services/channels/${encodeURIComponent(kind)}/${action}`,
+          { method: "POST" }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!connected) await fetchServices();
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : `${action} failed`);
+      }
+    },
+    [connected, fetchServices]
+  );
+
+  return {
+    data,
+    error,
+    loading,
+    connected,
+    refresh: fetchServices,
+    killService,
+    channelAction,
+  };
 }
