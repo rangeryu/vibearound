@@ -40,7 +40,7 @@ use crate::runtime_status::RuntimeStatusStore;
 use crate::tunnels::TunnelProvider;
 
 pub use entries::{AgentStatusEntry, ChannelEntry, TunnelEntry};
-pub use snapshot::{status_string, ServerMeta, ServiceInfo, StatusSnapshot};
+pub use snapshot::{ApiServiceStatus, ServerMeta, ServiceInfo, StatusSnapshot};
 pub use status::{spawn_tracked, ServiceMeta, ServiceStatus};
 
 use snapshot::capitalize;
@@ -254,7 +254,7 @@ impl ServiceStatusManager {
                     ServiceInfo {
                         id: key.clone(),
                         name: format!("Tunnel ({})", entry.provider.as_str()),
-                        status: status_string(&entry.meta.current_status()),
+                        status: (&entry.meta.current_status()).into(),
                         uptime_secs: entry.meta.uptime_secs(),
                         extra: {
                             let mut m = serde_json::Map::new();
@@ -285,7 +285,9 @@ impl ServiceStatusManager {
                 .into_iter()
                 .map(|s| {
                     let mut extra = serde_json::Map::new();
-                    extra.insert("reason".into(), s.reason.into());
+                    if !s.reason.is_empty() {
+                        extra.insert("reason".into(), s.reason.clone().into());
+                    }
                     extra.insert(
                         "crash_count".into(),
                         serde_json::Value::from(s.crash_count),
@@ -298,17 +300,24 @@ impl ServiceStatusManager {
                         "restart_in_secs".into(),
                         serde_json::Value::from(s.restart_in_secs),
                     );
-                    let status_str = match s.status {
-                        ChannelRunStatus::Running => "running".to_string(),
-                        ChannelRunStatus::NotStarted => "not_started".to_string(),
-                        ChannelRunStatus::Spawning => "spawning".to_string(),
-                        ChannelRunStatus::Stopped => "stopped".to_string(),
-                        ChannelRunStatus::Crashed => "crashed".to_string(),
+                    let reason_opt = if s.reason.is_empty() {
+                        None
+                    } else {
+                        Some(s.reason.clone())
+                    };
+                    let status = match s.status {
+                        ChannelRunStatus::Running => ApiServiceStatus::Running,
+                        ChannelRunStatus::NotStarted => ApiServiceStatus::NotStarted,
+                        ChannelRunStatus::Spawning => ApiServiceStatus::Spawning,
+                        ChannelRunStatus::Stopped => {
+                            ApiServiceStatus::Stopped { reason: reason_opt }
+                        }
+                        ChannelRunStatus::Crashed => ApiServiceStatus::Crashed,
                     };
                     ServiceInfo {
                         id: s.kind.clone(),
                         name: capitalize(&s.kind),
-                        status: status_str,
+                        status,
                         uptime_secs: s.last_seen_age_secs, // best-effort
                         extra,
                     }
@@ -322,7 +331,7 @@ impl ServiceStatusManager {
                 ServiceInfo {
                     id: key.clone(),
                     name: capitalize(&key),
-                    status: status_string(&entry.meta.current_status()),
+                    status: (&entry.meta.current_status()).into(),
                     uptime_secs: entry.meta.uptime_secs(),
                     extra: serde_json::Map::new(),
                 }

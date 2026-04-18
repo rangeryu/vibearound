@@ -17,7 +17,10 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "@va/generated/*": ["../shared/client-ts/generated/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "../shared/client-ts/generated"]
 }

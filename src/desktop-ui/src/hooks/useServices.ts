@@ -1,36 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import type { ApiServiceStatus } from "@va/generated/ApiServiceStatus";
 import { apiFetch, authedWsUrl } from "../lib/api";
+
+export type { ApiServiceStatus };
 
 const POLL_INTERVAL = 5000;
 const WS_RECONNECT_DELAY = 3000;
-
-/** Full channel lifecycle state from ChannelMonitor.
- *
- * - `running`      — process up, heartbeats fresh
- * - `spawning`     — spawn in flight
- * - `not_started`  — registered but never spawned (brief window at boot)
- * - `stopped`      — user-initiated stop (no auto-respawn; needs `start`)
- * - `crashed`      — involuntary exit or watchdog timeout; auto-respawns
- *                    after `restart_in_secs`
- *
- * Non-channel entries still use the legacy "stopped: <reason>" /
- * "failed: <error>" strings — kept as fallbacks on the same field.
- */
-export type ServiceStatus =
-  | "running"
-  | "spawning"
-  | "not_started"
-  | "stopped"
-  | "crashed"
-  | "failed"
-  | string; // legacy free-form, e.g. "stopped: killed"
 
 export interface ServiceInfo {
   id: string;
   category: string;
   name: string;
-  status: ServiceStatus;
-  status_detail?: string;
+  status: ApiServiceStatus;
   uptime_secs: number;
   provider?: string;
   url?: string;

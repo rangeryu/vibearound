@@ -2,24 +2,22 @@ import { useState, useEffect, useRef } from "react";
 import {
   Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen, Eye, Play,
 } from "lucide-react";
-import { useServices, type ServiceInfo } from "./hooks/useServices";
+import { useServices, type ServiceInfo, type ApiServiceStatus } from "./hooks/useServices";
 import { openDashboardUrl } from "./lib/api";
 import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Workspaces } from "./Workspaces";
 import { Previews } from "./Previews";
 
-/** Normalize the free-form `status` string (which may be "stopped: killed"
- *  on legacy entries) into a short label + dot color + whether it's the
- *  "healthy" running state. */
-function statusPresentation(status: string): {
+/** Map each `ApiServiceStatus` variant to a short label + dot color. The
+ *  exhaustive switch means adding a new variant in Rust breaks the build
+ *  here until a case is added. */
+function statusPresentation(status: ApiServiceStatus): {
   label: string;
   color: string;
   running: boolean;
 } {
-  // Strip legacy "stopped: <reason>" / "failed: <error>" prefix.
-  const head = status.split(":")[0].trim();
-  switch (head) {
+  switch (status.state) {
     case "running":
       return { label: "Running", color: "bg-emerald-500", running: true };
     case "spawning":
@@ -32,12 +30,18 @@ function statusPresentation(status: string): {
       return { label: "Crashed", color: "bg-red-500", running: false };
     case "failed":
       return { label: "Failed", color: "bg-red-500", running: false };
-    default:
-      return { label: head || "Unknown", color: "bg-zinc-400", running: false };
   }
 }
 
-function StatusDot({ status }: { status: string }) {
+function statusTooltip(service: ServiceInfo): string {
+  const { status } = service;
+  if (status.state === "stopped" && status.reason) return status.reason;
+  if (status.state === "failed") return status.error;
+  if (service.reason) return service.reason;
+  return status.state;
+}
+
+function StatusDot({ status }: { status: ApiServiceStatus }) {
   return (
     <span
       className={`inline-block w-2 h-2 rounded-full ${statusPresentation(status).color}`}
@@ -79,7 +83,7 @@ function ServiceRow({
         className={`text-[10px] tabular-nums ${
           pres.running ? "text-muted-foreground/60" : "text-muted-foreground/80"
         }`}
-        title={service.reason || service.status}
+        title={statusTooltip(service)}
       >
         {pres.label}
         {showRestartIn && (

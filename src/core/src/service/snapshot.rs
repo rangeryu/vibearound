@@ -24,17 +24,41 @@ pub struct StatusSnapshot {
 pub struct ServiceInfo {
     pub id: String,
     pub name: String,
-    pub status: String,
+    pub status: ApiServiceStatus,
     pub uptime_secs: u64,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-pub fn status_string(s: &ServiceStatus) -> String {
-    match s {
-        ServiceStatus::Running => "running".into(),
-        ServiceStatus::Stopped { reason } => format!("stopped: {}", reason),
-        ServiceStatus::Failed { error } => format!("failed: {}", error),
+/// Wire-level status across all service kinds (tunnels, agents, channels).
+///
+/// This unifies `ServiceStatus` (3 variants, for tunnels/agents) and
+/// `ChannelRunStatus` (5 variants, for channel plugins) into one tagged
+/// enum. The `state` discriminant lets the frontend pattern-match
+/// exhaustively instead of reverse-parsing free-form strings.
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[serde(tag = "state", rename_all = "snake_case")]
+#[ts(export)]
+pub enum ApiServiceStatus {
+    Running,
+    Spawning,
+    NotStarted,
+    Stopped { reason: Option<String> },
+    Failed { error: String },
+    Crashed,
+}
+
+impl From<&ServiceStatus> for ApiServiceStatus {
+    fn from(s: &ServiceStatus) -> Self {
+        match s {
+            ServiceStatus::Running => Self::Running,
+            ServiceStatus::Stopped { reason } => Self::Stopped {
+                reason: Some(reason.clone()),
+            },
+            ServiceStatus::Failed { error } => Self::Failed {
+                error: error.clone(),
+            },
+        }
     }
 }
 

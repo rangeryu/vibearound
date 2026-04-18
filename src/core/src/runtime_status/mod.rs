@@ -5,7 +5,7 @@ use tokio::sync::broadcast;
 
 use crate::acp_hub::event::SystemEvent;
 use crate::acp_hub::pod::PodSnapshot;
-use crate::service::ServiceInfo;
+use crate::service::{ApiServiceStatus, ServiceInfo};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,10 +136,11 @@ impl RuntimeStatusStore {
                             .unwrap_or_else(|| "agent".to_string()),
                         runtime.id
                     ),
-                    status: if runtime.failed.is_some() {
-                        "failed".to_string()
-                    } else {
-                        "running".to_string()
+                    status: match &runtime.failed {
+                        Some(error) => ApiServiceStatus::Failed {
+                            error: error.clone(),
+                        },
+                        None => ApiServiceStatus::Running,
                     },
                     uptime_secs: now_secs().saturating_sub(runtime.started_at),
                     extra,
