@@ -36,6 +36,7 @@ mod types;
 use std::path::PathBuf;
 use std::time::Instant;
 
+pub use store::SHARE_TTL_SECS;
 pub use types::{PreviewEntry, PreviewKind, PreviewSnapshot, PreviewTarget};
 
 use store::{

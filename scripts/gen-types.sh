@@ -14,7 +14,8 @@ export TS_RS_EXPORT_DIR="$OUT_DIR"
 
 cd "$ROOT/src"
 # ts-rs emits bindings during `cargo test`. Filter to only the synthesized
-# export tests so we don't pay for the full suite.
+# export tests so we don't pay for the full suite. Hand-written constant
+# exporters (not covered by ts-rs) also use the `export_bindings_` prefix.
 cargo test -p common --no-fail-fast export_bindings_ 2>&1 | tail -5
 
 echo ""

@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Eye, ExternalLink, Globe, Trash2, RefreshCw, FileText, Server,
 } from "lucide-react";
+import { PREVIEW_SHARE_TTL_SECS } from "@va/generated/preview-constants";
 import { apiFetch, openDashboardUrl, API_BASE } from "./lib/api";
+
+const PREVIEW_SHARE_TTL_MINUTES = Math.round(PREVIEW_SHARE_TTL_SECS / 60);
 
 interface PreviewSnapshot {
   slug: string;
@@ -82,8 +85,8 @@ export function Previews() {
 
       <p className="text-xs text-muted-foreground">
         Active dev-server proxies and markdown previews. Owner links are
-        permanent; share links rotate every 10 minutes. Closing a server
-        preview also kills the underlying dev server process.
+        permanent; share links rotate every {PREVIEW_SHARE_TTL_MINUTES} minutes.
+        Closing a server preview also kills the underlying dev server process.
       </p>
 
       {error && (

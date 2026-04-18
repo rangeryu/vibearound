@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { LayoutGrid, Rows3, Minimize2, MessageSquare, Plus, X, Sun, Moon } from "lucide-react";
+import { browserWsBaseUrl } from "@va/client";
 import type { ViewMode, TerminalGroup, TerminalSession, TerminalStatus, ToolType } from "@/lib/terminal-types";
 import { getGroupColor, TOOL_OPTIONS, STATUS_COLORS } from "@/lib/terminal-types";
 import { getToolDisplayName } from "@/lib/agents";
@@ -628,7 +629,7 @@ function App() {
       <footer className="flex items-center justify-between px-3 py-1 shrink-0 bg-muted/60 dark:bg-muted/40 border-t border-border">
         <div className="flex items-center gap-3">
           <span className="text-[10px] text-muted-foreground/40 font-mono truncate max-w-[180px]" title="WebSocket follows page host (tunnel works on phone)">
-            WS: {typeof window !== "undefined" ? (window.location.protocol === "https:" ? "wss" : "ws") + "://" + window.location.host + "/ws" : "—"}
+            WS: {browserWsBaseUrl()}/ws
           </span>
           <span className="text-[10px] text-muted-foreground/30 font-mono">
             Tunnel: — (see desktop tray)
