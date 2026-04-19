@@ -1,0 +1,112 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { apiFetch, authedWsUrl } from "../lib/api";
+
+const POLL_INTERVAL_MS = 5000;
+const WS_RECONNECT_DELAY_MS = 3000;
+
+/**
+ * Common state-subscription primitive for every per-domain hook
+ * (`useChannelsState`, `useTunnelsState`, `useAgentsRuntime`, ...).
+ *
+ * On mount it opens a WebSocket at `wsPath`; the server immediately
+ * pushes the current list, then re-pushes on every change. While the
+ * WS is open, no HTTP polling happens. If the WS drops (server
+ * restart, network blip), we fall back to polling `httpPath` every
+ * 5 s and attempt reconnection in the background.
+ *
+ * `schema` validates every wire frame — bad payloads get logged and
+ * skipped rather than silently putting garbage into React state.
+ */
+export function useManagerState<T>(
+  httpPath: string,
+  wsPath: string,
+  schema: z.ZodType<T[]>,
+) {
+  const [data, setData] = useState<T[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [connected, setConnected] = useState(false);
+  const [everLoaded, setEverLoaded] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchOnce = useCallback(async () => {
+    try {
+      const res = await apiFetch(httpPath);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const parsed = schema.parse(await res.json());
+      setData(parsed);
+      setError(null);
+      setEverLoaded(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "fetch failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [httpPath, schema]);
+
+  const startPolling = useCallback(() => {
+    if (pollRef.current) return;
+    void fetchOnce();
+    pollRef.current = setInterval(() => void fetchOnce(), POLL_INTERVAL_MS);
+  }, [fetchOnce]);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const connectWs = useCallback(async () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    const url = await authedWsUrl(wsPath);
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setConnected(true);
+      setError(null);
+      stopPolling();
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const parsed = schema.parse(JSON.parse(event.data));
+        setData(parsed);
+        setError(null);
+        setLoading(false);
+        setEverLoaded(true);
+      } catch (e) {
+        console.warn(`[${wsPath}] bad frame:`, e);
+      }
+    };
+
+    ws.onclose = () => {
+      setConnected(false);
+      wsRef.current = null;
+      startPolling();
+      setTimeout(() => void connectWs(), WS_RECONNECT_DELAY_MS);
+    };
+
+    ws.onerror = () => {
+      // onclose fires after this; no extra handling needed
+    };
+  }, [wsPath, schema, startPolling, stopPolling]);
+
+  useEffect(() => {
+    void connectWs();
+    return () => {
+      stopPolling();
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [connectWs, stopPolling]);
+
+  return { data, error, loading, connected, everLoaded, refresh: fetchOnce };
+}

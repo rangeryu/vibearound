@@ -14,7 +14,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { loopbackBaseUrl, loopbackWsBaseUrl } from "@va/client";
 
-const DAEMON_PORT = 12358;
+export const DAEMON_PORT = 12358;
 export const API_BASE = loopbackBaseUrl(DAEMON_PORT);
 export const WS_BASE = loopbackWsBaseUrl(DAEMON_PORT);
 

@@ -1,136 +1,204 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Globe, Bot, MessageSquare, Terminal, X, RefreshCw, ExternalLink, Server, Wifi, WifiOff, FolderOpen, Eye, Play,
 } from "lucide-react";
-import { useServices, type ServiceInfo, type ApiServiceStatus } from "./hooks/useServices";
-import { openDashboardUrl } from "./lib/api";
+import type { ApiServiceStatus } from "@va/client";
+import { useChannelsState, type ChannelRuntime } from "./hooks/useChannelsState";
+import { useTunnelsState, type TunnelRuntime } from "./hooks/useTunnelsState";
+import { useAgentsRuntime, type AgentRuntime } from "./hooks/useAgentsRuntime";
+import { openDashboardUrl, DAEMON_PORT } from "./lib/api";
 import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Workspaces } from "./Workspaces";
 import { Previews } from "./Previews";
 
-/** Map each `ApiServiceStatus` variant to a short label + dot color. The
- *  exhaustive switch means adding a new variant in Rust breaks the build
- *  here until a case is added. */
-function statusPresentation(status: ApiServiceStatus): {
-  label: string;
-  color: string;
-  running: boolean;
-} {
-  switch (status.state) {
-    case "running":
-      return { label: "Running", color: "bg-emerald-500", running: true };
-    case "spawning":
-      return { label: "Spawning", color: "bg-amber-500", running: false };
-    case "not_started":
-      return { label: "Not started", color: "bg-zinc-400", running: false };
-    case "stopped":
-      return { label: "Stopped", color: "bg-zinc-400", running: false };
-    case "crashed":
-      return { label: "Crashed", color: "bg-red-500", running: false };
-    case "failed":
-      return { label: "Failed", color: "bg-red-500", running: false };
+// ---------------------------------------------------------------------------
+// Per-domain status presentation — each manager has its own natural status
+// shape (channel: string enum; tunnel: ApiServiceStatus; agent: derived
+// from busy/failed flags), so each gets its own mapping.
+// ---------------------------------------------------------------------------
+
+type Pres = { label: string; color: string; running: boolean };
+
+function channelStatusPresentation(status: ChannelRuntime["status"]): Pres {
+  switch (status) {
+    case "running":     return { label: "Running",     color: "bg-emerald-500", running: true };
+    case "spawning":    return { label: "Spawning",    color: "bg-amber-500",   running: false };
+    case "not_started": return { label: "Not started", color: "bg-zinc-400",    running: false };
+    case "stopped":     return { label: "Stopped",     color: "bg-zinc-400",    running: false };
+    case "crashed":     return { label: "Crashed",     color: "bg-red-500",     running: false };
   }
 }
 
-function statusTooltip(service: ServiceInfo): string {
-  const { status } = service;
-  if (status.state === "stopped" && status.reason) return status.reason;
-  if (status.state === "failed") return status.error;
-  if (service.reason) return service.reason;
-  return status.state;
+function tunnelStatusPresentation(status: ApiServiceStatus): Pres {
+  switch (status.state) {
+    case "running":     return { label: "Running",     color: "bg-emerald-500", running: true };
+    case "spawning":    return { label: "Spawning",    color: "bg-amber-500",   running: false };
+    case "not_started": return { label: "Not started", color: "bg-zinc-400",    running: false };
+    case "stopped":     return { label: "Stopped",     color: "bg-zinc-400",    running: false };
+    case "crashed":     return { label: "Crashed",     color: "bg-red-500",     running: false };
+    case "failed":      return { label: "Failed",      color: "bg-red-500",     running: false };
+  }
 }
 
-function StatusDot({ status }: { status: ApiServiceStatus }) {
+function agentStatusPresentation(agent: AgentRuntime): Pres {
+  if (agent.failed) return { label: "Failed",  color: "bg-red-500",     running: false };
+  if (agent.busy)   return { label: "Busy",    color: "bg-amber-500",   running: true };
+  return              { label: "Idle",    color: "bg-emerald-500", running: true };
+}
+
+function StatusDot({ colorClass }: { colorClass: string }) {
+  return <span className={`inline-block w-2 h-2 rounded-full ${colorClass}`} />;
+}
+
+// ---------------------------------------------------------------------------
+// Per-domain row components
+// ---------------------------------------------------------------------------
+
+function ChannelRow({ channel, onStart, onStop }: {
+  channel: ChannelRuntime;
+  onStart: () => void;
+  onStop: () => void;
+}) {
+  const pres = channelStatusPresentation(channel.status);
+  const showRestartIn = channel.status === "crashed" && channel.restart_in_secs > 0;
   return (
-    <span
-      className={`inline-block w-2 h-2 rounded-full ${statusPresentation(status).color}`}
+    <Row
+      dot={pres.color}
+      name={capitalize(channel.kind)}
+      label={pres.label}
+      running={pres.running}
+      title={channel.reason ?? pres.label}
+      suffix={showRestartIn ? ` · retry ${channel.restart_in_secs}s` : null}
+      actions={
+        <>
+          {!pres.running && (
+            <IconBtn onClick={onStart} title="Start" icon={<Play className="w-3 h-3" />} hover="emerald" />
+          )}
+          {pres.running && (
+            <IconBtn onClick={onStop} title="Stop" icon={<X className="w-3 h-3" />} hover="destructive" />
+          )}
+        </>
+      }
     />
   );
 }
 
-function ServiceRow({
-  service,
-  category,
-  onKill,
-  onStart,
-}: {
-  service: ServiceInfo;
-  category: "tunnels" | "agents" | "channels" | "pty";
-  onKill: () => void;
-  onStart?: () => void;
-}) {
-  const pres = statusPresentation(service.status);
-  // Auto-respawn countdown is only meaningful for crashed channels.
-  const showRestartIn =
-    category === "channels" &&
-    pres.label === "Crashed" &&
-    typeof service.restart_in_secs === "number" &&
-    service.restart_in_secs > 0;
+function TunnelRow({ tunnel, onKill }: { tunnel: TunnelRuntime; onKill: () => void }) {
+  const pres = tunnelStatusPresentation(tunnel.status);
+  const tooltip =
+    tunnel.status.state === "stopped" ? (tunnel.status.reason ?? pres.label)
+    : tunnel.status.state === "failed" ? tunnel.status.error
+    : pres.label;
+  return (
+    <Row
+      dot={pres.color}
+      name={`Tunnel (${tunnel.provider})`}
+      label={pres.label}
+      running={pres.running}
+      title={tooltip}
+      secondary={tunnel.provider}
+      tailLink={tunnel.url ? { url: tunnel.url } : undefined}
+      actions={
+        pres.running ? (
+          <IconBtn onClick={onKill} title="Stop" icon={<X className="w-3 h-3" />} hover="destructive" />
+        ) : null
+      }
+    />
+  );
+}
 
+function AgentRow({ agent, onKill }: { agent: AgentRuntime; onKill: () => void }) {
+  const pres = agentStatusPresentation(agent);
+  const kindLabel = agent.cli_kind ?? "agent";
+  const name = `${kindLabel} (${agent.route_key})`;
+  return (
+    <Row
+      dot={pres.color}
+      name={name}
+      label={pres.label}
+      running={pres.running}
+      title={agent.failed ?? agent.session_id ?? pres.label}
+      secondary={agent.agent_version ? `v${agent.agent_version}` : undefined}
+      actions={
+        pres.running ? (
+          <IconBtn onClick={onKill} title="Stop" icon={<X className="w-3 h-3" />} hover="destructive" />
+        ) : null
+      }
+    />
+  );
+}
+
+function Row({ dot, name, label, running, title, suffix, secondary, tailLink, actions }: {
+  dot: string;
+  name: string;
+  label: string;
+  running: boolean;
+  title: string;
+  suffix?: React.ReactNode;
+  secondary?: string;
+  tailLink?: { url: string };
+  actions?: React.ReactNode;
+}) {
   return (
     <div className="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 transition-colors group">
-      <StatusDot status={service.status} />
-      <span className="text-xs font-medium flex-1 truncate">
-        {service.name}
-      </span>
-      {service.provider && (
-        <span className="text-[10px] text-muted-foreground/70 truncate max-w-[100px]">
-          {service.provider}
-        </span>
+      <StatusDot colorClass={dot} />
+      <span className="text-xs font-medium flex-1 truncate">{name}</span>
+      {secondary && (
+        <span className="text-[10px] text-muted-foreground/70 truncate max-w-[100px]">{secondary}</span>
       )}
       <span
-        className={`text-[10px] tabular-nums ${
-          pres.running ? "text-muted-foreground/60" : "text-muted-foreground/80"
-        }`}
-        title={statusTooltip(service)}
+        className={`text-[10px] tabular-nums ${running ? "text-muted-foreground/60" : "text-muted-foreground/80"}`}
+        title={title}
       >
-        {pres.label}
-        {showRestartIn && (
-          <span className="text-muted-foreground/50">
-            {" "}
-            · retry {service.restart_in_secs}s
-          </span>
-        )}
+        {label}
+        {suffix && <span className="text-muted-foreground/50">{suffix}</span>}
       </span>
-      {service.url && (
+      {tailLink && (
         <button
           type="button"
           onClick={(e) => {
             e.preventDefault();
-            void openDashboardUrl(service.url!);
+            void openDashboardUrl(tailLink.url);
           }}
           className="text-muted-foreground/50 hover:text-primary"
-          title={service.url}
+          title={tailLink.url}
         >
           <ExternalLink className="w-3 h-3" />
         </button>
       )}
-      {/* Start — only for channels, only when not running */}
-      {category === "channels" && !pres.running && onStart && (
-        <button
-          onClick={onStart}
-          className="text-muted-foreground/40 hover:text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Start"
-        >
-          <Play className="w-3 h-3" />
-        </button>
-      )}
-      {/* Stop — when running */}
-      {pres.running && (
-        <button
-          onClick={onKill}
-          className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Stop"
-        >
-          <X className="w-3 h-3" />
-        </button>
-      )}
+      {actions}
     </div>
   );
 }
 
+function IconBtn({ onClick, title, icon, hover }: {
+  onClick: () => void;
+  title: string;
+  icon: React.ReactNode;
+  hover: "destructive" | "emerald";
+}) {
+  const hoverClass = hover === "destructive"
+    ? "hover:text-destructive"
+    : "hover:text-emerald-500";
+  return (
+    <button
+      onClick={onClick}
+      className={`text-muted-foreground/40 ${hoverClass} opacity-0 group-hover:opacity-100 transition-opacity`}
+      title={title}
+    >
+      {icon}
+    </button>
+  );
+}
 
+function capitalize(s: string): string {
+  return s.length === 0 ? s : s[0].toUpperCase() + s.slice(1);
+}
+
+// ---------------------------------------------------------------------------
+// Routing + Dashboard
+// ---------------------------------------------------------------------------
 
 function App() {
   const [route, setRoute] = useState(() => window.location.pathname);
@@ -152,44 +220,50 @@ type DashboardPage = "services" | "workspaces" | "previews";
 
 function Dashboard() {
   const [page, setPage] = useState<DashboardPage>("services");
-  const { data, error, connected, refresh, killService, channelAction } = useServices();
+
+  const channels = useChannelsState();
+  const tunnels = useTunnelsState();
+  const agents = useAgentsRuntime();
+
+  const anyEverLoaded = channels.everLoaded || tunnels.everLoaded || agents.everLoaded;
+  const anyConnected = channels.connected || tunnels.connected || agents.connected;
+  const firstError = channels.error ?? tunnels.error ?? agents.error ?? null;
+
+  const refreshAll = useCallback(() => {
+    void channels.refresh();
+    void tunnels.refresh();
+    void agents.refresh();
+  }, [channels, tunnels, agents]);
+
   const everHadData = useRef(false);
   const [startTime] = useState(() => Date.now());
   const [timedOut, setTimedOut] = useState(false);
 
-  if (data) everHadData.current = true;
+  if (anyEverLoaded) everHadData.current = true;
 
-  // Auto-retry while waiting for server, timeout after 30s
   useEffect(() => {
-    if (data || everHadData.current) return;
+    if (anyEverLoaded || everHadData.current) return;
     if (timedOut) return;
-
     const elapsed = Date.now() - startTime;
     if (elapsed > 30_000) {
       setTimedOut(true);
       return;
     }
-
-    if (error) {
-      const timer = setTimeout(refresh, 2000);
+    if (firstError) {
+      const timer = setTimeout(refreshAll, 2000);
       return () => clearTimeout(timer);
     }
-  }, [data, error, timedOut, startTime, refresh]);
+  }, [anyEverLoaded, firstError, timedOut, startTime, refreshAll]);
 
-  // Show splash while waiting for first data (cold start)
-  const showSplash = !everHadData.current && !data && !timedOut;
+  const showSplash = !everHadData.current && !anyEverLoaded && !timedOut;
+  if (showSplash) return <Splash visible />;
 
-  if (showSplash) {
-    return <Splash visible />;
-  }
-
-  // Server failed after timeout
-  if (timedOut && !data) {
+  if (timedOut && !anyEverLoaded) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3">
         <p className="text-sm text-destructive">Server failed to start</p>
         <button
-          onClick={() => { setTimedOut(false); refresh(); }}
+          onClick={() => { setTimedOut(false); refreshAll(); }}
           className="text-xs text-primary hover:underline flex items-center gap-1"
         >
           <RefreshCw className="w-3 h-3" /> Retry
@@ -198,40 +272,13 @@ function Dashboard() {
     );
   }
 
-  if (!data) return null;
-
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
-          <button
-            onClick={() => setPage("services")}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
-              page === "services" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Server className="w-3 h-3" />
-            VibeAround
-          </button>
-          <button
-            onClick={() => setPage("workspaces")}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
-              page === "workspaces" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <FolderOpen className="w-3 h-3" />
-            Workspaces
-          </button>
-          <button
-            onClick={() => setPage("previews")}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
-              page === "previews" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Eye className="w-3 h-3" />
-            Previews
-          </button>
+          <TabButton active={page === "services"} onClick={() => setPage("services")} icon={<Server className="w-3 h-3" />} label="VibeAround" />
+          <TabButton active={page === "workspaces"} onClick={() => setPage("workspaces")} icon={<FolderOpen className="w-3 h-3" />} label="Workspaces" />
+          <TabButton active={page === "previews"} onClick={() => setPage("previews")} icon={<Eye className="w-3 h-3" />} label="Previews" />
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -241,7 +288,7 @@ function Dashboard() {
           >
             Config Wizard
           </button>
-          {connected ? (
+          {anyConnected ? (
             <span className="flex items-center gap-1 text-xs text-emerald-600">
               <Wifi className="w-3 h-3" /> Live
             </span>
@@ -250,11 +297,8 @@ function Dashboard() {
               <WifiOff className="w-3 h-3" /> Polling
             </span>
           )}
-          <span className="text-xs text-muted-foreground tabular-nums">
-            port {data.server.port}
-          </span>
           <button
-            onClick={refresh}
+            onClick={refreshAll}
             className="p-1 rounded hover:bg-accent transition-colors"
             title="Refresh"
           >
@@ -263,125 +307,107 @@ function Dashboard() {
         </div>
       </header>
 
-      {/* Error banner */}
-      {error && (
-        <div className="px-4 py-1.5 bg-destructive/10 text-destructive text-xs">
-          {error}
-        </div>
+      {firstError && (
+        <div className="px-4 py-1.5 bg-destructive/10 text-destructive text-xs">{firstError}</div>
       )}
 
-      {/* Content */}
       {page === "workspaces" ? (
-        <div className="flex-1 overflow-y-auto">
-          <Workspaces />
-        </div>
+        <div className="flex-1 overflow-y-auto"><Workspaces /></div>
       ) : page === "previews" ? (
-        <div className="flex-1 overflow-y-auto">
-          <Previews />
-        </div>
+        <div className="flex-1 overflow-y-auto"><Previews /></div>
       ) : (
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {/* Tunnel */}
-        <Section
-          icon={<Globe className="w-4 h-4 text-primary" />}
-          title="Tunnel"
-          badge={data.tunnels.length}
-        >
-          {data.tunnels.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-3 py-2">
-              No tunnel running
-            </p>
-          ) : (
-            data.tunnels.map((s) => (
-              <ServiceRow
-                key={s.id}
-                service={s}
-                category="tunnels"
-                onKill={() => killService("tunnels", s.id)}
-              />
-            ))
-          )}
-        </Section>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <Section
+            icon={<Globe className="w-4 h-4 text-primary" />}
+            title="Tunnel"
+            badge={tunnels.tunnels.length}
+          >
+            {tunnels.tunnels.length === 0 ? (
+              <p className="text-xs text-muted-foreground px-3 py-2">No tunnel running</p>
+            ) : (
+              tunnels.tunnels.map((t) => (
+                <TunnelRow key={t.provider} tunnel={t} onKill={() => tunnels.kill(t.provider)} />
+              ))
+            )}
+          </Section>
 
-        {/* Agents */}
-        <Section
-          icon={<Bot className="w-4 h-4 text-primary" />}
-          title="Agents"
-          badge={data.agents.length}
-        >
-          {data.agents.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-3 py-2">
-              No agents running
-            </p>
-          ) : (
-            data.agents.map((s) => (
-              <ServiceRow
-                key={s.id}
-                service={s}
-                category="agents"
-                onKill={() => killService("agents", s.id)}
-              />
-            ))
-          )}
-        </Section>
+          <Section
+            icon={<Bot className="w-4 h-4 text-primary" />}
+            title="Agents"
+            badge={agents.agents.length}
+          >
+            {agents.agents.length === 0 ? (
+              <p className="text-xs text-muted-foreground px-3 py-2">No agents running</p>
+            ) : (
+              agents.agents.map((a) => (
+                <AgentRow key={a.route_key} agent={a} onKill={() => agents.kill(a.route_key)} />
+              ))
+            )}
+          </Section>
 
-        {/* Channels */}
-        <Section
-          icon={<MessageSquare className="w-4 h-4 text-primary" />}
-          title="Channels"
-          badge={data.channels.length}
-        >
-          {data.channels.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-3 py-2">
-              No channels running
-            </p>
-          ) : (
-            data.channels.map((s) => (
-              <ServiceRow
-                key={s.id}
-                service={s}
-                category="channels"
-                onKill={() => channelAction(s.id, "stop")}
-                onStart={() => channelAction(s.id, "start")}
-              />
-            ))
-          )}
-        </Section>
+          <Section
+            icon={<MessageSquare className="w-4 h-4 text-primary" />}
+            title="Channels"
+            badge={channels.channels.length}
+          >
+            {channels.channels.length === 0 ? (
+              <p className="text-xs text-muted-foreground px-3 py-2">No channels running</p>
+            ) : (
+              channels.channels.map((c) => (
+                <ChannelRow
+                  key={c.kind}
+                  channel={c}
+                  onStart={() => channels.start(c.kind)}
+                  onStop={() => channels.stop(c.kind)}
+                />
+              ))
+            )}
+          </Section>
 
-        {/* PTY Sessions */}
-        <Section
-          icon={<Terminal className="w-4 h-4 text-primary" />}
-          title="PTY Sessions"
-          badge={data.pty_session_count}
-        >
-          <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-sm text-muted-foreground">
-              {data.pty_session_count} active session{data.pty_session_count !== 1 ? "s" : ""}
-            </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                void openDashboardUrl(`http://127.0.0.1:${data.server.port}/va/`);
-              }}
-              className="text-xs text-primary hover:underline flex items-center gap-1"
-            >
-              Open Web Dashboard <ExternalLink className="w-3 h-3" />
-            </button>
-          </div>
-        </Section>
-      </div>
+          <Section
+            icon={<Terminal className="w-4 h-4 text-primary" />}
+            title="Dashboard"
+          >
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-sm text-muted-foreground">Open the web dashboard</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void openDashboardUrl(`http://127.0.0.1:${DAEMON_PORT}/va/`);
+                }}
+                className="text-xs text-primary hover:underline flex items-center gap-1"
+              >
+                Open Web Dashboard <ExternalLink className="w-3 h-3" />
+              </button>
+            </div>
+          </Section>
+        </div>
       )}
     </div>
   );
 }
 
-function Section({
-  icon,
-  title,
-  children,
-  badge,
-}: {
+function TabButton({ active, onClick, icon, label }: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
+        active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function Section({ icon, title, children, badge }: {
   icon: React.ReactNode;
   title: string;
   children: React.ReactNode;
