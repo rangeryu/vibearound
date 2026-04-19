@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ChevronLeft, ChevronRight, Rocket } from "lucide-react";
 
 import { STEPS } from "./constants";
@@ -9,17 +8,17 @@ import { StepChannels } from "./components/StepChannels";
 import { StepConfirm } from "./components/StepConfirm";
 import { StepTunnel } from "./components/StepTunnel";
 import { StepWelcome } from "./components/StepWelcome";
+import { useChannelAuth } from "./hooks/useChannelAuth";
+import { useInstallFlow } from "./hooks/useInstallFlow";
+import { buildSettings } from "./lib/buildSettings";
 import type {
   AgentSummary,
-  AuthFlowState,
   DiscoveredChannelPlugin,
-  InstallTaskInfo,
-  InstallTaskProgress,
   PluginRegistryEntry,
   Settings,
   TunnelSummary,
 } from "./types";
-import type { AgentId, OnboardingStep, TunnelProvider } from "./constants";
+import type { AgentId, TunnelProvider } from "./constants";
 
 export default function Onboarding() {
   const [step, setStep] = useState(0);
@@ -36,11 +35,10 @@ export default function Onboarding() {
   const [enabledAgents, setEnabledAgents] = useState<Set<AgentId>>(new Set());
   const [defaultAgent, setDefaultAgent] = useState<AgentId>("claude");
 
-  // Channels — generic state for all plugins
+  // Channels
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(new Set());
   const [channelConfigs, setChannelConfigs] = useState<Record<string, Record<string, string>>>({});
   const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(new Set());
-  const [authStates, setAuthStates] = useState<Record<string, AuthFlowState>>({});
 
   // Tunnel
   const [tunnelProvider, setTunnelProvider] = useState<TunnelProvider>("none");
@@ -48,14 +46,6 @@ export default function Onboarding() {
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
   const [cfHostname, setCfHostname] = useState("");
-
-  const [finishing, setFinishing] = useState(false);
-
-  // Install progress state
-  const [isInstalling, setIsInstalling] = useState(false);
-  const [installComplete, setInstallComplete] = useState(false);
-  const [installTasks, setInstallTasks] = useState<InstallTaskProgress[]>([]);
-  const unlistenRefs = useRef<UnlistenFn[]>([]);
 
   // ---- Load existing settings + resources ----
   useEffect(() => {
@@ -73,7 +63,6 @@ export default function Onboarding() {
         setTunnels(tunnelDefs);
         setPluginRegistry(pluginDefs);
 
-        // Agents — default to all enabled
         if (loadedSettings.enabled_agents?.length) {
           setEnabledAgents(new Set(loadedSettings.enabled_agents as AgentId[]));
         } else {
@@ -83,7 +72,6 @@ export default function Onboarding() {
           setDefaultAgent(loadedSettings.default_agent as AgentId);
         }
 
-        // Channels — load from existing settings
         const channels = loadedSettings.channels ?? {};
         const enabled = new Set<string>();
         const configs: Record<string, Record<string, string>> = {};
@@ -100,7 +88,6 @@ export default function Onboarding() {
         setEnabledChannels(enabled);
         setChannelConfigs(configs);
 
-        // Tunnel
         const provider = loadedSettings.tunnel?.provider;
         if (provider === "cloudflare" || provider === "ngrok" || provider === "localtunnel") {
           setTunnelProvider(provider);
@@ -135,10 +122,7 @@ export default function Onboarding() {
   const installPlugin = useCallback(async (pluginId: string, githubUrl: string) => {
     setInstallingPlugins((prev) => new Set(prev).add(pluginId));
     try {
-      await invoke("install_plugin", {
-        request: { pluginId, githubUrl },
-      });
-      // Refresh discovered plugins
+      await invoke("install_plugin", { request: { pluginId, githubUrl } });
       const plugins = await invoke<DiscoveredChannelPlugin[]>("list_channel_plugins");
       setDiscoveredPlugins(plugins);
     } catch (error) {
@@ -152,173 +136,39 @@ export default function Onboarding() {
     }
   }, []);
 
-  // ---- Auth flow (generic for any plugin with QR login) ----
-  const startAuth = useCallback(async (pluginId: string) => {
-    setAuthStates((prev) => ({
-      ...prev,
-      [pluginId]: { status: "generating", message: "Connecting…" },
-    }));
+  // ---- Auth flow + install orchestration (extracted hooks) ----
+  const { authStates, startAuth, cancelAuth } = useChannelAuth({
+    step,
+    discoveredPlugins,
+    channelConfigs,
+    onConfigChange: updateChannelConfig,
+  });
 
-    try {
-      // Build config from current channel config + schema defaults
-      const discovered = discoveredPlugins.find((p) => p.id === pluginId);
-      const schemaProps = discovered?.configSchema?.properties ?? {};
-      const configForAuth: Record<string, string> = {};
-      for (const [key, prop] of Object.entries(schemaProps)) {
-        configForAuth[key] = channelConfigs[pluginId]?.[key] ?? prop.default ?? "";
-      }
+  const {
+    finishing,
+    isInstalling,
+    installComplete,
+    installTasks,
+    startInstall,
+    cancelInstall,
+    completeInstall,
+  } = useInstallFlow();
 
-      const result = await invoke<Record<string, unknown>>("plugin_auth_start", {
-        request: { pluginId, config: configForAuth },
-      });
-
-      if (result.alreadyConnected) {
-        setAuthStates((prev) => ({
-          ...prev,
-          [pluginId]: { status: "connected", message: String(result.message ?? "Already authenticated.") },
-        }));
-        if (result.botToken) updateChannelConfig(pluginId, "bot_token", String(result.botToken));
-        if (result.accountId) updateChannelConfig(pluginId, "account_id", String(result.accountId));
-        return;
-      }
-
-      const qrUrl = result.qrcodeUrl as string | undefined;
-      setAuthStates((prev) => ({
-        ...prev,
-        [pluginId]: {
-          status: qrUrl ? "waiting" : "error",
-          message: String(result.message ?? "Scan the QR code."),
-          qrCodeUrl: qrUrl,
-          sessionKey: result.sessionKey as string | undefined,
-        },
-      }));
-
-      if (!qrUrl) return;
-
-      // Wait for auth completion
-      try {
-        const waitResult = await invoke<Record<string, unknown>>("plugin_auth_wait", {
-          request: {
-            pluginId,
-            params: {
-              sessionKey: result.sessionKey,
-              timeoutMs: 480000,
-            },
-          },
-        });
-
-        if (waitResult.connected) {
-          setAuthStates((prev) => ({
-            ...prev,
-            [pluginId]: { status: "connected", message: String(waitResult.message ?? "Connected successfully.") },
-          }));
-          if (waitResult.botToken) updateChannelConfig(pluginId, "bot_token", String(waitResult.botToken));
-          if (waitResult.accountId) updateChannelConfig(pluginId, "account_id", String(waitResult.accountId));
-        } else {
-          setAuthStates((prev) => ({
-            ...prev,
-            [pluginId]: { status: "idle", message: String(waitResult.message ?? "Not confirmed.") },
-          }));
-        }
-      } catch {
-        setAuthStates((prev) => ({
-          ...prev,
-          [pluginId]: { status: "error", message: "Connection lost. Try again." },
-        }));
-      }
-    } catch (error) {
-      setAuthStates((prev) => ({
-        ...prev,
-        [pluginId]: { status: "error", message: error instanceof Error ? error.message : String(error) },
-      }));
-    }
-  }, [discoveredPlugins, channelConfigs, updateChannelConfig]);
-
-  const cancelAuth = useCallback(async (pluginId: string) => {
-    setAuthStates((prev) => ({
-      ...prev,
-      [pluginId]: { status: "idle", message: "Cancelled." },
-    }));
-    try {
-      await invoke("plugin_auth_cancel", { request: { pluginId } });
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // ---- Cancel active auth when leaving Channels step ----
-  useEffect(() => {
-    const currentStep = STEPS[step] as OnboardingStep;
-    if (currentStep !== "Channels") {
-      for (const [pluginId, state] of Object.entries(authStates)) {
-        if (state.status === "generating" || state.status === "waiting") {
-          void invoke("plugin_auth_cancel", { request: { pluginId } }).catch(() => {});
-        }
-      }
-    }
-  }, [step, authStates]);
-
-  // ---- Build settings ----
-  const buildSettings = useCallback((): Settings => {
-    const result: Settings = {
-      ...settings,
-      enabled_agents: Array.from(enabledAgents),
-      default_agent: defaultAgent,
-    };
-
-    // Channels
-    const channels: Record<string, Record<string, unknown>> = {};
-    for (const id of enabledChannels) {
-      const config: Record<string, unknown> = {};
-      const userConfig = channelConfigs[id] ?? {};
-
-      // Merge user config
-      for (const [key, value] of Object.entries(userConfig)) {
-        if (value) config[key] = value;
-      }
-
-      // Fill defaults from schema for hidden fields
-      const discovered = discoveredPlugins.find((p) => p.id === id);
-      if (discovered?.configSchema?.properties) {
-        for (const [key, prop] of Object.entries(discovered.configSchema.properties)) {
-          if (prop.hidden && prop.default && !config[key]) {
-            config[key] = prop.default;
-          }
-        }
-      }
-
-      // Preserve verbose settings
-      const existingVerbose = (settings.channels as Record<string, Record<string, unknown>> | undefined)?.[id]?.verbose;
-      config.verbose = existingVerbose ?? { show_thinking: false, show_tool_use: false };
-
-      channels[id] = config;
-    }
-
-    if (Object.keys(channels).length > 0) {
-      result.channels = channels;
-    } else {
-      delete result.channels;
-    }
-
-    // Tunnel
-    if (tunnelProvider !== "none") {
-      const tunnel: Settings["tunnel"] = { provider: tunnelProvider };
-      if (tunnelProvider === "ngrok") {
-        tunnel.ngrok = {};
-        if (ngrokToken.trim()) tunnel.ngrok.auth_token = ngrokToken.trim();
-        if (ngrokDomain.trim()) tunnel.ngrok.domain = ngrokDomain.trim();
-      }
-      if (tunnelProvider === "cloudflare") {
-        tunnel.cloudflare = {};
-        if (cfToken.trim()) tunnel.cloudflare.tunnel_token = cfToken.trim();
-        if (cfHostname.trim()) tunnel.cloudflare.hostname = cfHostname.trim();
-      }
-      result.tunnel = tunnel;
-    } else {
-      delete result.tunnel;
-    }
-
-    return result;
+  const handleFinish = useCallback(() => {
+    const finalSettings = buildSettings({
+      settings,
+      enabledAgents,
+      defaultAgent,
+      enabledChannels,
+      channelConfigs,
+      discoveredPlugins,
+      tunnelProvider,
+      ngrokToken,
+      ngrokDomain,
+      cfToken,
+      cfHostname,
+    });
+    void startInstall(finalSettings);
   }, [
     settings,
     enabledAgents,
@@ -331,107 +181,26 @@ export default function Onboarding() {
     ngrokDomain,
     cfToken,
     cfHostname,
+    startInstall,
   ]);
 
-  const handleFinish = async () => {
-    setFinishing(true);
-    try {
-      const finalSettings = buildSettings();
-
-      // Get install manifest to pre-populate the task list
-      const manifest = await invoke<InstallTaskInfo[]>("get_install_manifest", {
-        settings: finalSettings,
+  const toggleAgent = useCallback(
+    (id: AgentId) => {
+      setEnabledAgents((previous) => {
+        const next = new Set(previous);
+        if (next.has(id)) {
+          if (next.size > 1) next.delete(id);
+        } else {
+          next.add(id);
+        }
+        if (!next.has(defaultAgent)) {
+          setDefaultAgent(Array.from(next)[0]);
+        }
+        return next;
       });
-      setInstallTasks(
-        manifest.map((t) => ({
-          id: t.id,
-          label: t.label,
-          status: "pending" as const,
-        })),
-      );
-      setIsInstalling(true);
-
-      // Set up event listeners for progress
-      const unlistenProgress = await listen<{
-        id: string;
-        label: string;
-        status: string;
-        message?: string;
-      }>("onboarding-install-progress", (event) => {
-        const { id, status, message } = event.payload;
-        setInstallTasks((prev) =>
-          prev.map((task) =>
-            task.id === id
-              ? { ...task, status: status as InstallTaskProgress["status"], message }
-              : task,
-          ),
-        );
-      });
-
-      const unlistenComplete = await listen<{ status: string }>(
-        "onboarding-install-complete",
-        () => {
-          setInstallComplete(true);
-        },
-      );
-
-      unlistenRefs.current = [unlistenProgress, unlistenComplete];
-
-      // Fire-and-forget: start the install
-      await invoke("start_onboarding_install", { settings: finalSettings });
-    } catch (error) {
-      console.error("start_onboarding_install failed:", error);
-      setFinishing(false);
-      setIsInstalling(false);
-    }
-  };
-
-  const handleCancelInstall = async () => {
-    try {
-      await invoke("cancel_onboarding_install");
-      // Mark remaining pending tasks as cancelled
-      setInstallTasks((prev) =>
-        prev.map((task) =>
-          task.status === "pending" || task.status === "running"
-            ? { ...task, status: "cancelled" as const, message: "Cancelled" }
-            : task,
-        ),
-      );
-      setInstallComplete(true);
-    } catch (error) {
-      console.error("cancel failed:", error);
-    }
-  };
-
-  const handleInstallComplete = async () => {
-    // Clean up event listeners
-    for (const unlisten of unlistenRefs.current) {
-      unlisten();
-    }
-    unlistenRefs.current = [];
-
-    try {
-      await invoke("finish_onboarding");
-      window.location.replace("/");
-    } catch (error) {
-      console.error("finish_onboarding failed:", error);
-    }
-  };
-
-  const toggleAgent = (id: AgentId) => {
-    setEnabledAgents((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) {
-        if (next.size > 1) next.delete(id);
-      } else {
-        next.add(id);
-      }
-      if (!next.has(defaultAgent)) {
-        setDefaultAgent(Array.from(next)[0]);
-      }
-      return next;
-    });
-  };
+    },
+    [defaultAgent],
+  );
 
   if (!loaded) {
     return (
@@ -517,8 +286,8 @@ export default function Onboarding() {
             isInstalling={isInstalling}
             installComplete={installComplete}
             installTasks={installTasks}
-            onCancel={handleCancelInstall}
-            onComplete={handleInstallComplete}
+            onCancel={cancelInstall}
+            onComplete={completeInstall}
           />
         )}
       </div>
