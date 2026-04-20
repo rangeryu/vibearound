@@ -8,7 +8,7 @@
 use axum::http::StatusCode;
 use axum::response::Response;
 
-use common::preview_manager::{PreviewEntry, PreviewTarget};
+use common::previews::{PreviewEntry, PreviewTarget};
 
 use super::toolbar::{escape_html, html_response, remaining_millis, toolbar_and_timer, TOOLBAR_CSS};
 

@@ -12,14 +12,14 @@ use anyhow::{anyhow, Context};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-use common::conversation_manager::ConversationManager;
+use common::conversations::ConversationManager;
 use common::auth::{self, AuthToken};
-use common::channel_manager::{handle_channel_input, ChannelManager, WebChannelManager};
+use common::channels::{handle_channel_input, ChannelManager, WebChannelManager};
 use common::process::registry::{self as child_registry, ChildRegistry};
 use common::config;
 use common::plugins;
 use common::pty::{PtySessionManager, Registry, SessionId};
-use common::tunnel_manager::{self, TunnelManager};
+use common::tunnels::{self, TunnelManager};
 
 /// Unified daemon that starts and manages all VibeAround services.
 /// Both the server binary and the desktop (Tauri) binary use this.
@@ -63,7 +63,7 @@ impl RunningDaemon {
 
         // Kill any user-started dev servers we were previewing so they don't
         // outlive the daemon. Best-effort; failures are logged.
-        common::preview_manager::shutdown_kill_all_ports();
+        common::previews::shutdown_kill_all_ports();
 
         let pty_manager = PtySessionManager::from_registry(Arc::clone(&self.pty));
         let session_ids: Vec<SessionId> = self.pty.iter().map(|entry| entry.key().clone()).collect();
@@ -252,7 +252,7 @@ impl ServerDaemon {
         let tunnel_handle = if tunnel_provider.is_enabled() {
             let tunnel_manager = Arc::clone(&tunnels);
             let handle = tokio::spawn(async move {
-                match tunnel_manager::start_web_tunnel_with_provider(tunnel_provider, &cfg).await {
+                match tunnels::start_web_tunnel_with_provider(tunnel_provider, &cfg).await {
                     Ok((guard, url)) => {
                         tracing::info!(url = %url, "tunnel connected");
                         tunnel_manager.set_url(tunnel_provider.as_str(), &url);

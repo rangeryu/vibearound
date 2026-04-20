@@ -39,7 +39,7 @@ fn parse_url_from_line(line: &str) -> Option<String> {
 
 /// Start localtunnel for the given port. Returns (guard, public URL) once the URL is printed.
 /// Caller must keep the guard and await `guard.wait()` to keep the tunnel alive.
-pub async fn start(port: u16) -> Result<(crate::tunnel_manager::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start(port: u16) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
     let tunnel_def = crate::resources::tunnel_by_id("localtunnel")
         .expect("localtunnel not in tunnels.json");
     let program = tunnel_def.program.as_deref().unwrap_or("npx");
@@ -77,11 +77,11 @@ pub async fn start(port: u16) -> Result<(crate::tunnel_manager::TunnelGuard, Str
         }
     };
 
-    Ok((crate::tunnel_manager::TunnelGuard::Process(child), url))
+    Ok((crate::tunnels::TunnelGuard::Process(child), url))
 }
 
 /// Start tunnel for the default web dashboard port.
-pub async fn start_web_tunnel() -> Result<(crate::tunnel_manager::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_web_tunnel() -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
     start(PORT).await
 }
 
@@ -89,7 +89,7 @@ pub async fn start_web_tunnel() -> Result<(crate::tunnel_manager::TunnelGuard, S
 pub struct LocaltunnelBackend;
 
 #[async_trait::async_trait]
-impl crate::tunnel_manager::TunnelBackend for LocaltunnelBackend {
+impl crate::tunnels::TunnelBackend for LocaltunnelBackend {
     fn name(&self) -> &'static str {
         "localtunnel"
     }
@@ -97,7 +97,7 @@ impl crate::tunnel_manager::TunnelBackend for LocaltunnelBackend {
     async fn start_web_tunnel(
         &self,
         _config: &crate::config::Config,
-    ) -> Result<(crate::tunnel_manager::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
         start_web_tunnel().await
     }
 }

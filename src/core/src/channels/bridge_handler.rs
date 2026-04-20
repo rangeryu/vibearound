@@ -16,7 +16,7 @@ use std::sync::Arc;
 use agent_client_protocol as acp;
 
 use crate::routing::RouteKey;
-use crate::conversation_manager::ConversationManager;
+use crate::conversations::ConversationManager;
 use crate::agent::AgentClientHandler;
 
 use super::plugin_host::PluginHost;

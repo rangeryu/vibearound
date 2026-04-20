@@ -10,7 +10,7 @@ use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::Response;
 
-use common::preview_manager::{PreviewEntry, PreviewTarget};
+use common::previews::{PreviewEntry, PreviewTarget};
 
 use super::cookie_proxy::PREVIEW_COOKIE;
 use super::markdown::render_md_page;
@@ -18,7 +18,7 @@ use super::toolbar::{escape_html, remaining_millis, toolbar_and_timer, TOOLBAR_C
 
 /// Look up a preview by slug and dispatch to the right renderer based on target.
 pub(super) async fn render_preview(slug: &str) -> Result<Response, (StatusCode, String)> {
-    let entry = common::preview_manager::lookup(slug).ok_or_else(|| {
+    let entry = common::previews::lookup(slug).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
             "Preview not found or expired.".to_string(),

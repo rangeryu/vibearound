@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use crate::channel_manager::plugin_host::PluginHost;
-use crate::conversation_manager::{handover, ConversationManager};
+use crate::channels::plugin_host::PluginHost;
+use crate::conversations::{handover, ConversationManager};
 use crate::routing::RouteKey;
 
 use super::send_system_text;

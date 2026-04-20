@@ -10,7 +10,7 @@
 //! transport. If another transport is ever needed, reintroduce a trait
 //! at that time.
 //!
-//! [`Conversation`]: crate::conversation_manager::Conversation
+//! [`Conversation`]: crate::conversations::Conversation
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -35,7 +35,7 @@ use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc;
 
-use crate::conversation_manager::ConversationManager;
+use crate::conversations::ConversationManager;
 use crate::pty::unix_now_secs;
 
 use super::manifest::ChannelPluginManifest;

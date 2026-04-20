@@ -116,7 +116,7 @@ pub(super) async fn mcp_prepare_handover(
         },
     };
 
-    let code = common::conversation_manager::handover::pickup_codes::store(
+    let code = common::conversations::handover::pickup_codes::store(
         agent_kind_str.to_string(),
         session_id,
         cwd.to_string(),
@@ -226,7 +226,7 @@ pub(super) async fn mcp_preview_start(
         .map(String::from);
 
     let (owner_slug, share_slug) =
-        common::preview_manager::ensure_server(port, cwd_path, title, session_id.clone());
+        common::previews::ensure_server(port, cwd_path, title, session_id.clone());
     let owner_url = build_preview_url(state, "preview/u", &owner_slug);
     let share_url = build_preview_url(state, "preview/s", &share_slug);
 
@@ -306,7 +306,7 @@ pub(super) async fn mcp_md_preview(
         });
 
     let (owner_slug, share_slug) =
-        common::preview_manager::ensure_file(file_path, cwd_path, title);
+        common::previews::ensure_file(file_path, cwd_path, title);
     let owner_url = build_preview_url(state, "preview/u", &owner_slug);
     let share_url = build_preview_url(state, "preview/s", &share_slug);
 

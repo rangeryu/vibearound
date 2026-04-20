@@ -30,8 +30,8 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::sync::{broadcast, mpsc};
 
-use crate::conversation_manager::event::SystemEvent;
-use crate::conversation_manager::ConversationManager;
+use crate::conversations::event::SystemEvent;
+use crate::conversations::ConversationManager;
 use crate::plugins::DiscoveredPlugin;
 
 use self::manifest::ChannelPluginManifest;

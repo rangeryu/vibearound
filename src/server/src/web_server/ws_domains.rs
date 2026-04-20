@@ -44,7 +44,7 @@ pub async fn ws_channels_handler(
 }
 
 async fn build_channels(
-    monitor: &common::channel_manager::monitor::ChannelMonitor,
+    monitor: &common::channels::monitor::ChannelMonitor,
 ) -> Vec<crate::api_types::ChannelRuntime> {
     use common::state::StateSource;
     monitor
@@ -83,7 +83,7 @@ pub async fn ws_tunnels_handler(
 }
 
 async fn build_tunnels(
-    manager: &common::tunnel_manager::TunnelManager,
+    manager: &common::tunnels::TunnelManager,
 ) -> Vec<crate::api_types::TunnelRuntime> {
     use common::state::StateSource;
     manager
@@ -119,7 +119,7 @@ pub async fn ws_agents_runtime_handler(
 }
 
 async fn build_agents_runtime(
-    conversation_manager: &common::conversation_manager::ConversationManager,
+    conversation_manager: &common::conversations::ConversationManager,
 ) -> Vec<crate::api_types::AgentRuntime> {
     let pods = conversation_manager.list();
     let mut out = Vec::with_capacity(pods.len());

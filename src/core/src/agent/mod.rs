@@ -19,7 +19,7 @@
 //!   the agent knows how to reach us. [`sync_integrations`] is the
 //!   startup/settings-change entrypoint.
 //!
-//! [`Conversation`]: crate::conversation_manager::Conversation
+//! [`Conversation`]: crate::conversations::Conversation
 
 mod mcp;
 pub mod install;

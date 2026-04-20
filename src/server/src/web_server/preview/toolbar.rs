@@ -9,7 +9,7 @@ use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::Response;
 
-use common::preview_manager::PreviewEntry;
+use common::previews::PreviewEntry;
 
 pub(super) fn remaining_millis(entry: &PreviewEntry) -> u128 {
     entry

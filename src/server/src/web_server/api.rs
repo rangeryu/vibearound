@@ -373,7 +373,7 @@ pub async fn set_default_workspace_handler(
 
 /// GET /api/previews — list all live preview sessions and the active tunnel URL.
 pub async fn list_previews_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let previews = common::preview_manager::list_snapshots();
+    let previews = common::previews::list_snapshots();
     let tunnel_url = state.tunnels.first_url();
     Json(serde_json::json!({
         "previews": previews,
@@ -383,7 +383,7 @@ pub async fn list_previews_handler(State(state): State<AppState>) -> Json<serde_
 
 /// DELETE /api/previews/:slug — close one preview and kill its dev-server port.
 pub async fn delete_preview_handler(Path(slug): Path<String>) -> impl IntoResponse {
-    if common::preview_manager::delete_session(&slug) {
+    if common::previews::delete_session(&slug) {
         (StatusCode::OK, format!("Preview {} closed", slug))
     } else {
         (StatusCode::NOT_FOUND, format!("Preview {} not found", slug))

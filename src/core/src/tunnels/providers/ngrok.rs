@@ -11,7 +11,7 @@ const PORT: u16 = crate::config::DEFAULT_PORT;
 /// Uses the given config for auth token and optional static domain.
 pub async fn start_web_tunnel(
     config: &crate::config::Config,
-) -> Result<(crate::tunnel_manager::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
     let token = config.ngrok_auth_token.as_deref().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -53,14 +53,14 @@ pub async fn start_web_tunnel(
         std::future::pending::<()>().await
     });
 
-    Ok((crate::tunnel_manager::TunnelGuard::Sdk(handle), url))
+    Ok((crate::tunnels::TunnelGuard::Sdk(handle), url))
 }
 
 /// Ngrok backend. Implements TunnelBackend for unified dispatch.
 pub struct NgrokBackend;
 
 #[async_trait::async_trait]
-impl crate::tunnel_manager::TunnelBackend for NgrokBackend {
+impl crate::tunnels::TunnelBackend for NgrokBackend {
     fn name(&self) -> &'static str {
         "ngrok"
     }
@@ -68,7 +68,7 @@ impl crate::tunnel_manager::TunnelBackend for NgrokBackend {
     async fn start_web_tunnel(
         &self,
         config: &crate::config::Config,
-    ) -> Result<(crate::tunnel_manager::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
         start_web_tunnel(config).await
     }
 }

@@ -17,7 +17,7 @@ use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 
-use common::preview_manager::PreviewTarget;
+use common::previews::PreviewTarget;
 
 use crate::web_server::AppState;
 
@@ -75,7 +75,7 @@ pub async fn cookie_proxy_fallback(State(state): State<AppState>, req: Request) 
         return Redirect::temporary("/va/").into_response();
     }
 
-    let entry = match common::preview_manager::lookup(&slug) {
+    let entry = match common::previews::lookup(&slug) {
         Some(e) => e,
         None => {
             // Cookie exists but entry expired — clear cookie and redirect.
@@ -192,7 +192,7 @@ fn preview_error_page() -> Response {
 }
 
 fn preview_error_html() -> String {
-    let ttl_minutes = common::preview_manager::SHARE_TTL_SECS / 60;
+    let ttl_minutes = common::previews::SHARE_TTL_SECS / 60;
     let template = r#"<!DOCTYPE html>
 <html lang="en">
 <head>

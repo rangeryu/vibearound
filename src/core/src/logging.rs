@@ -14,7 +14,7 @@
 //! environment, e.g.
 //!
 //! ```sh
-//! RUST_LOG=warn,common::channel_manager=trace cargo run
+//! RUST_LOG=warn,common::channels=trace cargo run
 //! ```
 
 use tracing_subscriber::layer::SubscriberExt;

@@ -3,10 +3,10 @@
  * or WebSocket.
  *
  * The source of truth is Rust: look at the `#[derive(Serialize)]` types
- * in `src/core/src/service/snapshot.rs` and `src/server/src/api_types.rs`
- * for the reference shapes. The docstrings on those Rust types carry
- * JSON examples; this file mirrors them. When the Rust side changes,
- * update the matching schema here in the same PR.
+ * in `src/server/src/api_types.rs` and the domain types they reference
+ * (e.g. `common::tunnels::TunnelStatus`). The docstrings on those Rust
+ * types carry JSON examples; this file mirrors them. When the Rust
+ * side changes, update the matching schema here in the same PR.
  *
  * Usage: call `.parse()` on every wire-crossing value so bad payloads
  * fail fast at the boundary instead of rotting through the UI.
@@ -39,7 +39,7 @@ export const AgentIdSchema = z.enum(AGENT_IDS);
 // Constants mirrored from Rust
 // ---------------------------------------------------------------------------
 
-/** Mirror of `common::preview_manager::SHARE_TTL_SECS`. */
+/** Mirror of `common::previews::SHARE_TTL_SECS`. */
 export const PREVIEW_SHARE_TTL_SECS = 600;
 
 // ---------------------------------------------------------------------------

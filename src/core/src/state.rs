@@ -25,7 +25,7 @@
 //! concrete references (`Arc<ChannelMonitor>`, etc.) and the trait
 //! documents what they can count on.
 //!
-//! [`SystemEvent`]: crate::conversation_manager::SystemEvent
+//! [`SystemEvent`]: crate::conversations::SystemEvent
 
 /// Managers that expose a list of entries and notify when the list
 /// changes. See module docs for the intended usage pattern.

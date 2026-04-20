@@ -13,7 +13,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
-use crate::conversation_manager::ConversationManager;
+use crate::conversations::ConversationManager;
 use crate::process::registry::{ChildKind, ChildRegistry};
 
 use super::super::manifest::ChannelPluginManifest;

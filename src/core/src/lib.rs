@@ -2,15 +2,15 @@
 
 pub mod agent;
 pub mod auth;
-pub mod channel_manager;
+pub mod channels;
 pub mod config;
-pub mod conversation_manager;
+pub mod conversations;
 pub mod logging;
 pub mod plugins;
-pub mod preview_manager;
+pub mod previews;
 pub mod process;
 pub mod pty;
 pub mod resources;
 pub mod routing;
 pub mod state;
-pub mod tunnel_manager;
+pub mod tunnels;

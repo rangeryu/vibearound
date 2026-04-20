@@ -89,7 +89,7 @@ impl AgentInfo {
 
 /// One channel plugin, as returned by `GET /api/channels`.
 ///
-/// Sources: `common::channel_manager::monitor::ChannelMonitor::list()`
+/// Sources: `common::channels::monitor::ChannelMonitor::list()`
 ///
 /// # Wire format (JSON)
 /// ```json
@@ -119,7 +119,7 @@ pub struct ChannelRuntime {
 
 /// One tunnel, as returned by `GET /api/tunnels`.
 ///
-/// Sources: `common::tunnel_manager::TunnelManager::list()`.
+/// Sources: `common::tunnels::TunnelManager::list()`.
 ///
 /// # Wire format (JSON)
 /// ```json
@@ -134,7 +134,7 @@ pub struct ChannelRuntime {
 pub struct TunnelRuntime {
     pub provider: &'static str,
     pub url: Option<String>,
-    pub status: common::tunnel_manager::TunnelStatus,
+    pub status: common::tunnels::TunnelStatus,
     pub uptime_secs: u64,
 }
 
@@ -205,7 +205,7 @@ pub enum ChatEvent {
 
 /// One agent runtime, as returned by `GET /api/agents/runtime`.
 ///
-/// Sources: `common::conversation_manager::ConversationManager::list()` → `Conversation::state()`.
+/// Sources: `common::conversations::ConversationManager::list()` → `Conversation::state()`.
 ///
 /// # Wire format (JSON)
 /// ```json

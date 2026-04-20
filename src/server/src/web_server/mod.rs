@@ -22,9 +22,9 @@ use std::sync::Arc;
 use tower_http::services::ServeDir;
 
 use common::auth::AuthToken;
-use common::channel_manager::{ChannelManager, WebChannelManager};
+use common::channels::{ChannelManager, WebChannelManager};
 use common::pty::{PtySessionManager, Registry};
-use common::tunnel_manager::TunnelManager;
+use common::tunnels::TunnelManager;
 
 use self::auth::{require_auth, AuthState};
 
@@ -200,7 +200,7 @@ pub async fn run_web_server(
     //
     // Preview routes are also un-authed — the 8-char slug itself acts as a
     // short-lived authentication token (10-min TTL, cryptographically random;
-    // single source of truth: `common::preview_manager::SHARE_TTL_SECS`).
+    // single source of truth: `common::previews::SHARE_TTL_SECS`).
     let public = Router::new()
         // Pairing API: no auth required (pairing IS the auth flow).
         .route("/api/pair/start", post(pair::start_handler))

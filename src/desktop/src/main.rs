@@ -15,7 +15,7 @@ use onboarding::{OnboardingGate, OnboardingInstallState, OnboardingSessions};
 /// Shared `TunnelManager` handle, injected into Tauri state for the
 /// tray (live tunnel menu item) and any IPC command that needs the
 /// current tunnel URL.
-pub struct AppTunnels(pub Arc<common::tunnel_manager::TunnelManager>);
+pub struct AppTunnels(pub Arc<common::tunnels::TunnelManager>);
 
 /// Whether the app is currently in onboarding mode (tray reads this).
 pub struct OnboardingActive(pub std::sync::atomic::AtomicBool);
@@ -290,7 +290,7 @@ fn main() {
             // runtime has been able to drain its tasks).
             if let tauri::RunEvent::Exit = event {
                 common::process::registry::ChildRegistry::global().kill_all();
-                common::preview_manager::shutdown_kill_all_ports();
+                common::previews::shutdown_kill_all_ports();
             }
         });
 }

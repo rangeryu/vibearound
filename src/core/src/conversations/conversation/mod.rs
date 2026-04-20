@@ -246,7 +246,7 @@ impl Conversation {
     pub async fn close(&self, reason: Option<String>) {
         // Kill preview sessions owned by this session before resetting.
         if let Some(sid) = self.session_id.lock().await.clone() {
-            crate::preview_manager::kill_by_session(&sid.to_string());
+            crate::previews::kill_by_session(&sid.to_string());
         }
         self.full_reset().await;
         self.emit(SystemEvent::RouteClosed {

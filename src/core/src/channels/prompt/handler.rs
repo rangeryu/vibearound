@@ -9,13 +9,13 @@ use std::sync::Arc;
 use agent_client_protocol as acp;
 
 use crate::routing::RouteKey;
-use crate::conversation_manager::ConversationManager;
+use crate::conversations::ConversationManager;
 use crate::agent::AgentClientHandler;
 
-use crate::channel_manager::bridge_handler::ChannelBridgeHandler;
-use crate::channel_manager::plugin_host::PluginHost;
-use crate::channel_manager::slash::{parse_slash_command, SlashAction};
-use crate::channel_manager::types::ChannelOutput;
+use crate::channels::bridge_handler::ChannelBridgeHandler;
+use crate::channels::plugin_host::PluginHost;
+use crate::channels::slash::{parse_slash_command, SlashAction};
+use crate::channels::types::ChannelOutput;
 
 use super::handover::handle_handover;
 use super::mode::{handle_set_mode, set_session_mode_and_reply};
@@ -111,7 +111,7 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::PickupCode(code) => {
-                match crate::conversation_manager::handover::pickup_codes::consume(&code) {
+                match crate::conversations::handover::pickup_codes::consume(&code) {
                     Some((agent_kind, session_id, cwd)) => {
                         conversation_manager
                             .prepare_pickup(

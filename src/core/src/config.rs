@@ -7,7 +7,7 @@ use std::sync::{Arc, Once};
 
 use parking_lot::RwLock;
 
-use crate::tunnel_manager::TunnelProvider;
+use crate::tunnels::TunnelProvider;
 
 /// Global config cache. Populated on first `ensure_loaded()` call, reloaded
 /// by `reload()` or automatically after `update_settings_json()`.

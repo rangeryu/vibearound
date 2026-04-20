@@ -16,7 +16,7 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use agent_client_protocol as acp;
 
-use crate::conversation_manager::ConversationManager;
+use crate::conversations::ConversationManager;
 
 use super::super::plugin_host::PluginHost;
 use super::super::{ChannelInput, ChannelOutput};

@@ -9,8 +9,8 @@
 use std::sync::Arc;
 
 use crate::routing::RouteKey;
-use crate::conversation_manager::ConversationManager;
-use crate::channel_manager::plugin_host::PluginHost;
+use crate::conversations::ConversationManager;
+use crate::channels::plugin_host::PluginHost;
 
 use super::send_system_text;
 
