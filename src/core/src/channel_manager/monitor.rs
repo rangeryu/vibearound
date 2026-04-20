@@ -453,16 +453,37 @@ impl ChannelMonitor {
         )
         .await;
 
+        // Both arms use compare_exchange to transition OUT of Spawning so a
+        // force_stop / force_restart that landed during the spawn await
+        // wins the race: if they already moved the channel to Stopped or
+        // Crashed via mark_crashed, our CAS fails and we tear down the
+        // freshly-spawned runtime instead of publishing it.
         match spawn_result {
             Ok(runtime) => {
                 let runtime = Arc::new(runtime);
+                if state
+                    .status
+                    .compare_exchange(
+                        ChannelRunStatus::Spawning as u8,
+                        ChannelRunStatus::Running as u8,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    )
+                    .is_err()
+                {
+                    tracing::info!(
+                        channel = %state.kind,
+                        "spawn completed but force_stop/restart already moved the channel out of Spawning — discarding new runtime"
+                    );
+                    runtime.shutdown().await;
+                    return;
+                }
                 *state.current_runtime.lock() = Some(Arc::clone(&runtime));
                 // Publish into plugin_host.runtimes so send_output can route
                 // to the fresh runtime.
                 self.plugin_host
                     .replace_stdio_runtime(&state.kind, runtime)
                     .await;
-                state.set_status(ChannelRunStatus::Running);
                 state.set_reason("");
                 // Grace window before first real heartbeat counts.
                 state
@@ -472,7 +493,23 @@ impl ChannelMonitor {
                 self.notify_change();
             }
             Err(e) => {
-                state.set_status(ChannelRunStatus::Crashed);
+                if state
+                    .status
+                    .compare_exchange(
+                        ChannelRunStatus::Spawning as u8,
+                        ChannelRunStatus::Crashed as u8,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    )
+                    .is_err()
+                {
+                    tracing::info!(
+                        channel = %state.kind,
+                        error = %e,
+                        "spawn failed but force_stop/restart already took over — not scheduling a retry"
+                    );
+                    return;
+                }
                 state.set_reason(format!("spawn failed: {}", e));
                 state
                     .restart_at

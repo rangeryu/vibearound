@@ -30,6 +30,7 @@ export function useManagerState<T>(
   const [everLoaded, setEverLoaded] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchOnce = useCallback(async () => {
     try {
@@ -88,7 +89,13 @@ export function useManagerState<T>(
       setConnected(false);
       wsRef.current = null;
       startPolling();
-      setTimeout(() => void connectWs(), WS_RECONNECT_DELAY_MS);
+      // Store the handle so cleanup can cancel a reconnect scheduled
+      // right before unmount — otherwise we'd open a zombie socket on
+      // a dead hook and double-subscribe after navigation.
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
+        void connectWs();
+      }, WS_RECONNECT_DELAY_MS);
     };
 
     ws.onerror = () => {
@@ -100,6 +107,10 @@ export function useManagerState<T>(
     void connectWs();
     return () => {
       stopPolling();
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
