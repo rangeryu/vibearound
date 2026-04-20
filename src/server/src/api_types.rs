@@ -205,7 +205,7 @@ pub enum ChatEvent {
 
 /// One agent runtime, as returned by `GET /api/agents/runtime`.
 ///
-/// Sources: `common::acp_hub::ACPHub::list()` → `ACPPod::state()`.
+/// Sources: `common::conversation_manager::ConversationManager::list()` → `Conversation::state()`.
 ///
 /// # Wire format (JSON)
 /// ```json

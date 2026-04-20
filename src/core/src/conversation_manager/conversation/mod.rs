@@ -1,22 +1,24 @@
-//! `ACPPod` — per-route conversation state.
+//! `Conversation` — per-route conversation state + Agent lifecycle coordinator.
 //!
-//! Owns the agent bridge directly (no external cache). Calls `acp::Agent`
-//! methods on the bridge without command enum intermediaries.
+//! Owns at most one [`Agent`] at a time. The Agent dies and respawns on
+//! `switch_agent` / `full_reset` / crash; this struct holds the state
+//! that survives those respawns (cli_kind, profile, session_id, handover,
+//! busy/failed, cached commands).
 //!
 //! ## Module layout
 //!
-//! - [`state`]           — `PodState` (mutable runtime fields read via
-//!                         `ACPPod::state().await`).
-//! - [`bridge`]          — agent bridge lifecycle (`ensure_bridge`,
-//!                         `ensure_session`, `full_reset`, crash watcher).
-//! - [`bridge_handler`]  — `SessionBridgeHandler` wrapper that suppresses
-//!                         session-notification replay during handover
-//!                         `load_session` to keep history out of the IM feed.
-//! - [`media`]           — relocate cached media from staging to the
-//!                         session-scoped workspace path before each prompt.
+//! - [`state`]             — [`ConversationState`] (mutable runtime fields
+//!                            read via `Conversation::state().await`).
+//! - [`lifecycle`]         — agent lifecycle (`ensure_agent`,
+//!                            `ensure_session`, `full_reset`).
+//! - [`handover_handler`]  — [`HandoverHandler`] wrapper that suppresses
+//!                            session-notification replay during handover
+//!                            `load_session` to keep history out of the IM feed.
+//! - [`media`]             — relocate cached media from staging to the
+//!                            session-scoped workspace path before each prompt.
 
-mod bridge;
-mod bridge_handler;
+mod handover_handler;
+mod lifecycle;
 mod media;
 mod state;
 
@@ -27,27 +29,27 @@ use tokio::sync::{broadcast, Mutex};
 
 use agent_client_protocol as acp;
 
+use crate::agent::{Agent, AgentClientHandler};
 use crate::routing::RouteKey;
-use crate::agent_factory::runtime::{AcpBridge, BridgeClientHandler};
 
 use super::event::SystemEvent;
 
 use media::relocate_cached_media;
 
-pub use state::PodState;
+pub use state::ConversationState;
 
 // ---------------------------------------------------------------------------
-// ACPPod
+// Conversation
 // ---------------------------------------------------------------------------
 
-pub struct ACPPod {
+pub struct Conversation {
     pub route: RouteKey,
     bot_identity: Option<String>,
-    bridge: Mutex<Option<Arc<AcpBridge>>>,
+    agent: Mutex<Option<Arc<Agent>>>,
     session_id: Mutex<Option<String>>,
     cli_kind: Mutex<Option<String>>,
     profile: Mutex<Option<String>>,
-    /// Resolved workspace path, set when bridge is spawned.
+    /// Resolved workspace path, set when agent is spawned.
     workspace: Mutex<Option<String>>,
     initialize: Mutex<Option<acp::InitializeResponse>>,
     busy: Mutex<bool>,
@@ -60,16 +62,16 @@ pub struct ACPPod {
     handover_resume_session_id: Mutex<Option<String>>,
     handover_cwd: Mutex<Option<String>>,
     /// Suppresses session_notification replay during handover load_session.
-    /// Released just before the first prompt is sent (not when bridge is ready),
+    /// Released just before the first prompt is sent (not when agent is ready),
     /// because some agents (Gemini) continue replaying after load_session returns.
     suppress_replay: Mutex<Option<Arc<AtomicBool>>>,
     /// Dashboard-facing change ping. Fired on any state mutation that a
-    /// consumer of `acp_hub.subscribe_changes()` would want to re-poll
-    /// for. Shared (cloned) from the owning `ACPHub`'s ping channel.
+    /// consumer of `ConversationManager::subscribe_changes()` would want to
+    /// re-poll for. Shared (cloned) from the owning manager's ping channel.
     change_tx: broadcast::Sender<()>,
 }
 
-impl ACPPod {
+impl Conversation {
     pub fn new(
         route: RouteKey,
         event_tx: broadcast::Sender<SystemEvent>,
@@ -78,7 +80,7 @@ impl ACPPod {
         Self {
             route,
             bot_identity: None,
-            bridge: Mutex::new(None),
+            agent: Mutex::new(None),
             session_id: Mutex::new(None),
             cli_kind: Mutex::new(None),
             profile: Mutex::new(None),
@@ -96,9 +98,9 @@ impl ACPPod {
         }
     }
 
-    /// Prepare this pod for a session pickup. Sets cli_kind, resume_session_id,
-    /// and optionally cwd so the next prompt spawns a bridge that resumes the
-    /// given session in the correct workspace.
+    /// Prepare this conversation for a session pickup. Sets cli_kind,
+    /// resume_session_id, and optionally cwd so the next prompt spawns an
+    /// agent that resumes the given session in the correct workspace.
     pub async fn set_handover(
         &self,
         cli_kind: String,
@@ -115,20 +117,20 @@ impl ACPPod {
     // Public API — direct methods, no command enums
     // -----------------------------------------------------------------------
 
-    /// Send a prompt to the agent. Handles bridge init and session creation
+    /// Send a prompt to the agent. Handles agent spawn and session creation
     /// transparently on first call.
     pub async fn prompt(
         self: &Arc<Self>,
         cli_kind: Option<String>,
         content_blocks: Vec<acp::ContentBlock>,
-        downstream_handler: Arc<dyn BridgeClientHandler>,
+        downstream_handler: Arc<dyn AgentClientHandler>,
     ) -> acp::Result<acp::PromptResponse> {
         // No prompt_lock — prompts are forwarded to the agent immediately.
         // CLI agents (Claude Code, Codex, Gemini CLI) accept input at any
         // time and queue/interrupt internally via ACP. Blocking here caused
         // user-visible hangs when a turn didn't end (e.g. background tasks).
         tracing::info!(
-            "[ACPPod] prompt route={} cli_kind={:?} blocks={}",
+            "[Conversation] prompt route={} cli_kind={:?} blocks={}",
             self.route,
             cli_kind,
             content_blocks.len()
@@ -143,18 +145,18 @@ impl ACPPod {
             let resume_sid = self.handover_resume_session_id.lock().await.take();
             let resume_cwd = self.handover_cwd.lock().await.take();
 
-            let bridge = self
-                .ensure_bridge(cli_kind, resume_sid, resume_cwd, downstream_handler)
+            let agent = self
+                .ensure_agent(cli_kind, resume_sid, resume_cwd, downstream_handler)
                 .await
                 .map_err(|error| {
                     tracing::info!(
-                        "[ACPPod] ensure_bridge failed route={}: {:#}",
+                        "[Conversation] ensure_agent failed route={}: {:#}",
                         self.route, error
                     );
                     acp::Error::new(-32603, error.to_string())
                 })?;
 
-            let session_id = self.ensure_session(&bridge).await?;
+            let session_id = self.ensure_session(&agent).await?;
 
             // Move cached media files to session-scoped workspace path and update URIs
             let agent_kind = self
@@ -178,13 +180,13 @@ impl ACPPod {
             }
 
             tracing::info!(
-                "[ACPPod] prompt SENDING route={} session={}",
+                "[Conversation] prompt SENDING route={} session={}",
                 self.route, session_id
             );
             let request = acp::PromptRequest::new(session_id, content_blocks);
-            let response = acp::Agent::prompt(&*bridge, request).await;
+            let response = acp::Agent::prompt(&*agent, request).await;
             tracing::info!(
-                "[ACPPod] prompt RETURNED route={} ok={}",
+                "[Conversation] prompt RETURNED route={} ok={}",
                 self.route,
                 response.is_ok()
             );
@@ -203,8 +205,8 @@ impl ACPPod {
 
     /// Cancel the active turn.
     pub async fn cancel(&self) -> acp::Result<()> {
-        let bridge = self
-            .bridge
+        let agent = self
+            .agent
             .lock()
             .await
             .clone()
@@ -215,15 +217,15 @@ impl ACPPod {
             .await
             .clone()
             .ok_or_else(acp::Error::method_not_found)?;
-        acp::Agent::cancel(&*bridge, acp::CancelNotification::new(session_id)).await
+        acp::Agent::cancel(&*agent, acp::CancelNotification::new(session_id)).await
     }
 
     /// Switch the current session's permission mode. Requires an active
-    /// bridge + session (caller should ensure this — no auto-spawn because
+    /// agent + session (caller should ensure this — no auto-spawn because
     /// the mode is a session property that only exists after initialization).
     pub async fn set_session_mode(&self, mode_id: String) -> acp::Result<()> {
-        let bridge = self
-            .bridge
+        let agent = self
+            .agent
             .lock()
             .await
             .clone()
@@ -235,14 +237,14 @@ impl ACPPod {
             .clone()
             .ok_or_else(acp::Error::method_not_found)?;
         let request = acp::SetSessionModeRequest::new(session_id, mode_id);
-        acp::Agent::set_session_mode(&*bridge, request).await?;
+        acp::Agent::set_session_mode(&*agent, request).await?;
         Ok(())
     }
 
-    /// Close this route — kill bridge, drain queue, clear all state.
+    /// Close this route — kill agent, drain queue, clear all state.
     /// Also kills any preview dev-servers registered with this session's ID.
     pub async fn close(&self, reason: Option<String>) {
-        // Kill preview sessions owned by this agent session before resetting.
+        // Kill preview sessions owned by this session before resetting.
         if let Some(sid) = self.session_id.lock().await.clone() {
             crate::preview_entries::kill_by_session(&sid.to_string());
         }
@@ -253,25 +255,25 @@ impl ACPPod {
         });
     }
 
-    /// Switch agent kind — kill current bridge, drain queue, next prompt spawns new one.
+    /// Switch agent kind — kill current agent, next prompt spawns a new one.
     pub async fn switch_agent(&self, agent_kind: String) {
         tracing::info!(
-            "[ACPPod] switch_agent route={} new_kind={}",
+            "[Conversation] switch_agent route={} new_kind={}",
             self.route, agent_kind
         );
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(agent_kind.clone());
         let _ = self.change_tx.send(());
         tracing::info!(
-            "[ACPPod] switch_agent done route={} cli_kind={:?}",
+            "[Conversation] switch_agent done route={} cli_kind={:?}",
             self.route, agent_kind
         );
     }
 
-    /// Switch profile — kill current bridge, drain queue, next prompt spawns new one.
+    /// Switch profile — kill current agent, next prompt spawns a new one.
     pub async fn switch_profile(&self, profile: String) {
         tracing::info!(
-            "[ACPPod] switch_profile route={} new_profile={}",
+            "[Conversation] switch_profile route={} new_profile={}",
             self.route, profile
         );
         self.full_reset().await;
@@ -279,7 +281,7 @@ impl ACPPod {
         let _ = self.change_tx.send(());
     }
 
-    /// Reset session — kill session but keep bridge (start fresh conversation).
+    /// Reset session — kill session but keep agent (start a fresh thread).
     pub async fn reset_session(&self) {
         *self.session_id.lock().await = None;
         let _ = self.change_tx.send(());
@@ -295,19 +297,18 @@ impl ACPPod {
         self.agent_commands.lock().await.clone()
     }
 
-    /// Read the pod's mutable runtime fields as a consistent-enough
-    /// snapshot. Immutable fields (`route`, `started_at`,
-    /// `bot_identity`) are exposed directly on the pod via their
-    /// own getters (`route()`, `started_at()`); this method only
-    /// covers the fields that can change after construction.
+    /// Read the conversation's mutable runtime fields as a consistent-enough
+    /// snapshot. Immutable fields (`route`, `started_at`, `bot_identity`)
+    /// are exposed directly via their own getters; this method only covers
+    /// the fields that can change after construction.
     ///
     /// Internally takes several short mutex locks in sequence; since
-    /// mutations of pod state typically batch (e.g. `ensure_bridge`
-    /// updates cli_kind/profile/initialize/failed together under the
-    /// same async call chain), callers at dashboard polling cadence
-    /// see a coherent view in practice.
-    pub async fn state(&self) -> PodState {
-        PodState {
+    /// mutations typically batch (e.g. `ensure_agent` updates
+    /// cli_kind/profile/initialize/failed together under the same async
+    /// call chain), callers at dashboard polling cadence see a coherent
+    /// view in practice.
+    pub async fn state(&self) -> ConversationState {
+        ConversationState {
             cli_kind: self.cli_kind.lock().await.clone(),
             profile: self.profile.lock().await.clone(),
             session_id: self.session_id.lock().await.clone(),
@@ -323,9 +324,8 @@ impl ACPPod {
     pub fn started_at(&self) -> u64 { self.started_at }
     pub fn bot_identity(&self) -> Option<&str> { self.bot_identity.as_deref() }
 
-    // Bridge + session lifecycle (ensure_bridge, ensure_session,
-    // full_reset, spawn_provider_session_watcher) lives in `bridge.rs`.
-
+    // Agent + session lifecycle (ensure_agent, ensure_session, full_reset)
+    // lives in `lifecycle.rs`.
 
     // -----------------------------------------------------------------------
     // Event emission

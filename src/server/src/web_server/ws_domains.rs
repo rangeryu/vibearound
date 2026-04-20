@@ -108,20 +108,20 @@ pub async fn ws_agents_runtime_handler(
     ws: WebSocketUpgrade,
 ) -> Response {
     ws.on_upgrade(move |socket| async move {
-        let acp_hub = state.channel_hub.acp_hub();
-        let rx = acp_hub.subscribe_changes();
+        let conversation_manager = state.channel_hub.conversation_manager();
+        let rx = conversation_manager.subscribe_changes();
         run_ws_loop(socket, rx, "ws/agents/runtime", move || {
-            let acp_hub = acp_hub.clone();
-            async move { build_agents_runtime(&acp_hub).await }
+            let conversation_manager = conversation_manager.clone();
+            async move { build_agents_runtime(&conversation_manager).await }
         })
         .await;
     })
 }
 
 async fn build_agents_runtime(
-    acp_hub: &common::acp_hub::ACPHub,
+    conversation_manager: &common::conversation_manager::ConversationManager,
 ) -> Vec<crate::api_types::AgentRuntime> {
-    let pods = acp_hub.list();
+    let pods = conversation_manager.list();
     let mut out = Vec::with_capacity(pods.len());
     for pod in pods {
         let st = pod.state().await;

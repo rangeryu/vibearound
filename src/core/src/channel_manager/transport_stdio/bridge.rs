@@ -16,7 +16,7 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use agent_client_protocol as acp;
 
-use crate::acp_hub::ACPHub;
+use crate::conversation_manager::ConversationManager;
 
 use super::super::plugin_host::PluginHost;
 use super::super::{ChannelInput, ChannelOutput};
@@ -32,7 +32,7 @@ pub(super) async fn run_acp_plugin_bridge(
     stdout: tokio::process::ChildStdout,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     mut output_rx: mpsc::UnboundedReceiver<ChannelOutput>,
-    acp_hub: Arc<ACPHub>,
+    conversation_manager: Arc<ConversationManager>,
     plugin_host: Arc<PluginHost>,
 ) {
     let local = tokio::task::LocalSet::new();
@@ -45,7 +45,7 @@ pub(super) async fn run_acp_plugin_bridge(
                     channel_kind.clone(),
                     config.clone(),
                     input_tx.clone(),
-                    acp_hub,
+                    conversation_manager,
                     plugin_host,
                 ),
                 stdin.compat_write(),

@@ -2,7 +2,7 @@
 //!
 //! - GET /ws/chat — ACP-native websocket adapter
 //!
-//! Inbound user messages are dispatched to ACPHub via the channel-input
+//! Inbound user messages are dispatched to ConversationManager via the channel-input
 //! thread (fire-and-forget through ChannelManager). ACP events flow back
 //! through the WebChannelManager outbound channel to the websocket,
 //! wrapped in a tagged [`crate::api_types::ChatEvent`] envelope so the
@@ -76,7 +76,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
         }
     });
 
-    // Inbound: ws messages → ChannelInput → channel-input thread → ACPHub.
+    // Inbound: ws messages → ChannelInput → channel-input thread → ConversationManager.
     while let Some(Ok(msg)) = ws_rx.next().await {
         match msg {
             Message::Text(text) => {
@@ -91,7 +91,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
 
     outbound_task.abort();
     state.web_channel.unregister_connection(&chat_id);
-    state.channel_hub.acp_hub().close(&route, None).await;
+    state.channel_hub.conversation_manager().close(&route, None).await;
 }
 
 async fn send_event<S>(ws_tx: &mut S, event: &ChatEvent) -> Result<(), ()>

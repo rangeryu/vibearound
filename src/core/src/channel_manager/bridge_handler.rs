@@ -1,5 +1,5 @@
 //! `ChannelBridgeHandler` — the downstream handler wired to the upstream
-//! `AcpBridge`. Its two jobs:
+//! `Agent`. Its two jobs:
 //!
 //! 1. **`session_notification`** — forward every `acp::SessionNotification`
 //!    from the agent to the channel plugin as a `ChannelOutput::RawAcp`
@@ -16,30 +16,30 @@ use std::sync::Arc;
 use agent_client_protocol as acp;
 
 use crate::routing::RouteKey;
-use crate::acp_hub::ACPHub;
-use crate::agent_factory::runtime::BridgeClientHandler;
+use crate::conversation_manager::ConversationManager;
+use crate::agent::AgentClientHandler;
 
 use super::plugin_host::PluginHost;
 use super::types::ChannelOutput;
 
 pub(crate) struct ChannelBridgeHandler {
     plugin_host: Arc<PluginHost>,
-    acp_hub: Arc<ACPHub>,
+    conversation_manager: Arc<ConversationManager>,
     route: RouteKey,
 }
 
 impl ChannelBridgeHandler {
     pub(crate) fn new(
         plugin_host: Arc<PluginHost>,
-        acp_hub: Arc<ACPHub>,
+        conversation_manager: Arc<ConversationManager>,
         route: RouteKey,
     ) -> Self {
-        Self { plugin_host, acp_hub, route }
+        Self { plugin_host, conversation_manager, route }
     }
 }
 
 #[async_trait::async_trait(?Send)]
-impl BridgeClientHandler for ChannelBridgeHandler {
+impl AgentClientHandler for ChannelBridgeHandler {
     async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
         // Cache available_commands_update in the pod for later query.
         let payload = serde_json::to_value(&args)
@@ -71,7 +71,7 @@ impl BridgeClientHandler for ChannelBridgeHandler {
                 == Some("available_commands_update")
             {
                 if let Some(commands) = update.get("availableCommands") {
-                    self.acp_hub
+                    self.conversation_manager
                         .list_agent_commands_update(&self.route, commands.clone())
                         .await;
                 }

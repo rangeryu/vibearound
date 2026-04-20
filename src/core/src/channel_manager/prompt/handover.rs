@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use crate::routing::RouteKey;
-use crate::acp_hub::ACPHub;
+use crate::conversation_manager::ConversationManager;
 use crate::channel_manager::plugin_host::PluginHost;
 
 use super::send_system_text;
@@ -14,15 +14,15 @@ use super::send_system_text;
 /// a resume command template (pulled from `agents.json`). Silently no-ops
 /// if there's no active session yet.
 pub(super) async fn handle_handover(
-    acp_hub: &Arc<ACPHub>,
+    conversation_manager: &Arc<ConversationManager>,
     plugin_host: &Arc<PluginHost>,
     route: &RouteKey,
 ) {
-    let pod_state = match acp_hub.pod(route) {
-        Some(pod) => Some(pod.state().await),
+    let conv_state = match conversation_manager.conversation(route) {
+        Some(conv) => Some(conv.state().await),
         None => None,
     };
-    match pod_state {
+    match conv_state {
         Some(snap) if snap.session_id.is_some() => {
             let session_id = snap.session_id.unwrap();
             let cwd = snap.workspace.unwrap_or_else(|| "~".to_string());

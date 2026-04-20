@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use agent_client_protocol as acp;
 
 use crate::routing::RouteKey;
-use crate::acp_hub::ACPHub;
+use crate::conversation_manager::ConversationManager;
 
 use super::super::plugin_host::PluginHost;
 use super::super::prompt::handle_prompt;
@@ -23,7 +23,7 @@ pub(super) struct PluginAgentHandler {
     config: serde_json::Value,
     /// Still used for fire-and-forget operations: cancel, callback.
     input_tx: mpsc::UnboundedSender<ChannelInput>,
-    acp_hub: Arc<ACPHub>,
+    conversation_manager: Arc<ConversationManager>,
     plugin_host: Arc<PluginHost>,
 }
 
@@ -32,14 +32,14 @@ impl PluginAgentHandler {
         channel_kind: String,
         config: serde_json::Value,
         input_tx: mpsc::UnboundedSender<ChannelInput>,
-        acp_hub: Arc<ACPHub>,
+        conversation_manager: Arc<ConversationManager>,
         plugin_host: Arc<PluginHost>,
     ) -> Self {
         Self {
             channel_kind,
             config,
             input_tx,
-            acp_hub,
+            conversation_manager,
             plugin_host,
         }
     }
@@ -118,7 +118,7 @@ impl acp::Agent for PluginAgentHandler {
         // Session notifications stream to the plugin via ChannelBridgeHandler
         // → PluginHost → output_tx → output forwarder → conn.session_notification().
         let result = handle_prompt(
-            &self.acp_hub,
+            &self.conversation_manager,
             &self.plugin_host,
             route.clone(),
             None, // cli_kind: plugin prompts don't specify

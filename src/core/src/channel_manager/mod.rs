@@ -1,6 +1,6 @@
 //! ACP-native channel manager: hosts channel plugins and routes traffic.
 //!
-//! The web channel path uses ACP directly (ws_chat dispatches via ACPHub).
+//! The web channel path uses ACP directly (ws_chat dispatches via ConversationManager).
 //! Stdio plugins still use the legacy ChannelInput/ChannelOutput for now.
 //!
 //! Module layout:
@@ -30,8 +30,8 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::sync::{broadcast, mpsc};
 
-use crate::acp_hub::event::SystemEvent;
-use crate::acp_hub::ACPHub;
+use crate::conversation_manager::event::SystemEvent;
+use crate::conversation_manager::ConversationManager;
 use crate::plugins::DiscoveredPlugin;
 
 use self::manifest::ChannelPluginManifest;
@@ -51,7 +51,7 @@ pub struct ChannelManager {
     /// `spawn_local` task so that `!Send` ACP futures are allowed.
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     input_rx: StdMutex<Option<mpsc::UnboundedReceiver<ChannelInput>>>,
-    acp_hub: Arc<ACPHub>,
+    conversation_manager: Arc<ConversationManager>,
     /// Lazy-initialised on first `register_plugin` call. A single monitor
     /// task supervises every channel plugin (respawn + heartbeat watchdog).
     monitor: StdMutex<Option<Arc<monitor::ChannelMonitor>>>,
@@ -61,13 +61,13 @@ pub struct ChannelManager {
 }
 
 impl ChannelManager {
-    pub fn new(acp_hub: Arc<ACPHub>) -> Self {
+    pub fn new(conversation_manager: Arc<ConversationManager>) -> Self {
         let (input_tx, input_rx) = mpsc::unbounded_channel();
         Self {
             plugin_host: Arc::new(PluginHost::new(input_tx.clone())),
             input_tx,
             input_rx: StdMutex::new(Some(input_rx)),
-            acp_hub,
+            conversation_manager,
             monitor: StdMutex::new(None),
             monitor_shutdown_tx: StdMutex::new(None),
         }
@@ -86,7 +86,7 @@ impl ChannelManager {
         }
         let (change_tx, _) = tokio::sync::broadcast::channel::<()>(64);
         let m = monitor::ChannelMonitor::new(
-            Arc::clone(&self.acp_hub),
+            Arc::clone(&self.conversation_manager),
             self.input_tx.clone(),
             Arc::clone(&self.plugin_host),
             change_tx,
@@ -153,11 +153,11 @@ impl ChannelManager {
     /// futures — callers should run it on a `LocalSet` or other non-`Send`
     /// context.
     pub async fn process_input(&self, input: ChannelInput) {
-        prompt::handle_channel_input(&self.acp_hub, &self.plugin_host, input).await;
+        prompt::handle_channel_input(&self.conversation_manager, &self.plugin_host, input).await;
     }
 
-    pub fn acp_hub(&self) -> Arc<ACPHub> {
-        Arc::clone(&self.acp_hub)
+    pub fn conversation_manager(&self) -> Arc<ConversationManager> {
+        Arc::clone(&self.conversation_manager)
     }
 
     pub async fn send_output(&self, output: ChannelOutput) {
@@ -168,7 +168,7 @@ impl ChannelManager {
         self.plugin_host.shutdown_all().await;
     }
 
-    /// Subscribe to ACPHub `SystemEvent`s and forward relevant ones to
+    /// Subscribe to ConversationManager `SystemEvent`s and forward relevant ones to
     /// channel plugins. Call once during daemon startup. Returns the
     /// forwarder task's `JoinHandle`.
     pub fn start_event_forwarder(

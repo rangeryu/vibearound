@@ -35,7 +35,7 @@ use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc;
 
-use crate::acp_hub::ACPHub;
+use crate::conversation_manager::ConversationManager;
 use crate::pty::unix_now_secs;
 
 use super::manifest::ChannelPluginManifest;
@@ -203,7 +203,7 @@ pub struct ChannelStatusSnapshot {
 
 pub struct ChannelMonitor {
     channels: DashMap<String, Arc<ChannelState>>,
-    acp_hub: Arc<ACPHub>,
+    conversation_manager: Arc<ConversationManager>,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
 
     /// Strong ref to PluginHost. `PluginHost` holds a `Weak<ChannelMonitor>`
@@ -220,14 +220,14 @@ pub struct ChannelMonitor {
 
 impl ChannelMonitor {
     pub fn new(
-        acp_hub: Arc<ACPHub>,
+        conversation_manager: Arc<ConversationManager>,
         input_tx: mpsc::UnboundedSender<ChannelInput>,
         plugin_host: Arc<PluginHost>,
         change_tx: tokio::sync::broadcast::Sender<()>,
     ) -> Arc<Self> {
         Arc::new(Self {
             channels: DashMap::new(),
-            acp_hub,
+            conversation_manager,
             input_tx,
             plugin_host,
             change_tx,
@@ -448,7 +448,7 @@ impl ChannelMonitor {
         let spawn_result = StdioPluginRuntime::spawn(
             state.manifest.clone(),
             self.input_tx.clone(),
-            Arc::clone(&self.acp_hub),
+            Arc::clone(&self.conversation_manager),
             Arc::clone(&self.plugin_host),
         )
         .await;

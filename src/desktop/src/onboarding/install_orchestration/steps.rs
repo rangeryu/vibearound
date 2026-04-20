@@ -53,7 +53,7 @@ pub(super) async fn install_npm_agent<R: Runtime>(
     );
     log_line(log_file, &format!("[{}] {}", agent_id, msg));
 
-    match common::agent_integrations::auto_install_npm_agent_with_output(npm_pkg).await {
+    match common::agent::auto_install_npm_agent_with_output(npm_pkg).await {
         Ok(out) => {
             log_line(
                 log_file,
@@ -100,7 +100,7 @@ pub(super) async fn install_script_agent<R: Runtime>(
 ) {
     let task_id = format!("agent:{}:acp", agent_id);
 
-    if common::agent_integrations::is_program_available(&agent_def.acp.program) {
+    if common::agent::is_program_available(&agent_def.acp.program) {
         emit_progress(
             app,
             &InstallProgressEvent {
@@ -132,7 +132,7 @@ pub(super) async fn install_script_agent<R: Runtime>(
     );
     log_line(log_file, &format!("[{}] {}", agent_id, msg));
 
-    match common::agent_integrations::auto_install_agent_cmd_with_output(install_cmd, agent_id)
+    match common::agent::auto_install_agent_cmd_with_output(install_cmd, agent_id)
         .await
     {
         Ok(out) => {

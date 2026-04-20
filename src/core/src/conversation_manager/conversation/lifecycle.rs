@@ -1,42 +1,43 @@
-//! `ACPPod` internal bridge + session lifecycle.
+//! `Conversation` internal agent + session lifecycle.
 //!
-//! These methods manage the spawned ACP bridge process on behalf of the
-//! public API in `pod/mod.rs`. They're split into their own `impl`
-//! block so the public-facing methods (prompt, cancel, close, etc.)
-//! stay close together and this file owns all the "spawn a bridge,
-//! keep it alive, wire notifications" plumbing.
+//! These methods manage the spawned [`Agent`] on behalf of the public
+//! API in `conversation/mod.rs`. They live in their own `impl` block so
+//! the public-facing methods (prompt, cancel, close, etc.) stay close
+//! together and this file owns all the "spawn an agent, keep it alive,
+//! wire notifications" plumbing.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 
 use agent_client_protocol as acp;
 
-use crate::agent_factory::runtime::{AcpBridge, BridgeClientHandler};
+use crate::agent::{Agent, AgentClientHandler};
 use crate::config;
 
 use super::super::event::SystemEvent;
-use super::bridge_handler::SessionBridgeHandler;
-use super::ACPPod;
+use super::handover_handler::HandoverHandler;
+use super::Conversation;
 
-impl ACPPod {
-    /// Ensure a bridge exists, spawning one via agent_factory if needed.
-    pub(super) async fn ensure_bridge(
+impl Conversation {
+    /// Ensure a live [`Agent`] exists, spawning one if needed. Reuses the
+    /// existing Agent if the caller didn't request a different `cli_kind`.
+    pub(super) async fn ensure_agent(
         self: &Arc<Self>,
         cli_kind: Option<String>,
         resume_session_id: Option<String>,
         resume_cwd: Option<String>,
-        downstream_handler: Arc<dyn BridgeClientHandler>,
-    ) -> anyhow::Result<Arc<AcpBridge>> {
+        downstream_handler: Arc<dyn AgentClientHandler>,
+    ) -> anyhow::Result<Arc<Agent>> {
         let stored_cli_kind = self.cli_kind.lock().await.clone();
         let resolved_cli_kind = stored_cli_kind
             .clone()
             .or(cli_kind.clone())
             .unwrap_or_else(|| config::ensure_loaded().default_agent.clone());
 
-        // If bridge exists, check if caller requested a different agent (implicit switch).
-        if let Some(existing) = self.bridge.lock().await.clone() {
+        // If an Agent exists, check if caller requested a different kind (implicit switch).
+        if let Some(existing) = self.agent.lock().await.clone() {
             let needs_switch = cli_kind
                 .as_ref()
                 .map(|requested| {
@@ -58,7 +59,7 @@ impl ACPPod {
                 self.full_reset().await;
                 *self.cli_kind.lock().await = Some(new_kind.clone());
             } else {
-                tracing::debug!(route = %self.route, "reusing existing bridge");
+                tracing::debug!(route = %self.route, "reusing existing agent");
                 return Ok(existing);
             }
         }
@@ -69,7 +70,7 @@ impl ACPPod {
             .await
             .clone()
             .unwrap_or_else(|| config::ensure_loaded().default_agent.clone());
-        tracing::info!(route = %self.route, cli_kind = %cli_kind, "spawning new bridge");
+        tracing::info!(route = %self.route, cli_kind = %cli_kind, "spawning new agent");
         let profile = self
             .profile
             .lock()
@@ -94,20 +95,34 @@ impl ACPPod {
         *self.workspace.lock().await = Some(workspace.to_string_lossy().to_string());
 
         // Wrap downstream handler — suppress replay during handover load_session.
-        let is_handover = resume_session_id.is_some();
         let suppress_replay = Arc::new(AtomicBool::new(is_handover));
-        let handler: Arc<dyn BridgeClientHandler> = Arc::new(SessionBridgeHandler {
+        let handler: Arc<dyn AgentClientHandler> = Arc::new(HandoverHandler {
             downstream: downstream_handler,
             suppress_replay: Arc::clone(&suppress_replay),
         });
 
-        let ready = match crate::agent_factory::spawn_bridge(
-            &self.route.channel_kind,
-            &self.route.chat_id,
-            &cli_kind,
+        // Resolve concrete agent_id from alias ("claude" etc. → canonical id)
+        // and ensure the workspace exists. Env vars are injected so skills
+        // can resolve which conversation they belong to.
+        std::fs::create_dir_all(&workspace)
+            .with_context(|| format!("Failed to create workspace {:?}", &workspace))?;
+
+        let agent_id = crate::resources::agent_by_alias(&cli_kind)
+            .map(|def| def.id.clone())
+            .unwrap_or_else(|| "claude".to_string());
+
+        let env_vars = vec![
+            ("VIBEAROUND_CHANNEL_KIND".to_string(), self.route.channel_kind.clone()),
+            ("VIBEAROUND_CHAT_ID".to_string(), self.route.chat_id.clone()),
+            ("VIBEAROUND_AGENT_KIND".to_string(), agent_id.clone()),
+        ];
+
+        let ready = match Agent::spawn(
+            agent_id,
             &workspace,
             resume_session_id.clone(),
             handler,
+            env_vars,
         )
         .await
         {
@@ -125,8 +140,8 @@ impl ACPPod {
             }
         };
 
-        // Store suppress_replay on the pod — released before the first prompt,
-        // not here, because some agents (Gemini) continue replaying after load_session.
+        // Store suppress_replay — released before the first prompt, not here,
+        // because some agents (Gemini) continue replaying after load_session.
         if is_handover {
             *self.suppress_replay.lock().await = Some(suppress_replay);
         }
@@ -135,9 +150,9 @@ impl ACPPod {
             route = %self.route,
             cli_kind = %cli_kind,
             agent_info = ?ready.initialize.agent_info,
-            "bridge ready"
+            "agent ready"
         );
-        *self.bridge.lock().await = Some(Arc::clone(&ready.bridge));
+        *self.agent.lock().await = Some(Arc::clone(&ready.agent));
         *self.cli_kind.lock().await = Some(cli_kind.clone());
         *self.profile.lock().await = Some(profile.clone());
         *self.initialize.lock().await = Some(ready.initialize.clone());
@@ -151,7 +166,6 @@ impl ACPPod {
             });
         }
 
-        self.spawn_provider_session_watcher(&ready.bridge).await;
         self.emit(SystemEvent::AgentInitialized {
             route: self.route.clone(),
             cli_kind: Some(cli_kind),
@@ -160,11 +174,11 @@ impl ACPPod {
         });
         let _ = self.change_tx.send(());
 
-        Ok(ready.bridge)
+        Ok(ready.agent)
     }
 
-    /// Ensure a session exists, creating one if needed.
-    pub(super) async fn ensure_session(&self, bridge: &Arc<AcpBridge>) -> acp::Result<String> {
+    /// Ensure a session exists on the given agent, creating one if needed.
+    pub(super) async fn ensure_session(&self, agent: &Arc<Agent>) -> acp::Result<String> {
         if let Some(session_id) = self.session_id.lock().await.clone() {
             return Ok(session_id);
         }
@@ -177,7 +191,7 @@ impl ACPPod {
             .unwrap_or_else(|| "claude".to_string());
         let workspace = config::ensure_loaded().resolve_workspace(&agent_kind);
         let response =
-            acp::Agent::new_session(&**bridge, acp::NewSessionRequest::new(workspace)).await?;
+            acp::Agent::new_session(&**agent, acp::NewSessionRequest::new(workspace)).await?;
         let session_id = response.session_id.to_string();
         *self.session_id.lock().await = Some(session_id.clone());
 
@@ -190,16 +204,16 @@ impl ACPPod {
         Ok(session_id)
     }
 
-    /// Kill bridge and clear all state.
+    /// Kill the current agent and clear all state.
     ///
-    /// Does not wait for any in-flight prompt — the bridge shutdown signal
+    /// Does not wait for any in-flight prompt — the agent shutdown signal
     /// is sent immediately. Any concurrent `acp::Agent::prompt` future will
-    /// receive an ACP error. Subsequent prompts will re-spawn a fresh
-    /// bridge via `ensure_bridge`.
+    /// receive an ACP error. Subsequent prompts will re-spawn a fresh agent
+    /// via `ensure_agent`.
     pub(super) async fn full_reset(&self) {
-        if let Some(bridge) = self.bridge.lock().await.take() {
-            bridge.shutdown().await;
-            tracing::info!(route = %self.route, "bridge killed (full_reset)");
+        if let Some(agent) = self.agent.lock().await.take() {
+            agent.shutdown().await;
+            tracing::info!(route = %self.route, "agent killed (full_reset)");
         }
         *self.session_id.lock().await = None;
         *self.initialize.lock().await = None;
@@ -210,24 +224,4 @@ impl ACPPod {
         *self.suppress_replay.lock().await = None;
         tracing::debug!(route = %self.route, "full_reset complete");
     }
-
-    pub(super) async fn spawn_provider_session_watcher(
-        self: &Arc<Self>,
-        bridge: &Arc<AcpBridge>,
-    ) {
-        let Some(mut rx) = bridge.take_provider_session_id_rx().await else {
-            return;
-        };
-        let pod = Arc::downgrade(self);
-        tokio::spawn(async move {
-            while let Some(session_id) = rx.recv().await {
-                let Some(pod) = pod.upgrade() else {
-                    break;
-                };
-                *pod.session_id.lock().await = Some(session_id);
-                let _ = pod.change_tx.send(());
-            }
-        });
-    }
 }
-

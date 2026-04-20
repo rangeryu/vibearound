@@ -1,27 +1,29 @@
-//! `SessionBridgeHandler` — the `BridgeClientHandler` wrapper that `ACPPod`
-//! installs on the downstream channel handler.
+//! `HandoverHandler` — the [`AgentClientHandler`] wrapper that
+//! [`Conversation`] installs on the downstream channel handler.
 //!
-//! It passes `session_notification` and `request_permission` through to the
-//! real channel-side handler, except during handover `load_session`, when
-//! the `suppress_replay` flag is set to swallow replayed history so it
-//! doesn't flood the IM channel.
+//! It passes `session_notification` and `request_permission` through to
+//! the real channel-side handler, except during handover `load_session`,
+//! when the `suppress_replay` flag is set to swallow replayed history so
+//! it doesn't flood the IM channel.
+//!
+//! [`Conversation`]: super::Conversation
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
 
-use crate::agent_factory::runtime::BridgeClientHandler;
+use crate::agent::AgentClientHandler;
 
-pub(super) struct SessionBridgeHandler {
-    pub(super) downstream: Arc<dyn BridgeClientHandler>,
+pub(super) struct HandoverHandler {
+    pub(super) downstream: Arc<dyn AgentClientHandler>,
     /// When true, session_notification events are swallowed (not forwarded
     /// to IM). Used during handover load_session to suppress history replay.
     pub(super) suppress_replay: Arc<AtomicBool>,
 }
 
 #[async_trait::async_trait(?Send)]
-impl BridgeClientHandler for SessionBridgeHandler {
+impl AgentClientHandler for HandoverHandler {
     async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
         // During handover load_session, suppress replay notifications
         // so history doesn't flood the IM channel.

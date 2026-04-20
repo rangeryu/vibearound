@@ -23,5 +23,5 @@ pub(super) fn log_line(log_file: &Arc<Mutex<Option<std::fs::File>>>, line: &str)
 }
 
 pub(super) fn resolve_enabled_agents(settings: &Value, all_agents: &[&str]) -> Vec<String> {
-    common::agent_integrations::resolve_enabled_agents(settings, all_agents)
+    common::agent::resolve_enabled_agents(settings, all_agents)
 }

@@ -1,12 +1,16 @@
-//! ACPHub: conversation management center.
+//! ConversationManager: the routing layer.
 //!
-//! Manages per-route ACPPods, calls acp::Agent methods directly on bridges
-//! (no command/event enum intermediaries). Emits two broadcast streams:
+//! Holds one [`Conversation`] per [`RouteKey`] and dispatches system
+//! commands (prompt / cancel / close / switch_agent / ...) to it. Emits
+//! two broadcast streams:
 //!
-//! - `event_tx` — typed `SystemEvent` for lifecycle milestones consumed
-//!   by `session_manager` and `channel_manager`.
+//! - `event_tx` — typed [`SystemEvent`] for lifecycle milestones consumed
+//!   by `channel_manager`.
 //! - `change_tx` — untyped `()` ping for dashboard-style consumers that
 //!   re-poll `list()` on each signal. Exposed via [`StateSource`].
+//!
+//! The real per-conversation state lives on [`Conversation`]; this type
+//! is just the table + dispatcher.
 //!
 //! [`StateSource`]: crate::state::StateSource
 
@@ -15,31 +19,31 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::broadcast;
 
+use crate::agent::AgentClientHandler;
 use crate::routing::RouteKey;
-use crate::agent_factory::runtime::BridgeClientHandler;
 
 use agent_client_protocol as acp;
 
-use self::pod::ACPPod;
+use self::conversation::Conversation;
 
+pub mod conversation;
 pub mod event;
-pub mod pod;
 
+pub use conversation::ConversationState;
 pub use event::SystemEvent;
-pub use pod::PodState;
 
-pub struct ACPHub {
-    pods: DashMap<RouteKey, Arc<ACPPod>>,
+pub struct ConversationManager {
+    conversations: DashMap<RouteKey, Arc<Conversation>>,
     event_tx: broadcast::Sender<SystemEvent>,
     change_tx: broadcast::Sender<()>,
 }
 
-impl ACPHub {
+impl ConversationManager {
     pub fn new() -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let (change_tx, _) = broadcast::channel(256);
         Self {
-            pods: DashMap::new(),
+            conversations: DashMap::new(),
             event_tx,
             change_tx,
         }
@@ -50,69 +54,69 @@ impl ACPHub {
         self.event_tx.subscribe()
     }
 
-    /// List every currently-held pod. Consumers read each pod's live
-    /// state via `pod.state().await`; immutable getters on the pod
-    /// (`route` field, `started_at()`, `bot_identity()`) don't need the
-    /// state snapshot.
-    pub fn list(&self) -> Vec<Arc<ACPPod>> {
-        self.pods.iter().map(|e| Arc::clone(e.value())).collect()
+    /// List every currently-held conversation. Consumers read each
+    /// conversation's live state via `conv.state().await`; immutable
+    /// getters (`route` field, `started_at()`, `bot_identity()`) don't
+    /// need the state snapshot.
+    pub fn list(&self) -> Vec<Arc<Conversation>> {
+        self.conversations.iter().map(|e| Arc::clone(e.value())).collect()
     }
 
-    /// Look up a pod by route. Returns `None` if no pod has been created
-    /// for that route yet.
-    pub fn pod(&self, route: &RouteKey) -> Option<Arc<ACPPod>> {
-        self.pods.get(route).map(|e| Arc::clone(&e))
+    /// Look up a conversation by route. Returns `None` if none has been
+    /// created for that route yet.
+    pub fn conversation(&self, route: &RouteKey) -> Option<Arc<Conversation>> {
+        self.conversations.get(route).map(|e| Arc::clone(&e))
     }
 
     // -----------------------------------------------------------------------
-    // Conversation lifecycle — direct methods, no command enums
+    // Command dispatch — direct methods, no command enums
     // -----------------------------------------------------------------------
 
-    /// Send a prompt on a route. Handles bridge init and session creation
+    /// Send a prompt on a route. Handles agent spawn and session creation
     /// transparently on first call.
     pub async fn prompt(
         &self,
         route: RouteKey,
         cli_kind: Option<String>,
         content_blocks: Vec<acp::ContentBlock>,
-        handler: Arc<dyn BridgeClientHandler>,
+        handler: Arc<dyn AgentClientHandler>,
     ) -> acp::Result<acp::PromptResponse> {
-        let pod = self.get_or_create_pod(route);
-        pod.prompt(cli_kind, content_blocks, handler).await
+        let conv = self.get_or_create(route);
+        conv.prompt(cli_kind, content_blocks, handler).await
     }
 
     /// Cancel the active turn on a route.
     pub async fn cancel(&self, route: &RouteKey) -> acp::Result<()> {
-        let Some(pod) = self.get_pod(route) else {
+        let Some(conv) = self.get(route) else {
             return Err(acp::Error::method_not_found());
         };
-        pod.cancel().await
+        conv.cancel().await
     }
 
-    /// Close a route — kill bridge, remove pod.
+    /// Close a route — kill agent, remove conversation.
     pub async fn close(&self, route: &RouteKey, reason: Option<String>) {
-        if let Some((_, pod)) = self.pods.remove(route) {
-            pod.close(reason).await;
+        if let Some((_, conv)) = self.conversations.remove(route) {
+            conv.close(reason).await;
             let _ = self.change_tx.send(());
         }
     }
 
-    /// Switch agent kind on a route (creates pod if needed).
+    /// Switch agent kind on a route (creates conversation if needed).
     pub async fn switch_agent(&self, route: &RouteKey, agent_kind: String) {
-        let pod = self.get_or_create_pod(route.clone());
-        pod.switch_agent(agent_kind).await;
+        let conv = self.get_or_create(route.clone());
+        conv.switch_agent(agent_kind).await;
     }
 
-    /// Switch profile on a route (creates pod if needed).
+    /// Switch profile on a route (creates conversation if needed).
     pub async fn switch_profile(&self, route: &RouteKey, profile: String) {
-        let pod = self.get_or_create_pod(route.clone());
-        pod.switch_profile(profile).await;
+        let conv = self.get_or_create(route.clone());
+        conv.switch_profile(profile).await;
     }
 
-    /// Reset session on a route (new conversation, same agent).
+    /// Reset session on a route (new conversation thread, same agent).
     pub async fn reset_session(&self, route: &RouteKey) {
-        if let Some(pod) = self.get_pod(route) {
-            pod.reset_session().await;
+        if let Some(conv) = self.get(route) {
+            conv.reset_session().await;
         }
     }
 
@@ -123,41 +127,42 @@ impl ACPHub {
         route: &RouteKey,
         mode_id: String,
     ) -> acp::Result<()> {
-        let pod = self
-            .get_pod(route)
+        let conv = self
+            .get(route)
             .ok_or_else(acp::Error::method_not_found)?;
-        pod.set_session_mode(mode_id).await
+        conv.set_session_mode(mode_id).await
     }
 
     /// Get cached available agent commands for a route.
     pub async fn list_agent_commands(&self, route: &RouteKey) -> serde_json::Value {
-        match self.get_pod(route) {
-            Some(pod) => pod.list_agent_commands().await,
+        match self.get(route) {
+            Some(conv) => conv.list_agent_commands().await,
             None => serde_json::Value::Array(vec![]),
         }
     }
 
     /// Update cached agent commands for a route (called on available_commands_update).
     pub async fn list_agent_commands_update(&self, route: &RouteKey, commands: serde_json::Value) {
-        if let Some(pod) = self.get_pod(route) {
-            pod.update_agent_commands(commands).await;
+        if let Some(conv) = self.get(route) {
+            conv.update_agent_commands(commands).await;
         }
     }
 
     /// Shutdown all routes.
     pub async fn shutdown_all(&self) {
-        let routes: Vec<RouteKey> = self.pods.iter().map(|e| e.key().clone()).collect();
+        let routes: Vec<RouteKey> = self.conversations.iter().map(|e| e.key().clone()).collect();
         for route in routes {
             self.close(&route, Some("shutdown".to_string())).await;
         }
     }
 
     // -----------------------------------------------------------------------
-    // Session handover — pod lifecycle only
+    // Session handover — conversation lifecycle only
     // -----------------------------------------------------------------------
 
-    /// Prepare a pod on a route for session pickup — set the resume_session_id
-    /// and cwd so the next prompt spawns a bridge that loads the given session.
+    /// Prepare a conversation for session pickup — set the
+    /// resume_session_id and cwd so the next prompt spawns an agent that
+    /// loads the given session.
     pub async fn prepare_pickup(
         &self,
         route: RouteKey,
@@ -165,37 +170,37 @@ impl ACPHub {
         resume_session_id: String,
         cwd: Option<String>,
     ) {
-        let pod = self.get_or_create_pod(route);
-        pod.set_handover(cli_kind, resume_session_id, cwd).await;
+        let conv = self.get_or_create(route);
+        conv.set_handover(cli_kind, resume_session_id, cwd).await;
     }
 
     // -----------------------------------------------------------------------
     // Internal
     // -----------------------------------------------------------------------
 
-    fn get_pod(&self, route: &RouteKey) -> Option<Arc<ACPPod>> {
-        self.pods.get(route).map(|e| Arc::clone(&e))
+    fn get(&self, route: &RouteKey) -> Option<Arc<Conversation>> {
+        self.conversations.get(route).map(|e| Arc::clone(&e))
     }
 
-    fn get_or_create_pod(&self, route: RouteKey) -> Arc<ACPPod> {
-        if let Some(existing) = self.get_pod(&route) {
+    fn get_or_create(&self, route: RouteKey) -> Arc<Conversation> {
+        if let Some(existing) = self.get(&route) {
             return existing;
         }
 
-        let pod = Arc::new(ACPPod::new(
+        let conv = Arc::new(Conversation::new(
             route.clone(),
             self.event_tx.clone(),
             self.change_tx.clone(),
         ));
-        self.pods.insert(route.clone(), Arc::clone(&pod));
+        self.conversations.insert(route.clone(), Arc::clone(&conv));
         let _ = self.event_tx.send(SystemEvent::RouteCreated { route });
         let _ = self.change_tx.send(());
-        pod
+        conv
     }
 }
 
-impl crate::state::StateSource for ACPHub {
-    type Entry = Arc<ACPPod>;
+impl crate::state::StateSource for ConversationManager {
+    type Entry = Arc<Conversation>;
 
     async fn list(&self) -> Vec<Self::Entry> {
         self.list()

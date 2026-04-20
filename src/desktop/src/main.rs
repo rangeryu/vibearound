@@ -157,7 +157,7 @@ fn main() {
     // itself with the freshly populated settings. Skipping here also
     // avoids a pointless uninstall sweep over files that don't exist yet.
     if !onboarding_needed {
-        common::agent_integrations::sync_integrations(
+        common::agent::sync_integrations(
             &onboarding::get_settings_value(),
         );
     }
@@ -270,7 +270,7 @@ fn main() {
                 // steady-state path already ran this pre-binding, so
                 // re-running would be wasted work.
                 if onboarding_needed {
-                    common::agent_integrations::sync_integrations(
+                    common::agent::sync_integrations(
                         &onboarding::get_settings_value(),
                     );
                 }

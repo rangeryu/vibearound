@@ -5,8 +5,8 @@
 //! filename convention differ per agent.
 //!
 //! The `include_str!` paths are relative to this source file: `src/core/
-//! src/agent_integrations/skills.rs` → `../../../skills/...` reaches the
-//! top-level `src/skills/` directory where the skill markdown lives.
+//! src/agent/skills.rs` → `../../../skills/...` reaches the top-level
+//! `src/skills/` directory where the skill markdown lives.
 
 use anyhow::Context;
 

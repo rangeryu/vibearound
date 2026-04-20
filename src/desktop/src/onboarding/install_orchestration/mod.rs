@@ -163,7 +163,7 @@ async fn run_install<R: Runtime>(
             &log_file,
             "[onboarding] Running sync_integrations (global MCP + skills sweep)",
         );
-        common::agent_integrations::sync_integrations(&settings);
+        common::agent::sync_integrations(&settings);
     }
 
     // --- Agent installs ---

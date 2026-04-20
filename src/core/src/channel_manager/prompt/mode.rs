@@ -9,14 +9,14 @@
 use std::sync::Arc;
 
 use crate::routing::RouteKey;
-use crate::acp_hub::ACPHub;
+use crate::conversation_manager::ConversationManager;
 use crate::channel_manager::plugin_host::PluginHost;
 
 use super::send_system_text;
 
 /// Validate + canonicalise the mode ID from `/mode <id>`, then dispatch.
 pub(super) async fn handle_set_mode(
-    acp_hub: &Arc<ACPHub>,
+    conversation_manager: &Arc<ConversationManager>,
     plugin_host: &Arc<PluginHost>,
     route: &RouteKey,
     mode_id: &str,
@@ -42,7 +42,7 @@ pub(super) async fn handle_set_mode(
         )
         .await;
     } else {
-        set_session_mode_and_reply(acp_hub, plugin_host, route, canonical).await;
+        set_session_mode_and_reply(conversation_manager, plugin_host, route, canonical).await;
     }
 }
 
@@ -52,12 +52,12 @@ pub(super) async fn handle_set_mode(
 /// line here so the user sees their command was accepted even before
 /// the agent replies.
 pub(super) async fn set_session_mode_and_reply(
-    acp_hub: &Arc<ACPHub>,
+    conversation_manager: &Arc<ConversationManager>,
     plugin_host: &Arc<PluginHost>,
     route: &RouteKey,
     mode_id: &str,
 ) {
-    match acp_hub.set_session_mode(route, mode_id.to_string()).await {
+    match conversation_manager.set_session_mode(route, mode_id.to_string()).await {
         Ok(()) => {
             send_system_text(
                 plugin_host,

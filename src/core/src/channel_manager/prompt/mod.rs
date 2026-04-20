@@ -5,8 +5,8 @@
 //! variant:
 //!
 //! - `Message` / `Callback` → [`handler::handle_prompt`] (slash
-//!   command parse → ACPHub prompt).
-//! - `Stop` / `Close` / `SwitchAgent` → direct `ACPHub` calls.
+//!   command parse → ConversationManager prompt).
+//! - `Stop` / `Close` / `SwitchAgent` → direct `ConversationManager` calls.
 //! - `Log` → forward to the daemon log stream.
 //!
 //! Sub-modules:
@@ -23,7 +23,7 @@ use std::sync::Arc;
 use agent_client_protocol as acp;
 
 use crate::routing::RouteKey;
-use crate::acp_hub::ACPHub;
+use crate::conversation_manager::ConversationManager;
 
 use super::plugin_host::PluginHost;
 use super::types::{ChannelInput, ChannelOutput};
@@ -33,7 +33,7 @@ pub(crate) use handler::handle_prompt;
 /// Dispatch a single `ChannelInput` to the right subsystem. Used by both the
 /// stdio plugin transport and the legacy web-chat channel-input thread.
 pub async fn handle_channel_input(
-    acp_hub: &Arc<ACPHub>,
+    conversation_manager: &Arc<ConversationManager>,
     plugin_host: &Arc<PluginHost>,
     input: ChannelInput,
 ) {
@@ -60,7 +60,7 @@ pub async fn handle_channel_input(
                 vec![acp::ContentBlock::Text(acp::TextContent::new(text))]
             };
 
-            match handle_prompt(acp_hub, plugin_host, route.clone(), cli_kind, content_blocks)
+            match handle_prompt(conversation_manager, plugin_host, route.clone(), cli_kind, content_blocks)
                 .await
             {
                 Ok(_resp) => {
@@ -73,13 +73,13 @@ pub async fn handle_channel_input(
             }
         }
         ChannelInput::Stop { route } => {
-            let _ = acp_hub.cancel(&route).await;
+            let _ = conversation_manager.cancel(&route).await;
         }
         ChannelInput::Close { route, reason } => {
-            acp_hub.close(&route, reason).await;
+            conversation_manager.close(&route, reason).await;
         }
         ChannelInput::SwitchAgent { route, agent_kind } => {
-            acp_hub.switch_agent(&route, agent_kind).await;
+            conversation_manager.switch_agent(&route, agent_kind).await;
         }
         ChannelInput::Log { level, message } => {
             tracing::info!(

@@ -13,7 +13,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
-use crate::acp_hub::ACPHub;
+use crate::conversation_manager::ConversationManager;
 use crate::child_registry::{ChildKind, ChildRegistry};
 
 use super::super::manifest::ChannelPluginManifest;
@@ -34,7 +34,7 @@ impl StdioPluginRuntime {
     pub async fn spawn(
         manifest: ChannelPluginManifest,
         input_tx: mpsc::UnboundedSender<ChannelInput>,
-        acp_hub: Arc<ACPHub>,
+        conversation_manager: Arc<ConversationManager>,
         plugin_host: Arc<PluginHost>,
     ) -> Result<Self, String> {
         if manifest.runtime != "node" {
@@ -130,7 +130,7 @@ impl StdioPluginRuntime {
                         stdout,
                         input_tx,
                         output_rx,
-                        acp_hub,
+                        conversation_manager,
                         plugin_host,
                     )
                     .await;

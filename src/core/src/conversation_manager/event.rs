@@ -1,13 +1,14 @@
-//! System events emitted by ACPHub for lifecycle observability.
+//! System events emitted by ConversationManager for lifecycle observability.
 //!
 //! ACP protocol events (streaming tokens, tool calls) flow through the
-//! BridgeClientHandler chain and do NOT appear here.
+//! AgentClientHandler chain and do NOT appear here.
 //!
 //! There is intentionally no `StateChanged` / `SnapshotChanged` event on
-//! this channel. Consumers that need the current state of a pod read it
-//! live via `acp_hub.list()` + `pod.state().await`. The event stream is
-//! only for discrete lifecycle milestones (route created, session
-//! ready, agent initialized, etc.).
+//! this channel. Consumers that need the current state of a conversation
+//! read it live via `ConversationManager::list()` +
+//! `Conversation::state().await`. The event stream is only for discrete
+//! lifecycle milestones (route created, session ready, agent initialized,
+//! etc.).
 
 use crate::routing::RouteKey;
 

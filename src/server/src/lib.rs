@@ -12,7 +12,7 @@ use anyhow::{anyhow, Context};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-use common::acp_hub::ACPHub;
+use common::conversation_manager::ConversationManager;
 use common::auth::{self, AuthToken};
 use common::channel_manager::{handle_channel_input, ChannelManager, WebChannelManager};
 use common::child_registry::{self, ChildRegistry};
@@ -34,7 +34,7 @@ pub struct ServerDaemon {
 
 pub struct RunningDaemon {
     pub channel_hub: Arc<ChannelManager>,
-    pub acp_hub: Arc<ACPHub>,
+    pub conversation_manager: Arc<ConversationManager>,
     pub web_channel: Arc<WebChannelManager>,
     pub web_handle: JoinHandle<Result<(), String>>,
     pub tunnel_handle: JoinHandle<()>,
@@ -53,7 +53,7 @@ pub struct RunningDaemon {
 
 impl RunningDaemon {
     pub async fn stop(mut self) {
-        self.acp_hub.shutdown_all().await;
+        self.conversation_manager.shutdown_all().await;
         self.channel_hub.shutdown_all().await;
 
         // Safety net: synchronously kill any child process still registered
@@ -152,13 +152,13 @@ impl ServerDaemon {
             );
         }
 
-        // 1. Initialize hub architecture: ACPHub → ChannelManager
-        let acp_hub = Arc::new(ACPHub::new());
-        let channel_hub = Arc::new(ChannelManager::new(Arc::clone(&acp_hub)));
+        // 1. Initialize hub architecture: ConversationManager → ChannelManager
+        let conversation_manager = Arc::new(ConversationManager::new());
+        let channel_hub = Arc::new(ChannelManager::new(Arc::clone(&conversation_manager)));
         let web_channel = WebChannelManager::new();
 
         // 2. ChannelManager subscribes to SystemEvent for agent info forwarding
-        channel_hub.start_event_forwarder(acp_hub.subscribe());
+        channel_hub.start_event_forwarder(conversation_manager.subscribe());
 
         // Register built-in internal channels.
         let (web_outbound_tx, mut web_outbound_rx) = web_channel.sender();
@@ -179,7 +179,7 @@ impl ServerDaemon {
         // an explicit shutdown `Notify` and hand the join handle back to
         // `RunningDaemon` so `stop()` can unwind cleanly.
         let mut input_rx = channel_hub.take_input_rx().context("input_rx already taken")?;
-        let acp_hub_for_input = Arc::clone(&acp_hub);
+        let manager_for_input = Arc::clone(&conversation_manager);
         let plugin_host_for_input = channel_hub.plugin_host();
         let channel_input_shutdown = Arc::new(Notify::new());
         let input_shutdown_for_thread = Arc::clone(&channel_input_shutdown);
@@ -199,10 +199,10 @@ impl ServerDaemon {
                                 _ = input_shutdown_for_thread.notified() => break,
                                 maybe = input_rx.recv() => {
                                     let Some(input) = maybe else { break };
-                                    let acp_hub = Arc::clone(&acp_hub_for_input);
+                                    let conversation_manager = Arc::clone(&manager_for_input);
                                     let plugin_host = Arc::clone(&plugin_host_for_input);
                                     tokio::task::spawn_local(async move {
-                                        handle_channel_input(&acp_hub, &plugin_host, input).await;
+                                        handle_channel_input(&conversation_manager, &plugin_host, input).await;
                                     });
                                 }
                             }
@@ -272,7 +272,7 @@ impl ServerDaemon {
 
         Ok(RunningDaemon {
             channel_hub,
-            acp_hub,
+            conversation_manager,
             web_channel,
             web_handle,
             tunnel_handle,

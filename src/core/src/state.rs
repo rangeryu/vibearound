@@ -2,7 +2,7 @@
 //!
 //! This is the contract between `common` and its shells (the axum
 //! server, the Tauri desktop, any future TUI/CLI). Every manager that
-//! holds runtime state — `ChannelMonitor`, `ACPHub`, `TunnelManager`,
+//! holds runtime state — `ChannelMonitor`, `ConversationManager`, `TunnelManager`,
 //! `PtyRegistry` — implements [`StateSource`] so consumers have two
 //! ways to work with it:
 //!
@@ -13,7 +13,7 @@
 //!   changes, then re-poll. No typed event payloads on this channel
 //!   by design — every additional schema is an additional thing that
 //!   can drift from the list entries. Managers that need richer,
-//!   typed events (ACPHub's [`SystemEvent`] feed) expose them on
+//!   typed events (ConversationManager's [`SystemEvent`] feed) expose them on
 //!   separate channels; `subscribe_changes` is the lowest-common-
 //!   denominator signal.
 //!
@@ -25,7 +25,7 @@
 //! concrete references (`Arc<ChannelMonitor>`, etc.) and the trait
 //! documents what they can count on.
 //!
-//! [`SystemEvent`]: crate::acp_hub::SystemEvent
+//! [`SystemEvent`]: crate::conversation_manager::SystemEvent
 
 /// Managers that expose a list of entries and notify when the list
 /// changes. See module docs for the intended usage pattern.

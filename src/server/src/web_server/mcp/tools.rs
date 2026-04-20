@@ -4,7 +4,7 @@
 //! validates inputs, touches workspace config / preview store / session
 //! files, and returns a JSON-RPC response.
 //!
-//! Tools never touch `ACPHub`, pods, or bridges — they're stateless. Any
+//! Tools never touch `ConversationManager`, pods, or bridges — they're stateless. Any
 //! session loading happens later when the user sends `/pickup` in IM chat.
 
 use axum::Json;
@@ -34,10 +34,10 @@ pub(super) async fn mcp_get_session_id(
     };
 
     let route = common::routing::RouteKey::new(channel_kind, chat_id);
-    let acp_hub = state.channel_hub.acp_hub();
+    let conversation_manager = state.channel_hub.conversation_manager();
 
-    let state_opt = match acp_hub.pod(&route) {
-        Some(pod) => Some(pod.state().await),
+    let state_opt = match conversation_manager.conversation(&route) {
+        Some(conv) => Some(conv.state().await),
         None => None,
     };
     match state_opt {
@@ -53,7 +53,7 @@ pub(super) async fn mcp_get_session_id(
 }
 
 // ---------------------------------------------------------------------------
-// prepare_handover — stateless, no ACPHub dependency
+// prepare_handover — stateless, no ConversationManager dependency
 // ---------------------------------------------------------------------------
 
 pub(super) async fn mcp_prepare_handover(

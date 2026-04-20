@@ -1,7 +1,7 @@
 //! `handle_prompt` — the main prompt-processing path.
 //!
 //! Parses slash commands, short-circuits for built-in actions, or
-//! forwards the content blocks to `ACPHub::prompt` wrapped in a
+//! forwards the content blocks to `ConversationManager::prompt` wrapped in a
 //! `ChannelBridgeHandler`.
 
 use std::sync::Arc;
@@ -9,8 +9,8 @@ use std::sync::Arc;
 use agent_client_protocol as acp;
 
 use crate::routing::RouteKey;
-use crate::acp_hub::ACPHub;
-use crate::agent_factory::runtime::BridgeClientHandler;
+use crate::conversation_manager::ConversationManager;
+use crate::agent::AgentClientHandler;
 
 use crate::channel_manager::bridge_handler::ChannelBridgeHandler;
 use crate::channel_manager::plugin_host::PluginHost;
@@ -22,13 +22,13 @@ use super::mode::{handle_set_mode, set_session_mode_and_reply};
 use super::send_system_text;
 
 /// Handle a prompt request: process slash commands, then call through to
-/// `ACPHub::prompt`. Returns the real `PromptResponse` with actual
+/// `ConversationManager::prompt`. Returns the real `PromptResponse` with actual
 /// `StopReason`.
 ///
 /// Used by both the channel-input processing loop (web) and the stdio
 /// plugin transport (where `prompt()` blocks until the turn completes).
 pub(crate) async fn handle_prompt(
-    acp_hub: &Arc<ACPHub>,
+    conversation_manager: &Arc<ConversationManager>,
     plugin_host: &Arc<PluginHost>,
     route: RouteKey,
     cli_kind: Option<String>,
@@ -63,17 +63,17 @@ pub(crate) async fn handle_prompt(
                 }
             }
             SlashAction::NewSession => {
-                acp_hub.reset_session(&route).await;
+                conversation_manager.reset_session(&route).await;
                 send_system_text(plugin_host, &route, "Session reset.").await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::SwitchAgent(kind) => {
-                acp_hub.switch_agent(&route, kind.clone()).await;
+                conversation_manager.switch_agent(&route, kind.clone()).await;
                 send_system_text(plugin_host, &route, &format!("Switched to {}.", kind)).await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::SwitchProfile(profile) => {
-                acp_hub.switch_profile(&route, profile.clone()).await;
+                conversation_manager.switch_profile(&route, profile.clone()).await;
                 send_system_text(
                     plugin_host,
                     &route,
@@ -83,7 +83,7 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::Close => {
-                acp_hub.close(&route, Some("user closed".to_string())).await;
+                conversation_manager.close(&route, Some("user closed".to_string())).await;
                 send_system_text(plugin_host, &route, "Conversation closed.").await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
@@ -100,7 +100,7 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::ListAgentCommands => {
-                let agent_commands = acp_hub.list_agent_commands(&route).await;
+                let agent_commands = conversation_manager.list_agent_commands(&route).await;
                 plugin_host
                     .send_output(ChannelOutput::CommandMenu {
                         route: route.clone(),
@@ -113,7 +113,7 @@ pub(crate) async fn handle_prompt(
             SlashAction::PickupCode(code) => {
                 match crate::pickup_codes::consume(&code) {
                     Some((agent_kind, session_id, cwd)) => {
-                        acp_hub
+                        conversation_manager
                             .prepare_pickup(
                                 route.clone(),
                                 agent_kind.clone(),
@@ -143,7 +143,7 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::Pickup { agent_kind, session_id, cwd } => {
-                acp_hub
+                conversation_manager
                     .prepare_pickup(
                         route.clone(),
                         agent_kind.clone(),
@@ -184,15 +184,15 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::Handover => {
-                handle_handover(acp_hub, plugin_host, &route).await;
+                handle_handover(conversation_manager, plugin_host, &route).await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::PlanMode => {
-                set_session_mode_and_reply(acp_hub, plugin_host, &route, "plan").await;
+                set_session_mode_and_reply(conversation_manager, plugin_host, &route, "plan").await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::SetMode(mode_id) => {
-                handle_set_mode(acp_hub, plugin_host, &route, &mode_id).await;
+                handle_set_mode(conversation_manager, plugin_host, &route, &mode_id).await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::Unknown(cmd) => {
@@ -210,14 +210,14 @@ pub(crate) async fn handle_prompt(
         route = %route,
         cli_kind = ?cli_kind,
         blocks = content_blocks.len(),
-        "forwarding prompt to ACPHub"
+        "forwarding prompt to ConversationManager"
     );
 
-    let handler: Arc<dyn BridgeClientHandler> = Arc::new(ChannelBridgeHandler::new(
+    let handler: Arc<dyn AgentClientHandler> = Arc::new(ChannelBridgeHandler::new(
         Arc::clone(plugin_host),
-        Arc::clone(acp_hub),
+        Arc::clone(conversation_manager),
         route.clone(),
     ));
 
-    acp_hub.prompt(route, cli_kind, content_blocks, handler).await
+    conversation_manager.prompt(route, cli_kind, content_blocks, handler).await
 }

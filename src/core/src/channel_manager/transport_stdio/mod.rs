@@ -17,7 +17,7 @@
 //!
 //! ## Prompt lifecycle
 //!
-//! Plugin calls `prompt()` → host calls `acp_hub.prompt()` directly →
+//! Plugin calls `prompt()` → host calls `conversation_manager.prompt()` directly →
 //! session notifications stream to plugin during processing →
 //! `prompt()` returns the real `PromptResponse` with actual `StopReason`.
 //!

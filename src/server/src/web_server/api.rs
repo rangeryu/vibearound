@@ -85,12 +85,12 @@ pub async fn list_tunnels_handler(
     )
 }
 
-/// GET /api/agents/runtime — live list of agent pods from `ACPHub`.
+/// GET /api/agents/runtime — live list of agent pods from `ConversationManager`.
 pub async fn list_agents_runtime_handler(
     State(state): State<AppState>,
 ) -> Json<Vec<crate::api_types::AgentRuntime>> {
-    let acp_hub = state.channel_hub.acp_hub();
-    let pods = acp_hub.list();
+    let conversation_manager = state.channel_hub.conversation_manager();
+    let pods = conversation_manager.list();
     let mut out = Vec::with_capacity(pods.len());
     for pod in pods {
         let st = pod.state().await;
@@ -181,7 +181,7 @@ pub async fn kill_agent_handler(
     };
     state
         .channel_hub
-        .acp_hub()
+        .conversation_manager()
         .close(&route, Some("killed by user".to_string()))
         .await;
     (StatusCode::OK, format!("Killed agent {}", route_key))
