@@ -17,7 +17,7 @@ use crate::agent::{Agent, AgentClientHandler};
 use crate::config;
 
 use super::super::event::SystemEvent;
-use super::handover_handler::HandoverHandler;
+use super::super::handover::HandoverHandler;
 use super::Conversation;
 
 impl Conversation {

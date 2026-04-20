@@ -11,13 +11,13 @@
 //!                            read via `Conversation::state().await`).
 //! - [`lifecycle`]         — agent lifecycle (`ensure_agent`,
 //!                            `ensure_session`, `full_reset`).
-//! - [`handover_handler`]  — [`HandoverHandler`] wrapper that suppresses
-//!                            session-notification replay during handover
-//!                            `load_session` to keep history out of the IM feed.
 //! - [`media`]             — relocate cached media from staging to the
 //!                            session-scoped workspace path before each prompt.
+//!
+//! Handover plumbing (the `HandoverHandler` replay filter that wraps the
+//! downstream handler during `load_session`, and the pickup-code token
+//! store) lives next door in [`super::handover`].
 
-mod handover_handler;
 mod lifecycle;
 mod media;
 mod state;

@@ -6,7 +6,7 @@
 //! when the `suppress_replay` flag is set to swallow replayed history so
 //! it doesn't flood the IM channel.
 //!
-//! [`Conversation`]: super::Conversation
+//! [`Conversation`]: super::super::conversation::Conversation
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -15,11 +15,11 @@ use agent_client_protocol as acp;
 
 use crate::agent::AgentClientHandler;
 
-pub(super) struct HandoverHandler {
-    pub(super) downstream: Arc<dyn AgentClientHandler>,
+pub(crate) struct HandoverHandler {
+    pub(crate) downstream: Arc<dyn AgentClientHandler>,
     /// When true, session_notification events are swallowed (not forwarded
     /// to IM). Used during handover load_session to suppress history replay.
-    pub(super) suppress_replay: Arc<AtomicBool>,
+    pub(crate) suppress_replay: Arc<AtomicBool>,
 }
 
 #[async_trait::async_trait(?Send)]

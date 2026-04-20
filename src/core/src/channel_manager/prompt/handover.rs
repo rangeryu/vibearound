@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
-use crate::routing::RouteKey;
-use crate::conversation_manager::ConversationManager;
 use crate::channel_manager::plugin_host::PluginHost;
+use crate::conversation_manager::{handover, ConversationManager};
+use crate::routing::RouteKey;
 
 use super::send_system_text;
 
@@ -27,12 +27,7 @@ pub(super) async fn handle_handover(
             let session_id = snap.session_id.unwrap();
             let cwd = snap.workspace.unwrap_or_else(|| "~".to_string());
             let cli_kind = snap.cli_kind.unwrap_or_else(|| "claude".to_string());
-            let resume_cmd = crate::resources::agent_by_id(&cli_kind)
-                .and_then(|a| a.resume_template.as_ref())
-                .map(|tpl| tpl.replace("{cwd}", &cwd).replace("{session_id}", &session_id))
-                .unwrap_or_else(|| {
-                    format!("cd {} && {} (resume session {})", cwd, cli_kind, session_id)
-                });
+            let resume_cmd = handover::resume_command_for(&cli_kind, &session_id, &cwd);
             send_system_text(
                 plugin_host,
                 route,

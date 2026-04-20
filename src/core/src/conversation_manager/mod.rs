@@ -28,7 +28,7 @@ use self::conversation::Conversation;
 
 pub mod conversation;
 pub mod event;
-pub mod pickup_codes;
+pub mod handover;
 
 pub use conversation::ConversationState;
 pub use event::SystemEvent;
