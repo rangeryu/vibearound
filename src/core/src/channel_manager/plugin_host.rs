@@ -17,9 +17,16 @@ pub struct PluginHost {
     runtimes: DashMap<ChannelKind, PluginRuntime>,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     /// Pending `requestPermission` replies keyed by a fresh request_id.
-    /// The sender is consumed by the plugin-bridge forwarder task once the
-    /// plugin's ACP response arrives. See `channel_manager::request_permission`.
-    pub pending_permissions: DashMap<String, oneshot::Sender<acp::RequestPermissionResponse>>,
+    /// Value is `(channel_kind, sender)`: the sender is consumed by the
+    /// plugin-bridge forwarder task once the plugin's ACP response arrives
+    /// (see `transport_stdio::forwarder`), and the channel_kind lets us
+    /// drain orphaned entries when that plugin dies
+    /// (`cancel_channel_permissions`). Without the drain, a plugin crash
+    /// during approval leaves the sender alive here forever and
+    /// `request_permission`'s `rx.await` in `bridge_handler` stalls the
+    /// upstream agent turn.
+    pub pending_permissions:
+        DashMap<String, (ChannelKind, oneshot::Sender<acp::RequestPermissionResponse>)>,
     /// Back-pointer to the ChannelMonitor. Weak to avoid a reference cycle
     /// (ChannelMonitor holds `Arc<PluginHost>`). Used by bridge threads to
     /// call `mark_crashed` on plugin exit and `touch` on `_va/heartbeat`.
@@ -114,9 +121,29 @@ impl PluginHost {
             .collect();
 
         self.runtimes.clear();
+        // Drop every pending oneshot sender so waiting `request_permission`
+        // callers in `ChannelBridgeHandler` see `rx.await -> Err` and fall
+        // through to `Cancelled` instead of stalling forever.
+        self.pending_permissions.clear();
 
         for runtime in runtimes {
             runtime.shutdown().await;
+        }
+    }
+
+    /// Drop every pending permission request belonging to `channel_kind`.
+    /// Called when a plugin dies (`ChannelMonitor::mark_crashed`) so the
+    /// oneshot senders get released and the waiting agent turn resolves as
+    /// `Cancelled` rather than hanging indefinitely.
+    pub fn cancel_channel_permissions(&self, channel_kind: &str) {
+        let request_ids: Vec<String> = self
+            .pending_permissions
+            .iter()
+            .filter(|entry| entry.value().0 == channel_kind)
+            .map(|entry| entry.key().clone())
+            .collect();
+        for id in request_ids {
+            self.pending_permissions.remove(&id);
         }
     }
 }

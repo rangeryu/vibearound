@@ -100,11 +100,17 @@ impl BridgeClientHandler for ChannelBridgeHandler {
         let mut forwarded = args;
         forwarded.session_id = self.route.chat_id.clone().into();
 
-        // Register a oneshot keyed by a fresh request_id. The plugin-bridge
-        // forwarder task consumes it once the plugin's ACP response arrives.
+        // Register a oneshot keyed by a fresh request_id, tagged with this
+        // channel kind. The plugin-bridge forwarder task consumes it once
+        // the plugin's ACP response arrives. The tag lets
+        // `PluginHost::cancel_channel_permissions` drain orphaned entries
+        // when the plugin dies, so `rx.await` below resolves as `Cancelled`
+        // instead of stalling the agent turn.
         let request_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = tokio::sync::oneshot::channel::<acp::RequestPermissionResponse>();
-        self.plugin_host.pending_permissions.insert(request_id.clone(), tx);
+        self.plugin_host
+            .pending_permissions
+            .insert(request_id.clone(), (self.route.channel_kind.clone(), tx));
 
         let payload = match serde_json::to_value(&forwarded) {
             Ok(v) => v,

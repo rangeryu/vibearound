@@ -275,6 +275,11 @@ impl ChannelMonitor {
         state.set_reason(reason);
         state.last_crash_ts.store(unix_now_secs(), Ordering::Relaxed);
 
+        // Drop any oneshot senders waiting on this plugin's approvals.
+        // Otherwise `ChannelBridgeHandler::request_permission` callers
+        // would stall forever when the plugin dies mid-approval.
+        self.plugin_host.cancel_channel_permissions(&state.kind);
+
         match intent {
             TransitionIntent::Stop => {
                 state.set_status(ChannelRunStatus::Stopped);

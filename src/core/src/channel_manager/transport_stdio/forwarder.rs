@@ -123,7 +123,7 @@ pub(super) async fn forward_output_to_plugin(
                         "[{}] failed to parse PermissionRequest payload route={} request_id={}: {}",
                         channel_kind, route, request_id, e
                     );
-                    if let Some((_, tx)) = plugin_host.pending_permissions.remove(&request_id) {
+                    if let Some((_, (_, tx))) = plugin_host.pending_permissions.remove(&request_id) {
                         let _ = tx.send(acp::RequestPermissionResponse::new(
                             acp::RequestPermissionOutcome::Cancelled,
                         ));
@@ -132,7 +132,7 @@ pub(super) async fn forward_output_to_plugin(
                 }
             };
             let response = acp::Client::request_permission(&*conn, request).await;
-            let Some((_, tx)) = plugin_host.pending_permissions.remove(&request_id) else {
+            let Some((_, (_, tx))) = plugin_host.pending_permissions.remove(&request_id) else {
                 tracing::info!(
                     "[{}] PermissionRequest response dropped — no pending route={} request_id={}",
                     channel_kind, route, request_id
