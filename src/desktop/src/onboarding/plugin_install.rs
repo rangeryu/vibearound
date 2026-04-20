@@ -27,7 +27,7 @@ pub struct InstallPluginResponse {
 /// spawn directly. Locating npm-cli.js next to `node` and calling it via node
 /// works cross-platform without any PATH or shell workarounds.
 pub(super) async fn npm_command(args: &[&str], cwd: &std::path::Path) -> std::io::Result<std::process::Output> {
-    let node_info = common::env::command("node")
+    let node_info = common::process::env::command("node")
         .args(["-p", "process.execPath"])
         .output()
         .await?;
@@ -65,7 +65,7 @@ pub(super) async fn npm_command(args: &[&str], cwd: &std::path::Path) -> std::io
     node_args.extend(args.iter().map(|s| s.to_string()));
 
     tracing::info!("[npm_command] node {} {}", npm_cli.display(), args.join(" "));
-    common::env::command("node")
+    common::process::env::command("node")
         .args(&node_args)
         .current_dir(cwd)
         .stdout(std::process::Stdio::piped())
@@ -137,7 +137,7 @@ pub(super) async fn run_install_inner(request: InstallPluginRequest) -> anyhow::
         );
     }
 
-    let actual_id = match plugins::find_plugin(&request.plugin_id) {
+    let actual_id = match plugins::channel::find(&request.plugin_id) {
         Some(p) => {
             tracing::info!("[install_plugin] {} discoverable (manifest id='{}')", request.plugin_id, p.manifest.id);
             Some(p.manifest.id.clone())
@@ -167,7 +167,7 @@ pub(super) async fn run_install_inner(request: InstallPluginRequest) -> anyhow::
 pub fn check_plugin_status(plugin_id: String) -> String {
     // Check both user plugins dir (~/.vibearound/plugins/) and project plugins dir (src/plugins/)
     // via the discovery system which searches both paths.
-    if plugins::find_plugin(&plugin_id).is_some() {
+    if plugins::channel::find(&plugin_id).is_some() {
         return "ready".to_string();
     }
 

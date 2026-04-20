@@ -1,3 +1,18 @@
+//! Plugin discovery and manifest schema.
+//!
+//! Plugins are disk-resident directories under either
+//! - `~/.vibearound/plugins/<plugin-id>/` (user-installed), or
+//! - `<repo>/plugins/<plugin-id>/` (project, dev-only),
+//!
+//! each containing a `plugin.json` manifest describing the plugin.
+//! Today only **channel plugins** (`kind == "channel"`) exist — IM
+//! integrations like Telegram / Feishu / etc. Future kinds (`"agent"`
+//! for pluggable coding CLIs / model providers) would add a
+//! `plugins/<kind>.rs` sibling to [`channel`] without changing the
+//! discovery infrastructure here.
+
+pub mod channel;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -5,10 +20,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::config;
 
-const PROJECT_PLUGINS_DIR: &str = "plugins";
-const PLUGIN_MANIFEST_NAME: &str = "plugin.json";
-const CHANNEL_PLUGIN_KIND: &str = "channel";
-const QR_CODE_LOGIN_METHOD: &str = "qrcode_login";
+pub(crate) const PLUGIN_MANIFEST_NAME: &str = "plugin.json";
+pub(crate) const PROJECT_PLUGINS_DIR: &str = "plugins";
+
+// ---------------------------------------------------------------------------
+// Manifest schema
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PluginAuthCapabilities {
@@ -18,7 +35,7 @@ pub struct PluginAuthCapabilities {
 
 impl PluginAuthCapabilities {
     pub fn supports_qrcode_login(&self) -> bool {
-        self.methods.iter().any(|method| method == QR_CODE_LOGIN_METHOD)
+        self.methods.iter().any(|method| method == "qrcode_login")
     }
 }
 
@@ -125,6 +142,14 @@ impl From<&DiscoveredPlugin> for DiscoveredPluginSummary {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Disk discovery (all kinds)
+// ---------------------------------------------------------------------------
+
+/// Discover every plugin manifest in the user and project plugin
+/// directories, regardless of `kind`. Kind-specific callers
+/// (e.g. [`channel::discover`]) filter this map to the plugins they care
+/// about.
 pub fn discover_plugins() -> HashMap<String, DiscoveredPlugin> {
     let mut discovered = HashMap::new();
 
@@ -134,26 +159,6 @@ pub fn discover_plugins() -> HashMap<String, DiscoveredPlugin> {
     load_plugins_from_dir(&user_plugins_dir(), PluginSource::User, &mut discovered);
 
     discovered
-}
-
-pub fn discover_channel_plugins() -> HashMap<String, DiscoveredPlugin> {
-    discover_plugins()
-        .into_iter()
-        .filter(|(_, plugin)| plugin.manifest.kind == CHANNEL_PLUGIN_KIND)
-        .collect()
-}
-
-pub fn list_channel_plugin_summaries() -> Vec<DiscoveredPluginSummary> {
-    let mut plugins = discover_channel_plugins()
-        .values()
-        .map(DiscoveredPluginSummary::from)
-        .collect::<Vec<_>>();
-    plugins.sort_by(|left, right| left.id.cmp(&right.id));
-    plugins
-}
-
-pub fn find_plugin(plugin_id: &str) -> Option<DiscoveredPlugin> {
-    discover_channel_plugins().remove(plugin_id)
 }
 
 pub fn user_plugins_dir() -> PathBuf {

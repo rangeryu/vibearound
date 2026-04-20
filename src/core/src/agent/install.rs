@@ -25,7 +25,7 @@ pub async fn auto_install_npm_agent(npm_package: &str) -> anyhow::Result<()> {
 pub async fn auto_install_npm_agent_with_output(
     npm_package: &str,
 ) -> anyhow::Result<InstallOutput> {
-    let plugins_dir = crate::env::acp_agents_dir();
+    let plugins_dir = crate::process::env::acp_agents_dir();
     std::fs::create_dir_all(&plugins_dir).with_context(|| format!("creating {:?}", plugins_dir))?;
 
     let pkg_json = plugins_dir.join("package.json");
@@ -35,7 +35,7 @@ pub async fn auto_install_npm_agent_with_output(
             .context("writing package.json")?;
     }
 
-    let output = crate::env::command("npm")
+    let output = crate::process::env::command("npm")
         .args(["install", npm_package])
         .current_dir(&plugins_dir)
         .stdout(std::process::Stdio::piped())
@@ -68,7 +68,7 @@ pub async fn auto_install_agent_cmd_with_output(
 ) -> anyhow::Result<InstallOutput> {
     tracing::info!("[agent] running install for {}: {}", agent, install_cmd);
 
-    let output = crate::env::command("sh")
+    let output = crate::process::env::command("sh")
         .args(["-c", install_cmd])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -89,7 +89,7 @@ pub async fn auto_install_agent_cmd_with_output(
 
 /// Check if a program is available in PATH.
 pub fn is_program_available(program: &str) -> bool {
-    crate::env::std_command("which")
+    crate::process::env::std_command("which")
         .arg(program)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -112,7 +112,7 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
         // npm-based agents (Claude ACP, Codex ACP)
         if let Some(npm_pkg) = &agent_def.acp.npm_package {
             let bin_name = agent_def.acp.bin_name.as_deref().unwrap_or(npm_pkg);
-            if crate::env::resolve_acp_agent_bin(bin_name).is_ok() {
+            if crate::process::env::resolve_acp_agent_bin(bin_name).is_ok() {
                 continue;
             }
             tracing::info!("[agent] installing ACP agent: {}", npm_pkg);

@@ -157,7 +157,7 @@ pub fn get_settings() -> Result<Value, String> {
 
 #[tauri::command]
 pub fn list_channel_plugins() -> Result<Vec<plugins::DiscoveredPluginSummary>, String> {
-    Ok(plugins::list_channel_plugin_summaries())
+    Ok(plugins::channel::list_summaries())
 }
 
 #[tauri::command]

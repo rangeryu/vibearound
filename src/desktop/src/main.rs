@@ -289,7 +289,7 @@ fn main() {
             // abrupt exit (e.g. signal-driven shutdown before the async
             // runtime has been able to drain its tasks).
             if let tauri::RunEvent::Exit = event {
-                common::child_registry::ChildRegistry::global().kill_all();
+                common::process::registry::ChildRegistry::global().kill_all();
                 common::preview_manager::shutdown_kill_all_ports();
             }
         });

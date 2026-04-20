@@ -3,16 +3,14 @@
 pub mod agent;
 pub mod auth;
 pub mod channel_manager;
-pub mod child_registry;
 pub mod config;
 pub mod conversation_manager;
-pub mod env;
 pub mod logging;
 pub mod plugins;
 pub mod preview_manager;
+pub mod process;
 pub mod pty;
 pub mod resources;
 pub mod routing;
 pub mod state;
 pub mod tunnel_manager;
-pub mod workspace;

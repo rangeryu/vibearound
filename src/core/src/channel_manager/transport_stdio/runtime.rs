@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
 use crate::conversation_manager::ConversationManager;
-use crate::child_registry::{ChildKind, ChildRegistry};
+use crate::process::registry::{ChildKind, ChildRegistry};
 
 use super::super::manifest::ChannelPluginManifest;
 use super::super::plugin_host::PluginHost;
@@ -51,7 +51,7 @@ impl StdioPluginRuntime {
             ));
         }
 
-        let mut child = crate::env::command("node")
+        let mut child = crate::process::env::command("node")
             .arg(&manifest.entry_path)
             .current_dir(&manifest.plugin_dir)
             .stdin(std::process::Stdio::piped())

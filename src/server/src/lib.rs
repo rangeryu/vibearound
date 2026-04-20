@@ -15,7 +15,7 @@ use tokio::task::JoinHandle;
 use common::conversation_manager::ConversationManager;
 use common::auth::{self, AuthToken};
 use common::channel_manager::{handle_channel_input, ChannelManager, WebChannelManager};
-use common::child_registry::{self, ChildRegistry};
+use common::process::registry::{self as child_registry, ChildRegistry};
 use common::config;
 use common::plugins;
 use common::pty::{PtySessionManager, Registry, SessionId};
@@ -216,7 +216,7 @@ impl ServerDaemon {
         //    crash + heartbeat watchdog). Handlers reach the monitor
         //    directly via `state.channel_hub.monitor()`; no back-ref
         //    needed.
-        let discovered_plugins = plugins::discover_channel_plugins();
+        let discovered_plugins = plugins::channel::discover();
         for name in cfg.channel_names() {
             let Some(plugin) = discovered_plugins.get(&name) else {
                 tracing::warn!(channel = %name, "no plugin found, skipping");

@@ -344,11 +344,11 @@ async fn connect_stdio(
     // 3. native agents → program + args from PATH (Gemini, OpenCode)
     let (program, resolved_args) = if let Some(npm_pkg) = &agent_def.acp.npm_package {
         let bin_name = agent_def.acp.bin_name.as_deref().unwrap_or(npm_pkg);
-        if crate::env::resolve_acp_agent_bin(bin_name).is_err() {
+        if crate::process::env::resolve_acp_agent_bin(bin_name).is_err() {
             tracing::info!("[{}-agent] auto-installing {} ...", agent_id, npm_pkg);
             super::install::auto_install_npm_agent(npm_pkg).await?;
         }
-        let entry = crate::env::resolve_acp_agent_bin(bin_name).with_context(|| {
+        let entry = crate::process::env::resolve_acp_agent_bin(bin_name).with_context(|| {
             format!("Resolving ACP agent '{}' (npm: {})", agent_id, npm_pkg)
         })?;
         ("node".to_string(), vec![entry.to_string_lossy().to_string()])
@@ -378,7 +378,7 @@ fn spawn_stdio_process(
         "[{}-agent] spawning {} {} in {:?}",
         agent_id, program, args.join(" "), cwd
     );
-    let mut cmd = crate::env::command(program);
+    let mut cmd = crate::process::env::command(program);
     cmd.args(args)
         .current_dir(cwd)
         .stdin(std::process::Stdio::piped())
@@ -406,8 +406,8 @@ fn spawn_stdio_process(
     // that task never ran its destructor, leaving PPID=1 orphans.
     // The registry's kill_all() path synchronously SIGKILLs every child on
     // daemon stop + Tauri Exit, regardless of task scheduler state.
-    let registry_id = crate::child_registry::ChildRegistry::global().register(
-        crate::child_registry::ChildKind::AgentAcp,
+    let registry_id = crate::process::registry::ChildRegistry::global().register(
+        crate::process::registry::ChildKind::AgentAcp,
         format!("{}-agent", agent_id),
         child,
     );
@@ -431,7 +431,7 @@ fn spawn_stdio_process(
         }
         // Clean shutdown path: pull the child out of the registry and drop
         // it. kill_on_drop fires if the process is still alive.
-        if let Some(_c) = crate::child_registry::ChildRegistry::global().remove(registry_id) {
+        if let Some(_c) = crate::process::registry::ChildRegistry::global().remove(registry_id) {
             tracing::info!("[{}-agent] stdout EOF — dropping child via registry", agent_id_owned);
         }
     });

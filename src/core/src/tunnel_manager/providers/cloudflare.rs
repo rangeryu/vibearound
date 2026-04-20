@@ -30,7 +30,7 @@ pub async fn start_web_tunnel(
         .map(|a| a.iter().map(|s| s.as_str()).collect())
         .unwrap_or_else(|| vec!["tunnel", "run", "--token"]);
 
-    let mut cmd = crate::env::command(program);
+    let mut cmd = crate::process::env::command(program);
     cmd.args(&base_args)
         .arg(token)
         .stdout(Stdio::null())

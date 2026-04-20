@@ -47,7 +47,7 @@ pub async fn start(port: u16) -> Result<(crate::tunnel_manager::TunnelGuard, Str
         .map(|a| a.iter().map(|s| s.as_str()).collect())
         .unwrap_or_else(|| vec!["localtunnel", "--port"]);
 
-    let mut cmd = crate::env::command(program);
+    let mut cmd = crate::process::env::command(program);
     cmd.args(&base_args)
         .arg(port.to_string())
         .stdout(Stdio::piped())

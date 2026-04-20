@@ -21,7 +21,7 @@ pub struct PluginSession {
 
 /// Spawn a plugin's auth-standalone script (for QR/pairing flows during onboarding).
 pub(super) async fn spawn_auth_session(name: &str, config_value: Value) -> anyhow::Result<PluginSession> {
-    let plugin = plugins::find_plugin(name)
+    let plugin = plugins::channel::find(name)
         .ok_or_else(|| anyhow!("plugin '{}' not found or not built", name))?;
     let auth_entry = plugin.dir.join("dist").join("auth-standalone.js");
     if !auth_entry.exists() {
@@ -38,7 +38,7 @@ pub(super) async fn spawn_auth_session(name: &str, config_value: Value) -> anyho
 /// Kept for future runtime plugin management; currently only auth sessions are used during onboarding.
 #[allow(dead_code)]
 pub(super) async fn spawn_plugin_session(name: &str, config_value: Value) -> anyhow::Result<PluginSession> {
-    let plugin = plugins::find_plugin(name)
+    let plugin = plugins::channel::find(name)
         .ok_or_else(|| anyhow!("plugin '{}' not found or not built", name))?;
     let entry_point = plugin.entry_path();
     let plugin_dir = plugin.dir.clone();
@@ -85,7 +85,7 @@ pub(super) async fn spawn_plugin_session(name: &str, config_value: Value) -> any
 
 /// Spawn a Node.js script, wire stderr logging, and perform a raw JSON-RPC initialize handshake.
 async fn spawn_node_session(name: &str, entry_point: &Path, plugin_dir: &Path) -> anyhow::Result<PluginSession> {
-    let mut child = common::env::command("node")
+    let mut child = common::process::env::command("node")
         .arg(entry_point)
         .current_dir(plugin_dir)
         .stdin(std::process::Stdio::piped())

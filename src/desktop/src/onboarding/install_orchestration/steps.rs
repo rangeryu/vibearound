@@ -24,7 +24,7 @@ pub(super) async fn install_npm_agent<R: Runtime>(
     };
     let bin_name = agent_def.acp.bin_name.as_deref().unwrap_or(npm_pkg);
 
-    if common::env::resolve_acp_agent_bin(bin_name).is_ok() {
+    if common::process::env::resolve_acp_agent_bin(bin_name).is_ok() {
         emit_progress(
             app,
             &InstallProgressEvent {
