@@ -54,6 +54,21 @@ Share dev servers and rendered Markdown/HTML through short-lived links that open
 
 The wizard installs agent dependencies, fills in each channel's credentials, and picks a tunnel provider for you. You rarely need to touch a config file manually.
 
+## Quick start
+
+```bash
+cd src
+bun install
+bun run prebuild
+bun run dev
+```
+
+The desktop app opens its setup wizard on first launch: choose agents, configure channels, and set up the tunnel.
+
+**Prerequisites:** Rust 1.82+, Node.js 20+, Bun 1.1+. On macOS, also run `xcode-select --install`.
+
+If you don't have them yet, follow the official install guides: [Rust](https://rust-lang.org/tools/install/), [Bun](https://bun.com/), [Node.js](https://nodejs.org/en/download/).
+
 ## Supported agents
 
 All agents communicate over stdio via [ACP (Agent Client Protocol)](https://agentclientprotocol.com/). Agents distributed through npm are installed automatically on first use.
@@ -112,21 +127,6 @@ Two kinds of slash commands:
 | `/agent <command>` | Send a slash command to the agent, for example `/agent status` |
 
 In Slack, the `/` prefix is reserved by the client, so use `/va` or `/vibearound` instead, for example `/va switch claude`.
-
-## Quick start
-
-```bash
-cd src
-bun install
-bun run prebuild
-bun run dev
-```
-
-The desktop app opens its setup wizard on first launch: choose agents, configure channels, and set up the tunnel.
-
-**Prerequisites:** Rust 1.82+, Node.js 20+, Bun 1.1+. On macOS, also run `xcode-select --install`.
-
-If you don't have them yet, follow the official install guides: [Rust](https://rust-lang.org/tools/install/), [Bun](https://bun.com/), [Node.js](https://nodejs.org/en/download/).
 
 ## Platforms
 
