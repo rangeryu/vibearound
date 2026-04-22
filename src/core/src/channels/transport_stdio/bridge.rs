@@ -39,7 +39,11 @@ pub(crate) async fn run_acp_plugin_bridge(
     plugin_host: Arc<PluginHost>,
     mut cancel: CancelSignal,
 ) -> BridgeExit {
-    let fwd_plugin_host = Arc::clone(&plugin_host);
+    // Two clones: one moved into the handler, one moved into the
+    // forwarder task, one kept here for `cancel_channel_permissions` at
+    // the end of the bridge.
+    let forwarder_plugin_host = Arc::clone(&plugin_host);
+    let drain_plugin_host = Arc::clone(&plugin_host);
     let (conn, handle_io) = acp::AgentSideConnection::new(
         PluginAgentHandler::new(
             channel_kind.clone(),
@@ -61,7 +65,7 @@ pub(crate) async fn run_acp_plugin_bridge(
     let forwarder = tokio::task::spawn_local(async move {
         tracing::info!("[{}] output forwarder started", fwd_channel);
         while let Some(output) = output_rx.recv().await {
-            forward_output_to_plugin(&conn, &fwd_channel, &fwd_plugin_host, output).await;
+            forward_output_to_plugin(&conn, &fwd_channel, &forwarder_plugin_host, output).await;
         }
         tracing::info!("[{}] output forwarder ended", fwd_channel);
     });
@@ -83,5 +87,13 @@ pub(crate) async fn run_acp_plugin_bridge(
         }
     };
     forwarder.abort();
+
+    // Drain pending permission senders for this channel — otherwise any
+    // `ChannelBridgeHandler::request_permission` caller blocked on a
+    // reply from the dying plugin stalls forever. Previously invoked by
+    // the old `ChannelMonitor::mark_crashed`; now lives here because the
+    // supervisor is protocol-agnostic.
+    drain_plugin_host.cancel_channel_permissions(&channel_kind);
+
     exit
 }

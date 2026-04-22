@@ -134,9 +134,11 @@ impl PluginHost {
     }
 
     /// Drop every pending permission request belonging to `channel_kind`.
-    /// Called when a plugin dies (`ChannelMonitor::mark_crashed`) so the
-    /// oneshot senders get released and the waiting agent turn resolves as
-    /// `Cancelled` rather than hanging indefinitely.
+    /// Called from `run_acp_plugin_bridge` right before it returns its
+    /// `BridgeExit` — guaranteed to fire exactly once per bridge death.
+    /// Without this drain, oneshot senders waiting on a reply from the
+    /// dying plugin would stall `ChannelBridgeHandler::request_permission`
+    /// callers indefinitely.
     pub fn cancel_channel_permissions(&self, channel_kind: &str) {
         let request_ids: Vec<String> = self
             .pending_permissions
