@@ -133,7 +133,12 @@ impl ChannelManager {
     ) {
         self.plugin_host
             .register_websocket_plugin(channel_name.to_string(), outbound_tx);
-        tracing::info!("[{}] registered internal ACP plugin", channel_name);
+        crate::proc_log!(
+            info,
+            kind = crate::process::registry::ProcessKind::ChannelPlugin,
+            label = channel_name,
+            event = "registered_internal"
+        );
     }
 
     /// Fire-and-forget: enqueue input for async processing. `Send`-safe

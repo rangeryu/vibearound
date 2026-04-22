@@ -33,6 +33,7 @@ use agent_client_protocol as acp;
 use crate::process::bridge::{BridgeFactory, ProcessBridge};
 use crate::process::registry::ProcessKind;
 use crate::process::supervisor::{ProcessId, RestartPolicy, SpawnSpec, Supervisor};
+use crate::routing::RouteKey;
 
 use super::bridge::AcpAgentBridge;
 
@@ -85,20 +86,27 @@ impl Agent {
     ///
     /// `agent_id` must match an entry in `resources/agents.json`. The
     /// binary is lazily installed on first miss (npm or `install_cmd`).
+    ///
+    /// `route` is used to build a supervisor label unique to the owning
+    /// conversation (`<agent_id>:<channel_kind>:<chat_id>`) so that
+    /// multiple concurrent agents of the same kind remain distinguishable
+    /// in snapshots and logs.
     pub async fn spawn(
         agent_id: String,
+        route: &RouteKey,
         workspace: &Path,
         resume_session_id: Option<String>,
         client_handler: Arc<dyn AgentClientHandler>,
         extra_env: Vec<(String, String)>,
     ) -> anyhow::Result<AgentReady> {
         let cwd = workspace.to_path_buf();
+        let label = format!("{}:{}", agent_id, route);
 
         // Resolve program + args + install if needed.
         let (program, resolved_args) = resolve_agent_program(&agent_id).await?;
         tracing::info!(
-            "[{}-agent] spawning {} {} in {:?}",
-            agent_id, program, resolved_args.join(" "), cwd
+            "[{}] spawning {} {} in {:?}",
+            label, program, resolved_args.join(" "), cwd
         );
 
         let mut spec = SpawnSpec::new(program)
@@ -131,7 +139,7 @@ impl Agent {
 
         let id = Supervisor::global().register(
             ProcessKind::AcpAgent,
-            format!("{}-agent", agent_id),
+            label,
             spec,
             RestartPolicy::Never,
             factory,

@@ -30,6 +30,8 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::proc_log;
+use crate::process::registry::ProcessKind;
 use crate::routing::ChannelKind;
 
 use super::monitor::ChannelMonitor;
@@ -110,9 +112,12 @@ impl PluginHost {
 
     pub async fn send_output(&self, output: ChannelOutput) {
         let route = output.route_key().clone();
-        tracing::info!(
-            "[PluginHost] send_output route={} channel_kind={}",
-            route, route.channel_kind
+        proc_log!(
+            debug,
+            kind = ProcessKind::ChannelPlugin,
+            label = route.channel_kind,
+            event = "send_output",
+            route = %route
         );
         let runtime = self
             .runtimes
@@ -130,9 +135,13 @@ impl PluginHost {
                 .iter()
                 .map(|e| format!("{:?}", e.key()))
                 .collect();
-            tracing::info!(
-                "[ChannelManager] no plugin runtime for route {} (looking up channel_kind={:?}, known={:?})",
-                route, route.channel_kind, known
+            proc_log!(
+                warn,
+                kind = ProcessKind::ChannelPlugin,
+                label = route.channel_kind,
+                event = "no_runtime_for_route",
+                route = %route,
+                known = ?known
             );
         }
     }

@@ -17,7 +17,9 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use agent_client_protocol as acp;
 
 use crate::conversations::ConversationManager;
+use crate::proc_log;
 use crate::process::bridge::{BridgeExit, CancelSignal};
+use crate::process::registry::ProcessKind;
 
 use super::super::plugin_host::PluginHost;
 use super::super::{ChannelInput, ChannelOutput};
@@ -63,26 +65,52 @@ pub(crate) async fn run_acp_plugin_bridge(
     // concurrently with the IO driver below.
     let fwd_channel = channel_kind.clone();
     let forwarder = tokio::task::spawn_local(async move {
-        tracing::info!("[{}] output forwarder started", fwd_channel);
+        proc_log!(
+            info,
+            kind = ProcessKind::ChannelPlugin,
+            label = fwd_channel,
+            event = "forwarder_started"
+        );
         while let Some(output) = output_rx.recv().await {
             forward_output_to_plugin(&conn, &fwd_channel, &forwarder_plugin_host, output).await;
         }
-        tracing::info!("[{}] output forwarder ended", fwd_channel);
+        proc_log!(
+            info,
+            kind = ProcessKind::ChannelPlugin,
+            label = fwd_channel,
+            event = "forwarder_ended"
+        );
     });
 
     let exit = tokio::select! {
         result = handle_io => match result {
             Ok(()) => {
-                tracing::info!("[{}] ACP plugin bridge exited cleanly", channel_kind);
+                proc_log!(
+                    info,
+                    kind = ProcessKind::ChannelPlugin,
+                    label = channel_kind,
+                    event = "io_exited_clean"
+                );
                 BridgeExit::Clean
             }
             Err(error) => {
-                tracing::info!("[{}] ACP plugin IO terminated: {}", channel_kind, error);
+                proc_log!(
+                    info,
+                    kind = ProcessKind::ChannelPlugin,
+                    label = channel_kind,
+                    event = "io_terminated",
+                    error = %error
+                );
                 BridgeExit::ProtocolError(anyhow::anyhow!(error))
             }
         },
         _ = cancel.wait_for(|v| *v) => {
-            tracing::info!("[{}] ACP plugin bridge cancelled", channel_kind);
+            proc_log!(
+                info,
+                kind = ProcessKind::ChannelPlugin,
+                label = channel_kind,
+                event = "bridge_cancelled"
+            );
             BridgeExit::Cancelled
         }
     };

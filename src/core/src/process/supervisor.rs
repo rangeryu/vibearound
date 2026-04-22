@@ -810,6 +810,24 @@ impl Supervisor {
             },
         }
         self.notify_change(&proc);
+
+        // Auto-deregister terminal one-shot processes. Without this the
+        // `processes` map grows unbounded over daemon lifetime as
+        // `RestartPolicy::Never` workloads (chiefly `AcpAgent` spawns
+        // tied to opened conversations) accumulate Stopped entries.
+        // Keeping `OnCrash` entries around is deliberate: a user-stopped
+        // channel plugin can still be resurrected via `force_start`.
+        if matches!(proc.policy, RestartPolicy::Never)
+            && matches!(proc.status(), ProcessStatus::Stopped)
+        {
+            self.processes.write().remove(&proc.id);
+            proc_log!(
+                info,
+                kind = proc.kind,
+                label = proc.label,
+                event = "deregistered"
+            );
+        }
     }
 }
 
@@ -914,6 +932,21 @@ mod tests {
         }
     }
 
+    /// Wait until `id` disappears from the snapshot — i.e. auto-deregistered
+    /// because it hit a terminal state under `RestartPolicy::Never`.
+    async fn wait_for_absent(sup: &Arc<Supervisor>, id: ProcessId) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if !sup.snapshot().iter().any(|p| p.id == id) {
+                return;
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("timeout waiting for process {} to be deregistered", id);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    }
+
     fn cat_spec() -> SpawnSpec {
         SpawnSpec::new("cat")
     }
@@ -933,13 +966,18 @@ mod tests {
 
         wait_for_status(&sup, id, ProcessStatus::Running).await;
         sup.force_stop(id).await.unwrap();
-        wait_for_status(&sup, id, ProcessStatus::Stopped).await;
+        // Never + Stopped auto-deregisters, so the snapshot entry vanishes.
+        wait_for_absent(&sup, id).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn protocol_error_with_never_policy_goes_to_stopped() {
+    async fn protocol_error_with_never_policy_deregisters() {
         let registry = Arc::new(ChildRegistry::new());
         let sup = Supervisor::new(registry);
+
+        // Subscribe BEFORE register so we capture the transient Stopped
+        // event (notify_change fires before auto-deregister).
+        let mut rx = sup.subscribe();
 
         let id = sup.register(
             ProcessKind::AcpAgent,
@@ -949,10 +987,20 @@ mod tests {
             Box::new(|| Box::new(InstantErrorBridge)),
         );
 
-        wait_for_status(&sup, id, ProcessStatus::Stopped).await;
-        let snap = sup.snapshot();
-        let p = snap.iter().find(|p| p.id == id).unwrap();
-        assert_eq!(p.crash_count, 1, "protocol error should count as a crash");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut saw_stopped = false;
+        while std::time::Instant::now() < deadline {
+            match tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await {
+                Ok(Ok(ev)) if ev.id == id && ev.status == ProcessStatus::Stopped => {
+                    saw_stopped = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_stopped, "should have observed Stopped event");
+
+        wait_for_absent(&sup, id).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1031,16 +1079,9 @@ mod tests {
             factory,
         );
 
-        wait_for_status(&sup, id, ProcessStatus::Stopped).await;
+        // Never + Clean-exit auto-deregisters; by the time the entry is
+        // gone, the factory has run exactly once.
+        wait_for_absent(&sup, id).await;
         assert_eq!(counter.load(Ordering::Relaxed), 1);
-
-        // Force restart — factory should be invoked again.
-        sup.force_start(id).unwrap();
-        // Wait for the tick to pick it up. Shortcut: call begin_spawn via tick manually
-        // isn't public, so we force_restart instead which schedules an immediate respawn.
-        // But force_start already sets restart_at=now and Crashed — we need the tick loop
-        // to actually spawn it. Since spawn_tick_loop would add a 5s wait, just wait.
-        // Alternative: register a fresh process instead. For PR1, just assert >=1.
-        // (A tighter test will land when the tick loop gets a test-only fast-tick knob.)
     }
 }
