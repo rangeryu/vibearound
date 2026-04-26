@@ -70,9 +70,10 @@ export function TerminalPicker() {
         <Button
           type="button"
           variant="outline"
-          size="xs"
+          size="sm"
           disabled={pending}
           title="Choose which terminal app to open on Launch"
+          className="h-8 px-2.5 text-xs"
         >
           <TerminalIcon className="w-3 h-3" />
           <span>{current?.label ?? "Terminal"}</span>
