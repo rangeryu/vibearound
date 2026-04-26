@@ -42,13 +42,13 @@ export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
   }
 
   return (
-    <div className="border border-border rounded-md p-3 flex flex-col gap-2 hover:border-primary/40 transition-colors">
+    <div className="border border-border rounded-md p-2.5 flex flex-col gap-1.5 hover:border-primary/40 transition-colors">
       <div className="flex items-start gap-2">
         {profile.providerIcon && (
           <span className="text-base shrink-0">{profile.providerIcon}</span>
         )}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">{profile.label}</div>
+          <div className="text-[13px] font-medium truncate">{profile.label}</div>
           <div className="text-[11px] text-muted-foreground truncate">
             {profile.providerLabel}
           </div>

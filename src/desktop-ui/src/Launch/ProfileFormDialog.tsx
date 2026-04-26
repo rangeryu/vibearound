@@ -135,8 +135,9 @@ function generateProfileId(providerId: string): string {
   return `${providerId}-${random}`;
 }
 
-const MONO_INPUT_CLASS = "h-8 font-mono";
-const SECRET_INPUT_CLASS = "h-8 pr-8 font-mono";
+const INPUT_CLASS = "h-8 text-[13px]";
+const MONO_INPUT_CLASS = "h-8 text-[13px] font-mono";
+const SECRET_INPUT_CLASS = "h-8 pr-8 text-[13px] font-mono";
 
 export function ProfileFormDialog({
   catalog,
@@ -393,7 +394,7 @@ function ProviderGrid({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search providers"
-          className="h-8 pl-8"
+          className="h-8 pl-8 text-[13px]"
           autoFocus
         />
       </div>
@@ -455,13 +456,13 @@ function ProviderTile({
     <button
       type="button"
       onClick={onPick}
-      className={`flex flex-col items-start gap-1 p-3 border rounded-md hover:border-primary hover:bg-accent/30 transition-colors text-left ${
+      className={`flex flex-col items-start gap-1 p-2.5 border rounded-md hover:border-primary hover:bg-accent/30 transition-colors text-left ${
         dashed ? "border-dashed border-border" : "border-border"
       }`}
     >
       <div className="flex items-center gap-2">
         {provider.icon && <span className="text-base">{provider.icon}</span>}
-        <span className="text-sm font-medium">{provider.label}</span>
+        <span className="text-[13px] font-medium">{provider.label}</span>
       </div>
       <div className="flex flex-wrap gap-1 mt-1">
         {endpoints.map((e) => (
@@ -528,6 +529,7 @@ function FormBody(props: FormBodyProps) {
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder={`${provider.label} (work)`}
+            className={INPUT_CLASS}
           />
         </FieldRow>
 
@@ -564,7 +566,7 @@ function FormBody(props: FormBodyProps) {
               if (!ep) return null;
               const ov = overrides[apiType] ?? {};
               return (
-                <div key={apiType} className="border border-border/60 rounded-md p-3 space-y-2">
+                <div key={apiType} className="border border-border/60 rounded-md p-2.5 space-y-2">
                   <div className="flex items-center gap-2 text-xs">
                     <span className="font-mono px-1.5 py-0.5 rounded bg-muted">
                       {apiTypeShort(apiType)}
@@ -616,12 +618,12 @@ function FormBody(props: FormBodyProps) {
                           })
                         }
                       >
-                        <SelectTrigger size="sm" className="h-8 w-full">
+                        <SelectTrigger size="sm" className="h-8 w-full text-[13px]">
                           <SelectValue placeholder="Select a model" />
                         </SelectTrigger>
                         <SelectContent>
                           {ep.models.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>
+                            <SelectItem key={m.id} value={m.id} className="text-xs">
                               {m.label ?? m.id}
                             </SelectItem>
                           ))}
@@ -653,14 +655,14 @@ function FormBody(props: FormBodyProps) {
                           })
                         }
                       >
-                        <SelectTrigger size="sm" className="h-8 w-full">
+                        <SelectTrigger size="sm" className="h-8 w-full text-[13px]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="low">low</SelectItem>
-                          <SelectItem value="medium">medium</SelectItem>
-                          <SelectItem value="high">high</SelectItem>
-                          <SelectItem value="xhigh">xhigh</SelectItem>
+                          <SelectItem value="low" className="text-xs">low</SelectItem>
+                          <SelectItem value="medium" className="text-xs">medium</SelectItem>
+                          <SelectItem value="high" className="text-xs">high</SelectItem>
+                          <SelectItem value="xhigh" className="text-xs">xhigh</SelectItem>
                         </SelectContent>
                       </Select>
                     </FieldRow>

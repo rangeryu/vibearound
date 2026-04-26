@@ -143,13 +143,13 @@ function PreviewRow({ preview, tunnelUrl, localBase, isFirst, onClose }: Preview
   const Icon = preview.kind === "server" ? Server : FileText;
 
   return (
-    <div className={`px-4 py-3 ${isFirst ? "" : "border-t border-border"}`}>
+    <div className={`px-3 py-2 ${isFirst ? "" : "border-t border-border"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0 flex-1">
           <Icon className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold truncate">{preview.title}</span>
+              <span className="text-[13px] font-semibold truncate">{preview.title}</span>
               <Badge
                 className={`text-[10px] ${
                   preview.kind === "server"

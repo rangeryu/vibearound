@@ -81,7 +81,7 @@ export function TerminalPicker() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+        <DropdownMenuLabel className="text-[10px] font-medium uppercase text-muted-foreground/60">
           Open launches in
         </DropdownMenuLabel>
         <DropdownMenuRadioGroup

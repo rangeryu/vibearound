@@ -126,14 +126,14 @@ export function Workspaces() {
         {data?.workspaces.map((ws, i) => (
           <div
             key={ws.path}
-            className={`flex items-center justify-between px-4 py-3 ${
+            className={`flex items-center justify-between px-3 py-2 ${
               i > 0 ? "border-t border-border" : ""
             }`}
           >
             <div className="flex items-center gap-3 min-w-0">
               <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
               <div className="min-w-0">
-                <div className="text-sm font-mono truncate">{ws.path}</div>
+                <div className="text-xs font-mono truncate">{ws.path}</div>
                 <div className="flex items-center gap-2 mt-0.5">
                   {ws.is_builtin && (
                     <Badge className="text-[10px]">
