@@ -262,39 +262,111 @@ fn spawn_terminal(
 fn spawn_terminal(
     env: &[(String, String)],
     command: &str,
-    _window_label: &str,
+    window_label: &str,
 ) -> anyhow::Result<()> {
-    use std::os::windows::process::CommandExt;
-
-    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
-
     let choice = terminal::read_preference();
-    let mut child = match choice {
+    let script_path = write_windows_launch_script(env, command, window_label, choice)?;
+    let title = format!("VibeAround - {}", window_label);
+
+    let mut starter = std::process::Command::new("cmd.exe");
+    starter
+        .arg("/C")
+        .arg("start")
+        .arg(&title)
+        .current_dir(home_dir_for_launch()?);
+
+    match choice {
         TerminalChoice::PowerShell => {
-            let mut cmd = std::process::Command::new("powershell.exe");
-            cmd.arg("-NoExit")
+            starter
+                .arg("powershell.exe")
                 .arg("-ExecutionPolicy")
                 .arg("Bypass")
-                .arg("-Command")
-                .arg(command);
-            cmd
+                .arg("-NoExit")
+                .arg("-File")
+                .arg(&script_path);
         }
         TerminalChoice::Cmd => {
-            let mut cmd = std::process::Command::new("cmd.exe");
-            cmd.arg("/K").arg(command);
-            cmd
+            starter.arg("cmd.exe").arg("/K").arg(&script_path);
         }
+        other => bail!("terminal '{}' is not supported on Windows", other.id()),
+    }
+
+    starter
+        .spawn()
+        .with_context(|| format!("open {}", choice.label()))?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn write_windows_launch_script(
+    env: &[(String, String)],
+    command: &str,
+    window_label: &str,
+    choice: TerminalChoice,
+) -> anyhow::Result<PathBuf> {
+    let script_path = match choice {
+        TerminalChoice::PowerShell => std::env::temp_dir()
+            .join(format!("vibearound-launch-{}.ps1", uuid::Uuid::new_v4())),
+        TerminalChoice::Cmd => std::env::temp_dir()
+            .join(format!("vibearound-launch-{}.cmd", uuid::Uuid::new_v4())),
         other => bail!("terminal '{}' is not supported on Windows", other.id()),
     };
 
-    child
-        .envs(env.iter().map(|(k, v)| (k, v)))
-        .current_dir(home_dir_for_launch()?)
-        .creation_flags(CREATE_NEW_CONSOLE)
-        .spawn()
-        .with_context(|| format!("spawn {}", choice.label()))?;
+    let body = match choice {
+        TerminalChoice::PowerShell => build_powershell_script(env, command, window_label),
+        TerminalChoice::Cmd => build_cmd_script(env, command, window_label),
+        other => bail!("terminal '{}' is not supported on Windows", other.id()),
+    };
 
-    Ok(())
+    std::fs::write(&script_path, body)
+        .with_context(|| format!("write launch script {:?}", script_path))?;
+    auth::set_owner_only(&script_path).ok();
+    Ok(script_path)
+}
+
+#[cfg(target_os = "windows")]
+fn build_powershell_script(env: &[(String, String)], command: &str, window_label: &str) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "Write-Host '# VibeAround profile: {}'\n",
+        window_label.replace('\'', "''")
+    ));
+    for (k, v) in env {
+        out.push_str(&format!(
+            "$env:{} = '{}'\n",
+            k,
+            v.replace('\'', "''")
+        ));
+    }
+    out.push_str("Set-Location $HOME\n");
+    out.push_str(command);
+    out.push_str("\n");
+    out.push_str("if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {\n");
+    out.push_str("  Write-Host \"`nCommand exited with code $LASTEXITCODE\"\n");
+    out.push_str("}\n");
+    out.push_str("$scriptPath = $MyInvocation.MyCommand.Path\n");
+    out.push_str("if ($scriptPath) { Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue }\n");
+    out
+}
+
+#[cfg(target_os = "windows")]
+fn build_cmd_script(env: &[(String, String)], command: &str, window_label: &str) -> String {
+    let mut out = String::new();
+    out.push_str("@echo off\r\n");
+    out.push_str(&format!("@title VibeAround - {}\r\n", window_label));
+    out.push_str(&format!("@echo # VibeAround profile: {}\r\n", window_label));
+    for (k, v) in env {
+        out.push_str(&format!("set \"{}={}\"\r\n", k, v));
+    }
+    out.push_str("cd /d \"%USERPROFILE%\"\r\n");
+    out.push_str(command);
+    out.push_str("\r\n");
+    out.push_str("set \"VA_EXIT=%ERRORLEVEL%\"\r\n");
+    out.push_str("if not \"%VA_EXIT%\"==\"0\" echo.\r\n");
+    out.push_str("if not \"%VA_EXIT%\"==\"0\" echo Command exited with code %VA_EXIT%\r\n");
+    out.push_str("del \"%~f0\" >nul 2>nul\r\n");
+    out
 }
 
 #[cfg(target_os = "windows")]
