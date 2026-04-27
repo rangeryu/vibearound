@@ -221,6 +221,7 @@ fn spawn_terminal(
     let app_name = match choice {
         TerminalChoice::Terminal => "Terminal",
         TerminalChoice::Iterm2 => "iTerm",
+        other => bail!("terminal '{}' is not supported on macOS", other.id()),
     };
 
     let status = std::process::Command::new("open")
@@ -244,12 +245,72 @@ fn spawn_terminal(
 }
 
 #[cfg(not(target_os = "macos"))]
+#[cfg(not(target_os = "windows"))]
 fn spawn_terminal(
     _env: &[(String, String)],
     _command: &str,
     _window_label: &str,
 ) -> anyhow::Result<()> {
-    bail!("Profile launch is only supported on macOS in v1");
+    bail!("Profile launch is only supported on macOS and Windows");
+}
+
+// ---------------------------------------------------------------------------
+// Windows terminal spawn
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "windows")]
+fn spawn_terminal(
+    env: &[(String, String)],
+    command: &str,
+    _window_label: &str,
+) -> anyhow::Result<()> {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+
+    let choice = terminal::read_preference();
+    let mut child = match choice {
+        TerminalChoice::PowerShell => {
+            let mut cmd = std::process::Command::new("powershell.exe");
+            cmd.arg("-NoExit")
+                .arg("-ExecutionPolicy")
+                .arg("Bypass")
+                .arg("-Command")
+                .arg(command);
+            cmd
+        }
+        TerminalChoice::Cmd => {
+            let mut cmd = std::process::Command::new("cmd.exe");
+            cmd.arg("/K").arg(command);
+            cmd
+        }
+        other => bail!("terminal '{}' is not supported on Windows", other.id()),
+    };
+
+    child
+        .envs(env.iter().map(|(k, v)| (k, v)))
+        .current_dir(home_dir_for_launch()?)
+        .creation_flags(CREATE_NEW_CONSOLE)
+        .spawn()
+        .with_context(|| format!("spawn {}", choice.label()))?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn home_dir_for_launch() -> anyhow::Result<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let drive = std::env::var_os("HOMEDRIVE")?;
+            let path = std::env::var_os("HOMEPATH")?;
+            Some(PathBuf::from(format!(
+                "{}{}",
+                drive.to_string_lossy(),
+                path.to_string_lossy()
+            )))
+        })
+        .ok_or_else(|| anyhow!("could not determine Windows home directory"))
 }
 
 // ---------------------------------------------------------------------------

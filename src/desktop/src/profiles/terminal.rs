@@ -1,7 +1,6 @@
 //! Terminal-app preferences.
 //!
-//! v1 supports Terminal.app (always present on macOS) and iTerm2 (detected
-//! by `/Applications/iTerm.app` existence). The preference lives in a tiny
+//! v1 supports native terminal choices per platform. The preference lives in a tiny
 //! dedicated file at `~/.vibearound/launcher.json` so adding it doesn't
 //! couple the Launch tab to the daemon's settings.json write path.
 //!
@@ -26,15 +25,24 @@ use common::{auth, config};
 pub enum TerminalChoice {
     Terminal,
     Iterm2,
+    PowerShell,
+    Cmd,
 }
 
 impl TerminalChoice {
+    #[cfg(target_os = "macos")]
     pub const ALL: &'static [TerminalChoice] = &[Self::Terminal, Self::Iterm2];
+    #[cfg(target_os = "windows")]
+    pub const ALL: &'static [TerminalChoice] = &[Self::PowerShell, Self::Cmd];
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    pub const ALL: &'static [TerminalChoice] = &[];
 
     pub fn id(self) -> &'static str {
         match self {
             Self::Terminal => "terminal",
             Self::Iterm2 => "iterm2",
+            Self::PowerShell => "powershell",
+            Self::Cmd => "cmd",
         }
     }
 
@@ -42,6 +50,8 @@ impl TerminalChoice {
         match self {
             Self::Terminal => "Terminal.app",
             Self::Iterm2 => "iTerm2",
+            Self::PowerShell => "PowerShell",
+            Self::Cmd => "Command Prompt",
         }
     }
 
@@ -49,7 +59,24 @@ impl TerminalChoice {
         match s {
             "terminal" => Some(Self::Terminal),
             "iterm2" => Some(Self::Iterm2),
+            "powershell" => Some(Self::PowerShell),
+            "cmd" => Some(Self::Cmd),
             _ => None,
+        }
+    }
+
+    pub fn default_for_platform() -> Self {
+        #[cfg(target_os = "windows")]
+        {
+            Self::PowerShell
+        }
+        #[cfg(target_os = "macos")]
+        {
+            Self::Terminal
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            Self::Terminal
         }
     }
 }
@@ -76,6 +103,9 @@ fn is_installed(choice: TerminalChoice) -> bool {
         // Terminal.app ships with macOS; assume present.
         TerminalChoice::Terminal => cfg!(target_os = "macos"),
         TerminalChoice::Iterm2 => std::path::Path::new("/Applications/iTerm.app").exists(),
+        // Both ship with supported Windows versions.
+        TerminalChoice::PowerShell => cfg!(target_os = "windows"),
+        TerminalChoice::Cmd => cfg!(target_os = "windows"),
     }
 }
 
@@ -100,20 +130,21 @@ fn prefs_path() -> PathBuf {
 pub fn read_preference() -> TerminalChoice {
     let body = match std::fs::read_to_string(prefs_path()) {
         Ok(b) => b,
-        Err(_) => return TerminalChoice::Terminal,
+        Err(_) => return TerminalChoice::default_for_platform(),
     };
     let prefs: LauncherPrefsFile = match serde_json::from_str(&body) {
         Ok(p) => p,
         Err(e) => {
             tracing::warn!("[launcher] launcher.json parse error: {} — using default", e);
-            return TerminalChoice::Terminal;
+            return TerminalChoice::default_for_platform();
         }
     };
     prefs
         .terminal
         .as_deref()
         .and_then(TerminalChoice::from_id)
-        .unwrap_or(TerminalChoice::Terminal)
+        .filter(|choice| TerminalChoice::ALL.contains(choice))
+        .unwrap_or_else(TerminalChoice::default_for_platform)
 }
 
 pub fn write_preference(choice: TerminalChoice) -> anyhow::Result<()> {
