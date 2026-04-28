@@ -18,6 +18,12 @@ impl SessionId {
     }
 }
 
+impl Default for SessionId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl std::fmt::Display for SessionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -66,6 +72,12 @@ impl CircularBuffer {
     pub fn dump(&self) -> Vec<u8> {
         let g = self.data.lock().expect("buffer mutex");
         g.clone()
+    }
+}
+
+impl Default for CircularBuffer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
