@@ -9,7 +9,7 @@ mod terminal;
 
 use std::path::{Path, PathBuf};
 
-use common::config;
+use common::{config, resources};
 use common::profiles::{catalog, normalize_legacy_profile, runtime, schema};
 use serde::Serialize;
 
@@ -210,6 +210,10 @@ pub struct LauncherPreferences {
     pub workspace: String,
     /// Suggested cwd choices surfaced in the Launch header.
     pub workspace_options: Vec<WorkspaceOption>,
+    /// Canonical agent id used by Quick Launch and IM defaults.
+    pub default_agent: String,
+    /// Per-agent profile defaults from settings.json.
+    pub default_profiles: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -241,12 +245,80 @@ pub fn launcher_get_preferences() -> LauncherPreferences {
         .unwrap_or_else(|_| terminal::launch_home_dir().unwrap_or_else(|_| config::data_dir()))
         .to_string_lossy()
         .to_string();
+    let cfg = config::ensure_loaded();
     LauncherPreferences {
         terminal: terminal::read_preference().id().to_string(),
         options,
         workspace,
         workspace_options,
+        default_agent: canonical_agent_id(&cfg.default_agent),
+        default_profiles: cfg.default_profiles.clone(),
     }
+}
+
+#[tauri::command]
+pub fn profiles_launch_default() -> Result<(), String> {
+    let cfg = config::ensure_loaded();
+    let agent_id = canonical_agent_id(&cfg.default_agent);
+    if let Some(profile_id) = cfg.default_profile_for(&agent_id) {
+        let profile = schema::load(&profile_id)
+            .map(normalize_legacy_profile)
+            .ok_or_else(|| format!("profile '{profile_id}' not found"))?;
+        if !runtime::launch_targets_for_api_types(&profile.api_types)
+            .iter()
+            .any(|(target, _, _)| *target == agent_id)
+        {
+            return Err(format!("profile '{profile_id}' cannot launch '{agent_id}'"));
+        }
+        launcher::launch(&profile, &agent_id).map_err(|e| e.to_string())
+    } else {
+        launcher::launch_direct(&agent_id).map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+pub fn launcher_set_default(agent_id: String, profile_id: Option<String>) -> Result<(), String> {
+    let agent_id = resources::agent_by_alias(&agent_id)
+        .map(|def| def.id.clone())
+        .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
+    let profile_id = profile_id
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty());
+
+    if let Some(profile_id) = &profile_id {
+        let profile = schema::load(profile_id)
+            .map(normalize_legacy_profile)
+            .ok_or_else(|| format!("profile '{profile_id}' not found"))?;
+        if !runtime::launch_targets_for_api_types(&profile.api_types)
+            .iter()
+            .any(|(target, _, _)| *target == agent_id)
+        {
+            return Err(format!("profile '{profile_id}' cannot launch '{agent_id}'"));
+        }
+    }
+
+    config::update_settings_json(|root| {
+        if let Some(obj) = root.as_object_mut() {
+            obj.insert("default_agent".into(), serde_json::json!(agent_id.clone()));
+            let default_profiles = obj
+                .entry("default_profiles")
+                .or_insert_with(|| serde_json::json!({}));
+            if !default_profiles.is_object() {
+                *default_profiles = serde_json::json!({});
+            }
+            if let Some(map) = default_profiles.as_object_mut() {
+                match &profile_id {
+                    Some(profile_id) => {
+                        map.insert(agent_id.clone(), serde_json::json!(profile_id));
+                    }
+                    None => {
+                        map.remove(&agent_id);
+                    }
+                }
+            }
+        }
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -297,6 +369,12 @@ fn launcher_workspace_options() -> Vec<WorkspaceOption> {
         }
     }
     out
+}
+
+fn canonical_agent_id(agent_id: &str) -> String {
+    resources::agent_by_alias(agent_id)
+        .map(|def| def.id.clone())
+        .unwrap_or_else(|| agent_id.to_string())
 }
 
 fn push_workspace_option(

@@ -15,6 +15,8 @@ export function StepConfirm({
   pluginRegistry,
   enabledAgents,
   defaultAgent,
+  defaultProfiles,
+  profiles,
   tunnelProvider,
   enabledChannels,
   isInstalling,
@@ -36,6 +38,10 @@ export function StepConfirm({
 
   const agentLabels = new Map(agents.map((a) => [a.id, a.display_name]));
   const tunnelLabels = new Map(tunnels.map((t) => [t.id, t.display_name]));
+  const defaultProfileId = defaultProfiles[defaultAgent];
+  const defaultProfile = defaultProfileId
+    ? profiles.find((profile) => profile.id === defaultProfileId)
+    : null;
 
   const agentSummary = Array.from(enabledAgents)
     .map(
@@ -63,6 +69,13 @@ export function StepConfirm({
       </div>
 
       <div className="space-y-2 text-sm">
+        <SummaryRow
+          label="Quick Launch"
+          value={`${agentLabels.get(defaultAgent) ?? defaultAgent} · ${
+            defaultProfile?.label ?? "Direct launch"
+          }`}
+        />
+        <SummaryRow label="Workspace" value="~/.vibearound/workspaces" />
         <SummaryRow label="Agents" value={agentSummary} />
         <SummaryRow
           label="Channels"

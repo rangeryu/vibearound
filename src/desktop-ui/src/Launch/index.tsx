@@ -12,11 +12,15 @@ import { Button } from "@/components/ui/button";
 import {
   deleteProfile,
   getProfile,
+  getLauncherPreferences,
+  launchDefault,
   launchDirect,
   launchProfile,
   listCatalog,
   listProfiles,
+  setLauncherDefault,
   upsertProfile,
+  type LauncherPreferences,
 } from "./api";
 import { DirectCards } from "./DirectCards";
 import { ProfileCard } from "./ProfileCard";
@@ -28,6 +32,7 @@ import type { CatalogEntry, ProfileDef, ProfileSummary } from "./types";
 export function Launch() {
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
+  const [prefs, setPrefs] = useState<LauncherPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -38,9 +43,14 @@ export function Launch() {
   const refresh = useCallback(async () => {
     setError(null);
     try {
-      const [c, p] = await Promise.all([listCatalog(), listProfiles()]);
+      const [c, p, nextPrefs] = await Promise.all([
+        listCatalog(),
+        listProfiles(),
+        getLauncherPreferences(),
+      ]);
       setCatalog(c);
       setProfiles(p);
+      setPrefs(nextPrefs);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -80,6 +90,31 @@ export function Launch() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setDirectBusy(false);
+    }
+  }
+
+  async function handleLaunchDefault() {
+    setError(null);
+    setDirectBusy(true);
+    try {
+      await launchDefault();
+      setToast("Quick launch opened");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDirectBusy(false);
+    }
+  }
+
+  async function handleSetDefault(agentId: string, profileId: string | null) {
+    setError(null);
+    try {
+      await setLauncherDefault(agentId, profileId);
+      const nextPrefs = await getLauncherPreferences();
+      setPrefs(nextPrefs);
+      setToast(profileId ? "Quick Launch default updated" : "Direct Quick Launch default updated");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -127,6 +162,17 @@ export function Launch() {
           <TerminalPicker />
           <Button
             type="button"
+            onClick={handleLaunchDefault}
+            size="sm"
+            variant="secondary"
+            disabled={directBusy}
+            className="h-8 text-xs"
+            title={quickLaunchTitle(prefs, profiles)}
+          >
+            <Rocket className="w-3 h-3" /> Quick launch
+          </Button>
+          <Button
+            type="button"
             onClick={openNewEditor}
             size="sm"
             className="h-8 text-xs"
@@ -152,7 +198,13 @@ export function Launch() {
           <p className="text-xs text-muted-foreground">Loading…</p>
         ) : (
           <>
-            <DirectCards onLaunch={handleLaunchDirect} busy={directBusy} />
+            <DirectCards
+              onLaunch={handleLaunchDirect}
+              onSetDefault={(agentId) => handleSetDefault(agentId, null)}
+              busy={directBusy}
+              defaultAgent={prefs?.defaultAgent}
+              defaultProfiles={prefs?.defaultProfiles}
+            />
 
             {profiles.length === 0 ? (
               <EmptyState onNew={openNewEditor} />
@@ -162,8 +214,11 @@ export function Launch() {
                   key={p.id}
                   profile={p}
                   onLaunch={(t) => handleLaunch(p, t)}
+                  onSetDefault={(t) => handleSetDefault(t, p.id)}
                   onEdit={() => handleEdit(p)}
                   onDelete={() => handleDelete(p)}
+                  defaultAgent={prefs?.defaultAgent}
+                  defaultProfiles={prefs?.defaultProfiles}
                 />
               ))
             )}
@@ -184,6 +239,17 @@ export function Launch() {
       )}
     </div>
   );
+}
+
+function quickLaunchTitle(
+  prefs: LauncherPreferences | null,
+  profiles: ProfileSummary[],
+): string {
+  if (!prefs) return "Launch the default CLI";
+  const profileId = prefs.defaultProfiles[prefs.defaultAgent];
+  if (!profileId) return `Launch ${prefs.defaultAgent} directly`;
+  const profile = profiles.find((p) => p.id === profileId);
+  return `Launch ${prefs.defaultAgent} with ${profile?.label ?? profileId}`;
 }
 
 function EmptyState({ onNew }: { onNew: () => void }) {

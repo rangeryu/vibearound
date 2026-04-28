@@ -2,6 +2,7 @@
 //! All config comes from ~/.vibearound/settings.json.
 //! Callers load a fresh Config when they need one.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Once};
 
@@ -19,7 +20,8 @@ pub const DEFAULT_PORT: u16 = 12358;
 /// Minimal default settings.json content, embedded at compile time.
 const DEFAULT_SETTINGS_JSON: &str = r#"{
   "workspaces": [],
-  "default_workspace": ""
+  "default_workspace": "",
+  "default_profiles": {}
 }"#;
 
 /// User home directory (HOME on Unix, USERPROFILE on Windows).
@@ -93,12 +95,15 @@ pub struct Config {
     // --- Workspaces ---
     /// User-added project folders (not including the built-in ~/.vibearound/workspaces/).
     pub workspaces: Vec<PathBuf>,
-    /// User override for default workspace. None = use built-in per-agent default.
+    /// User override for default workspace. None = use the built-in workspaces root.
     pub default_workspace: Option<PathBuf>,
     pub preview_base_url: Option<String>,
     pub tmux_detach_others: bool,
     // --- Agents ---
     pub default_agent: String,
+    /// Per-agent default profile id used when a route has not chosen a
+    /// profile explicitly. Keys are canonical agent ids.
+    pub default_profiles: BTreeMap<String, String>,
     /// Subset of agent IDs from `resources/agents.json` the user has enabled.
     /// Validated at load time — entries that don't resolve via
     /// `resources::agent_by_alias` are dropped.
@@ -129,14 +134,24 @@ impl Config {
 
     /// Resolve the workspace directory for an agent session.
     /// - If user set a default_workspace → use it directly
-    /// - Otherwise → ~/.vibearound/workspaces/{agent_kind}-default
-    pub fn resolve_workspace(&self, agent_kind: &str) -> PathBuf {
+    /// - Otherwise → ~/.vibearound/workspaces
+    pub fn resolve_workspace(&self, _agent_kind: &str) -> PathBuf {
         if let Some(ref ws) = self.default_workspace {
             ws.clone()
         } else {
-            let subdir = format!("{}-default", agent_kind);
-            data_dir().join("workspaces").join(subdir)
+            builtin_workspaces_dir()
         }
+    }
+
+    /// Resolve the default profile id for an agent alias/id.
+    pub fn default_profile_for(&self, agent_kind: &str) -> Option<String> {
+        let agent_id = crate::resources::agent_by_alias(agent_kind)
+            .map(|def| def.id.as_str())
+            .unwrap_or(agent_kind);
+        self.default_profiles
+            .get(agent_id)
+            .cloned()
+            .filter(|s| !s.trim().is_empty())
     }
 
     /// All available workspaces: the built-in root + user-added paths.
@@ -272,6 +287,25 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "claude".to_string());
 
+    let default_profiles = root
+        .get("default_profiles")
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(agent, profile)| {
+                    let profile = profile.as_str()?.trim();
+                    if profile.is_empty() {
+                        return None;
+                    }
+                    let agent_id = crate::resources::agent_by_alias(agent)
+                        .map(|def| def.id.clone())
+                        .unwrap_or_else(|| agent.to_string());
+                    Some((agent_id, profile.to_string()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+
     let enabled_agents = root
         .get("enabled_agents")
         .and_then(|v| v.as_array())
@@ -295,6 +329,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         preview_base_url,
         tmux_detach_others,
         default_agent,
+        default_profiles,
         enabled_agents,
         raw_channels,
     }
@@ -365,6 +400,7 @@ impl Default for Config {
             preview_base_url: None,
             tmux_detach_others: true,
             default_agent: "claude".to_string(),
+            default_profiles: BTreeMap::new(),
             enabled_agents: crate::resources::AGENTS.iter().map(|a| a.id.clone()).collect(),
             raw_channels: serde_json::Value::Object(serde_json::Map::new()),
         }

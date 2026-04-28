@@ -65,18 +65,20 @@ impl Conversation {
             }
         }
 
+        let cfg = config::ensure_loaded();
         let cli_kind = self
             .cli_kind
             .lock()
             .await
             .clone()
-            .unwrap_or_else(|| config::ensure_loaded().default_agent.clone());
+            .unwrap_or_else(|| cfg.default_agent.clone());
         tracing::info!(route = %self.route, cli_kind = %cli_kind, "spawning new agent");
         let profile = self
             .profile
             .lock()
             .await
             .clone()
+            .or_else(|| cfg.default_profile_for(&cli_kind))
             .unwrap_or_else(|| "default".to_string());
 
         // Resolve workspace — handover must include cwd, normal prompt uses default.

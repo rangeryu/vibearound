@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { Play, Sparkles } from "lucide-react";
+import { Play, Sparkles, Star } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { listAgents, type AgentSummary } from "./api";
 
 interface Props {
   onLaunch: (agentId: string) => Promise<void>;
+  onSetDefault: (agentId: string) => Promise<void>;
   busy: boolean;
+  defaultAgent?: string;
+  defaultProfiles?: Record<string, string>;
 }
 
 /**
@@ -18,9 +21,16 @@ interface Props {
  * adding a new CLI is a one-file edit on the agents side; this card
  * picks it up automatically without a UI release.
  */
-export function DirectCards({ onLaunch, busy }: Props) {
+export function DirectCards({
+  onLaunch,
+  onSetDefault,
+  busy,
+  defaultAgent,
+  defaultProfiles = {},
+}: Props) {
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [defaultBusy, setDefaultBusy] = useState<string | null>(null);
 
   useEffect(() => {
     void listAgents()
@@ -46,21 +56,44 @@ export function DirectCards({ onLaunch, busy }: Props) {
         <div className="text-[11px] text-muted-foreground">Loading…</div>
       ) : (
         <div className="flex flex-wrap gap-1.5 mt-1">
-          {(agents ?? []).map((a) => (
-            <Button
-              key={a.id}
-              type="button"
-              variant="secondary"
-              size="xs"
-              onClick={() => onLaunch(a.id)}
-              disabled={busy}
-              className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
-              title={`${a.display_name} — ${a.description}`}
-            >
-              <Play className="w-3 h-3" />
-              {a.id}
-            </Button>
-          ))}
+          {(agents ?? []).map((a) => {
+            const isDefault = defaultAgent === a.id && !defaultProfiles[a.id];
+            return (
+              <span key={a.id} className="inline-flex items-center gap-0.5">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="xs"
+                  onClick={() => onLaunch(a.id)}
+                  disabled={busy}
+                  className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
+                  title={`${a.display_name} — ${a.description}`}
+                >
+                  <Play className="w-3 h-3" />
+                  {a.id}
+                  {isDefault && <Star className="w-3 h-3 fill-current" />}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  disabled={busy || defaultBusy === a.id}
+                  onClick={async () => {
+                    setDefaultBusy(a.id);
+                    try {
+                      await onSetDefault(a.id);
+                    } finally {
+                      setDefaultBusy(null);
+                    }
+                  }}
+                  title={`Use ${a.display_name} as Quick Launch default without a profile`}
+                  className="h-7 w-7 text-muted-foreground hover:text-primary"
+                >
+                  <Star className={`w-3.5 h-3.5 ${isDefault ? "fill-current text-primary" : ""}`} />
+                </Button>
+              </span>
+            );
+          })}
         </div>
       )}
     </div>

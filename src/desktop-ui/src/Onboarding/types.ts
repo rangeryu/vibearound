@@ -1,4 +1,5 @@
 import type { AgentId, TunnelProvider } from "./constants";
+import type { ProfileSummary } from "../Launch/types";
 
 // Resource types — returned by Tauri commands
 export interface AgentSummary {
@@ -25,6 +26,7 @@ export interface Settings {
   workspaces?: string[];
   default_workspace?: string;
   default_agent?: string;
+  default_profiles?: Record<string, string>;
   enabled_agents?: string[];
   tunnel?: {
     provider?: string;
@@ -90,10 +92,14 @@ export interface AuthFlowState {
 
 export interface StepAgentsProps {
   agents: AgentSummary[];
+  profiles: ProfileSummary[];
   enabled: Set<AgentId>;
   defaultAgent: AgentId;
+  defaultProfiles: Record<string, string>;
   onToggle: (id: AgentId) => void;
   onSetDefault: (id: AgentId) => void;
+  onSetDefaultProfile: (agentId: AgentId, profileId: string | null) => void;
+  onCreateProfile: () => void;
 }
 
 export interface StepChannelsProps {
@@ -130,6 +136,8 @@ export interface StepConfirmProps {
   pluginRegistry: PluginRegistryEntry[];
   enabledAgents: Set<AgentId>;
   defaultAgent: AgentId;
+  defaultProfiles: Record<string, string>;
+  profiles: ProfileSummary[];
   tunnelProvider: TunnelProvider;
   enabledChannels: Set<string>;
   // Install progress state

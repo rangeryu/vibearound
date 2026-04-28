@@ -5,6 +5,7 @@ export interface BuildSettingsInput {
   settings: Settings;
   enabledAgents: Set<AgentId>;
   defaultAgent: AgentId;
+  defaultProfiles: Record<string, string>;
   enabledChannels: Set<string>;
   channelConfigs: Record<string, Record<string, string>>;
   discoveredPlugins: DiscoveredChannelPlugin[];
@@ -25,6 +26,7 @@ export function buildSettings(input: BuildSettingsInput): Settings {
     settings,
     enabledAgents,
     defaultAgent,
+    defaultProfiles,
     enabledChannels,
     channelConfigs,
     discoveredPlugins,
@@ -40,6 +42,17 @@ export function buildSettings(input: BuildSettingsInput): Settings {
     enabled_agents: Array.from(enabledAgents),
     default_agent: defaultAgent,
   };
+
+  const profileDefaults = Object.fromEntries(
+    Object.entries(defaultProfiles).filter(
+      ([agentId, profileId]) => enabledAgents.has(agentId) && profileId,
+    ),
+  );
+  if (Object.keys(profileDefaults).length > 0) {
+    result.default_profiles = profileDefaults;
+  } else {
+    delete result.default_profiles;
+  }
 
   const channels: Record<string, Record<string, unknown>> = {};
   for (const id of enabledChannels) {

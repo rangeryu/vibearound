@@ -11,6 +11,13 @@ import { StepWelcome } from "./components/StepWelcome";
 import { useChannelAuth } from "./hooks/useChannelAuth";
 import { useInstallFlow } from "./hooks/useInstallFlow";
 import { buildSettings } from "./lib/buildSettings";
+import {
+  listCatalog,
+  listProfiles,
+  upsertProfile,
+} from "../Launch/api";
+import { ProfileFormDialog } from "../Launch/ProfileFormDialog";
+import type { CatalogEntry, ProfileDef, ProfileSummary } from "../Launch/types";
 import type {
   AgentSummary,
   DiscoveredChannelPlugin,
@@ -25,6 +32,9 @@ export default function Onboarding() {
   const [settings, setSettings] = useState<Settings>({});
   const [discoveredPlugins, setDiscoveredPlugins] = useState<DiscoveredChannelPlugin[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false);
 
   // Resource data from backend
   const [agents, setAgents] = useState<AgentSummary[]>([]);
@@ -34,6 +44,7 @@ export default function Onboarding() {
   // Agents
   const [enabledAgents, setEnabledAgents] = useState<Set<AgentId>>(new Set());
   const [defaultAgent, setDefaultAgent] = useState<AgentId>("claude");
+  const [defaultProfiles, setDefaultProfiles] = useState<Record<string, string>>({});
 
   // Channels
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(new Set());
@@ -41,7 +52,7 @@ export default function Onboarding() {
   const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(new Set());
 
   // Tunnel
-  const [tunnelProvider, setTunnelProvider] = useState<TunnelProvider>("none");
+  const [tunnelProvider, setTunnelProvider] = useState<TunnelProvider>("cloudflare");
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
@@ -55,13 +66,17 @@ export default function Onboarding() {
       invoke<AgentSummary[]>("list_agents"),
       invoke<TunnelSummary[]>("list_tunnels"),
       invoke<PluginRegistryEntry[]>("list_plugin_registry"),
+      listCatalog(),
+      listProfiles(),
     ])
-      .then(([loadedSettings, plugins, agentDefs, tunnelDefs, pluginDefs]) => {
+      .then(([loadedSettings, plugins, agentDefs, tunnelDefs, pluginDefs, catalogDefs, profileDefs]) => {
         setSettings(loadedSettings);
         setDiscoveredPlugins(plugins);
         setAgents(agentDefs);
         setTunnels(tunnelDefs);
         setPluginRegistry(pluginDefs);
+        setCatalog(catalogDefs);
+        setProfiles(profileDefs);
 
         if (loadedSettings.enabled_agents?.length) {
           setEnabledAgents(new Set(loadedSettings.enabled_agents as AgentId[]));
@@ -70,6 +85,9 @@ export default function Onboarding() {
         }
         if (loadedSettings.default_agent) {
           setDefaultAgent(loadedSettings.default_agent as AgentId);
+        }
+        if (loadedSettings.default_profiles) {
+          setDefaultProfiles(loadedSettings.default_profiles);
         }
 
         const channels = loadedSettings.channels ?? {};
@@ -89,7 +107,12 @@ export default function Onboarding() {
         setChannelConfigs(configs);
 
         const provider = loadedSettings.tunnel?.provider;
-        if (provider === "cloudflare" || provider === "ngrok" || provider === "localtunnel") {
+        if (
+          provider === "none" ||
+          provider === "cloudflare" ||
+          provider === "ngrok" ||
+          provider === "localtunnel"
+        ) {
           setTunnelProvider(provider);
         }
         if (loadedSettings.tunnel?.ngrok?.auth_token) setNgrokToken(loadedSettings.tunnel.ngrok.auth_token);
@@ -159,6 +182,7 @@ export default function Onboarding() {
       settings,
       enabledAgents,
       defaultAgent,
+      defaultProfiles,
       enabledChannels,
       channelConfigs,
       discoveredPlugins,
@@ -173,6 +197,7 @@ export default function Onboarding() {
     settings,
     enabledAgents,
     defaultAgent,
+    defaultProfiles,
     enabledChannels,
     channelConfigs,
     discoveredPlugins,
@@ -202,6 +227,31 @@ export default function Onboarding() {
     [defaultAgent],
   );
 
+  const setDefaultProfile = useCallback((agentId: AgentId, profileId: string | null) => {
+    setEnabledAgents((previous) => new Set(previous).add(agentId));
+    setDefaultProfiles((previous) => {
+      const next = { ...previous };
+      if (profileId) next[agentId] = profileId;
+      else delete next[agentId];
+      return next;
+    });
+  }, []);
+
+  const handleSaveProfile = useCallback(
+    async (profile: ProfileDef) => {
+      await upsertProfile(profile);
+      const nextProfiles = await listProfiles();
+      setProfiles(nextProfiles);
+      const supportsDefaultAgent = nextProfiles
+        .find((item) => item.id === profile.id)
+        ?.launchTargets.some((target) => target.id === defaultAgent);
+      if (supportsDefaultAgent && !defaultProfiles[defaultAgent]) {
+        setDefaultProfile(defaultAgent, profile.id);
+      }
+    },
+    [defaultAgent, defaultProfiles, setDefaultProfile],
+  );
+
   if (!loaded) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -212,7 +262,7 @@ export default function Onboarding() {
 
   const currentStep = STEPS[step];
   const isLast = step === STEPS.length - 1;
-  const canNext = currentStep !== "Agents" || enabledAgents.size > 0;
+  const canNext = currentStep !== "Quick Launch" || enabledAgents.size > 0;
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -235,13 +285,17 @@ export default function Onboarding() {
 
       <div className="flex-1 overflow-y-auto px-6 pb-4">
         {currentStep === "Welcome" && <StepWelcome />}
-        {currentStep === "Agents" && (
+        {currentStep === "Quick Launch" && (
           <StepAgents
             agents={agents}
+            profiles={profiles}
             enabled={enabledAgents}
             defaultAgent={defaultAgent}
+            defaultProfiles={defaultProfiles}
             onToggle={toggleAgent}
             onSetDefault={setDefaultAgent}
+            onSetDefaultProfile={setDefaultProfile}
+            onCreateProfile={() => setProfileEditorOpen(true)}
           />
         )}
         {currentStep === "Channels" && (
@@ -281,6 +335,8 @@ export default function Onboarding() {
             pluginRegistry={pluginRegistry}
             enabledAgents={enabledAgents}
             defaultAgent={defaultAgent}
+            defaultProfiles={defaultProfiles}
+            profiles={profiles}
             tunnelProvider={tunnelProvider}
             enabledChannels={enabledChannels}
             isInstalling={isInstalling}
@@ -328,6 +384,15 @@ export default function Onboarding() {
             </button>
           )}
         </div>
+      )}
+
+      {profileEditorOpen && (
+        <ProfileFormDialog
+          catalog={catalog}
+          initial={null}
+          onClose={() => setProfileEditorOpen(false)}
+          onSave={handleSaveProfile}
+        />
       )}
     </div>
   );

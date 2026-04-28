@@ -15,6 +15,10 @@ export function StepTunnel({
   cfHostname,
   onCfHostname,
 }: StepTunnelProps) {
+  const orderedTunnels = [...tunnels].sort(
+    (a, b) => tunnelRank(a.id) - tunnelRank(b.id),
+  );
+
   return (
     <div className="space-y-4">
       <div>
@@ -29,7 +33,7 @@ export function StepTunnel({
       </div>
 
       <div className="flex gap-2">
-        {tunnels.map((tp) => (
+        {orderedTunnels.map((tp) => (
           <button
             key={tp.id}
             onClick={() => onProvider(tp.id)}
@@ -40,6 +44,9 @@ export function StepTunnel({
             }`}
           >
             {tp.display_name}
+            {tp.id === "cloudflare" && (
+              <span className="ml-1 text-[10px] opacity-70">Recommended</span>
+            )}
           </button>
         ))}
       </div>
@@ -95,4 +102,19 @@ export function StepTunnel({
       )}
     </div>
   );
+}
+
+function tunnelRank(id: string): number {
+  switch (id) {
+    case "cloudflare":
+      return 0;
+    case "none":
+      return 1;
+    case "localtunnel":
+      return 2;
+    case "ngrok":
+      return 3;
+    default:
+      return 10;
+  }
 }

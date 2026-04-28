@@ -22,6 +22,10 @@ export function launchProfile(id: string, launchTarget: string): Promise<void> {
   return invoke<void>("profiles_launch", { id, launchTarget });
 }
 
+export function launchDefault(): Promise<void> {
+  return invoke<void>("profiles_launch_default");
+}
+
 /** Direct launch — no env, CLI uses whatever global OAuth the user has. */
 export function launchDirect(agentId: string): Promise<void> {
   return invoke<void>("profiles_launch_direct", { agentId });
@@ -50,6 +54,8 @@ export interface LauncherPreferences {
   options: TerminalOption[];
   workspace: string;
   workspaceOptions: WorkspaceOption[];
+  defaultAgent: string;
+  defaultProfiles: Record<string, string>;
 }
 
 export interface WorkspaceOption {
@@ -70,6 +76,13 @@ export function setLauncherTerminal(terminalId: string): Promise<void> {
 
 export function setLauncherWorkspace(workspacePath: string): Promise<void> {
   return invoke<void>("launcher_set_workspace", { workspacePath });
+}
+
+export function setLauncherDefault(
+  agentId: string,
+  profileId: string | null,
+): Promise<void> {
+  return invoke<void>("launcher_set_default", { agentId, profileId });
 }
 
 export function listCatalog(): Promise<CatalogEntry[]> {

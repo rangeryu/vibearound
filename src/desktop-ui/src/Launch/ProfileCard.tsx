@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
+import { AlertTriangle, MoreVertical, Pencil, Play, Star, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { ProfileSummary } from "./types";
@@ -15,11 +16,22 @@ import { apiTypeBadge, apiTypeShort } from "./types";
 interface Props {
   profile: ProfileSummary;
   onLaunch: (launchTarget: string) => Promise<void>;
+  onSetDefault: (launchTarget: string) => Promise<void>;
   onEdit: () => void;
   onDelete: () => Promise<void>;
+  defaultAgent?: string;
+  defaultProfiles?: Record<string, string>;
 }
 
-export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
+export function ProfileCard({
+  profile,
+  onLaunch,
+  onSetDefault,
+  onEdit,
+  onDelete,
+  defaultAgent,
+  defaultProfiles = {},
+}: Props) {
   const [busy, setBusy] = useState(false);
 
   async function handleLaunch(launchTarget: string) {
@@ -36,6 +48,15 @@ export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
     setBusy(true);
     try {
       await onDelete();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSetDefault(launchTarget: string) {
+    setBusy(true);
+    try {
+      await onSetDefault(launchTarget);
     } finally {
       setBusy(false);
     }
@@ -69,6 +90,22 @@ export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
             <DropdownMenuItem className="text-xs" onSelect={onEdit}>
               <Pencil className="w-3 h-3" /> Edit
             </DropdownMenuItem>
+            {profile.launchTargets.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                {profile.launchTargets.map((target) => (
+                  <DropdownMenuItem
+                    key={target.id}
+                    className="text-xs"
+                    onSelect={() => {
+                      void handleSetDefault(target.id);
+                    }}
+                  >
+                    <Star className="w-3 h-3" /> Default {target.label}
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
             <DropdownMenuItem
               className="text-xs"
               variant="destructive"
@@ -85,6 +122,8 @@ export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
       <div className="flex flex-wrap gap-1.5 mt-1">
         {profile.launchTargets.map((target) => {
           const warning = target.warning ?? profile.apiTypeWarnings[target.apiType];
+          const isDefault =
+            defaultAgent === target.id && defaultProfiles[target.id] === profile.id;
           return (
             <Button
               key={target.id}
@@ -105,6 +144,7 @@ export function ProfileCard({ profile, onLaunch, onEdit, onDelete }: Props) {
               <Badge className="border-0 bg-transparent p-0 text-[11px] text-primary/55">
                 · {apiTypeBadge(target.apiType)}
               </Badge>
+              {isDefault && <Star className="w-3 h-3 fill-current" />}
               {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
             </Button>
           );

@@ -96,7 +96,7 @@ export function Workspaces() {
       <PageHeader
         icon={<FolderOpen className="w-4 h-4 text-primary" />}
         title="Workspaces"
-        description="Workspace folders where agents build projects. The built-in workspace creates per-agent subdirectories automatically."
+        description="Workspace folders where agents build projects. The built-in workspace is used when no default folder is selected."
         actions={(
           <>
             <Button
