@@ -182,7 +182,7 @@ function AgentGrid({
               checked={isEnabled}
               aria-hidden="true"
               tabIndex={-1}
-              className="pointer-events-none absolute right-2.5 top-2.5"
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"
             />
           </div>
         );
