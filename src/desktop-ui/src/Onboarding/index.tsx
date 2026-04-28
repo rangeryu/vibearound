@@ -28,6 +28,8 @@ import type {
 } from "./types";
 import type { AgentId, TunnelProvider } from "./constants";
 
+const DEFAULT_ENABLED_AGENT_IDS = new Set<AgentId>(["claude", "codex"]);
+
 export default function Onboarding() {
   const [step, setStep] = useState(0);
   const [settings, setSettings] = useState<Settings>({});
@@ -79,7 +81,13 @@ export default function Onboarding() {
         if (loadedSettings.enabled_agents?.length) {
           setEnabledAgents(new Set(loadedSettings.enabled_agents as AgentId[]));
         } else {
-          setEnabledAgents(new Set(agentDefs.map((a) => a.id)));
+          setEnabledAgents(
+            new Set(
+              agentDefs
+                .map((agent) => agent.id)
+                .filter((id) => DEFAULT_ENABLED_AGENT_IDS.has(id)),
+            ),
+          );
         }
         const channels = loadedSettings.channels ?? {};
         const enabled = new Set<string>();

@@ -35,12 +35,7 @@ pub async fn auto_install_npm_agent_with_output(
             .context("writing package.json")?;
     }
 
-    let output = crate::process::env::command("npm")
-        .args(["install", npm_package])
-        .current_dir(&plugins_dir)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
+    let output = npm_command(&["install", npm_package], &plugins_dir)
         .await
         .with_context(|| format!("running npm install {}", npm_package))?;
 
@@ -52,6 +47,64 @@ pub async fn auto_install_npm_agent_with_output(
     }
     tracing::info!("[agent] installed {}", npm_package);
     Ok(InstallOutput { stdout, stderr })
+}
+
+/// Invoke npm through `node npm-cli.js` so Windows does not need to spawn
+/// the `npm.cmd` wrapper directly.
+async fn npm_command(
+    args: &[&str],
+    cwd: &std::path::Path,
+) -> std::io::Result<std::process::Output> {
+    let node_info = crate::process::env::command("node")
+        .args(["-p", "process.execPath"])
+        .output()
+        .await?;
+    let node_exec = String::from_utf8_lossy(&node_info.stdout)
+        .trim()
+        .to_string();
+    let node_dir = std::path::Path::new(&node_exec).parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "cannot determine node install directory",
+        )
+    })?;
+
+    let candidates = [
+        node_dir
+            .join("node_modules")
+            .join("npm")
+            .join("bin")
+            .join("npm-cli.js"),
+        node_dir
+            .join("../lib/node_modules/npm/bin/npm-cli.js")
+            .into(),
+        std::path::PathBuf::from("/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js"),
+        std::path::PathBuf::from("/usr/local/lib/node_modules/npm/bin/npm-cli.js"),
+    ];
+    let npm_cli = candidates
+        .iter()
+        .find(|p| p.exists())
+        .cloned()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "npm-cli.js not found in any of: {:?} — is npm installed with Node.js?",
+                    candidates
+                ),
+            )
+        })?;
+
+    let mut node_args: Vec<String> = vec![npm_cli.to_string_lossy().to_string()];
+    node_args.extend(args.iter().map(|s| s.to_string()));
+
+    crate::process::env::command("node")
+        .args(&node_args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
 }
 
 /// Install a native agent CLI by running its official install command.
