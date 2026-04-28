@@ -94,12 +94,9 @@ export interface StepAgentsProps {
   agents: AgentSummary[];
   profiles: ProfileSummary[];
   enabled: Set<AgentId>;
-  defaultAgent: AgentId;
-  defaultProfiles: Record<string, string>;
   onToggle: (id: AgentId) => void;
-  onSetDefault: (id: AgentId) => void;
-  onSetDefaultProfile: (agentId: AgentId, profileId: string | null) => void;
   onCreateProfile: () => void;
+  onDeleteProfile: (id: string) => void;
 }
 
 export interface StepChannelsProps {
@@ -135,17 +132,12 @@ export interface StepConfirmProps {
   tunnels: TunnelSummary[];
   pluginRegistry: PluginRegistryEntry[];
   enabledAgents: Set<AgentId>;
-  defaultAgent: AgentId;
-  defaultProfiles: Record<string, string>;
-  profiles: ProfileSummary[];
   tunnelProvider: TunnelProvider;
   enabledChannels: Set<string>;
   // Install progress state
   isInstalling: boolean;
   installComplete: boolean;
   installTasks: InstallTaskProgress[];
-  onCancel: () => void;
-  onComplete: () => void;
 }
 
 export type InstallTaskStatus = "pending" | "running" | "done" | "error" | "skipped" | "cancelled";

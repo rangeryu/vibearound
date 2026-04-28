@@ -1,4 +1,4 @@
-import { Bot, Check, FolderOpen, Plus, Sparkles, Star } from "lucide-react";
+import { Bot, Check, FolderOpen, Plus, Star, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { BrandIcon } from "@/components/brand-icon";
@@ -6,30 +6,17 @@ import type { AgentSummary, StepAgentsProps } from "../types";
 
 const RECOMMENDED_AGENT_IDS = new Set(["claude", "codex"]);
 const NO_HANDOVER_AGENTS = new Set(["opencode"]);
-const DIRECT_VALUE = "__direct__";
 
 export function StepAgents({
   agents,
   profiles,
   enabled,
-  defaultAgent,
-  defaultProfiles,
   onToggle,
-  onSetDefault,
-  onSetDefaultProfile,
   onCreateProfile,
+  onDeleteProfile,
 }: StepAgentsProps) {
   const recommended = agents.filter((agent) => RECOMMENDED_AGENT_IDS.has(agent.id));
   const others = agents.filter((agent) => !RECOMMENDED_AGENT_IDS.has(agent.id));
-  const profileOptions = profiles.map((profile) => ({
-    profile,
-    compatible: profile.launchTargets.some((target) => target.id === defaultAgent),
-  }));
-  const selectedProfile = defaultProfiles[defaultAgent] ?? DIRECT_VALUE;
-  const selectedProfileIsVisible = profileOptions.some(
-    ({ profile, compatible }) => compatible && profile.id === selectedProfile,
-  );
-  const activeProfile = selectedProfileIsVisible ? selectedProfile : DIRECT_VALUE;
 
   return (
     <div className="space-y-4">
@@ -51,9 +38,7 @@ export function StepAgents({
         <AgentGrid
           agents={recommended}
           enabled={enabled}
-          defaultAgent={defaultAgent}
           onToggle={onToggle}
-          onSetDefault={onSetDefault}
         />
       </section>
 
@@ -63,9 +48,7 @@ export function StepAgents({
           <AgentGrid
             agents={others}
             enabled={enabled}
-            defaultAgent={defaultAgent}
             onToggle={onToggle}
-            onSetDefault={onSetDefault}
           />
         </section>
       )}
@@ -73,9 +56,9 @@ export function StepAgents({
       <section className="rounded-lg border border-border bg-card p-3 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-xs font-medium">Default API profile</div>
+            <div className="text-xs font-medium">API profiles</div>
             <p className="text-[11px] text-muted-foreground mt-0.5">
-              Optional. Direct launch uses the CLI's existing login.
+              Optional. Save API keys now; choose launch defaults later in Launch.
             </p>
           </div>
           <Button
@@ -90,48 +73,12 @@ export function StepAgents({
           </Button>
         </div>
 
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(178px,220px))] gap-2">
-          <button
-            type="button"
-            onClick={() => onSetDefaultProfile(defaultAgent, null)}
-            className={`flex min-h-[54px] items-center gap-2 rounded-md border p-2 text-left transition-colors ${
-              activeProfile === DIRECT_VALUE
-                ? "border-primary/40 bg-primary/5"
-                : "border-border hover:border-border/80"
-            }`}
-          >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
-              <Sparkles className="h-3.5 w-3.5" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium">Direct launch</span>
-              <span className="block truncate text-[10px] text-muted-foreground">
-                Existing CLI login
-              </span>
-            </span>
-            {activeProfile === DIRECT_VALUE && (
-              <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
-            )}
-          </button>
-
-          {profileOptions.map(({ profile, compatible }) => {
-            const selected = activeProfile === profile.id;
-            return (
-              <button
+        {profiles.length > 0 ? (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(178px,220px))] gap-2">
+            {profiles.map((profile) => (
+              <div
                 key={profile.id}
-                type="button"
-                disabled={!compatible}
-                onClick={() => onSetDefaultProfile(defaultAgent, profile.id)}
-                title={
-                  compatible
-                    ? `Use ${profile.label} with ${defaultAgent}`
-                    : `${profile.label} does not support ${defaultAgent}`
-                }
-                className={`flex min-h-[54px] items-center gap-2 rounded-md border p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
-                  selected
-                    ? "border-primary/40 bg-primary/5"
-                    : "border-border hover:border-border/80"
-                }`}
+                className="flex min-h-[54px] items-center gap-2 rounded-md border border-border p-2 text-left"
               >
                 <BrandIcon
                   kind="provider"
@@ -145,18 +92,25 @@ export function StepAgents({
                     {profile.label}
                   </span>
                   <span className="block truncate text-[10px] text-muted-foreground">
-                    {compatible ? profile.providerLabel : `Not for ${defaultAgent}`}
+                    {profile.providerLabel}
                   </span>
                 </span>
-                {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-              </button>
-            );
-          })}
-        </div>
-
-        {profileOptions.length === 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                  title={`Delete ${profile.label}`}
+                  onClick={() => onDeleteProfile(profile.id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
           <p className="text-[11px] text-muted-foreground">
-            No saved profile supports {defaultAgent} yet.
+            No API profiles yet. You can add one now or skip this step.
           </p>
         )}
       </section>
@@ -179,21 +133,16 @@ export function StepAgents({
 function AgentGrid({
   agents,
   enabled,
-  defaultAgent,
   onToggle,
-  onSetDefault,
 }: {
   agents: AgentSummary[];
   enabled: Set<string>;
-  defaultAgent: string;
   onToggle: (id: string) => void;
-  onSetDefault: (id: string) => void;
 }) {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(178px,220px))] gap-2">
       {agents.map((agent) => {
         const isEnabled = enabled.has(agent.id);
-        const isDefault = defaultAgent === agent.id;
         const noHandover = NO_HANDOVER_AGENTS.has(agent.id);
         return (
           <div
@@ -225,22 +174,6 @@ function AgentGrid({
                     no handover
                   </span>
                 </div>
-              )}
-              {isEnabled && (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSetDefault(agent.id);
-                  }}
-                  className={`mt-2 rounded px-1.5 py-0.5 font-mono text-[10px] leading-none transition-colors ${
-                    isDefault
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:bg-accent"
-                  }`}
-                >
-                  {isDefault ? "default" : "set default"}
-                </button>
               )}
             </div>
             <div

@@ -14,40 +14,26 @@ export function StepConfirm({
   tunnels,
   pluginRegistry,
   enabledAgents,
-  defaultAgent,
-  defaultProfiles,
-  profiles,
   tunnelProvider,
   enabledChannels,
   isInstalling,
   installComplete,
   installTasks,
-  onCancel,
-  onComplete,
 }: StepConfirmProps) {
   if (isInstalling) {
     return (
       <InstallProgressView
         tasks={installTasks}
         complete={installComplete}
-        onCancel={onCancel}
-        onComplete={onComplete}
       />
     );
   }
 
   const agentLabels = new Map(agents.map((a) => [a.id, a.display_name]));
   const tunnelLabels = new Map(tunnels.map((t) => [t.id, t.display_name]));
-  const defaultProfileId = defaultProfiles[defaultAgent];
-  const defaultProfile = defaultProfileId
-    ? profiles.find((profile) => profile.id === defaultProfileId)
-    : null;
 
   const agentSummary = Array.from(enabledAgents)
-    .map(
-      (id) =>
-        `${agentLabels.get(id) ?? id}${id === defaultAgent ? " \u2605" : ""}`,
-    )
+    .map((id) => agentLabels.get(id) ?? id)
     .join(", ");
 
   const channelNames = Array.from(enabledChannels).map((id) => {
@@ -71,9 +57,7 @@ export function StepConfirm({
       <div className="space-y-2 text-sm">
         <SummaryRow
           label="Quick Launch"
-          value={`${agentLabels.get(defaultAgent) ?? defaultAgent} · ${
-            defaultProfile?.label ?? "Direct launch"
-          }`}
+          value={`${agentLabels.get("claude") ?? "Claude Code"} · Direct launch`}
         />
         <SummaryRow label="Workspace" value="~/.vibearound/workspaces" />
         <SummaryRow label="Agents" value={agentSummary} />
@@ -107,13 +91,9 @@ export function StepConfirm({
 function InstallProgressView({
   tasks,
   complete,
-  onCancel,
-  onComplete,
 }: {
   tasks: InstallTaskProgress[];
   complete: boolean;
-  onCancel: () => void;
-  onComplete: () => void;
 }) {
   const hasErrors = tasks.some((t) => t.status === "error");
   const hasCancelled = tasks.some((t) => t.status === "cancelled");
@@ -150,33 +130,6 @@ function InstallProgressView({
         {tasks.map((task) => (
           <TaskRow key={task.id} task={task} />
         ))}
-      </div>
-
-      <div className="flex items-center justify-between pt-3 border-t border-border">
-        {!complete ? (
-          <>
-            <div />
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-accent transition-colors"
-            >
-              Cancel
-            </button>
-          </>
-        ) : (
-          <>
-            <div />
-            <button
-              onClick={onComplete}
-              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              <Rocket className="w-4 h-4" />
-              {hasErrors || hasCancelled
-                ? "Continue Anyway"
-                : "Open VibeAround"}
-            </button>
-          </>
-        )}
       </div>
     </div>
   );
