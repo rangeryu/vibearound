@@ -73,24 +73,26 @@ export function DirectCards({
                   {a.id}
                   {isDefault && <Star className="w-3 h-3 fill-current" />}
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  disabled={busy || defaultBusy === a.id}
-                  onClick={async () => {
-                    setDefaultBusy(a.id);
-                    try {
-                      await onSetDefault(a.id);
-                    } finally {
-                      setDefaultBusy(null);
-                    }
-                  }}
-                  title={`Use ${a.display_name} as Quick Launch default without a profile`}
-                  className="h-7 w-7 text-muted-foreground hover:text-primary"
-                >
-                  <Star className={`w-3.5 h-3.5 ${isDefault ? "fill-current text-primary" : ""}`} />
-                </Button>
+                {!isDefault && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    disabled={busy || defaultBusy === a.id}
+                    onClick={async () => {
+                      setDefaultBusy(a.id);
+                      try {
+                        await onSetDefault(a.id);
+                      } finally {
+                        setDefaultBusy(null);
+                      }
+                    }}
+                    title={`Use ${a.display_name} as Quick Launch default without a profile`}
+                    className="h-7 w-7 text-muted-foreground hover:text-primary"
+                  >
+                    <Star className="w-3.5 h-3.5" />
+                  </Button>
+                )}
               </span>
             );
           })}

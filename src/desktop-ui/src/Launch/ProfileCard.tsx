@@ -7,7 +7,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { ProfileSummary } from "./types";
@@ -33,6 +32,7 @@ export function ProfileCard({
   defaultProfiles = {},
 }: Props) {
   const [busy, setBusy] = useState(false);
+  const [defaultBusy, setDefaultBusy] = useState<string | null>(null);
 
   async function handleLaunch(launchTarget: string) {
     setBusy(true);
@@ -90,22 +90,6 @@ export function ProfileCard({
             <DropdownMenuItem className="text-xs" onSelect={onEdit}>
               <Pencil className="w-3 h-3" /> Edit
             </DropdownMenuItem>
-            {profile.launchTargets.length > 0 && (
-              <>
-                <DropdownMenuSeparator />
-                {profile.launchTargets.map((target) => (
-                  <DropdownMenuItem
-                    key={target.id}
-                    className="text-xs"
-                    onSelect={() => {
-                      void handleSetDefault(target.id);
-                    }}
-                  >
-                    <Star className="w-3 h-3" /> Default {target.label}
-                  </DropdownMenuItem>
-                ))}
-              </>
-            )}
             <DropdownMenuItem
               className="text-xs"
               variant="destructive"
@@ -125,28 +109,49 @@ export function ProfileCard({
           const isDefault =
             defaultAgent === target.id && defaultProfiles[target.id] === profile.id;
           return (
-            <Button
-              key={target.id}
-              type="button"
-              variant="secondary"
-              size="xs"
-              onClick={() => handleLaunch(target.id)}
-              disabled={busy}
-              className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
-              title={
-                warning
-                  ? `⚠ ${warning}\n\n(Click to launch ${target.label} via ${apiTypeShort(target.apiType)} anyway.)`
-                  : `Launch ${target.label} via ${apiTypeShort(target.apiType)}`
-              }
-            >
-              <Play className="w-3 h-3" />
-              <span>{target.label}</span>
-              <Badge className="border-0 bg-transparent p-0 text-[11px] text-primary/55">
-                · {apiTypeBadge(target.apiType)}
-              </Badge>
-              {isDefault && <Star className="w-3 h-3 fill-current" />}
-              {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
-            </Button>
+            <span key={target.id} className="inline-flex items-center gap-0.5">
+              <Button
+                type="button"
+                variant="secondary"
+                size="xs"
+                onClick={() => handleLaunch(target.id)}
+                disabled={busy}
+                className="h-7 font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20"
+                title={
+                  warning
+                    ? `⚠ ${warning}\n\n(Click to launch ${target.label} via ${apiTypeShort(target.apiType)} anyway.)`
+                    : `Launch ${target.label} via ${apiTypeShort(target.apiType)}`
+                }
+              >
+                <Play className="w-3 h-3" />
+                <span>{target.label}</span>
+                <Badge className="border-0 bg-transparent p-0 text-[11px] text-primary/55">
+                  · {apiTypeBadge(target.apiType)}
+                </Badge>
+                {isDefault && <Star className="w-3 h-3 fill-current" />}
+                {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+              </Button>
+              {!isDefault && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  disabled={busy || defaultBusy === target.id}
+                  onClick={async () => {
+                    setDefaultBusy(target.id);
+                    try {
+                      await handleSetDefault(target.id);
+                    } finally {
+                      setDefaultBusy(null);
+                    }
+                  }}
+                  title={`Use ${target.label} with ${profile.label} as Quick Launch default`}
+                  className="h-7 w-7 text-muted-foreground hover:text-primary"
+                >
+                  <Star className="w-3.5 h-3.5" />
+                </Button>
+              )}
+            </span>
           );
         })}
       </div>
