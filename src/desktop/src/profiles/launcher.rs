@@ -15,13 +15,9 @@
 //!   two are not interchangeable.
 
 use std::collections::HashMap;
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 use std::path::Path;
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
-#[cfg(target_os = "windows")]
-use std::process::Stdio;
 
 use anyhow::{anyhow, bail, Context};
 
@@ -170,46 +166,29 @@ fn spawn_terminal(
     window_label: &str,
     workspace: &Path,
 ) -> anyhow::Result<()> {
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
     let choice = terminal::read_preference();
     let script_path = write_windows_launch_script(env, command, window_label, choice, workspace)?;
     let title = format!("VibeAround - {}", window_label);
 
-    let mut starter = std::process::Command::new("cmd.exe");
-    starter
-        .arg("/C")
-        .arg("start")
-        .arg(&title)
-        .current_dir(workspace)
-        // The launched CLI window must not inherit daemon handles. On
-        // Windows, an inherited listener handle can keep 127.0.0.1:12358
-        // alive after VibeAround exits, leaving netstat with an owner PID
-        // that no longer maps to a process.
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
-
-    match choice {
-        TerminalChoice::PowerShell => {
-            starter
-                .arg("powershell.exe")
-                .arg("-ExecutionPolicy")
-                .arg("Bypass")
-                .arg("-NoExit")
-                .arg("-File")
-                .arg(&script_path);
-        }
-        TerminalChoice::Cmd => {
-            starter.arg("cmd.exe").arg("/K").arg(&script_path);
-        }
+    let params = match choice {
+        TerminalChoice::PowerShell => format!(
+            "/C start {} powershell.exe -ExecutionPolicy Bypass -NoExit -File {}",
+            quote_cmd_arg(&title),
+            quote_cmd_arg(&script_path.to_string_lossy())
+        ),
+        TerminalChoice::Cmd => format!(
+            "/C start {} cmd.exe /K {}",
+            quote_cmd_arg(&title),
+            quote_cmd_arg(&script_path.to_string_lossy())
+        ),
         other => bail!("terminal '{}' is not supported on Windows", other.id()),
-    }
+    };
 
-    starter
-        .spawn()
+    // Use ShellExecuteW through the `open` crate instead of Rust `Command`.
+    // `Command` inherits all inheritable handles by default on Windows; if a
+    // launched CLI keeps the daemon's TCP listener handle alive, VibeAround's
+    // next start sees 127.0.0.1:12358 as occupied by a stale PID.
+    open::with(params, "cmd.exe")
         .with_context(|| format!("open {}", choice.label()))?;
 
     Ok(())
@@ -357,6 +336,11 @@ fn escape_powershell_single_quoted(value: &str) -> String {
 #[cfg(target_os = "windows")]
 fn escape_cmd_quoted(value: &str) -> String {
     value.replace('"', "\"\"")
+}
+
+#[cfg(target_os = "windows")]
+fn quote_cmd_arg(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
 }
 
 // ---------------------------------------------------------------------------
