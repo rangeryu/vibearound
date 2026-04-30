@@ -27,12 +27,11 @@
 //! kill_on_drop) are **unchanged** — they still guarantee SIGKILL on daemon
 //! stop. This module adds a separate liveness/respawn layer on top.
 
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
-use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 use dashmap::DashMap;
-use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc;
 
 use crate::conversations::ConversationManager;
@@ -42,6 +41,11 @@ use super::manifest::ChannelPluginManifest;
 use super::plugin_host::PluginHost;
 use super::transport_stdio::StdioPluginRuntime;
 use super::ChannelInput;
+
+mod state;
+
+pub use state::{ChannelRunStatus, ChannelStatusSnapshot};
+use state::{ChannelState, TransitionIntent};
 
 // ---------------------------------------------------------------------------
 // Tunables
@@ -56,150 +60,6 @@ const HEARTBEAT_TIMEOUT_SECS: u64 = 90;
 
 /// Fixed wait between restart attempts. No exponential, no stability reset.
 const RESTART_BACKOFF_SECS: u64 = 15;
-
-// ---------------------------------------------------------------------------
-// State enums (AtomicU8-friendly)
-// ---------------------------------------------------------------------------
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChannelRunStatus {
-    NotStarted = 0,
-    Spawning = 1,
-    Running = 2,
-    Crashed = 3,
-    Stopped = 4,
-}
-
-impl ChannelRunStatus {
-    fn from_u8(v: u8) -> Self {
-        match v {
-            0 => Self::NotStarted,
-            1 => Self::Spawning,
-            2 => Self::Running,
-            3 => Self::Crashed,
-            _ => Self::Stopped,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::NotStarted => "not_started",
-            Self::Spawning => "spawning",
-            Self::Running => "running",
-            Self::Crashed => "crashed",
-            Self::Stopped => "stopped",
-        }
-    }
-}
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TransitionIntent {
-    None = 0,
-    Stop = 1,
-    Restart = 2,
-}
-
-impl TransitionIntent {
-    fn from_u8(v: u8) -> Self {
-        match v {
-            1 => Self::Stop,
-            2 => Self::Restart,
-            _ => Self::None,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Per-channel state
-// ---------------------------------------------------------------------------
-
-pub struct ChannelState {
-    pub kind: String,
-    pub manifest: ChannelPluginManifest,
-
-    /// `ChannelRunStatus` stored as atomic for lock-free reads in tick/snapshot.
-    status: AtomicU8,
-
-    /// `TransitionIntent` — consumed by `mark_crashed` to distinguish user
-    /// actions from actual crashes.
-    intent: AtomicU8,
-
-    /// Human-readable last transition reason ("no heartbeat", "io terminated
-    /// (…)", "spawn failed: …"). Displayed on Dashboard.
-    reason: RwLock<String>,
-
-    /// Unix secs of last `_va/heartbeat` receipt. Bumped on register/spawn to
-    /// give a grace window before first real heartbeat.
-    last_seen_ts: AtomicU64,
-
-    /// Unix secs of last crash. Purely informational for Dashboard.
-    last_crash_ts: AtomicU64,
-
-    /// How many times this channel has crashed since daemon start.
-    crash_count: AtomicU32,
-
-    /// Unix secs at which a respawn should be attempted. `0` means "not
-    /// scheduled" (e.g. already running, or user-stopped).
-    restart_at: AtomicU64,
-
-    /// Arc to the currently-active `StdioPluginRuntime`. Swapped on respawn.
-    /// `None` means no runtime is live (Crashed / Stopped / between states).
-    current_runtime: Mutex<Option<Arc<StdioPluginRuntime>>>,
-}
-
-impl ChannelState {
-    fn new(manifest: ChannelPluginManifest) -> Self {
-        Self {
-            kind: manifest.channel_kind.clone(),
-            manifest,
-            status: AtomicU8::new(ChannelRunStatus::NotStarted as u8),
-            intent: AtomicU8::new(TransitionIntent::None as u8),
-            reason: RwLock::new(String::new()),
-            last_seen_ts: AtomicU64::new(unix_now_secs()),
-            last_crash_ts: AtomicU64::new(0),
-            crash_count: AtomicU32::new(0),
-            restart_at: AtomicU64::new(0),
-            current_runtime: Mutex::new(None),
-        }
-    }
-
-    pub fn run_status(&self) -> ChannelRunStatus {
-        ChannelRunStatus::from_u8(self.status.load(Ordering::Acquire))
-    }
-
-    fn set_status(&self, status: ChannelRunStatus) {
-        self.status.store(status as u8, Ordering::Release);
-    }
-
-    fn set_reason(&self, reason: impl Into<String>) {
-        *self.reason.write() = reason.into();
-    }
-
-    pub fn reason_snapshot(&self) -> String {
-        self.reason.read().clone()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Snapshot (for Dashboard API)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-pub struct ChannelStatusSnapshot {
-    pub kind: String,
-    pub status: ChannelRunStatus,
-    pub reason: String,
-    pub crash_count: u32,
-    pub last_seen_age_secs: u64,
-    pub restart_in_secs: u64,
-    pub started_at: u64,
-}
-
-// ---------------------------------------------------------------------------
-// ChannelMonitor
-// ---------------------------------------------------------------------------
 
 pub struct ChannelMonitor {
     channels: DashMap<String, Arc<ChannelState>>,
@@ -268,12 +128,16 @@ impl ChannelMonitor {
 
         // Consume intent atomically so two racing callers don't both observe Stop.
         let intent = TransitionIntent::from_u8(
-            state.intent.swap(TransitionIntent::None as u8, Ordering::AcqRel),
+            state
+                .intent
+                .swap(TransitionIntent::None as u8, Ordering::AcqRel),
         );
 
         state.current_runtime.lock().take();
         state.set_reason(reason);
-        state.last_crash_ts.store(unix_now_secs(), Ordering::Relaxed);
+        state
+            .last_crash_ts
+            .store(unix_now_secs(), Ordering::Relaxed);
 
         // Drop any oneshot senders waiting on this plugin's approvals.
         // Otherwise `ChannelBridgeHandler::request_permission` callers
@@ -288,9 +152,7 @@ impl ChannelMonitor {
             }
             TransitionIntent::Restart => {
                 state.set_status(ChannelRunStatus::Crashed);
-                state
-                    .restart_at
-                    .store(unix_now_secs(), Ordering::Relaxed);
+                state.restart_at.store(unix_now_secs(), Ordering::Relaxed);
                 tracing::info!(
                     channel = %state.kind,
                     reason = %reason,
@@ -361,12 +223,12 @@ impl ChannelMonitor {
         // Only meaningful from Stopped / Crashed. For Running / Spawning we
         // just no-op — status is already on a live path.
         match state.run_status() {
-            ChannelRunStatus::Stopped | ChannelRunStatus::Crashed | ChannelRunStatus::NotStarted => {
+            ChannelRunStatus::Stopped
+            | ChannelRunStatus::Crashed
+            | ChannelRunStatus::NotStarted => {
                 state.set_status(ChannelRunStatus::Crashed);
                 state.set_reason("started by user");
-                state
-                    .restart_at
-                    .store(unix_now_secs(), Ordering::Relaxed);
+                state.restart_at.store(unix_now_secs(), Ordering::Relaxed);
                 self.notify_change();
             }
             _ => {}
@@ -486,9 +348,7 @@ impl ChannelMonitor {
                     .await;
                 state.set_reason("");
                 // Grace window before first real heartbeat counts.
-                state
-                    .last_seen_ts
-                    .store(unix_now_secs(), Ordering::Relaxed);
+                state.last_seen_ts.store(unix_now_secs(), Ordering::Relaxed);
                 tracing::info!(channel = %state.kind, "channel → Running");
                 self.notify_change();
             }
@@ -600,16 +460,16 @@ pub fn touch_weak(weak: &Weak<ChannelMonitor>, kind: &str) {
 
 /// Drive the monitor's tick. Spawn this as a top-level tokio task at daemon
 /// boot. The `shutdown_rx` is signaled on clean daemon stop.
-pub async fn run_monitor_loop(
-    monitor: Arc<ChannelMonitor>,
-    mut shutdown_rx: mpsc::Receiver<()>,
-) {
+pub async fn run_monitor_loop(monitor: Arc<ChannelMonitor>, mut shutdown_rx: mpsc::Receiver<()>) {
     let mut ticker = tokio::time::interval(TICK_INTERVAL);
     // Skip the immediate tick so we don't race with `register`'s immediate spawn.
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     ticker.tick().await; // consume the first immediate tick
 
-    tracing::info!(tick_secs = TICK_INTERVAL.as_secs(), "channel monitor loop started");
+    tracing::info!(
+        tick_secs = TICK_INTERVAL.as_secs(),
+        "channel monitor loop started"
+    );
     loop {
         tokio::select! {
             _ = ticker.tick() => monitor.tick().await,
