@@ -17,6 +17,9 @@ export interface TerminalSession {
   startedAt: number;
   /** Backend created_at (seconds); optional, for display. */
   createdAt?: number;
+  profileId?: string;
+  profileLabel?: string;
+  launchTarget?: string;
   /** If attached to a tmux session, its name. */
   tmuxSession?: string;
 }

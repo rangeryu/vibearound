@@ -42,6 +42,30 @@ pub async fn list_agents_handler() -> Json<crate::api_types::AgentsConfig> {
     })
 }
 
+/// GET /api/profiles — list saved profiles and the CLI targets each can launch.
+pub async fn list_profiles_handler() -> Json<Vec<crate::api_types::ProfileLaunchOption>> {
+    let profiles = common::profiles::schema::list()
+        .into_iter()
+        .map(common::profiles::normalize_legacy_profile)
+        .map(|profile| crate::api_types::ProfileLaunchOption {
+            id: profile.id,
+            label: profile.label,
+            provider: profile.provider,
+            launch_targets: common::profiles::runtime::launch_targets_for_api_types(
+                &profile.api_types,
+            )
+            .into_iter()
+            .map(|(id, label, api_type)| crate::api_types::ProfileLaunchTarget {
+                id: id.to_string(),
+                label: label.to_string(),
+                api_type: api_type.to_string(),
+            })
+            .collect(),
+        })
+        .collect();
+    Json(profiles)
+}
+
 /// GET /api/channels — live list of channel plugins from `ChannelMonitor`.
 pub async fn list_channels_handler(
     State(state): State<AppState>,
@@ -205,7 +229,9 @@ pub async fn kill_pty_handler(
 /// Request body for POST /api/sessions.
 #[derive(serde::Deserialize)]
 pub(crate) struct CreateSessionBody {
-    tool: PtyTool,
+    tool: Option<PtyTool>,
+    profile_id: Option<String>,
+    launch_target: Option<String>,
     project_path: Option<String>,
     tmux_session: Option<String>,
     theme: Option<String>,
@@ -227,6 +253,9 @@ pub async fn list_sessions_handler(
             status: item.status,
             created_at: item.created_at,
             project_path: item.project_path,
+            profile_id: item.profile_id,
+            profile_label: item.profile_label,
+            launch_target: item.launch_target,
             tmux_session: item.tmux_session,
         })
         .collect();
@@ -243,23 +272,97 @@ pub async fn create_session_handler(
         _ => None,
     };
 
-    let created = state
-        .pty_manager
-        .create_session(
-            body.tool,
-            body.project_path.clone(),
-            body.tmux_session.clone(),
-            body.theme.clone(),
-            initial_size,
-        )
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let created = match (body.profile_id.as_deref(), body.launch_target.as_deref()) {
+        (Some(profile_id), Some(launch_target)) => {
+            if body.tmux_session.is_some() {
+                return Err((StatusCode::BAD_REQUEST, "profile sessions cannot attach tmux".to_string()));
+            }
+            let profile = common::profiles::schema::load(profile_id)
+                .map(common::profiles::normalize_legacy_profile)
+                .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("profile '{}' not found", profile_id)))?;
+            if !common::profiles::runtime::launch_targets_for_api_types(&profile.api_types)
+                .iter()
+                .any(|(target, _, _)| *target == launch_target)
+            {
+                return Err((StatusCode::BAD_REQUEST, format!("profile '{}' cannot launch '{}'", profile.id, launch_target)));
+            }
+            let rendered = common::profiles::runtime::render_for_launch(&profile, launch_target)
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+            let command_args = rendered.command_args.clone();
+            let env = common::profiles::runtime::materialize_env(&profile.id, rendered)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let agent_id = common::profiles::runtime::agent_id_for(launch_target)
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+            let agent = common::resources::agent_by_id(agent_id)
+                .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("agent '{}' not found", agent_id)))?;
+            state
+                .pty_manager
+                .create_profile_session(
+                    pty_tool_for_launch_target(launch_target).map_err(|e| (StatusCode::BAD_REQUEST, e))?,
+                    command_with_args(&agent.pty.command, &command_args),
+                    env,
+                    profile.id.clone(),
+                    profile.label.clone(),
+                    launch_target.to_string(),
+                    body.project_path.clone(),
+                    body.theme.clone(),
+                    initial_size,
+                )
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        }
+        (None, None) => {
+            let tool = body.tool.ok_or_else(|| (StatusCode::BAD_REQUEST, "missing tool for direct session".to_string()))?;
+            state
+                .pty_manager
+                .create_session(
+                    tool,
+                    body.project_path.clone(),
+                    body.tmux_session.clone(),
+                    body.theme.clone(),
+                    initial_size,
+                )
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        }
+        _ => {
+            return Err((StatusCode::BAD_REQUEST, "profile_id and launch_target must be provided together".to_string()));
+        }
+    };
 
     Ok(Json(crate::api_types::CreateSessionResponse {
         session_id: created.session_id,
         tool: created.tool,
         created_at: created.created_at,
         project_path: created.project_path,
+        profile_id: created.profile_id,
+        profile_label: created.profile_label,
+        launch_target: created.launch_target,
     }))
+}
+
+fn pty_tool_for_launch_target(launch_target: &str) -> Result<PtyTool, String> {
+    match launch_target {
+        "claude" => Ok(PtyTool::Claude),
+        "codex" => Ok(PtyTool::Codex),
+        "gemini" => Ok(PtyTool::Gemini),
+        "opencode" => Ok(PtyTool::OpenCode),
+        other => Err(format!("unsupported PTY launch target '{}'", other)),
+    }
+}
+
+fn command_with_args(command: &str, args: &[String]) -> String {
+    if args.is_empty() {
+        return command.to_string();
+    }
+    let mut out = command.to_string();
+    for arg in args {
+        out.push(' ');
+        out.push_str(&shell_quote(arg));
+    }
+    out
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
 // ---------------------------------------------------------------------------

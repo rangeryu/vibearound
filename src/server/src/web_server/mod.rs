@@ -153,6 +153,7 @@ pub async fn run_web_server(
         )
         .route("/api/tmux/sessions", get(api::list_tmux_sessions_handler))
         .route("/api/agents", get(api::list_agents_handler))
+        .route("/api/profiles", get(api::list_profiles_handler))
         .route("/ws", get(ws_pty::ws_handler))
         .route("/ws/chat", get(ws_chat::ws_chat_handler))
         .route("/ws/channels", get(ws_domains::ws_channels_handler))

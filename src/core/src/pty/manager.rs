@@ -9,7 +9,7 @@ use bytes::Bytes;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-use super::runtime::{spawn_pty, PtyRunState, PtyTool, ResizeSender};
+use super::runtime::{spawn_pty, spawn_pty_with_command, PtyRunState, PtyTool, ResizeSender};
 use super::session::{
     unix_now_secs, CircularBuffer, Registry, SessionContext, SessionId, SessionMetadata,
     LIVE_BROADCAST_CAP,
@@ -26,6 +26,9 @@ pub struct PtySessionSummary {
     pub status: PtyRunState,
     pub created_at: u64,
     pub project_path: Option<String>,
+    pub profile_id: Option<String>,
+    pub profile_label: Option<String>,
+    pub launch_target: Option<String>,
     pub tmux_session: Option<String>,
 }
 
@@ -35,6 +38,9 @@ pub struct PtySessionCreated {
     pub tool: PtyTool,
     pub created_at: u64,
     pub project_path: Option<String>,
+    pub profile_id: Option<String>,
+    pub profile_label: Option<String>,
+    pub launch_target: Option<String>,
 }
 
 pub struct PtyAttachHandles {
@@ -78,6 +84,9 @@ impl PtySessionManager {
                 status,
                 created_at: ctx.metadata.created_at,
                 project_path: ctx.metadata.project_path.clone(),
+                profile_id: ctx.metadata.profile_id.clone(),
+                profile_label: ctx.metadata.profile_label.clone(),
+                launch_target: ctx.metadata.launch_target.clone(),
                 tmux_session: ctx.metadata.tmux_session.clone(),
             });
         }
@@ -93,20 +102,18 @@ impl PtySessionManager {
         initial_size: Option<(u16, u16)>,
     ) -> anyhow::Result<PtySessionCreated> {
         let cwd = project_path.as_ref().map(std::path::PathBuf::from);
-        let (bridge, mut pty_rx, resize_tx, mut state_rx) = spawn_pty(
-            tool,
-            cwd,
-            tmux_session.clone(),
-            theme,
-            initial_size,
-        )
-        .context("Failed to spawn PTY")?;
+        let (bridge, mut pty_rx, resize_tx, mut state_rx) =
+            spawn_pty(tool, cwd, tmux_session.clone(), theme, initial_size)
+                .context("Failed to spawn PTY")?;
 
         let session_id = SessionId::new();
         let metadata = SessionMetadata {
             created_at: unix_now_secs(),
             project_path: project_path.clone(),
             tool,
+            profile_id: None,
+            profile_label: None,
+            launch_target: None,
             tmux_session,
         };
 
@@ -148,6 +155,81 @@ impl PtySessionManager {
             tool: metadata.tool,
             created_at: metadata.created_at,
             project_path: metadata.project_path,
+            profile_id: metadata.profile_id,
+            profile_label: metadata.profile_label,
+            launch_target: metadata.launch_target,
+        })
+    }
+
+    pub fn create_profile_session(
+        &self,
+        tool: PtyTool,
+        command: String,
+        env: Vec<(String, String)>,
+        profile_id: String,
+        profile_label: String,
+        launch_target: String,
+        project_path: Option<String>,
+        theme: Option<String>,
+        initial_size: Option<(u16, u16)>,
+    ) -> anyhow::Result<PtySessionCreated> {
+        let cwd = project_path.as_ref().map(std::path::PathBuf::from);
+        let (bridge, mut pty_rx, resize_tx, mut state_rx) =
+            spawn_pty_with_command(tool, cwd, None, theme, initial_size, Some(command), env)
+                .context("Failed to spawn profile PTY")?;
+
+        let session_id = SessionId::new();
+        let metadata = SessionMetadata {
+            created_at: unix_now_secs(),
+            project_path: project_path.clone(),
+            tool,
+            profile_id: Some(profile_id),
+            profile_label: Some(profile_label),
+            launch_target: Some(launch_target),
+            tmux_session: None,
+        };
+
+        let buffer = Arc::new(CircularBuffer::new());
+        let (live_tx, _) = broadcast::channel(LIVE_BROADCAST_CAP);
+        let run_state: Arc<std::sync::RwLock<PtyRunState>> =
+            Arc::new(std::sync::RwLock::new(PtyRunState::Running { tool }));
+
+        let ctx = SessionContext {
+            bridge,
+            resize_tx,
+            state: Arc::clone(&run_state),
+            metadata: metadata.clone(),
+            buffer: Arc::clone(&buffer),
+            live_tx: live_tx.clone(),
+        };
+        self.registry.insert(session_id, ctx);
+
+        let buf_clone = Arc::clone(&buffer);
+        let tx_clone = live_tx.clone();
+        tokio::spawn(async move {
+            while let Some(data) = pty_rx.recv().await {
+                buf_clone.push(&data);
+                let _ = tx_clone.send(Bytes::from(data));
+            }
+        });
+
+        let rs = Arc::clone(&run_state);
+        tokio::spawn(async move {
+            while let Some(new_state) = state_rx.recv().await {
+                if let Ok(mut g) = rs.write() {
+                    *g = new_state;
+                }
+            }
+        });
+
+        Ok(PtySessionCreated {
+            session_id: session_id.0.to_string(),
+            tool: metadata.tool,
+            created_at: metadata.created_at,
+            project_path: metadata.project_path,
+            profile_id: metadata.profile_id,
+            profile_label: metadata.profile_label,
+            launch_target: metadata.launch_target,
         })
     }
 

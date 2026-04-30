@@ -5,18 +5,22 @@
 import {
   browserBaseUrl,
   CreateSessionResponseSchema,
+  ProfileLaunchOptionsSchema,
   SessionListSchema,
   TmuxSessionsResponseSchema,
   type CreateSessionResponse,
+  type ProfileLaunchOption,
   type PtyTool,
   type SessionListItem,
   type TmuxSessionsResponse,
 } from "@va/client";
 
-export type { CreateSessionResponse, SessionListItem, TmuxSessionsResponse };
+export type { CreateSessionResponse, ProfileLaunchOption, SessionListItem, TmuxSessionsResponse };
 
 export interface CreateSessionBody {
-  tool: PtyTool;
+  tool?: PtyTool;
+  profile_id?: string;
+  launch_target?: string;
   project_path?: string;
   tmux_session?: string;
   /** "dark" | "light" — sets COLORFGBG in PTY env as fallback for non-OSC programs. */
@@ -31,6 +35,12 @@ export async function getSessions(): Promise<SessionListItem[]> {
   const res = await fetch(`${browserBaseUrl()}/api/sessions`);
   if (!res.ok) throw new Error(`GET /api/sessions: ${res.status}`);
   return SessionListSchema.parse(await res.json());
+}
+
+export async function getProfiles(): Promise<ProfileLaunchOption[]> {
+  const res = await fetch(`${browserBaseUrl()}/api/profiles`);
+  if (!res.ok) throw new Error(`GET /api/profiles: ${res.status}`);
+  return ProfileLaunchOptionsSchema.parse(await res.json());
 }
 
 export async function createSession(body: CreateSessionBody): Promise<CreateSessionResponse> {

@@ -66,6 +66,21 @@ pub struct AgentsConfig {
     pub default_agent: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ProfileLaunchTarget {
+    pub id: String,
+    pub label: String,
+    pub api_type: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProfileLaunchOption {
+    pub id: String,
+    pub label: String,
+    pub provider: String,
+    pub launch_targets: Vec<ProfileLaunchTarget>,
+}
+
 impl AgentInfo {
     /// Build an `AgentInfo` for each of the given agent IDs by looking up
     /// the corresponding entry in `agents.json`. IDs with no matching
@@ -149,6 +164,9 @@ pub struct SessionListItem {
     pub status: PtyRunState,
     pub created_at: u64,
     pub project_path: Option<String>,
+    pub profile_id: Option<String>,
+    pub profile_label: Option<String>,
+    pub launch_target: Option<String>,
     pub tmux_session: Option<String>,
 }
 
@@ -159,6 +177,9 @@ pub struct CreateSessionResponse {
     pub tool: PtyTool,
     pub created_at: u64,
     pub project_path: Option<String>,
+    pub profile_id: Option<String>,
+    pub profile_label: Option<String>,
+    pub launch_target: Option<String>,
 }
 
 /// `GET /api/tmux/sessions` response.
