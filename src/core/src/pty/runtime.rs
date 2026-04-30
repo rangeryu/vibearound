@@ -59,6 +59,10 @@ fn set_pty_env(c: &mut CommandBuilder, theme: Option<&str>, extra_env: &[(String
     for (key, val) in crate::process::env::enriched_env() {
         c.env(key, val);
     }
+    // Codex.app launches this process with NO_COLOR=1/TERM=dumb in some
+    // contexts. A web xterm PTY is color-capable, so clear the inherited
+    // opt-out before applying our terminal defaults.
+    c.env_remove("NO_COLOR");
     let pty_env = &crate::resources::PTY_ENV;
     for (key, val) in &pty_env.env {
         c.env(key, val);
@@ -72,6 +76,7 @@ fn set_pty_env(c: &mut CommandBuilder, theme: Option<&str>, extra_env: &[(String
     for (key, val) in extra_env {
         c.env(key, val);
     }
+    c.env_remove("NO_COLOR");
 }
 
 fn bash_wrapper(
