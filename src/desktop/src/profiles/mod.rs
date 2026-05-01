@@ -7,6 +7,7 @@
 mod launcher;
 mod terminal;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use common::profiles::{catalog, normalize_legacy_profile, runtime, schema};
@@ -77,9 +78,8 @@ pub struct CatalogEntry {
 
 #[tauri::command]
 pub fn profiles_list() -> Vec<ProfileSummary> {
-    schema::list()
+    ordered_profiles()
         .into_iter()
-        .map(normalize_legacy_profile)
         .map(|p| {
             let provider = catalog::get(&p.provider);
             let (label, icon) = match provider {
@@ -142,6 +142,7 @@ pub fn profiles_upsert(app: tauri::AppHandle, profile: ProfileDef) -> Result<(),
         }
     }
     schema::save(&profile).map_err(|e| e.to_string())?;
+    ensure_profile_order_contains(&profile.id)?;
     emit_launch_config_changed(&app);
     Ok(())
 }
@@ -150,6 +151,34 @@ pub fn profiles_upsert(app: tauri::AppHandle, profile: ProfileDef) -> Result<(),
 pub fn profiles_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
     schema::delete(&id).map_err(|e| e.to_string())?;
     clear_default_profile_references(&id)?;
+    emit_launch_config_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn profiles_reorder(app: tauri::AppHandle, profile_ids: Vec<String>) -> Result<(), String> {
+    let profiles: Vec<_> = schema::list()
+        .into_iter()
+        .map(normalize_legacy_profile)
+        .collect();
+    let existing_ids: HashSet<_> = profiles.iter().map(|profile| profile.id.as_str()).collect();
+    let mut seen = HashSet::new();
+    let mut ordered_ids = Vec::new();
+
+    for id in profile_ids {
+        let id = id.trim();
+        if existing_ids.contains(id) && seen.insert(id.to_string()) {
+            ordered_ids.push(id.to_string());
+        }
+    }
+
+    for profile in profiles {
+        if seen.insert(profile.id.clone()) {
+            ordered_ids.push(profile.id);
+        }
+    }
+
+    write_profile_order(&ordered_ids)?;
     emit_launch_config_changed(&app);
     Ok(())
 }
@@ -386,6 +415,23 @@ fn canonical_agent_id(agent_id: &str) -> String {
         .unwrap_or_else(|| agent_id.to_string())
 }
 
+pub(crate) fn ordered_profiles() -> Vec<ProfileDef> {
+    let mut remaining: Vec<_> = schema::list()
+        .into_iter()
+        .map(normalize_legacy_profile)
+        .collect();
+    let mut out = Vec::new();
+
+    for id in read_profile_order() {
+        if let Some(index) = remaining.iter().position(|profile| profile.id == id) {
+            out.push(remaining.remove(index));
+        }
+    }
+
+    out.extend(remaining);
+    out
+}
+
 fn clear_default_profile_references(profile_id: &str) -> Result<(), String> {
     config::update_settings_json(|root| {
         if let Some(obj) = root.as_object_mut() {
@@ -400,9 +446,65 @@ fn clear_default_profile_references(profile_id: &str) -> Result<(), String> {
             if remove_default_profiles {
                 obj.remove("default_profiles");
             }
+            if let Some(order) = obj
+                .get_mut("profile_order")
+                .and_then(|value| value.as_array_mut())
+            {
+                order.retain(|value| value.as_str() != Some(profile_id));
+                if order.is_empty() {
+                    obj.remove("profile_order");
+                }
+            }
         }
     })
     .map_err(|e| e.to_string())
+}
+
+fn read_profile_order() -> Vec<String> {
+    let path = config::data_dir().join("settings.json");
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|data| serde_json::from_str::<serde_json::Value>(&data).ok())
+        .and_then(|root| {
+            root.get("profile_order")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str())
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect()
+                })
+        })
+        .unwrap_or_default()
+}
+
+fn write_profile_order(profile_ids: &[String]) -> Result<(), String> {
+    config::update_settings_json(|root| {
+        if let Some(obj) = root.as_object_mut() {
+            obj.insert(
+                "profile_order".to_string(),
+                serde_json::Value::Array(
+                    profile_ids
+                        .iter()
+                        .map(|id| serde_json::Value::String(id.clone()))
+                        .collect(),
+                ),
+            );
+        }
+    })
+    .map_err(|e| e.to_string())
+}
+
+fn ensure_profile_order_contains(profile_id: &str) -> Result<(), String> {
+    let mut order = read_profile_order();
+    if !order.iter().any(|id| id == profile_id) {
+        order.push(profile_id.to_string());
+        write_profile_order(&order)?;
+    }
+    Ok(())
 }
 
 fn emit_launch_config_changed(app: &tauri::AppHandle) {

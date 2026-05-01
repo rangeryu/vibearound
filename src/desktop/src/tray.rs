@@ -212,10 +212,7 @@ fn build_profile_submenus<R: Runtime>(
     app: &AppHandle<R>,
     launch_enabled: bool,
 ) -> tauri::Result<Vec<tauri::menu::Submenu<R>>> {
-    let profiles: Vec<_> = common::profiles::schema::list()
-        .into_iter()
-        .map(common::profiles::normalize_legacy_profile)
-        .collect();
+    let profiles = crate::profiles::ordered_profiles();
 
     if profiles.is_empty() {
         return Ok(Vec::new());

@@ -6,6 +6,7 @@
  * provider's API kinds.
  */
 import { useCallback, useEffect, useState } from "react";
+import type { DragEvent } from "react";
 import { Plus, Rocket } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import {
   launchProfile,
   listCatalog,
   listProfiles,
+  reorderProfiles,
   setLauncherDefault,
   upsertProfile,
   type LauncherPreferences,
@@ -39,6 +41,9 @@ export function Launch() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<ProfileDef | null>(null);
   const [directBusy, setDirectBusy] = useState(false);
+  const [draggedProfileId, setDraggedProfileId] = useState<string | null>(null);
+  const [dragOverProfileId, setDragOverProfileId] = useState<string | null>(null);
+  const [reorderBusy, setReorderBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -147,6 +152,36 @@ export function Launch() {
     await refresh();
   }
 
+  async function handleProfileDrop(
+    event: DragEvent<HTMLDivElement>,
+    targetProfileId: string,
+  ) {
+    event.preventDefault();
+    const draggedId = draggedProfileId || event.dataTransfer.getData("text/plain");
+    setDraggedProfileId(null);
+    setDragOverProfileId(null);
+    if (!draggedId || draggedId === targetProfileId || reorderBusy) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const placeAfter = event.clientY > rect.top + rect.height / 2;
+    const nextProfiles = moveProfile(profiles, draggedId, targetProfileId, placeAfter);
+    if (nextProfiles === profiles) return;
+
+    const previousProfiles = profiles;
+    setProfiles(nextProfiles);
+    setError(null);
+    setReorderBusy(true);
+    try {
+      await reorderProfiles(nextProfiles.map((profile) => profile.id));
+      setToast("Profile order updated");
+    } catch (e) {
+      setProfiles(previousProfiles);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReorderBusy(false);
+    }
+  }
+
   return (
     <div className="h-full flex flex-col">
       <header className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
@@ -210,16 +245,54 @@ export function Launch() {
               <EmptyState onNew={openNewEditor} />
             ) : (
               profiles.map((p) => (
-                <ProfileCard
+                <div
                   key={p.id}
-                  profile={p}
-                  onLaunch={(t) => handleLaunch(p, t)}
-                  onSetDefault={(t) => handleSetDefault(t, p.id)}
-                  onEdit={() => handleEdit(p)}
-                  onDelete={() => handleDelete(p)}
-                  defaultAgent={prefs?.defaultAgent}
-                  defaultProfiles={prefs?.defaultProfiles}
-                />
+                  onDragOver={(event) => {
+                    if (!draggedProfileId || draggedProfileId === p.id || reorderBusy) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDragOverProfileId(p.id);
+                  }}
+                  onDragLeave={(event) => {
+                    const nextTarget = event.relatedTarget;
+                    if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+                      setDragOverProfileId((id) => (id === p.id ? null : id));
+                    }
+                  }}
+                  onDrop={(event) => {
+                    void handleProfileDrop(event, p.id);
+                  }}
+                  className={`rounded-md transition-shadow ${
+                    dragOverProfileId === p.id ? "ring-2 ring-primary/40" : ""
+                  }`}
+                >
+                  <ProfileCard
+                    profile={p}
+                    onLaunch={(t) => handleLaunch(p, t)}
+                    onSetDefault={(t) => handleSetDefault(t, p.id)}
+                    onEdit={() => handleEdit(p)}
+                    onDelete={() => handleDelete(p)}
+                    defaultAgent={prefs?.defaultAgent}
+                    defaultProfiles={prefs?.defaultProfiles}
+                    isDragging={draggedProfileId === p.id}
+                    dragHandleProps={{
+                      draggable: !reorderBusy,
+                      onDragStart: (event) => {
+                        if (reorderBusy) {
+                          event.preventDefault();
+                          return;
+                        }
+                        setDraggedProfileId(p.id);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", p.id);
+                      },
+                      onDragEnd: () => {
+                        setDraggedProfileId(null);
+                        setDragOverProfileId(null);
+                      },
+                    }}
+                  />
+                </div>
               ))
             )}
           </>
@@ -239,6 +312,24 @@ export function Launch() {
       )}
     </div>
   );
+}
+
+function moveProfile(
+  profiles: ProfileSummary[],
+  draggedId: string,
+  targetId: string,
+  placeAfter: boolean,
+): ProfileSummary[] {
+  const fromIndex = profiles.findIndex((profile) => profile.id === draggedId);
+  if (fromIndex === -1) return profiles;
+
+  const next = [...profiles];
+  const [dragged] = next.splice(fromIndex, 1);
+  const targetIndex = next.findIndex((profile) => profile.id === targetId);
+  if (targetIndex === -1) return profiles;
+
+  next.splice(placeAfter ? targetIndex + 1 : targetIndex, 0, dragged);
+  return next;
 }
 
 function quickLaunchTitle(

@@ -18,6 +18,10 @@ export function deleteProfile(id: string): Promise<void> {
   return invoke<void>("profiles_delete", { id });
 }
 
+export function reorderProfiles(profileIds: string[]): Promise<void> {
+  return invoke<void>("profiles_reorder", { profileIds });
+}
+
 export function launchProfile(id: string, launchTarget: string): Promise<void> {
   return invoke<void>("profiles_launch", { id, launchTarget });
 }

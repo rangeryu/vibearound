@@ -208,6 +208,7 @@ fn main() {
             profiles::profiles_get,
             profiles::profiles_upsert,
             profiles::profiles_delete,
+            profiles::profiles_reorder,
             profiles::profiles_launch,
             profiles::profiles_launch_default,
             profiles::profiles_launch_direct,

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { AlertTriangle, MoreVertical, Pencil, Star, Trash2 } from "lucide-react";
+import type { HTMLAttributes } from "react";
+import { AlertTriangle, GripVertical, MoreVertical, Pencil, Star, Trash2 } from "lucide-react";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,8 @@ interface Props {
   onDelete: () => Promise<void>;
   defaultAgent?: string;
   defaultProfiles?: Record<string, string>;
+  dragHandleProps?: HTMLAttributes<HTMLButtonElement>;
+  isDragging?: boolean;
 }
 
 export function ProfileCard({
@@ -31,6 +34,8 @@ export function ProfileCard({
   onDelete,
   defaultAgent,
   defaultProfiles = {},
+  dragHandleProps,
+  isDragging = false,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [defaultBusy, setDefaultBusy] = useState<string | null>(null);
@@ -64,7 +69,11 @@ export function ProfileCard({
   }
 
   return (
-    <div className="border border-border rounded-md p-2.5 flex flex-col gap-1.5 hover:border-primary/40 transition-colors">
+    <div
+      className={`border border-border rounded-md p-2.5 flex flex-col gap-1.5 hover:border-primary/40 transition-colors ${
+        isDragging ? "opacity-55" : ""
+      }`}
+    >
       <div className="flex items-start gap-2">
         <BrandIcon
           kind="provider"
@@ -79,6 +88,16 @@ export function ProfileCard({
             {profile.providerLabel}
           </div>
         </div>
+        {dragHandleProps && (
+          <button
+            type="button"
+            aria-label={`Reorder ${profile.label}`}
+            className="h-6 w-6 shrink-0 rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground cursor-grab active:cursor-grabbing inline-flex items-center justify-center"
+            {...dragHandleProps}
+          >
+            <GripVertical className="w-3.5 h-3.5" />
+          </button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
