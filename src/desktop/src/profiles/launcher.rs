@@ -22,7 +22,6 @@ use anyhow::{anyhow, bail, Context};
 #[cfg(target_os = "windows")]
 use common::auth;
 use common::{config, profiles, resources};
-use toml_edit::{value, DocumentMut};
 
 use super::terminal::{self, TerminalChoice};
 use profiles::ProfileDef;
@@ -91,18 +90,33 @@ fn apply_codex_session_hooks(
     }
 
     let hook_helper = resolve_hook_helper_path()?;
-    for settings_file in &mut rendered.settings_files {
-        if settings_file.rel_path == "config.toml" {
-            settings_file.contents = rewrite_codex_config_for_session_hooks(
-                &settings_file.contents,
-                &hook_helper,
-                launch_id,
-                &profile.id,
-                launch_target,
-            )?;
-        }
-    }
+    push_codex_config_arg(&mut rendered.command_args, "features.codex_hooks", "true");
 
+    let command_for = |event: &str| {
+        build_hook_command(
+            &hook_helper,
+            event,
+            launch_id,
+            &profile.id,
+            launch_target,
+            &format!("http://127.0.0.1:{}", config::DEFAULT_PORT),
+        )
+    };
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        "hooks.SessionStart",
+        &codex_hook_config_value(Some("startup|resume|clear"), &command_for("SessionStart")),
+    );
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        "hooks.UserPromptSubmit",
+        &codex_hook_config_value(None, &command_for("UserPromptSubmit")),
+    );
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        "hooks.Stop",
+        &codex_hook_config_value(None, &command_for("Stop")),
+    );
     Ok(())
 }
 
@@ -147,97 +161,36 @@ fn apply_compatibility_proxy(
         launch_id
     );
 
-    for settings_file in &mut rendered.settings_files {
-        if settings_file.rel_path == "config.toml" {
-            settings_file.contents = rewrite_codex_config_for_proxy(
-                &settings_file.contents,
-                &profile.provider,
-                &proxy_base_url,
-            )?;
-        }
-    }
+    let provider_key = format!("model_providers.{}", profile.provider);
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        &format!("{provider_key}.base_url"),
+        &toml_basic_string(&proxy_base_url),
+    );
+    push_codex_config_arg(
+        &mut rendered.command_args,
+        &format!("{provider_key}.wire_api"),
+        &toml_basic_string("responses"),
+    );
 
     Ok(())
 }
 
-fn rewrite_codex_config_for_proxy(
-    contents: &str,
-    provider_id: &str,
-    proxy_base_url: &str,
-) -> anyhow::Result<String> {
-    let mut doc = contents
-        .parse::<DocumentMut>()
-        .context("parse generated Codex config.toml")?;
-    let provider = doc["model_providers"][provider_id]
-        .as_table_mut()
-        .ok_or_else(|| {
-            anyhow!(
-                "generated Codex config has no model_providers.{} table",
-                provider_id
-            )
-        })?;
-    provider["base_url"] = value(proxy_base_url);
-    provider["wire_api"] = value("responses");
-    Ok(doc.to_string())
+fn push_codex_config_arg(args: &mut Vec<String>, key: &str, value: &str) {
+    args.push("-c".to_string());
+    args.push(format!("{key}={value}"));
 }
 
-fn rewrite_codex_config_for_session_hooks(
-    contents: &str,
-    hook_helper: &Path,
-    launch_id: &str,
-    profile_id: &str,
-    launch_target: &str,
-) -> anyhow::Result<String> {
-    let mut doc = contents
-        .parse::<DocumentMut>()
-        .context("parse generated Codex config.toml")?;
-    doc["features"]["codex_hooks"] = value(true);
-
-    let command_for = |event: &str| {
-        build_hook_command(
-            hook_helper,
-            event,
-            launch_id,
-            profile_id,
-            launch_target,
-            &format!("http://127.0.0.1:{}", config::DEFAULT_PORT),
-        )
-    };
-    let hook_toml = format!(
-        r#"
-[[hooks.SessionStart]]
-matcher = "startup|resume|clear"
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = {}
-timeout = 5
-
-[[hooks.UserPromptSubmit]]
-[[hooks.UserPromptSubmit.hooks]]
-type = "command"
-command = {}
-timeout = 5
-
-[[hooks.Stop]]
-[[hooks.Stop.hooks]]
-type = "command"
-command = {}
-timeout = 5
-"#,
-        toml_basic_string(&command_for("SessionStart")),
-        toml_basic_string(&command_for("UserPromptSubmit")),
-        toml_basic_string(&command_for("Stop")),
-    );
-    hook_toml
-        .parse::<DocumentMut>()
-        .context("parse generated Codex hook config")?;
-
-    let mut out = doc.to_string();
-    if !out.ends_with('\n') {
-        out.push('\n');
+fn codex_hook_config_value(matcher: Option<&str>, command: &str) -> String {
+    let mut fields = Vec::new();
+    if let Some(matcher) = matcher {
+        fields.push(format!("matcher = {}", toml_basic_string(matcher)));
     }
-    out.push_str(&hook_toml);
-    Ok(out)
+    fields.push(format!(
+        "hooks = [{{ type = \"command\", command = {}, timeout = 5 }}]",
+        toml_basic_string(command)
+    ));
+    format!("[{{ {} }}]", fields.join(", "))
 }
 
 fn build_hook_command(
@@ -486,6 +439,7 @@ fn build_powershell_script(
     for (k, v) in env {
         out.push_str(&format!("$env:{} = '{}'\n", k, v.replace('\'', "''")));
     }
+    append_powershell_color_env(&mut out);
     out.push_str(&format!(
         "Set-Location -LiteralPath '{}'\n",
         escape_powershell_single_quoted(&workspace.to_string_lossy())
@@ -514,6 +468,7 @@ fn build_cmd_script(
     for (k, v) in env {
         out.push_str(&format!("set \"{}={}\"\r\n", k, v));
     }
+    append_cmd_color_env(&mut out);
     out.push_str(&format!(
         "cd /d \"{}\"\r\n",
         escape_cmd_quoted(&workspace.to_string_lossy())
@@ -561,6 +516,7 @@ fn build_bash_script(
         let escaped = shell_escape::unix::escape(std::borrow::Cow::Borrowed(v.as_str()));
         out.push_str(&format!("export {}={}\n", k, escaped));
     }
+    append_bash_color_env(&mut out);
 
     // `open -a Terminal foo.command` opens the new window with $TMPDIR as
     // CWD; surfacing the user in /private/var/folders/... is jarring. Move
@@ -573,14 +529,40 @@ fn build_bash_script(
     out
 }
 
+fn append_bash_color_env(out: &mut String) {
+    out.push_str("unset NO_COLOR\n");
+    out.push_str(
+        "if [ -z \"${TERM:-}\" ] || [ \"$TERM\" = \"dumb\" ]; then export TERM=xterm-256color; fi\n",
+    );
+    out.push_str("export COLORTERM=${COLORTERM:-truecolor}\n");
+    out.push_str("export CLICOLOR=${CLICOLOR:-1}\n");
+}
+
 #[cfg(target_os = "windows")]
 fn escape_powershell_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
 }
 
 #[cfg(target_os = "windows")]
+fn append_powershell_color_env(out: &mut String) {
+    out.push_str("Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue\n");
+    out.push_str("if (-not $env:TERM -or $env:TERM -eq 'dumb') { $env:TERM = 'xterm-256color' }\n");
+    out.push_str("if (-not $env:COLORTERM) { $env:COLORTERM = 'truecolor' }\n");
+    out.push_str("if (-not $env:CLICOLOR) { $env:CLICOLOR = '1' }\n");
+}
+
+#[cfg(target_os = "windows")]
 fn escape_cmd_quoted(value: &str) -> String {
     value.replace('"', "\"\"")
+}
+
+#[cfg(target_os = "windows")]
+fn append_cmd_color_env(out: &mut String) {
+    out.push_str("set \"NO_COLOR=\"\r\n");
+    out.push_str("if not defined TERM set \"TERM=xterm-256color\"\r\n");
+    out.push_str("if /I \"%TERM%\"==\"dumb\" set \"TERM=xterm-256color\"\r\n");
+    out.push_str("if not defined COLORTERM set \"COLORTERM=truecolor\"\r\n");
+    out.push_str("if not defined CLICOLOR set \"CLICOLOR=1\"\r\n");
 }
 
 #[cfg(target_os = "windows")]
@@ -629,58 +611,59 @@ mod tests {
     }
 
     #[test]
-    fn rewrites_codex_chat_config_for_proxy() {
-        let input = r#"model = "deepseek-chat"
-model_provider = "deepseek"
-model_reasoning_effort = "high"
-disable_response_storage = true
+    fn build_bash_script_restores_color_capable_terminal_env() {
+        let env = vec![("NO_COLOR".to_string(), "1".to_string())];
+        let script = build_bash_script(&env, "codex", "x", Path::new("/tmp/work dir"));
 
-[model_providers.deepseek]
-name = "DeepSeek"
-base_url = "https://api.deepseek.com/v1"
-wire_api = "chat"
-requires_openai_auth = true
-"#;
-
-        let output = rewrite_codex_config_for_proxy(
-            input,
-            "deepseek",
-            "http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1",
-        )
-        .unwrap();
-
-        assert!(output.contains(
-            r#"base_url = "http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1""#
-        ));
-        assert!(output.contains(r#"wire_api = "responses""#));
+        assert!(script.contains("export NO_COLOR=1\n"));
+        assert!(script.contains("unset NO_COLOR\n"));
+        assert!(script.contains("export TERM=xterm-256color"));
+        assert!(script.contains("export COLORTERM=${COLORTERM:-truecolor}\n"));
+        assert!(script.contains("export CLICOLOR=${CLICOLOR:-1}\n"));
+        assert!(script.find("export NO_COLOR=1").unwrap() < script.find("unset NO_COLOR").unwrap());
     }
 
     #[test]
-    fn rewrites_codex_config_for_session_hooks() {
-        let input = r#"model = "gpt-5.5"
-model_provider = "openai"
+    fn appends_codex_config_args_for_proxy() {
+        let mut args = Vec::new();
+        push_codex_config_arg(
+            &mut args,
+            "model_providers.deepseek.base_url",
+            &toml_basic_string("http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1"),
+        );
+        push_codex_config_arg(
+            &mut args,
+            "model_providers.deepseek.wire_api",
+            &toml_basic_string("responses"),
+        );
 
-[model_providers.openai]
-name = "OpenAI"
-base_url = "https://api.openai.com/v1"
-wire_api = "responses"
-"#;
+        assert_eq!(
+            args,
+            vec![
+                "-c".to_string(),
+                "model_providers.deepseek.base_url=\"http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1\"".to_string(),
+                "-c".to_string(),
+                "model_providers.deepseek.wire_api=\"responses\"".to_string(),
+            ]
+        );
+    }
 
-        let output = super::rewrite_codex_config_for_session_hooks(
-            input,
+    #[test]
+    fn builds_codex_hook_config_arg_value() {
+        let command = build_hook_command(
             Path::new("/Applications/VibeAround.app/Contents/MacOS/vibearound-hook"),
+            "SessionStart",
             "launch-123",
             "profile-456",
             "codex",
-        )
-        .unwrap();
+            "http://127.0.0.1:12358",
+        );
+        let value = codex_hook_config_value(Some("startup|resume|clear"), &command);
 
-        assert!(output.contains("codex_hooks = true"));
-        assert!(output.contains("[[hooks.SessionStart]]"));
-        assert!(output.contains("matcher = \"startup|resume|clear\""));
-        assert!(output.contains("[[hooks.UserPromptSubmit.hooks]]"));
-        assert!(output.contains("[[hooks.Stop.hooks]]"));
-        assert!(output.contains("--launch-id launch-123"));
-        assert!(output.contains("--profile-id profile-456"));
+        assert!(value.starts_with("[{ matcher = \"startup|resume|clear\""));
+        assert!(value.contains("hooks = [{ type = \"command\""));
+        assert!(value.contains("--launch-id launch-123"));
+        assert!(value.contains("--profile-id profile-456"));
+        assert!(value.ends_with(" }]"));
     }
 }

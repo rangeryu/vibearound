@@ -13,8 +13,10 @@ use serde_json::{json, Value};
 
 use common::profiles::{catalog, normalize_legacy_profile, schema};
 
+use crate::agent_hooks::CodexSessionState;
 use crate::openai_proxy::{
-    chat_completion_to_response, encode_sse_event, providers::ProviderProxyAdapter,
+    chat_completion_to_response, encode_sse_event,
+    providers::{ProviderProxyAdapter, ProviderProxyContext},
     responses_to_chat_request, ChatToResponsesStream, ProxyTransformError,
 };
 
@@ -58,7 +60,11 @@ async fn responses_handler_inner(
     let codex_session_state = launch_id
         .as_deref()
         .and_then(|launch_id| state.hook_registry.codex_session_for_launch(launch_id));
-    let upstream_endpoint = match upstream_chat_completions_endpoint(&profile_id) {
+    let provider_context =
+        provider_proxy_context(launch_id.as_deref(), codex_session_state.as_ref());
+    let upstream_endpoint_result =
+        upstream_chat_completions_endpoint(&profile_id, provider_context);
+    let upstream_endpoint = match upstream_endpoint_result {
         Ok(endpoint) => endpoint,
         Err((status, message)) => return json_error(status, &message),
     };
@@ -170,8 +176,20 @@ struct UpstreamChatCompletionsEndpoint {
     provider_adapter: ProviderProxyAdapter,
 }
 
+fn provider_proxy_context(
+    launch_id: Option<&str>,
+    codex_session_state: Option<&CodexSessionState>,
+) -> ProviderProxyContext {
+    ProviderProxyContext {
+        launch_id: launch_id.map(str::to_string),
+        session_id: codex_session_state.and_then(|state| state.session_id.clone()),
+        transcript_path: codex_session_state.and_then(|state| state.transcript_path.clone()),
+    }
+}
+
 fn upstream_chat_completions_endpoint(
     profile_id: &str,
+    provider_context: ProviderProxyContext,
 ) -> Result<UpstreamChatCompletionsEndpoint, (StatusCode, String)> {
     let profile = schema::load(profile_id)
         .map(normalize_legacy_profile)
@@ -214,7 +232,7 @@ fn upstream_chat_completions_endpoint(
     }
     Ok(UpstreamChatCompletionsEndpoint {
         url: format!("{base_url}/chat/completions"),
-        provider_adapter: ProviderProxyAdapter::for_profile(&profile),
+        provider_adapter: ProviderProxyAdapter::for_profile(&profile, provider_context),
     })
 }
 

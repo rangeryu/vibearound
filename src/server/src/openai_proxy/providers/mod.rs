@@ -5,6 +5,13 @@ use serde_json::Value;
 
 use self::deepseek::DeepSeekProxyAdapter;
 
+#[derive(Debug, Clone, Default)]
+pub struct ProviderProxyContext {
+    pub launch_id: Option<String>,
+    pub session_id: Option<String>,
+    pub transcript_path: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub enum ProviderProxyAdapter {
     None,
@@ -12,11 +19,12 @@ pub enum ProviderProxyAdapter {
 }
 
 impl ProviderProxyAdapter {
-    pub fn for_profile(profile: &ProfileDef) -> Self {
+    pub fn for_profile(profile: &ProfileDef, context: ProviderProxyContext) -> Self {
         match profile.provider.as_str() {
             "deepseek" => Self::DeepSeek(DeepSeekProxyAdapter::new(
                 profile.id.clone(),
                 profile.provider_settings.deepseek.clone(),
+                context,
             )),
             _ => Self::None,
         }
