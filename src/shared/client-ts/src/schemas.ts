@@ -59,6 +59,22 @@ export const AgentsConfigSchema = z.object({
 });
 export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
 
+export const ProfileLaunchTargetSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  api_type: z.string(),
+});
+export type ProfileLaunchTarget = z.infer<typeof ProfileLaunchTargetSchema>;
+
+export const ProfileLaunchOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  provider: z.string(),
+  launch_targets: z.array(ProfileLaunchTargetSchema),
+});
+export type ProfileLaunchOption = z.infer<typeof ProfileLaunchOptionSchema>;
+export const ProfileLaunchOptionsSchema = z.array(ProfileLaunchOptionSchema);
+
 // ---------------------------------------------------------------------------
 // PTY sessions and workspace/previews endpoints.
 // ---------------------------------------------------------------------------
@@ -91,6 +107,9 @@ export const SessionListItemSchema = z.object({
   status: PtyRunStateSchema,
   created_at: z.number(),
   project_path: z.string().nullable(),
+  profile_id: z.string().nullable(),
+  profile_label: z.string().nullable(),
+  launch_target: z.string().nullable(),
   tmux_session: z.string().nullable(),
 });
 export type SessionListItem = z.infer<typeof SessionListItemSchema>;
@@ -101,6 +120,9 @@ export const CreateSessionResponseSchema = z.object({
   tool: PtyToolSchema,
   created_at: z.number(),
   project_path: z.string().nullable(),
+  profile_id: z.string().nullable(),
+  profile_label: z.string().nullable(),
+  launch_target: z.string().nullable(),
 });
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>;
 

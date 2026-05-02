@@ -3,6 +3,31 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
 
+const backendTarget = process.env.VITE_VA_BACKEND_URL ?? "http://127.0.0.1:12358";
+const backendProxy = {
+  "/va/api": {
+    target: backendTarget,
+    changeOrigin: true,
+  },
+  "/va/mcp": {
+    target: backendTarget,
+    changeOrigin: true,
+  },
+  "/va/ws": {
+    target: backendTarget,
+    changeOrigin: true,
+    ws: true,
+  },
+  "/va/preview": {
+    target: backendTarget,
+    changeOrigin: true,
+  },
+  "/va/md-preview": {
+    target: backendTarget,
+    changeOrigin: true,
+  },
+};
+
 export default defineConfig({
   base: "/va/",
   plugins: [react(), tailwindcss()],
@@ -19,5 +44,9 @@ export default defineConfig({
   server: {
     port: 5180,
     strictPort: true,
+    proxy: backendProxy,
+  },
+  preview: {
+    proxy: backendProxy,
   },
 });

@@ -48,9 +48,12 @@ function mapApiTool(s: string): ToolType {
 }
 
 export function sessionListItemToSession(item: SessionListItem): TerminalSession {
+  const baseName = item.profile_label
+    ? `${sessionToName(item.launch_target ?? item.tool)} · ${item.profile_label}`
+    : sessionToName(item.tool);
   return {
     id: item.session_id,
-    name: item.tmux_session ? `tmux: ${item.tmux_session}` : sessionToName(item.tool),
+    name: item.tmux_session ? `tmux: ${item.tmux_session}` : baseName,
     group: DEFAULT_GROUP_ID,
     tool: mapApiTool(item.tool),
     status: mapApiStatus(item.status),
@@ -58,6 +61,9 @@ export function sessionListItemToSession(item: SessionListItem): TerminalSession
     cwd: item.project_path ?? "—",
     startedAt: item.created_at * 1000,
     createdAt: item.created_at,
+    profileId: item.profile_id ?? undefined,
+    profileLabel: item.profile_label ?? undefined,
+    launchTarget: item.launch_target ?? undefined,
     tmuxSession: item.tmux_session ?? undefined,
   };
 }
