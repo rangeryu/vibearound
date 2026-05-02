@@ -5687,6 +5687,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vibearound-hook"
+version = "0.5.2"
+dependencies = [
+ "anyhow",
+ "serde_json",
+]
+
+[[package]]
 name = "vswhom"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

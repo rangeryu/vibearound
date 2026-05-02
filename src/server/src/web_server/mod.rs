@@ -2,6 +2,7 @@
 //! agent chat WS at /ws/chat, live preview (/preview/:slug with iframe wrapper + reverse proxy),
 //! and MCP endpoint at /mcp.
 
+mod agent_hooks;
 mod api;
 mod auth;
 mod mcp;
@@ -22,6 +23,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
+use crate::agent_hooks::AgentHookRegistry;
 use common::auth::AuthToken;
 use common::channels::{ChannelManager, WebChannelManager};
 use common::pty::{PtySessionManager, Registry};
@@ -61,6 +63,8 @@ pub(crate) struct AppState {
     port: u16,
     /// Shared HTTP client for preview proxy (connection pooling).
     preview_client: reqwest::Client,
+    /// Codex/agent lifecycle events received from bundled hook helpers.
+    hook_registry: Arc<AgentHookRegistry>,
 }
 
 /// Ensure web dist exists (build web first).
@@ -119,6 +123,7 @@ pub async fn run_web_server(
     channel_hub: Arc<ChannelManager>,
     web_channel: Arc<WebChannelManager>,
     auth_token: Arc<AuthToken>,
+    hook_registry: Arc<AgentHookRegistry>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     verify_web_dist(&dist_path)?;
     let web_dist = dist_path
@@ -143,6 +148,7 @@ pub async fn run_web_server(
         web_channel,
         port,
         preview_client,
+        hook_registry,
     };
 
     let auth_state = AuthState(Arc::clone(&auth_token));
@@ -226,6 +232,10 @@ pub async fn run_web_server(
         .route(
             "/openai-proxy/{profile_id}/v1/responses",
             post(openai_proxy::responses_handler),
+        )
+        .route(
+            "/internal/agent-hooks/codex",
+            post(agent_hooks::codex_hook_handler),
         )
         // Pairing API: no auth required (pairing IS the auth flow).
         .route("/api/pair/start", post(pair::start_handler))

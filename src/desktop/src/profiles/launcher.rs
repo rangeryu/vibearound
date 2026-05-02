@@ -15,9 +15,7 @@
 //!   two are not interchangeable.
 
 use std::collections::HashMap;
-use std::path::Path;
-#[cfg(target_os = "windows")]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context};
 
@@ -59,10 +57,19 @@ pub fn launch_direct(agent_id: &str) -> anyhow::Result<()> {
 fn do_launch(
     profile: &ProfileDef,
     launch_target: &str,
-    rendered: profiles::render::RenderedProfile,
+    mut rendered: profiles::render::RenderedProfile,
 ) -> anyhow::Result<()> {
+    let launch_id = uuid::Uuid::new_v4().to_string();
+    apply_codex_session_hooks(profile, launch_target, &launch_id, &mut rendered)?;
+
     let command_args = rendered.command_args.clone();
-    let env = profiles::runtime::materialize_env(&profile.id, rendered)?;
+    let mut env = profiles::runtime::materialize_env(&profile.id, rendered)?;
+    env.push(("VIBEAROUND_LAUNCH_ID".to_string(), launch_id));
+    env.push(("VIBEAROUND_PROFILE_ID".to_string(), profile.id.clone()));
+    env.push((
+        "VIBEAROUND_LAUNCH_TARGET".to_string(),
+        launch_target.to_string(),
+    ));
     let agent_id = profiles::runtime::agent_id_for(launch_target)?;
     let agent = resources::agent_by_id(agent_id)
         .ok_or_else(|| anyhow!("agent '{}' not found in agents.json", agent_id))?;
@@ -70,6 +77,32 @@ fn do_launch(
     let workspace = terminal::resolve_workspace_preference()?;
 
     spawn_terminal(&env, &pty_command, &profile.label, &workspace)?;
+    Ok(())
+}
+
+fn apply_codex_session_hooks(
+    profile: &ProfileDef,
+    launch_target: &str,
+    launch_id: &str,
+    rendered: &mut profiles::render::RenderedProfile,
+) -> anyhow::Result<()> {
+    if launch_target != "codex" {
+        return Ok(());
+    }
+
+    let hook_helper = resolve_hook_helper_path()?;
+    for settings_file in &mut rendered.settings_files {
+        if settings_file.rel_path == "config.toml" {
+            settings_file.contents = rewrite_codex_config_for_session_hooks(
+                &settings_file.contents,
+                &hook_helper,
+                launch_id,
+                &profile.id,
+                launch_target,
+            )?;
+        }
+    }
+
     Ok(())
 }
 
@@ -144,6 +177,157 @@ fn rewrite_codex_config_for_proxy(
     provider["base_url"] = value(proxy_base_url);
     provider["wire_api"] = value("responses");
     Ok(doc.to_string())
+}
+
+fn rewrite_codex_config_for_session_hooks(
+    contents: &str,
+    hook_helper: &Path,
+    launch_id: &str,
+    profile_id: &str,
+    launch_target: &str,
+) -> anyhow::Result<String> {
+    let mut doc = contents
+        .parse::<DocumentMut>()
+        .context("parse generated Codex config.toml")?;
+    doc["features"]["codex_hooks"] = value(true);
+
+    let command_for = |event: &str| {
+        build_hook_command(
+            hook_helper,
+            event,
+            launch_id,
+            profile_id,
+            launch_target,
+            &format!("http://127.0.0.1:{}", config::DEFAULT_PORT),
+        )
+    };
+    let hook_toml = format!(
+        r#"
+[[hooks.SessionStart]]
+matcher = "startup|resume|clear"
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = {}
+timeout = 5
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = {}
+timeout = 5
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = {}
+timeout = 5
+"#,
+        toml_basic_string(&command_for("SessionStart")),
+        toml_basic_string(&command_for("UserPromptSubmit")),
+        toml_basic_string(&command_for("Stop")),
+    );
+    hook_toml
+        .parse::<DocumentMut>()
+        .context("parse generated Codex hook config")?;
+
+    let mut out = doc.to_string();
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&hook_toml);
+    Ok(out)
+}
+
+fn build_hook_command(
+    hook_helper: &Path,
+    event: &str,
+    launch_id: &str,
+    profile_id: &str,
+    launch_target: &str,
+    server_url: &str,
+) -> String {
+    [
+        quote_hook_arg(&hook_helper.to_string_lossy()),
+        "--agent".to_string(),
+        quote_hook_arg("codex"),
+        "--event".to_string(),
+        quote_hook_arg(event),
+        "--launch-id".to_string(),
+        quote_hook_arg(launch_id),
+        "--profile-id".to_string(),
+        quote_hook_arg(profile_id),
+        "--launch-target".to_string(),
+        quote_hook_arg(launch_target),
+        "--server".to_string(),
+        quote_hook_arg(server_url),
+    ]
+    .join(" ")
+}
+
+fn resolve_hook_helper_path() -> anyhow::Result<PathBuf> {
+    let exe = std::env::current_exe().context("resolve current executable")?;
+    let exe_dir = exe
+        .parent()
+        .ok_or_else(|| anyhow!("current executable has no parent: {:?}", exe))?;
+    let sidecar_dir = if exe_dir.ends_with("deps") {
+        exe_dir.parent().unwrap_or(exe_dir)
+    } else {
+        exe_dir
+    };
+    let candidate = sidecar_dir.join(hook_helper_name());
+    if candidate.exists() {
+        return Ok(candidate);
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let dev_candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../target/debug")
+            .join(hook_helper_name());
+        if dev_candidate.exists() {
+            return Ok(dev_candidate);
+        }
+    }
+
+    bail!(
+        "VibeAround hook helper not found next to executable: {:?}",
+        candidate
+    )
+}
+
+fn hook_helper_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "vibearound-hook.exe"
+    } else {
+        "vibearound-hook"
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn quote_hook_arg(value: &str) -> String {
+    shell_escape::unix::escape(std::borrow::Cow::Borrowed(value)).into_owned()
+}
+
+#[cfg(target_os = "windows")]
+fn quote_hook_arg(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\\\""))
+}
+
+fn toml_basic_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -467,5 +651,34 @@ requires_openai_auth = true
             output.contains(r#"base_url = "http://127.0.0.1:12358/va/openai-proxy/deepseek/v1""#)
         );
         assert!(output.contains(r#"wire_api = "responses""#));
+    }
+
+    #[test]
+    fn rewrites_codex_config_for_session_hooks() {
+        let input = r#"model = "gpt-5.5"
+model_provider = "openai"
+
+[model_providers.openai]
+name = "OpenAI"
+base_url = "https://api.openai.com/v1"
+wire_api = "responses"
+"#;
+
+        let output = super::rewrite_codex_config_for_session_hooks(
+            input,
+            Path::new("/Applications/VibeAround.app/Contents/MacOS/vibearound-hook"),
+            "launch-123",
+            "profile-456",
+            "codex",
+        )
+        .unwrap();
+
+        assert!(output.contains("codex_hooks = true"));
+        assert!(output.contains("[[hooks.SessionStart]]"));
+        assert!(output.contains("matcher = \"startup|resume|clear\""));
+        assert!(output.contains("[[hooks.UserPromptSubmit.hooks]]"));
+        assert!(output.contains("[[hooks.Stop.hooks]]"));
+        assert!(output.contains("--launch-id launch-123"));
+        assert!(output.contains("--profile-id profile-456"));
     }
 }

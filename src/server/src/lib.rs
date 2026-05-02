@@ -1,5 +1,6 @@
 //! VibeAround server crate: Axum HTTP + WebSocket, and the unified ServerDaemon entry point.
 
+pub mod agent_hooks;
 pub mod api_types;
 pub mod openai_proxy;
 mod web_server;
@@ -42,6 +43,7 @@ pub struct RunningDaemon {
     pub web_dispatch_handle: JoinHandle<()>,
     pub tunnels: Arc<TunnelManager>,
     pub pty: Registry,
+    pub hook_registry: Arc<agent_hooks::AgentHookRegistry>,
     /// Signal to the channel-input OS thread that it should unwind.
     /// Dropped sender = no wake-up ever, so we hold this for the life of
     /// `RunningDaemon` and signal on `stop()`.
@@ -233,11 +235,13 @@ impl ServerDaemon {
         }
 
         // 4. Web server (Axum)
+        let hook_registry = agent_hooks::AgentHookRegistry::new();
         let web_tunnels = Arc::clone(&tunnels);
         let web_pty = Arc::clone(&pty);
         let web_channel_hub = Arc::clone(&channel_hub);
         let web_channel_manager = Arc::clone(&web_channel);
         let web_auth_token = Arc::clone(&self.auth_token);
+        let web_hook_registry = Arc::clone(&hook_registry);
         let daemon_port = self.port;
         let web_handle = tokio::spawn(async move {
             run_web_server(
@@ -248,6 +252,7 @@ impl ServerDaemon {
                 web_channel_hub,
                 web_channel_manager,
                 web_auth_token,
+                web_hook_registry,
             )
             .await
             .map_err(|e| e.to_string())
@@ -286,6 +291,7 @@ impl ServerDaemon {
             web_dispatch_handle,
             tunnels,
             pty,
+            hook_registry,
             channel_input_shutdown,
             channel_input_thread: Some(channel_input_thread),
         })
