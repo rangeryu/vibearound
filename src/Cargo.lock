@@ -5648,6 +5648,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "va-ai-api-proxy"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
