@@ -4,7 +4,6 @@ import { AlertTriangle, GripVertical, MoreVertical, Pencil, Star, Trash2 } from 
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,8 +11,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { ProfileSummary } from "./types";
-import { apiTypeBadge, apiTypeShort } from "./types";
+import { apiTypeShort } from "./types";
 
 interface Props {
   profile: ProfileSummary;
@@ -142,75 +147,83 @@ export function ProfileCard({
         </DropdownMenu>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mt-1">
-        {profile.launchTargets.map((target) => {
-          const warning = target.warning ?? profile.apiTypeWarnings[target.apiType];
-          const isDefault =
-            defaultAgent === target.id && defaultProfiles[target.id] === profile.id;
-          return (
-            <span key={target.id} className="inline-flex h-7 overflow-hidden rounded-md bg-primary/10 text-primary">
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => handleLaunch(target.id)}
-                disabled={busy}
-                className={`h-7 rounded-none bg-transparent px-2 font-mono text-[11px] text-primary hover:bg-primary/15 hover:text-primary ${
-                  isDefault ? "" : "pr-1.5"
-                }`}
-                title={
-                  warning
-                    ? `⚠ ${warning}\n\n(${t("Click to launch {{agent}} via {{apiType}} anyway.", {
-                        agent: target.label,
-                        apiType: apiTypeShort(target.apiType),
-                      })})`
-                    : t("Launch {{agent}} via {{apiType}}", {
-                        agent: target.label,
-                        apiType: apiTypeShort(target.apiType),
-                      })
-                }
-              >
-                <BrandIcon
-                  kind="cli"
-                  id={target.id}
-                  label={target.label}
-                  framed={false}
-                  className="h-3.5 w-3.5"
-                />
-                <span>{target.label}</span>
-                <Badge className="border-0 bg-transparent p-0 text-[11px] text-primary/55">
-                  · {apiTypeBadge(target.apiType)}
-                </Badge>
-                {isDefault && <Star className="w-3 h-3 fill-current" />}
-                {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
-              </Button>
-              {!isDefault && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  disabled={busy || defaultBusy === target.id}
-                  onClick={async () => {
-                    setDefaultBusy(target.id);
-                    try {
-                      await handleSetDefault(target.id);
-                    } finally {
-                      setDefaultBusy(null);
-                    }
-                  }}
-                  title={t("Use {{agent}} with {{profile}} as Quick Launch default", {
-                    agent: target.label,
-                    profile: profile.label,
-                  })}
-                  className="h-7 w-6 rounded-none border-l border-primary/15 bg-transparent text-primary/60 hover:bg-primary/15 hover:text-primary"
-                >
-                  <Star className="w-3 h-3" />
-                </Button>
-              )}
-            </span>
-          );
-        })}
-      </div>
+      <TooltipProvider>
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {profile.launchTargets.map((target) => {
+            const warning = target.warning ?? profile.apiTypeWarnings[target.apiType];
+            const isDefault =
+              defaultAgent === target.id && defaultProfiles[target.id] === profile.id;
+            const launchTooltip = warning
+              ? `⚠ ${warning}\n\n(${t("Click to launch {{agent}} via {{apiType}} anyway.", {
+                  agent: target.label,
+                  apiType: apiTypeShort(target.apiType),
+                })})`
+              : t("Launch {{agent}} via {{apiType}}", {
+                  agent: target.label,
+                  apiType: apiTypeShort(target.apiType),
+                });
+            return (
+              <span key={target.id} className="inline-flex h-7 overflow-hidden rounded-md bg-primary/10 text-primary">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => handleLaunch(target.id)}
+                      disabled={busy}
+                      className={`h-7 rounded-none bg-transparent px-2 font-mono text-[11px] text-primary hover:bg-primary/15 hover:text-primary ${
+                        isDefault ? "" : "pr-1.5"
+                      }`}
+                    >
+                      <BrandIcon
+                        kind="cli"
+                        id={target.id}
+                        label={target.label}
+                        framed={false}
+                        className="h-3.5 w-3.5"
+                      />
+                      <span>{target.label}</span>
+                      {isDefault && <Star className="w-3 h-3 fill-current" />}
+                      {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    sideOffset={6}
+                    className="max-w-72 whitespace-pre-line text-left"
+                  >
+                    {launchTooltip}
+                  </TooltipContent>
+                </Tooltip>
+                {!isDefault && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    disabled={busy || defaultBusy === target.id}
+                    onClick={async () => {
+                      setDefaultBusy(target.id);
+                      try {
+                        await handleSetDefault(target.id);
+                      } finally {
+                        setDefaultBusy(null);
+                      }
+                    }}
+                    title={t("Use {{agent}} with {{profile}} as Quick Launch default", {
+                      agent: target.label,
+                      profile: profile.label,
+                    })}
+                    className="h-7 w-6 rounded-none border-l border-primary/15 bg-transparent text-primary/60 hover:bg-primary/15 hover:text-primary"
+                  >
+                    <Star className="w-3 h-3" />
+                  </Button>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      </TooltipProvider>
     </div>
   );
 }
