@@ -146,6 +146,8 @@ fn normalize_chat_messages(messages: Vec<Value>) -> Vec<Value> {
         }
     }
 
+    rest = merge_consecutive_tool_calls(rest);
+
     if system_parts.is_empty() {
         return rest;
     }
@@ -367,6 +369,45 @@ fn copy_fields(from: &Map<String, Value>, to: &mut Map<String, Value>, names: &[
             to.insert((*name).to_string(), value.clone());
         }
     }
+}
+
+fn merge_consecutive_tool_calls(messages: Vec<Value>) -> Vec<Value> {
+    let mut merged: Vec<Value> = Vec::new();
+    let mut pending: Vec<Value> = Vec::new();
+
+    for message in messages {
+        let role = message.get("role").and_then(Value::as_str);
+        let is_placeholder = message.get("content").map(|c| c.is_null()).unwrap_or(false);
+        let has_tool_calls = message
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .is_some_and(|tc| !tc.is_empty());
+
+        if role == Some("assistant") && has_tool_calls && is_placeholder {
+            if let Some(tool_calls) = message.get("tool_calls").and_then(Value::as_array) {
+                pending.extend(tool_calls.clone());
+            }
+        } else {
+            if !pending.is_empty() {
+                merged.push(json!({
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": std::mem::take(&mut pending),
+                }));
+            }
+            merged.push(message);
+        }
+    }
+
+    if !pending.is_empty() {
+        merged.push(json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": pending,
+        }));
+    }
+
+    merged
 }
 
 fn value_to_text(value: &Value) -> Option<String> {
