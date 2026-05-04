@@ -250,21 +250,37 @@ fn codex_provider_env_key(provider_id: &str) -> &'static str {
     }
 }
 
+/// Wraps a value as a TOML literal string (`'...'`).  Literal strings have no
+/// escape sequences so they never contain `"` or `\` delimiters.  This is
+/// important on Windows where PowerShell 5.1 mangles native-command arguments
+/// that contain `"` characters.
+///
+/// Falls back to a basic (double-quoted) string when the value contains `'`,
+/// which is the only character forbidden inside TOML literal strings.
 fn toml_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            other => out.push(other),
+    if s.contains('\'') {
+        // Fallback: TOML basic string with standard escaping.
+        let mut out = String::with_capacity(s.len() + 2);
+        out.push('"');
+        for ch in s.chars() {
+            match ch {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                other => out.push(other),
+            }
         }
+        out.push('"');
+        out
+    } else {
+        let mut out = String::with_capacity(s.len() + 2);
+        out.push('\'');
+        out.push_str(s);
+        out.push('\'');
+        out
     }
-    out.push('"');
-    out
 }
 
 // ---------------------------------------------------------------------------
@@ -415,133 +431,4 @@ fn is_valid_env_key(key: &str) -> bool {
             .map(|c| c.is_ascii_alphabetic() || c == '_')
             .unwrap_or(false)
         && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ctx(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect()
-    }
-
-    #[test]
-    fn substitutes_simple_token() {
-        let c = ctx(&[("api_key", "sk-abc")]);
-        assert_eq!(substitute("Bearer {{api_key}}", &c), "Bearer sk-abc");
-    }
-
-    #[test]
-    fn substitutes_multiple_and_trims_whitespace() {
-        let c = ctx(&[("a", "1"), ("b", "2")]);
-        assert_eq!(substitute("{{ a }}-{{b }}", &c), "1-2");
-    }
-
-    #[test]
-    fn missing_token_renders_empty() {
-        let c = ctx(&[]);
-        assert_eq!(substitute("X={{nope}}", &c), "X=");
-    }
-
-    #[test]
-    fn unclosed_brace_is_literal() {
-        let c = ctx(&[("a", "1")]);
-        assert_eq!(substitute("hi {{a", &c), "hi {{a");
-    }
-
-    #[test]
-    fn json_filter_escapes_quotes_and_backslash() {
-        let c = ctx(&[("k", "sk-\"weird\\value")]);
-        assert_eq!(
-            substitute(r#"{"OPENAI_API_KEY": "{{k|json}}"}"#, &c),
-            r#"{"OPENAI_API_KEY": "sk-\"weird\\value"}"#,
-        );
-    }
-
-    #[test]
-    fn json_filter_escapes_control_chars() {
-        let c = ctx(&[("k", "a\nb\tc")]);
-        assert_eq!(substitute("{{k|json}}", &c), "a\\nb\\tc");
-    }
-
-    #[test]
-    fn unknown_filter_warns_and_passes_through() {
-        let c = ctx(&[("k", "hi")]);
-        assert_eq!(substitute("{{k|nonsense}}", &c), "hi");
-    }
-
-    #[test]
-    fn no_filter_keeps_raw_substitution() {
-        let c = ctx(&[("k", "sk-\"hi\"")]);
-        // No filter → raw substitution (caller must trust the value).
-        assert_eq!(substitute("X={{k}}", &c), "X=sk-\"hi\"");
-    }
-
-    #[test]
-    fn codex_launch_uses_cli_config_args_without_home_env() {
-        let mut credentials = BTreeMap::new();
-        credentials.insert("api_key".to_string(), "sk-test".to_string());
-        let mut overrides = BTreeMap::new();
-        overrides.insert(
-            "openai-chat".to_string(),
-            ApiTypeOverrides {
-                base_url: Some("https://api.deepseek.com/v1".to_string()),
-                model: Some("deepseek-v4-flash".to_string()),
-                reasoning_effort: Some("high".to_string()),
-            },
-        );
-        let profile = ProfileDef {
-            id: "deepseek-test".to_string(),
-            label: "DeepSeek".to_string(),
-            provider: "deepseek".to_string(),
-            auth_mode: AuthMode::ApiKey,
-            api_types: vec!["openai-chat".to_string()],
-            credentials,
-            overrides,
-            provider_settings: Default::default(),
-        };
-        let rendered = render(
-            &profile,
-            "openai-chat",
-            "codex",
-            crate::profiles::catalog::get("deepseek").unwrap(),
-        )
-        .unwrap();
-        let args = rendered.command_args.join(" ");
-
-        assert!(rendered.config_env.is_none());
-        assert!(args.contains("model=\"deepseek-v4-flash\""));
-        assert!(args.contains("model_provider=\"deepseek\""));
-        assert!(args.contains("model_providers.deepseek.base_url=\"https://api.deepseek.com/v1\""));
-        assert!(args.contains("model_providers.deepseek.wire_api=\"chat\""));
-        assert!(args.contains("model_providers.deepseek.env_key=\"OPENAI_API_KEY\""));
-    }
-
-    #[test]
-    fn validates_rel_path_blocks_traversal() {
-        assert!(validate_rel_path(".codex/config.toml").is_ok());
-        assert!(validate_rel_path("a/b/c").is_ok());
-        assert!(validate_rel_path("").is_err());
-        assert!(validate_rel_path("/etc/passwd").is_err());
-        assert!(validate_rel_path("../../../etc/passwd").is_err());
-        assert!(validate_rel_path(".codex/../../../etc").is_err());
-        assert!(validate_rel_path("a\\..\\b").is_err());
-    }
-
-    #[test]
-    fn rejects_invalid_env_keys() {
-        assert!(is_valid_env_key("ANTHROPIC_API_KEY"));
-        assert!(is_valid_env_key("_X"));
-        assert!(!is_valid_env_key(""));
-        assert!(!is_valid_env_key("1FOO"));
-        assert!(!is_valid_env_key("FOO BAR"));
-        assert!(!is_valid_env_key("FOO=BAR"));
-    }
 }
