@@ -182,8 +182,8 @@ where
         &mut on_log,
         &is_cancelled,
     )
-        .await
-        .context("npm install")?;
+    .await
+    .context("npm install")?;
     push_output_logs(&mut logs, "npm install", &output);
     if !output.status.success() {
         bail!(
@@ -200,8 +200,8 @@ where
         &mut on_log,
         &is_cancelled,
     )
-        .await
-        .context("npm run build")?;
+    .await
+    .context("npm run build")?;
     push_output_logs(&mut logs, "npm run build", &output);
     if !output.status.success() {
         bail!(

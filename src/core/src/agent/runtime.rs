@@ -47,10 +47,7 @@ use super::bridge::AcpAgentBridge;
 /// requests back through the ACP client channel.
 #[async_trait::async_trait(?Send)]
 pub trait AgentClientHandler: Send + Sync + 'static {
-    async fn session_notification(
-        &self,
-        args: acp::SessionNotification,
-    ) -> acp::Result<()>;
+    async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()>;
 
     async fn request_permission(
         &self,
@@ -106,12 +103,13 @@ impl Agent {
         let (program, resolved_args) = resolve_agent_program(&agent_id).await?;
         tracing::info!(
             "[{}] spawning {} {} in {:?}",
-            label, program, resolved_args.join(" "), cwd
+            label,
+            program,
+            resolved_args.join(" "),
+            cwd
         );
 
-        let mut spec = SpawnSpec::new(program)
-            .args(resolved_args)
-            .cwd(cwd.clone());
+        let mut spec = SpawnSpec::new(program).args(resolved_args).cwd(cwd.clone());
         for (k, v) in extra_env {
             spec = spec.env(k, v);
         }
@@ -194,7 +192,8 @@ impl Agent {
             if let Err(e) = Supervisor::global().force_stop(*id).await {
                 tracing::info!(
                     "[{}-agent] supervisor force_stop failed: {}",
-                    self.agent_id, e
+                    self.agent_id,
+                    e
                 );
             }
         }
@@ -207,28 +206,43 @@ impl Agent {
 
 #[async_trait::async_trait(?Send)]
 impl acp::Agent for Agent {
-    async fn initialize(&self, args: acp::InitializeRequest) -> acp::Result<acp::InitializeResponse> {
+    async fn initialize(
+        &self,
+        args: acp::InitializeRequest,
+    ) -> acp::Result<acp::InitializeResponse> {
         self.conn.initialize(args).await
     }
 
-    async fn authenticate(&self, args: acp::AuthenticateRequest) -> acp::Result<acp::AuthenticateResponse> {
+    async fn authenticate(
+        &self,
+        args: acp::AuthenticateRequest,
+    ) -> acp::Result<acp::AuthenticateResponse> {
         self.conn.authenticate(args).await
     }
 
-    async fn new_session(&self, args: acp::NewSessionRequest) -> acp::Result<acp::NewSessionResponse> {
+    async fn new_session(
+        &self,
+        args: acp::NewSessionRequest,
+    ) -> acp::Result<acp::NewSessionResponse> {
         let resp = self.conn.new_session(args).await?;
         *self.session_id.lock().await = Some(resp.session_id.to_string());
         Ok(resp)
     }
 
-    async fn load_session(&self, args: acp::LoadSessionRequest) -> acp::Result<acp::LoadSessionResponse> {
+    async fn load_session(
+        &self,
+        args: acp::LoadSessionRequest,
+    ) -> acp::Result<acp::LoadSessionResponse> {
         let session_id = args.session_id.clone();
         let resp = self.conn.load_session(args).await?;
         *self.session_id.lock().await = Some(session_id.to_string());
         Ok(resp)
     }
 
-    async fn set_session_mode(&self, args: acp::SetSessionModeRequest) -> acp::Result<acp::SetSessionModeResponse> {
+    async fn set_session_mode(
+        &self,
+        args: acp::SetSessionModeRequest,
+    ) -> acp::Result<acp::SetSessionModeResponse> {
         self.conn.set_session_mode(args).await
     }
 
@@ -319,4 +333,3 @@ async fn resolve_agent_program(agent_id: &str) -> anyhow::Result<(String, Vec<St
         Ok((agent_def.acp.program.clone(), agent_def.acp.args.clone()))
     }
 }
-

@@ -22,8 +22,8 @@
 //! [`Conversation`]: crate::conversations::Conversation
 
 mod bridge;
-mod mcp;
 pub mod install;
+mod mcp;
 pub mod runtime;
 mod skills;
 

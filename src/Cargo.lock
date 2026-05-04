@@ -4271,6 +4271,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "uuid",
+ "va-ai-api-proxy",
 ]
 
 [[package]]

@@ -91,17 +91,19 @@ fn ensure_session(
     let now = Instant::now();
 
     let mut sessions = SESSIONS.lock();
-    let session = sessions.entry(id.clone()).or_insert_with(|| PreviewSession {
-        id: id.clone(),
-        workspace: workspace.clone(),
-        title: title.clone(),
-        target: target.clone(),
-        slug: slug.clone(),
-        share_key: None,
-        share_expires_at: None,
-        owner_session: owner_session.clone(),
-        created_at: now,
-    });
+    let session = sessions
+        .entry(id.clone())
+        .or_insert_with(|| PreviewSession {
+            id: id.clone(),
+            workspace: workspace.clone(),
+            title: title.clone(),
+            target: target.clone(),
+            slug: slug.clone(),
+            share_key: None,
+            share_expires_at: None,
+            owner_session: owner_session.clone(),
+            created_at: now,
+        });
 
     // Refresh mutable fields on every call.
     session.workspace = workspace;
@@ -203,11 +205,7 @@ pub fn list_snapshots() -> Vec<PreviewSnapshot> {
 }
 
 /// Convert an `Instant` to unix-epoch milliseconds, using `now` as the pivot.
-fn instant_to_unix_ms(
-    point: Instant,
-    now_inst: Instant,
-    now_sys: std::time::SystemTime,
-) -> u64 {
+fn instant_to_unix_ms(point: Instant, now_inst: Instant, now_sys: std::time::SystemTime) -> u64 {
     let unix_now_ms = now_sys
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -370,12 +368,21 @@ mod tests {
         let (slug_a, _) = ensure_server(3456, path.clone(), "liquid".into(), None);
         let (slug_b, _) = ensure_server(5000, path.clone(), "python".into(), None);
 
-        assert_ne!(slug_a, slug_b, "same workspace + different ports must not collapse");
+        assert_ne!(
+            slug_a, slug_b,
+            "same workspace + different ports must not collapse"
+        );
 
         let entry_a = lookup_owner(&slug_a).expect("slug A still registered");
         let entry_b = lookup_owner(&slug_b).expect("slug B still registered");
-        assert!(matches!(entry_a.target, PreviewTarget::Server { port: 3456 }));
-        assert!(matches!(entry_b.target, PreviewTarget::Server { port: 5000 }));
+        assert!(matches!(
+            entry_a.target,
+            PreviewTarget::Server { port: 3456 }
+        ));
+        assert!(matches!(
+            entry_b.target,
+            PreviewTarget::Server { port: 5000 }
+        ));
     }
 
     #[test]

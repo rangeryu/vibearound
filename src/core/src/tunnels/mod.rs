@@ -104,8 +104,8 @@ impl TunnelGuard {
     pub async fn wait(self) {
         match self {
             TunnelGuard::Process { registry_id } => {
-                if let Some(mut child) = crate::process::registry::ChildRegistry::global()
-                    .remove(registry_id)
+                if let Some(mut child) =
+                    crate::process::registry::ChildRegistry::global().remove(registry_id)
                 {
                     let _ = child.wait().await;
                 }
@@ -119,7 +119,8 @@ impl TunnelGuard {
 
 /// Start the web tunnel using the default provider (Localtunnel) and global config.
 /// Returns (guard, public URL). Caller must keep the guard and await `guard.wait()` to keep the tunnel alive.
-pub async fn start_web_tunnel() -> Result<(TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_web_tunnel(
+) -> Result<(TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
     let config = crate::config::ensure_loaded();
     start_web_tunnel_with_provider(TunnelProvider::default(), &config).await
 }
@@ -134,4 +135,3 @@ pub async fn start_web_tunnel_with_provider(
         Option::None => Err("Tunnel provider is 'none' — no tunnel to start".into()),
     }
 }
-

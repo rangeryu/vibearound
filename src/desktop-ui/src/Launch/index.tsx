@@ -24,15 +24,23 @@ import {
   listProfiles,
   reorderProfiles,
   setLauncherDefault,
+  setProfileConnection,
   upsertProfile,
   type LauncherPreferences,
 } from "./api";
 import { DirectCards } from "./DirectCards";
 import { LaunchSettingsMenu } from "./LaunchSettingsMenu";
 import { ProfileCard } from "./ProfileCard";
+import { ProfileConnectionDialog } from "./ProfileConnectionDialog";
 import { ProfileFormDialog } from "./ProfileFormDialog";
 import { WorkspacePicker } from "./WorkspacePicker";
-import type { CatalogEntry, ProfileDef, ProfileSummary } from "./types";
+import type {
+  CatalogEntry,
+  ConnectionAgentId,
+  ProfileConnectionPreference,
+  ProfileDef,
+  ProfileSummary,
+} from "./types";
 
 type Translate = ReturnType<typeof useI18n>["t"];
 
@@ -46,6 +54,7 @@ export function Launch() {
   const [toast, setToast] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<ProfileDef | null>(null);
+  const [connectionEditing, setConnectionEditing] = useState<ProfileSummary | null>(null);
   const [directBusy, setDirectBusy] = useState(false);
   const [reorderBusy, setReorderBusy] = useState(false);
 
@@ -156,6 +165,16 @@ export function Launch() {
     await refresh();
   }
 
+  async function handleSaveConnection(
+    agentId: ConnectionAgentId,
+    preference: ProfileConnectionPreference,
+  ) {
+    if (!connectionEditing) return;
+    await setProfileConnection(connectionEditing.id, agentId, preference);
+    const nextPrefs = await getLauncherPreferences();
+    setPrefs(nextPrefs);
+  }
+
   function handleProfileDragEnd(event: DragEndEvent) {
     if (event.canceled || reorderBusy) return;
 
@@ -260,8 +279,10 @@ export function Launch() {
                     onSetDefault={(t) => handleSetDefault(t, p.id)}
                     onEdit={() => handleEdit(p)}
                     onDelete={() => handleDelete(p)}
+                    onConnectionSettings={() => setConnectionEditing(p)}
                     defaultAgent={prefs?.defaultAgent}
                     defaultProfiles={prefs?.defaultProfiles}
+                    profileConnections={prefs?.profileConnections}
                   />
                 ))}
               </DragDropProvider>
@@ -279,6 +300,14 @@ export function Launch() {
             setEditing(null);
           }}
           onSave={handleSave}
+        />
+      )}
+      {connectionEditing && (
+        <ProfileConnectionDialog
+          profile={connectionEditing}
+          connections={prefs?.profileConnections}
+          onClose={() => setConnectionEditing(null)}
+          onSave={handleSaveConnection}
         />
       )}
     </div>
@@ -314,8 +343,10 @@ function SortableProfileCard({
   onSetDefault,
   onEdit,
   onDelete,
+  onConnectionSettings,
   defaultAgent,
   defaultProfiles,
+  profileConnections,
 }: {
   profile: ProfileSummary;
   index: number;
@@ -324,8 +355,10 @@ function SortableProfileCard({
   onSetDefault: (launchTarget: string) => Promise<void>;
   onEdit: () => void;
   onDelete: () => Promise<void>;
+  onConnectionSettings: () => void;
   defaultAgent?: string;
   defaultProfiles?: Record<string, string>;
+  profileConnections?: LauncherPreferences["profileConnections"];
 }) {
   const { ref, handleRef, isDragging, isDropTarget } = useSortable({
     id: profile.id,
@@ -346,8 +379,10 @@ function SortableProfileCard({
         onSetDefault={onSetDefault}
         onEdit={onEdit}
         onDelete={onDelete}
+        onConnectionSettings={onConnectionSettings}
         defaultAgent={defaultAgent}
         defaultProfiles={defaultProfiles}
+        profileConnections={profileConnections}
         dragHandleRef={handleRef}
         dragHandleDisabled={reorderBusy}
         isDragging={isDragging}

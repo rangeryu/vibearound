@@ -15,9 +15,9 @@ use std::sync::Arc;
 
 use agent_client_protocol as acp;
 
-use crate::routing::RouteKey;
-use crate::conversations::ConversationManager;
 use crate::agent::AgentClientHandler;
+use crate::conversations::ConversationManager;
+use crate::routing::RouteKey;
 
 use super::plugin_host::PluginHost;
 use super::types::ChannelOutput;
@@ -34,7 +34,11 @@ impl ChannelBridgeHandler {
         conversation_manager: Arc<ConversationManager>,
         route: RouteKey,
     ) -> Self {
-        Self { plugin_host, conversation_manager, route }
+        Self {
+            plugin_host,
+            conversation_manager,
+            route,
+        }
     }
 }
 
@@ -63,7 +67,10 @@ impl AgentClientHandler for ChannelBridgeHandler {
             .unwrap_or_default();
         tracing::info!(
             "[ChannelBridgeHandler] session_notification route={} session={} kind={} preview={:?}",
-            self.route, args.session_id, update_kind, preview
+            self.route,
+            args.session_id,
+            update_kind,
+            preview
         );
 
         if let Some(update) = payload.get("update") {

@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use agent_client_protocol as acp;
 
-use crate::routing::RouteKey;
-use crate::conversations::ConversationManager;
 use crate::agent::AgentClientHandler;
+use crate::conversations::ConversationManager;
+use crate::routing::RouteKey;
 
 use crate::channels::bridge_handler::ChannelBridgeHandler;
 use crate::channels::plugin_host::PluginHost;
@@ -68,7 +68,10 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::SwitchAgent(kind) => {
-                match conversation_manager.switch_agent(&route, kind.clone()).await {
+                match conversation_manager
+                    .switch_agent(&route, kind.clone())
+                    .await
+                {
                     Ok(agent_id) => {
                         send_system_text(
                             plugin_host,
@@ -84,7 +87,9 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::SwitchProfile(profile) => {
-                conversation_manager.switch_profile(&route, profile.clone()).await;
+                conversation_manager
+                    .switch_profile(&route, profile.clone())
+                    .await;
                 send_system_text(
                     plugin_host,
                     &route,
@@ -94,13 +99,16 @@ pub(crate) async fn handle_prompt(
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::Close => {
-                conversation_manager.close(&route, Some("user closed".to_string())).await;
+                conversation_manager
+                    .close(&route, Some("user closed".to_string()))
+                    .await;
                 send_system_text(plugin_host, &route, "Conversation closed.").await;
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
             SlashAction::ShowCommandMenu => {
-                let system_commands = serde_json::to_value(&crate::resources::COMMANDS.system_commands)
-                    .unwrap_or(serde_json::json!([]));
+                let system_commands =
+                    serde_json::to_value(&crate::resources::COMMANDS.system_commands)
+                        .unwrap_or(serde_json::json!([]));
                 plugin_host
                     .send_output(ChannelOutput::CommandMenu {
                         route: route.clone(),
@@ -160,7 +168,11 @@ pub(crate) async fn handle_prompt(
                 }
                 return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
             }
-            SlashAction::Pickup { agent_kind, session_id, cwd } => {
+            SlashAction::Pickup {
+                agent_kind,
+                session_id,
+                cwd,
+            } => {
                 match conversation_manager
                     .prepare_pickup(
                         route.clone(),
@@ -244,5 +256,7 @@ pub(crate) async fn handle_prompt(
         route.clone(),
     ));
 
-    conversation_manager.prompt(route, cli_kind, content_blocks, handler).await
+    conversation_manager
+        .prompt(route, cli_kind, content_blocks, handler)
+        .await
 }

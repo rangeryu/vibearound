@@ -3,7 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   CatalogEntry,
   CompatibilityProxyMode,
+  ConnectionAgentId,
   ProfileDef,
+  ProfileConnectionPreference,
+  ProfileConnections,
   ProfileSummary,
 } from "./types";
 
@@ -66,6 +69,7 @@ export interface LauncherPreferences {
   defaultAgent: string;
   defaultProfiles: Record<string, string>;
   compatibilityProxy: CompatibilityProxyMode;
+  profileConnections: ProfileConnections;
 }
 
 export interface WorkspaceOption {
@@ -92,6 +96,19 @@ export function setLauncherCompatibilityProxy(
   mode: CompatibilityProxyMode,
 ): Promise<void> {
   return invoke<void>("launcher_set_compatibility_proxy", { mode });
+}
+
+export function setProfileConnection(
+  profileId: string,
+  agentId: ConnectionAgentId,
+  preference: ProfileConnectionPreference,
+): Promise<void> {
+  return invoke<void>("launcher_set_profile_connection", {
+    profileId,
+    agentId,
+    proxyEnabled: Boolean(preference.proxyEnabled),
+    targetApiType: preference.targetApiType ?? null,
+  });
 }
 
 export function setLauncherDefault(

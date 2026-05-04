@@ -16,9 +16,9 @@ use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use uuid::Uuid;
 
-use common::routing::RouteKey;
 use common::channels::{ChannelEnvelope, ChannelInput, ChannelOutput};
 use common::config;
+use common::routing::RouteKey;
 
 use crate::api_types::{AgentInfo, ChatEvent};
 
@@ -91,7 +91,11 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
 
     outbound_task.abort();
     state.web_channel.unregister_connection(&chat_id);
-    state.channel_hub.conversation_manager().close(&route, None).await;
+    state
+        .channel_hub
+        .conversation_manager()
+        .close(&route, None)
+        .await;
 }
 
 async fn send_event<S>(ws_tx: &mut S, event: &ChatEvent) -> Result<(), ()>
@@ -105,10 +109,7 @@ where
             return Ok(());
         }
     };
-    ws_tx
-        .send(Message::Text(body.into()))
-        .await
-        .map_err(|_| ())
+    ws_tx.send(Message::Text(body.into())).await.map_err(|_| ())
 }
 
 fn parse_channel_input(chat_id: &str, text: &str) -> Option<ChannelInput> {

@@ -111,7 +111,10 @@ impl ChildRegistry {
         let pid = child.id();
         tracing::info!(
             "[child-registry] register id={} kind={:?} label={} pid={:?}",
-            id, kind, label, pid
+            id,
+            kind,
+            label,
+            pid
         );
         self.entries.insert(id, Entry { kind, label, child });
         id
@@ -124,7 +127,9 @@ impl ChildRegistry {
         self.entries.remove(&id).map(|(_, entry)| {
             tracing::info!(
                 "[child-registry] remove id={} kind={:?} label={}",
-                id, entry.kind, entry.label
+                id,
+                entry.kind,
+                entry.label
             );
             entry.child
         })
@@ -146,11 +151,16 @@ impl ChildRegistry {
                 match entry.child.start_kill() {
                     Ok(()) => tracing::info!(
                         "[child-registry] killed id={} kind={:?} label={} pid={:?}",
-                        id, entry.kind, entry.label, pid
+                        id,
+                        entry.kind,
+                        entry.label,
+                        pid
                     ),
                     Err(e) => tracing::info!(
                         "[child-registry] start_kill failed id={} label={}: {}",
-                        id, entry.label, e
+                        id,
+                        entry.label,
+                        e
                     ),
                 }
             }

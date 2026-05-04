@@ -19,7 +19,9 @@ pub mod log;
 pub mod registry;
 pub mod supervisor;
 
-pub use bridge::{BridgeExit, BridgeFactory, BridgeFuture, CancelSignal, ProcessBridge, StdioPipes};
+pub use bridge::{
+    BridgeExit, BridgeFactory, BridgeFuture, CancelSignal, ProcessBridge, StdioPipes,
+};
 pub use error::{ProcessError, ProcessResult};
 pub use registry::{ChildRegistry, ProcessKind};
 pub use supervisor::{

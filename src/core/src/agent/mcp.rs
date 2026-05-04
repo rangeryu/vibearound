@@ -91,10 +91,9 @@ pub(super) fn uninstall_mcp_config(agent: &str) -> anyhow::Result<()> {
         return uninstall_mcp_config_toml(&config_path, mcp_key, agent);
     }
 
-    let data = std::fs::read_to_string(&config_path)
-        .with_context(|| format!("Read {:?}", config_path))?;
-    let mut root: serde_json::Value =
-        serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
+    let data =
+        std::fs::read_to_string(&config_path).with_context(|| format!("Read {:?}", config_path))?;
+    let mut root: serde_json::Value = serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
 
     let mut changed = false;
     if let Some(obj) = root.as_object_mut() {
@@ -109,11 +108,11 @@ pub(super) fn uninstall_mcp_config(agent: &str) -> anyhow::Result<()> {
 
     if changed {
         let pretty = serde_json::to_string_pretty(&root).context("JSON serialize")?;
-        std::fs::write(&config_path, pretty)
-            .with_context(|| format!("Write {:?}", config_path))?;
+        std::fs::write(&config_path, pretty).with_context(|| format!("Write {:?}", config_path))?;
         tracing::info!(
             "[integrations] Removed MCP config for {} at {:?}",
-            agent, config_path
+            agent,
+            config_path
         );
     }
 
@@ -141,34 +140,30 @@ fn install_mcp_config_json(
     agent: &str,
 ) -> anyhow::Result<()> {
     // Substitute placeholders in the entry template
-    let mcp_value_str =
-        serde_json::to_string(mcp_entry_template).context("serialize mcp_entry")?;
+    let mcp_value_str = serde_json::to_string(mcp_entry_template).context("serialize mcp_entry")?;
     let mcp_value: serde_json::Value =
         serde_json::from_str(&mcp_value_str.replace("{mcp_url}", mcp_url))
             .context("parse mcp_entry after substitution")?;
 
     // Read existing config
     let data = std::fs::read_to_string(config_path).unwrap_or_else(|_| "{}".to_string());
-    let mut root: serde_json::Value =
-        serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
+    let mut root: serde_json::Value = serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
 
     // Always replace (full replace on every startup)
     if let Some(obj) = root.as_object_mut() {
-        let servers = obj
-            .entry(mcp_key)
-            .or_insert_with(|| serde_json::json!({}));
+        let servers = obj.entry(mcp_key).or_insert_with(|| serde_json::json!({}));
         if let Some(servers_obj) = servers.as_object_mut() {
             servers_obj.insert("vibearound".to_string(), mcp_value);
         }
     }
 
     let pretty = serde_json::to_string_pretty(&root).context("JSON serialize")?;
-    std::fs::write(config_path, pretty)
-        .with_context(|| format!("Write {:?}", config_path))?;
+    std::fs::write(config_path, pretty).with_context(|| format!("Write {:?}", config_path))?;
 
     tracing::info!(
         "[integrations] Installed MCP config for {} at {:?}",
-        agent, config_path
+        agent,
+        config_path
     );
     Ok(())
 }
@@ -183,8 +178,7 @@ fn install_mcp_config_toml(
     use toml_edit::{DocumentMut, Item, Table};
 
     // Substitute placeholders in the entry template
-    let mcp_value_str =
-        serde_json::to_string(mcp_entry_template).context("serialize mcp_entry")?;
+    let mcp_value_str = serde_json::to_string(mcp_entry_template).context("serialize mcp_entry")?;
     let substituted = mcp_value_str.replace("{mcp_url}", mcp_url);
     let mcp_value: serde_json::Value =
         serde_json::from_str(&substituted).context("parse mcp_entry after substitution")?;
@@ -232,20 +226,17 @@ fn install_mcp_config_toml(
 
     tracing::info!(
         "[integrations] Installed MCP config for {} at {:?} (TOML)",
-        agent, config_path
+        agent,
+        config_path
     );
     Ok(())
 }
 
-fn uninstall_mcp_config_toml(
-    config_path: &Path,
-    mcp_key: &str,
-    agent: &str,
-) -> anyhow::Result<()> {
+fn uninstall_mcp_config_toml(config_path: &Path, mcp_key: &str, agent: &str) -> anyhow::Result<()> {
     use toml_edit::DocumentMut;
 
-    let data = std::fs::read_to_string(config_path)
-        .with_context(|| format!("Read {:?}", config_path))?;
+    let data =
+        std::fs::read_to_string(config_path).with_context(|| format!("Read {:?}", config_path))?;
     let mut doc: DocumentMut = data
         .parse::<DocumentMut>()
         .with_context(|| format!("Parse TOML {:?}", config_path))?;
@@ -262,7 +253,8 @@ fn uninstall_mcp_config_toml(
             .with_context(|| format!("Write {:?}", config_path))?;
         tracing::info!(
             "[integrations] Removed MCP config for {} at {:?} (TOML)",
-            agent, config_path
+            agent,
+            config_path
         );
     }
 

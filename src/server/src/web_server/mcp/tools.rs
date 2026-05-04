@@ -305,8 +305,7 @@ pub(super) async fn mcp_md_preview(
                 .to_string()
         });
 
-    let (owner_slug, share_slug) =
-        common::previews::ensure_file(file_path, cwd_path, title);
+    let (owner_slug, share_slug) = common::previews::ensure_file(file_path, cwd_path, title);
     let owner_url = build_preview_url(state, "preview/u", &owner_slug);
     let share_url = build_preview_url(state, "preview/s", &share_slug);
 

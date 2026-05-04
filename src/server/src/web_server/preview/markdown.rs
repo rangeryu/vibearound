@@ -10,12 +10,12 @@ use axum::response::Response;
 
 use common::previews::{PreviewEntry, PreviewTarget};
 
-use super::toolbar::{escape_html, html_response, remaining_millis, toolbar_and_timer, TOOLBAR_CSS};
+use super::toolbar::{
+    escape_html, html_response, remaining_millis, toolbar_and_timer, TOOLBAR_CSS,
+};
 
 /// Render a markdown file preview with toolbar + GitHub CSS + marked.js.
-pub(super) async fn render_md_page(
-    entry: &PreviewEntry,
-) -> Result<Response, (StatusCode, String)> {
+pub(super) async fn render_md_page(entry: &PreviewEntry) -> Result<Response, (StatusCode, String)> {
     let file_path = match &entry.target {
         PreviewTarget::File => &entry.id,
         PreviewTarget::Server { .. } => {

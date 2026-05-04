@@ -34,6 +34,7 @@ const zhCN: Record<string, string> = {
   Back: "返回",
   Next: "下一步",
   Confirm: "确认",
+  Save: "保存",
   "Get Started": "开始",
   "Save changes": "保存更改",
   "Create profile": "创建 profile",
@@ -172,6 +173,22 @@ const zhCN: Record<string, string> = {
   "Launch {{agent}} via {{apiType}}": "通过 {{apiType}} 启动 {{agent}}",
   "Click to launch {{agent}} via {{apiType}} anyway.":
     "仍然通过 {{apiType}} 启动 {{agent}}。",
+  "Connection settings": "连接设置",
+  "{{label}} Connections": "{{label}} 连接",
+  "Choose how Claude Code and Codex CLI connect through this profile.":
+    "选择 Claude Code 和 Codex CLI 如何通过这个 profile 连接。",
+  Native: "原生",
+  "Via proxy": "通过代理",
+  Unsupported: "不支持",
+  "Requires {{protocol}}": "需要 {{protocol}}",
+  "Default route": "默认路径",
+  "Enable proxy": "启用代理",
+  "Proxy target": "代理目标",
+  "via proxy": "通过代理",
+  unsupported: "不支持",
+  "{{agent}} routes through proxy to {{provider}} {{apiType}}":
+    "{{agent}} 通过代理连接到 {{provider}} {{apiType}}",
+  "{{agent}} is unsupported for this profile": "这个 profile 不支持 {{agent}}",
   "Delete profile \"{{label}}\"?": "删除 profile「{{label}}」？",
   "Reorder {{label}}": "重新排序 {{label}}",
 

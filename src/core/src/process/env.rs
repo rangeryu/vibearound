@@ -28,7 +28,10 @@ pub fn enriched_env() -> &'static HashMap<String, String> {
         tracing::info!(
             "[env] enriched environment ({} vars, PATH has {} entries)",
             result.len(),
-            result.get("PATH").map(|p| p.matches(':').count() + 1).unwrap_or(0)
+            result
+                .get("PATH")
+                .map(|p| p.matches(':').count() + 1)
+                .unwrap_or(0)
         );
         result
     })
@@ -76,7 +79,6 @@ pub fn acp_agents_dir() -> std::path::PathBuf {
     crate::config::data_dir().join("plugins")
 }
 
-
 /// Resolve the JS entry point for a pre-installed npm ACP agent binary.
 ///
 /// Looks up `~/.vibearound/plugins/node_modules/.bin/<bin_name>`.
@@ -118,7 +120,10 @@ pub fn resolve_acp_agent_bin(bin_name: &str) -> anyhow::Result<std::path::PathBu
         for line in content.lines() {
             let trimmed = line.trim().trim_start_matches('@');
             // Look for: node "..." or node ...
-            if let Some(rest) = trimmed.strip_prefix("node ").or_else(|| trimmed.strip_prefix("node.exe ")) {
+            if let Some(rest) = trimmed
+                .strip_prefix("node ")
+                .or_else(|| trimmed.strip_prefix("node.exe "))
+            {
                 let js_path = rest
                     .trim()
                     .trim_matches('"')
@@ -168,7 +173,6 @@ fn probe_enriched_env() -> HashMap<String, String> {
 
     env
 }
-
 
 /// Probe the user's login shell for their full environment.
 #[cfg(unix)]
@@ -279,9 +283,15 @@ fn enrich_windows_path(env: &mut HashMap<String, String>) {
     let sep = ";";
     let mut parts: Vec<String> = current.split(sep).map(String::from).collect();
     let candidates: Vec<String> = vec![
-        std::env::var("APPDATA").map(|d| format!("{}\\npm", d)).unwrap_or_default(),
-        std::env::var("ProgramFiles").map(|d| format!("{}\\nodejs", d)).unwrap_or_default(),
-        std::env::var("LOCALAPPDATA").map(|d| format!("{}\\Volta\\bin", d)).unwrap_or_default(),
+        std::env::var("APPDATA")
+            .map(|d| format!("{}\\npm", d))
+            .unwrap_or_default(),
+        std::env::var("ProgramFiles")
+            .map(|d| format!("{}\\nodejs", d))
+            .unwrap_or_default(),
+        std::env::var("LOCALAPPDATA")
+            .map(|d| format!("{}\\Volta\\bin", d))
+            .unwrap_or_default(),
     ];
     for candidate in candidates {
         if !candidate.is_empty()
