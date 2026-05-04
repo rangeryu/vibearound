@@ -23,6 +23,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   CONNECTION_AGENTS,
   apiTypeProtocolLabel,
   resolveProfileConnection,
@@ -168,115 +174,129 @@ export function ProfileCard({
         </DropdownMenu>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mt-1">
-        {connections.map((connection) => {
-          const target = {
-            id: connection.agent.id,
-            label: connection.agent.label,
-            apiType: connection.agent.requiredApiType,
-          };
-          const warning = profile.apiTypeWarnings[target.apiType];
-          const isDefault =
-            connection.native &&
-            defaultAgent === target.id &&
-            defaultProfiles[target.id] === profile.id;
-          const statusText =
-            connection.status === "via_proxy"
-              ? t("via proxy")
-              : connection.status === "native"
-                ? apiTypeBadge(target.apiType)
-                : t("unsupported");
-          const title =
-            connection.status === "via_proxy" && connection.targetApiType
-              ? t("{{agent}} routes through proxy to {{provider}} {{apiType}}", {
-                  agent: target.label,
-                  provider: profile.providerLabel,
-                  apiType: apiTypeProtocolLabel(connection.targetApiType),
-                })
-              : connection.native
-                ? t("Launch {{agent}} via {{apiType}}", {
+      <TooltipProvider>
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {connections.map((connection) => {
+            const target = {
+              id: connection.agent.id,
+              label: connection.agent.label,
+              apiType: connection.agent.requiredApiType,
+            };
+            const warning = profile.apiTypeWarnings[target.apiType];
+            const isDefault =
+              connection.native &&
+              defaultAgent === target.id && defaultProfiles[target.id] === profile.id;
+            const statusText =
+              connection.status === "via_proxy"
+                ? t("via proxy")
+                : connection.status === "native"
+                  ? apiTypeBadge(target.apiType)
+                  : t("unsupported");
+            const title =
+              connection.status === "via_proxy" && connection.targetApiType
+                ? t("{{agent}} routes through proxy to {{provider}} {{apiType}}", {
                     agent: target.label,
-                    apiType: apiTypeShort(target.apiType),
+                    provider: profile.providerLabel,
+                    apiType: apiTypeProtocolLabel(connection.targetApiType),
                   })
-                : t("{{agent}} is unsupported for this profile", { agent: target.label });
-          return (
-            <span
-              key={target.id}
-              className={`inline-flex h-7 overflow-hidden rounded-md ${
-                connection.status === "unsupported"
-                  ? "bg-muted text-muted-foreground"
-                  : "bg-primary/10 text-primary"
-              }`}
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => {
-                  if (connection.status !== "unsupported") {
-                    void handleLaunch(target.id);
-                  } else {
-                    onConnectionSettings();
-                  }
-                }}
-                disabled={busy}
-                className={`h-7 rounded-none bg-transparent px-2 font-mono text-[11px] ${
+                : connection.native
+                  ? t("Launch {{agent}} via {{apiType}}", {
+                      agent: target.label,
+                      apiType: apiTypeShort(target.apiType),
+                    })
+                  : t("{{agent}} is unsupported for this profile", { agent: target.label });
+            const launchTooltip = warning
+              ? `⚠ ${warning}\n\n(${title})`
+              : title;
+            return (
+              <span
+                key={target.id}
+                className={`inline-flex h-7 overflow-hidden rounded-md ${
                   connection.status === "unsupported"
-                    ? "text-muted-foreground hover:bg-muted hover:text-muted-foreground"
-                    : "text-primary hover:bg-primary/15 hover:text-primary"
-                } ${
-                  isDefault ? "" : "pr-1.5"
+                    ? "bg-muted text-muted-foreground"
+                    : "bg-primary/10 text-primary"
                 }`}
-                title={warning ? `⚠ ${warning}\n\n(${title})` : title}
               >
-                <BrandIcon
-                  kind="cli"
-                  id={target.id}
-                  label={target.label}
-                  framed={false}
-                  className="h-3.5 w-3.5"
-                />
-                <span>{target.label}</span>
-                <Badge
-                  className={`border-0 bg-transparent p-0 text-[11px] ${
-                    connection.status === "unsupported"
-                      ? "text-muted-foreground/70"
-                      : "text-primary/55"
-                  }`}
-                >
-                  · {statusText}
-                </Badge>
-                {connection.status === "via_proxy" && <Plug className="w-3 h-3" />}
-                {isDefault && <Star className="w-3 h-3 fill-current" />}
-                {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
-              </Button>
-              {connection.native && !isDefault && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  disabled={busy || defaultBusy === target.id}
-                  onClick={async () => {
-                    setDefaultBusy(target.id);
-                    try {
-                      await handleSetDefault(target.id);
-                    } finally {
-                      setDefaultBusy(null);
-                    }
-                  }}
-                  title={t("Use {{agent}} with {{profile}} as Quick Launch default", {
-                    agent: target.label,
-                    profile: profile.label,
-                  })}
-                  className="h-7 w-6 rounded-none border-l border-primary/15 bg-transparent text-primary/60 hover:bg-primary/15 hover:text-primary"
-                >
-                  <Star className="w-3 h-3" />
-                </Button>
-              )}
-            </span>
-          );
-        })}
-      </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => {
+                        if (connection.status !== "unsupported") {
+                          void handleLaunch(target.id);
+                        } else {
+                          onConnectionSettings();
+                        }
+                      }}
+                      disabled={busy}
+                      className={`h-7 rounded-none bg-transparent px-2 font-mono text-[11px] ${
+                        connection.status === "unsupported"
+                          ? "text-muted-foreground hover:bg-muted hover:text-muted-foreground"
+                          : "text-primary hover:bg-primary/15 hover:text-primary"
+                      } ${
+                        isDefault ? "" : "pr-1.5"
+                      }`}
+                    >
+                      <BrandIcon
+                        kind="cli"
+                        id={target.id}
+                        label={target.label}
+                        framed={false}
+                        className="h-3.5 w-3.5"
+                      />
+                      <span>{target.label}</span>
+                      <Badge
+                        className={`border-0 bg-transparent p-0 text-[11px] ${
+                          connection.status === "unsupported"
+                            ? "text-muted-foreground/70"
+                            : "text-primary/55"
+                        }`}
+                      >
+                        · {statusText}
+                      </Badge>
+                      {connection.status === "via_proxy" && <Plug className="w-3 h-3" />}
+                      {isDefault && <Star className="w-3 h-3 fill-current" />}
+                      {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    sideOffset={6}
+                    className="max-w-72 whitespace-pre-line text-left"
+                  >
+                    {launchTooltip}
+                  </TooltipContent>
+                </Tooltip>
+                {connection.native && !isDefault && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    disabled={busy || defaultBusy === target.id}
+                    onClick={async () => {
+                      setDefaultBusy(target.id);
+                      try {
+                        await handleSetDefault(target.id);
+                      } finally {
+                        setDefaultBusy(null);
+                      }
+                    }}
+                    title={t("Use {{agent}} with {{profile}} as Quick Launch default", {
+                      agent: target.label,
+                      profile: profile.label,
+                    })}
+                    className="h-7 w-6 rounded-none border-l border-primary/15 bg-transparent text-primary/60 hover:bg-primary/15 hover:text-primary"
+                  >
+                    <Star className="w-3 h-3" />
+                  </Button>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      </TooltipProvider>
     </div>
   );
 }
