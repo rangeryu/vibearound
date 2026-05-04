@@ -1,0 +1,96 @@
+{
+  "id": "deepseek",
+  "label": "DeepSeek",
+  "icon": "🐋",
+  "homepage": "https://platform.deepseek.com",
+  "endpoints": [
+    {
+      "api_type": "anthropic",
+      "default_base_url": "https://api.deepseek.com/anthropic",
+      "models": [
+        {
+          "id": "deepseek-v4-flash",
+          "label": "DeepSeek V4 Flash (1M ctx, thinking + non-thinking)"
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "DeepSeek V4 Pro (1M ctx, premium)"
+        },
+        {
+          "id": "deepseek-chat",
+          "label": "DeepSeek Chat (legacy alias for v4-flash, deprecating 2026/07/24)"
+        },
+        {
+          "id": "deepseek-reasoner",
+          "label": "DeepSeek Reasoner (legacy thinking alias, deprecating 2026/07/24)"
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "DeepSeek API key",
+              "secret": true,
+              "required": true,
+              "placeholder": "sk-..."
+            }
+          ],
+          "render": {
+            "env": {
+              "ANTHROPIC_API_KEY": "{{api_key}}",
+              "ANTHROPIC_BASE_URL": "{{base_url}}",
+              "ANTHROPIC_MODEL": "{{model}}"
+            },
+            "settings_files": []
+          }
+        }
+      ]
+    },
+    {
+      "api_type": "openai-chat",
+      "default_base_url": "https://api.deepseek.com/v1",
+      "models": [
+        {
+          "id": "deepseek-v4-flash",
+          "label": "DeepSeek V4 Flash"
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "DeepSeek V4 Pro"
+        },
+        {
+          "id": "deepseek-chat",
+          "label": "DeepSeek Chat (legacy)"
+        },
+        {
+          "id": "deepseek-reasoner",
+          "label": "DeepSeek Reasoner (legacy)"
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "DeepSeek API key",
+              "secret": true,
+              "required": true,
+              "placeholder": "sk-..."
+            }
+          ],
+          "render": {
+            "env": {
+              "OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": []
+          }
+        }
+      ]
+    }
+  ]
+}

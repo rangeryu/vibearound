@@ -1,0 +1,36 @@
+{
+  "providers": [
+    {
+      "id": "moonshot",
+      "file": "moonshot.json"
+    },
+    {
+      "id": "openrouter",
+      "file": "openrouter.json"
+    },
+    {
+      "id": "minimax",
+      "file": "minimax.json"
+    },
+    {
+      "id": "minimax-global",
+      "file": "minimax-global.json"
+    },
+    {
+      "id": "deepseek",
+      "file": "deepseek.json"
+    },
+    {
+      "id": "zai",
+      "file": "zai.json"
+    },
+    {
+      "id": "gemini",
+      "file": "gemini.json"
+    },
+    {
+      "id": "azure",
+      "file": "azure.json"
+    }
+  ]
+}

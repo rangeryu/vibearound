@@ -1,36 +1,27 @@
 //! Provider catalog — third-party endpoint metadata baked into the binary.
 //!
 //! Built-in providers have JSON under `src/resources/profile-catalog/`.
-//! Provider plugins discovered from the plugin directories can add or override
-//! entries using the same catalog schema.
+//! `profile-catalog/manifest.json` controls which provider files are loaded
+//! and in what order.
 //!
-//! v1 is a static built-in catalog (loaded once via `LazyLock`). The
-//! intent is to migrate to a separately-versioned npm package
-//! (`@vibearound/provider-catalog`) so that adding / updating providers
-//! does not require a desktop release. The Rust types here are the wire
-//! schema for that future package — adding fields requires only a serde
+//! The catalog is still embedded in the desktop binary, but the Rust side no
+//! longer hard-codes provider ids. The JSON manifest is the source of truth for
+//! built-in profile catalog membership; adding fields requires only a serde
 //! `#[serde(default)]` to stay forward-compatible.
 
+use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
+use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Embedded JSON sources
 // ---------------------------------------------------------------------------
-// Note: changing the .json files alone will not trigger a tauri-dev rebuild
-// (the file watcher only sees Rust sources). Edit this file or the
-// surrounding comment to force a rebuild after touching catalog data.
-// catalog-rebuild: 2026-04-27-reasoning-effort-capability
-
-static MOONSHOT_JSON: &str = include_str!("../../../resources/profile-catalog/moonshot.json");
-static OPENROUTER_JSON: &str = include_str!("../../../resources/profile-catalog/openrouter.json");
-static MINIMAX_JSON: &str = include_str!("../../../resources/profile-catalog/minimax.json");
-static MINIMAX_GLOBAL_JSON: &str =
-    include_str!("../../../resources/profile-catalog/minimax-global.json");
-static ZAI_JSON: &str = include_str!("../../../resources/profile-catalog/zai.json");
-static GEMINI_JSON: &str = include_str!("../../../resources/profile-catalog/gemini.json");
-static AZURE_JSON: &str = include_str!("../../../resources/profile-catalog/azure.json");
+static PROFILE_CATALOG_DIR: Dir<'_> =
+    include_dir!("$CARGO_MANIFEST_DIR/../resources/profile-catalog");
+static PROFILE_CATALOG_MANIFEST_JSON: &str =
+    include_str!("../../../resources/profile-catalog/manifest.json");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -124,36 +115,82 @@ pub struct SettingsFileTemplate {
     pub template: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ProfileCatalogManifest {
+    providers: Vec<ProfileCatalogManifestEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProfileCatalogManifestEntry {
+    id: String,
+    file: String,
+}
+
 // ---------------------------------------------------------------------------
 // Static loader
 // ---------------------------------------------------------------------------
 
-static CATALOG: LazyLock<Vec<ProviderCatalog>> = LazyLock::new(|| {
-    let raw = [
-        ("moonshot", MOONSHOT_JSON),
-        ("openrouter", OPENROUTER_JSON),
-        ("minimax", MINIMAX_JSON),
-        ("minimax-global", MINIMAX_GLOBAL_JSON),
-        ("zai", ZAI_JSON),
-        ("gemini", GEMINI_JSON),
-        ("azure", AZURE_JSON),
-    ];
-    let mut out = Vec::with_capacity(raw.len());
-    for (id, body) in raw {
-        match serde_json::from_str::<ProviderCatalog>(body) {
-            Ok(c) => out.push(c),
-            // Static JSON shipped with the binary — a parse failure here is a
-            // build-time bug, not a user error. Crash hard so it shows up in
-            // dev rather than silently dropping a provider in release.
-            Err(e) => panic!("profile-catalog: failed to parse {}: {}", id, e),
+static CATALOG: LazyLock<Vec<ProviderCatalog>> = LazyLock::new(load_builtin_catalogs);
+
+fn load_builtin_catalogs() -> Vec<ProviderCatalog> {
+    let manifest = serde_json::from_str::<ProfileCatalogManifest>(PROFILE_CATALOG_MANIFEST_JSON)
+        .unwrap_or_else(|e| panic!("profile-catalog: failed to parse manifest.json: {e}"));
+    let mut seen = BTreeSet::new();
+    let mut catalogs = Vec::with_capacity(manifest.providers.len());
+
+    for entry in manifest.providers {
+        validate_manifest_entry(&entry);
+        if !seen.insert(entry.id.clone()) {
+            panic!("profile-catalog: duplicate provider id '{}'", entry.id);
         }
+        let file = PROFILE_CATALOG_DIR
+            .get_file(entry.file.as_str())
+            .unwrap_or_else(|| {
+                panic!(
+                    "profile-catalog: manifest entry '{}' references missing file '{}'",
+                    entry.id, entry.file
+                )
+            });
+        let body = file.contents_utf8().unwrap_or_else(|| {
+            panic!(
+                "profile-catalog: manifest entry '{}' file '{}' is not valid UTF-8",
+                entry.id, entry.file
+            )
+        });
+        let catalog = serde_json::from_str::<ProviderCatalog>(body).unwrap_or_else(|e| {
+            panic!(
+                "profile-catalog: failed to parse {} for provider '{}': {}",
+                entry.file, entry.id, e
+            )
+        });
+        if catalog.id != entry.id {
+            panic!(
+                "profile-catalog: manifest id '{}' does not match file '{}' id '{}'",
+                entry.id, entry.file, catalog.id
+            );
+        }
+        catalogs.push(catalog);
     }
 
-    for plugin_catalog in crate::plugins::provider::catalogs() {
-        upsert_provider_catalog(&mut out, plugin_catalog);
+    catalogs
+}
+
+fn validate_manifest_entry(entry: &ProfileCatalogManifestEntry) {
+    if entry.id.trim().is_empty() {
+        panic!("profile-catalog: manifest contains an empty provider id");
     }
-    out
-});
+    if entry.file.trim().is_empty()
+        || entry.file.contains('/')
+        || entry.file.contains('\\')
+        || entry.file.contains("..")
+        || !entry.file.ends_with(".json")
+    {
+        panic!(
+            "profile-catalog: manifest entry '{}' has invalid file '{}'",
+            entry.id, entry.file
+        );
+    }
+}
 
 pub fn all() -> &'static [ProviderCatalog] {
     &CATALOG
@@ -301,17 +338,6 @@ fn btree_kv(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String
         .collect()
 }
 
-fn upsert_provider_catalog(catalogs: &mut Vec<ProviderCatalog>, catalog: ProviderCatalog) {
-    if let Some(existing) = catalogs
-        .iter_mut()
-        .find(|existing| existing.id == catalog.id)
-    {
-        *existing = catalog;
-    } else {
-        catalogs.push(catalog);
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -330,6 +356,7 @@ mod tests {
         assert!(get("moonshot").is_some());
         assert!(get("openrouter").is_some());
         assert!(get("minimax").is_some());
+        assert!(get("deepseek").is_some());
         assert!(get("zai").is_some());
         assert!(get("gemini").is_some());
         assert!(get("azure").is_some());
