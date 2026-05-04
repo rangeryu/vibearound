@@ -23,10 +23,8 @@ pub(super) fn kill_pids_on_ports(ports: &[u16]) {
     }
 
     // PID → PGID (via `ps`). Deduplicate so we don't send the same signal twice.
-    let pgids: std::collections::HashSet<i32> = pids
-        .iter()
-        .filter_map(|pid| pgid_for(*pid))
-        .collect();
+    let pgids: std::collections::HashSet<i32> =
+        pids.iter().filter_map(|pid| pgid_for(*pid)).collect();
 
     if pgids.is_empty() {
         tracing::info!(

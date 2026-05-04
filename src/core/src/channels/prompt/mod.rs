@@ -22,8 +22,8 @@ use std::sync::Arc;
 
 use agent_client_protocol as acp;
 
-use crate::routing::RouteKey;
 use crate::conversations::ConversationManager;
+use crate::routing::RouteKey;
 
 use super::plugin_host::PluginHost;
 use super::types::{ChannelInput, ChannelOutput};
@@ -60,8 +60,14 @@ pub async fn handle_channel_input(
                 vec![acp::ContentBlock::Text(acp::TextContent::new(text))]
             };
 
-            match handle_prompt(conversation_manager, plugin_host, route.clone(), cli_kind, content_blocks)
-                .await
+            match handle_prompt(
+                conversation_manager,
+                plugin_host,
+                route.clone(),
+                cli_kind,
+                content_blocks,
+            )
+            .await
             {
                 Ok(_resp) => {
                     tracing::debug!(route = %route, "prompt ok");
@@ -96,11 +102,7 @@ pub async fn handle_channel_input(
 
 /// Fire-and-forget helper: emit a `SystemText` to the plugin for this route.
 /// Shared by every sub-module in this folder.
-pub(super) async fn send_system_text(
-    plugin_host: &Arc<PluginHost>,
-    route: &RouteKey,
-    text: &str,
-) {
+pub(super) async fn send_system_text(plugin_host: &Arc<PluginHost>, route: &RouteKey, text: &str) {
     plugin_host
         .send_output(ChannelOutput::SystemText {
             route: route.clone(),

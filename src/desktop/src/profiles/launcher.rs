@@ -32,8 +32,20 @@ use profiles::ProfileDef;
 
 pub fn launch(profile: &ProfileDef, launch_target: &str) -> anyhow::Result<()> {
     let launch_id = uuid::Uuid::new_v4().to_string();
-    let mut rendered = profiles::runtime::render_for_launch(profile, launch_target)?;
-    apply_compatibility_proxy(profile, launch_target, &launch_id, &mut rendered)?;
+    let mut rendered = match proxy_preference(profile, launch_target) {
+        Some(preference) if preference.proxy_enabled => {
+            let target_api_type = preference
+                .target_api_type
+                .as_deref()
+                .ok_or_else(|| anyhow!("proxy target is not configured"))?;
+            render_proxy_launch(profile, launch_target, &launch_id, target_api_type)?
+        }
+        _ => {
+            let mut rendered = profiles::runtime::render_for_launch(profile, launch_target)?;
+            apply_compatibility_proxy(profile, launch_target, &launch_id, &mut rendered)?;
+            rendered
+        }
+    };
     apply_codex_session_hooks(profile, launch_target, &launch_id, &mut rendered)?;
     do_launch(profile, launch_target, &launch_id, rendered)
 }
@@ -174,6 +186,177 @@ fn apply_compatibility_proxy(
     );
 
     Ok(())
+}
+
+fn proxy_preference(
+    profile: &ProfileDef,
+    launch_target: &str,
+) -> Option<terminal::ProfileConnectionPreference> {
+    terminal::read_profile_connections()
+        .get(&profile.id)
+        .and_then(|connections| connections.get(launch_target))
+        .cloned()
+}
+
+fn render_proxy_launch(
+    profile: &ProfileDef,
+    launch_target: &str,
+    launch_id: &str,
+    target_api_type: &str,
+) -> anyhow::Result<profiles::render::RenderedProfile> {
+    let provider = profiles::catalog::get(&profile.provider)
+        .ok_or_else(|| anyhow!("unknown provider '{}'", profile.provider))?;
+    if !profile
+        .api_types
+        .iter()
+        .any(|api_type| api_type == target_api_type)
+    {
+        bail!(
+            "profile '{}' does not expose proxy target '{}'",
+            profile.id,
+            target_api_type
+        );
+    }
+    let endpoint = provider
+        .endpoints
+        .iter()
+        .find(|endpoint| endpoint.api_type == target_api_type)
+        .ok_or_else(|| {
+            anyhow!(
+                "provider '{}' does not expose proxy target '{}'",
+                profile.provider,
+                target_api_type
+            )
+        })?;
+    let api_key = profile
+        .credentials
+        .get("api_key")
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow!("profile '{}' has no api_key credential", profile.id))?
+        .clone();
+    let model = profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| overrides.model.clone())
+        .or_else(|| endpoint.models.first().map(|model| model.id.clone()))
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            anyhow!(
+                "profile '{}' has no model configured for proxy target '{}'",
+                profile.id,
+                target_api_type
+            )
+        })?;
+    let reasoning_effort = profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| overrides.reasoning_effort.clone())
+        .unwrap_or_else(|| "medium".to_string());
+
+    match launch_target {
+        "claude" => {
+            render_claude_proxy_profile(profile, launch_id, target_api_type, api_key, model)
+        }
+        "codex" => render_codex_proxy_profile(
+            profile,
+            provider.label.as_str(),
+            launch_id,
+            target_api_type,
+            api_key,
+            model,
+            reasoning_effort,
+        ),
+        other => bail!("proxy launch is not wired for '{}'", other),
+    }
+}
+
+fn render_claude_proxy_profile(
+    profile: &ProfileDef,
+    launch_id: &str,
+    target_api_type: &str,
+    api_key: String,
+    model: String,
+) -> anyhow::Result<profiles::render::RenderedProfile> {
+    let proxy_base_url = format!(
+        "http://127.0.0.1:{}/va/proxy/{}/{}/{}",
+        config::DEFAULT_PORT,
+        profile.id,
+        launch_id,
+        target_api_type
+    );
+    Ok(profiles::render::RenderedProfile {
+        env: vec![
+            ("ANTHROPIC_API_KEY".to_string(), api_key),
+            ("ANTHROPIC_BASE_URL".to_string(), proxy_base_url),
+            ("ANTHROPIC_MODEL".to_string(), model),
+        ],
+        settings_files: Vec::new(),
+        command_args: Vec::new(),
+        config_env: None,
+    })
+}
+
+fn render_codex_proxy_profile(
+    profile: &ProfileDef,
+    provider_label: &str,
+    launch_id: &str,
+    target_api_type: &str,
+    api_key: String,
+    model: String,
+    reasoning_effort: String,
+) -> anyhow::Result<profiles::render::RenderedProfile> {
+    let proxy_base_url = format!(
+        "http://127.0.0.1:{}/va/proxy/{}/{}/{}/v1",
+        config::DEFAULT_PORT,
+        profile.id,
+        launch_id,
+        target_api_type
+    );
+    let mut command_args = Vec::new();
+    let provider_key = format!("model_providers.{}", profile.provider);
+    push_codex_config_arg(&mut command_args, "model", &toml_basic_string(&model));
+    push_codex_config_arg(
+        &mut command_args,
+        "model_provider",
+        &toml_basic_string(&profile.provider),
+    );
+    push_codex_config_arg(
+        &mut command_args,
+        "model_reasoning_effort",
+        &toml_basic_string(&reasoning_effort),
+    );
+    push_codex_config_arg(
+        &mut command_args,
+        &format!("{provider_key}.name"),
+        &toml_basic_string(provider_label),
+    );
+    push_codex_config_arg(
+        &mut command_args,
+        &format!("{provider_key}.base_url"),
+        &toml_basic_string(&proxy_base_url),
+    );
+    push_codex_config_arg(
+        &mut command_args,
+        &format!("{provider_key}.wire_api"),
+        &toml_basic_string("responses"),
+    );
+    push_codex_config_arg(
+        &mut command_args,
+        &format!("{provider_key}.env_key"),
+        &toml_basic_string("OPENAI_API_KEY"),
+    );
+    push_codex_config_arg(
+        &mut command_args,
+        &format!("{provider_key}.requires_openai_auth"),
+        "true",
+    );
+
+    Ok(profiles::render::RenderedProfile {
+        env: vec![("OPENAI_API_KEY".to_string(), api_key)],
+        settings_files: Vec::new(),
+        command_args,
+        config_env: None,
+    })
 }
 
 fn push_codex_config_arg(args: &mut Vec<String>, key: &str, value: &str) {

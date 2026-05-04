@@ -29,7 +29,9 @@ pub async fn start_web_tunnel(
     let tunnel_def = crate::resources::tunnel_by_id("cloudflare")
         .expect("cloudflare tunnel not in tunnels.json");
     let program = tunnel_def.program.as_deref().unwrap_or("cloudflared");
-    let base_args: Vec<&str> = tunnel_def.args.as_ref()
+    let base_args: Vec<&str> = tunnel_def
+        .args
+        .as_ref()
         .map(|a| a.iter().map(|s| s.as_str()).collect())
         .unwrap_or_else(|| vec!["tunnel", "run", "--token"]);
 
@@ -40,11 +42,11 @@ pub async fn start_web_tunnel(
         .stderr(Stdio::inherit());
 
     cmd.kill_on_drop(true);
-    let error_hint = crate::resources::tunnel_spawn_error_hint(tunnel_def)
-        .unwrap_or("is it installed?");
-    let child = cmd.spawn().map_err(|e| {
-        format!("Failed to spawn {} ({}): {}", program, error_hint, e)
-    })?;
+    let error_hint =
+        crate::resources::tunnel_spawn_error_hint(tunnel_def).unwrap_or("is it installed?");
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn {} ({}): {}", program, error_hint, e))?;
     let pid = child.id();
 
     // Transfer Child ownership to the registry so daemon shutdown's
@@ -83,7 +85,8 @@ impl crate::tunnels::TunnelBackend for CloudflareBackend {
     async fn start_web_tunnel(
         &self,
         config: &crate::config::Config,
-    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>>
+    {
         start_web_tunnel(config).await
     }
 }

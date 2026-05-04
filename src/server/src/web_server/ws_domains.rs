@@ -28,10 +28,7 @@ use super::AppState;
 // GET /ws/channels
 // ---------------------------------------------------------------------------
 
-pub async fn ws_channels_handler(
-    State(state): State<AppState>,
-    ws: WebSocketUpgrade,
-) -> Response {
+pub async fn ws_channels_handler(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(move |socket| async move {
         let monitor = state.channel_hub.monitor();
         let rx = monitor.subscribe_changes();
@@ -54,7 +51,11 @@ async fn build_channels(
         .map(|s| crate::api_types::ChannelRuntime {
             kind: s.kind,
             status: s.status.as_str(),
-            reason: if s.reason.is_empty() { None } else { Some(s.reason) },
+            reason: if s.reason.is_empty() {
+                None
+            } else {
+                Some(s.reason)
+            },
             crash_count: s.crash_count,
             last_seen_age_secs: s.last_seen_age_secs,
             restart_in_secs: s.restart_in_secs,
@@ -67,10 +68,7 @@ async fn build_channels(
 // GET /ws/tunnels
 // ---------------------------------------------------------------------------
 
-pub async fn ws_tunnels_handler(
-    State(state): State<AppState>,
-    ws: WebSocketUpgrade,
-) -> Response {
+pub async fn ws_tunnels_handler(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(move |socket| async move {
         let tunnels = state.tunnels.clone();
         let rx = tunnels.subscribe_changes();

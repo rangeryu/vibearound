@@ -4,6 +4,7 @@
 
 mod agent_hooks;
 mod api;
+mod api_proxy;
 mod auth;
 mod mcp;
 mod openai_proxy;
@@ -236,6 +237,30 @@ pub async fn run_web_server(
         .route(
             "/openai-proxy/{profile_id}/v1/responses",
             post(openai_proxy::legacy_responses_handler),
+        )
+        .route(
+            "/proxy/{profile_id}/{launch_id}/{target_api_type}/v1/responses",
+            post(api_proxy::responses_handler),
+        )
+        .route(
+            "/proxy/{profile_id}/{target_api_type}/v1/responses",
+            post(api_proxy::legacy_responses_handler),
+        )
+        .route(
+            "/proxy/{profile_id}/{launch_id}/{target_api_type}/v1/chat/completions",
+            post(api_proxy::chat_completions_handler),
+        )
+        .route(
+            "/proxy/{profile_id}/{target_api_type}/v1/chat/completions",
+            post(api_proxy::legacy_chat_completions_handler),
+        )
+        .route(
+            "/proxy/{profile_id}/{launch_id}/{target_api_type}/v1/messages",
+            post(api_proxy::messages_handler),
+        )
+        .route(
+            "/proxy/{profile_id}/{target_api_type}/v1/messages",
+            post(api_proxy::legacy_messages_handler),
         )
         .route(
             "/internal/agent-hooks/codex",

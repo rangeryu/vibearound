@@ -41,7 +41,5 @@ pub fn resume_command_for(cli_kind: &str, session_id: &str, cwd: &str) -> String
             tpl.replace("{cwd}", cwd)
                 .replace("{session_id}", session_id)
         })
-        .unwrap_or_else(|| {
-            format!("cd {} && {} (resume session {})", cwd, cli_kind, session_id)
-        })
+        .unwrap_or_else(|| format!("cd {} && {} (resume session {})", cwd, cli_kind, session_id))
 }

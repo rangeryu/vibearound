@@ -90,11 +90,7 @@ impl PluginHost {
     /// the supervisor's bridge factory on every (re)spawn so `send_output`
     /// always routes to the live process. Sync — the body is just a
     /// `DashMap::insert`.
-    pub fn replace_stdio_runtime(
-        &self,
-        channel_kind: &str,
-        runtime: Arc<StdioPluginRuntime>,
-    ) {
+    pub fn replace_stdio_runtime(&self, channel_kind: &str, runtime: Arc<StdioPluginRuntime>) {
         self.runtimes
             .insert(channel_kind.to_string(), PluginRuntime::Stdio(runtime));
     }

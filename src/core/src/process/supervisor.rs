@@ -33,11 +33,11 @@ use parking_lot::RwLock;
 use tokio::process::Command;
 use tokio::sync::{broadcast, watch};
 
+use crate::proc_log;
 use crate::process::bridge::{BridgeExit, BridgeFactory, StdioPipes};
 use crate::process::env;
 use crate::process::error::{ProcessError, ProcessResult};
 use crate::process::registry::{ChildRegistry, ProcessKind};
-use crate::proc_log;
 
 /// Tick interval for the supervisor's scan loop.
 pub const TICK_INTERVAL: Duration = Duration::from_secs(5);
@@ -397,9 +397,7 @@ impl Supervisor {
     pub fn force_start(&self, id: ProcessId) -> ProcessResult<()> {
         let proc = self.get_proc(id)?;
         match proc.status() {
-            ProcessStatus::Stopped
-            | ProcessStatus::Crashed
-            | ProcessStatus::NotStarted => {
+            ProcessStatus::Stopped | ProcessStatus::Crashed | ProcessStatus::NotStarted => {
                 proc.set_status(ProcessStatus::Crashed);
                 proc.set_reason("started by user");
                 proc.restart_at.store(now_secs(), Ordering::Relaxed);
@@ -484,11 +482,13 @@ impl Supervisor {
     // -----------------------------------------------------------------------
 
     fn get_proc(&self, id: ProcessId) -> ProcessResult<Arc<SupervisedProcess>> {
-        self.processes.read().get(&id).cloned().ok_or_else(|| {
-            ProcessError::UnknownProcess {
+        self.processes
+            .read()
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| ProcessError::UnknownProcess {
                 label: format!("#{}", id.0),
-            }
-        })
+            })
     }
 
     fn cancel_current_bridge(&self, proc: &SupervisedProcess) {
@@ -510,7 +510,10 @@ impl Supervisor {
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         ticker.tick().await; // consume the immediate first tick
 
-        tracing::info!(tick_secs = TICK_INTERVAL.as_secs(), "supervisor loop started");
+        tracing::info!(
+            tick_secs = TICK_INTERVAL.as_secs(),
+            "supervisor loop started"
+        );
         loop {
             ticker.tick().await;
             self.tick().await;
@@ -681,15 +684,18 @@ impl Supervisor {
             source: e,
         })?;
 
-        let stdin = child.stdin.take().ok_or(ProcessError::StdioUnavailable {
-            what: "stdin",
-        })?;
-        let stdout = child.stdout.take().ok_or(ProcessError::StdioUnavailable {
-            what: "stdout",
-        })?;
-        let stderr_raw = child.stderr.take().ok_or(ProcessError::StdioUnavailable {
-            what: "stderr",
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or(ProcessError::StdioUnavailable { what: "stdin" })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or(ProcessError::StdioUnavailable { what: "stdout" })?;
+        let stderr_raw = child
+            .stderr
+            .take()
+            .ok_or(ProcessError::StdioUnavailable { what: "stderr" })?;
         let pid = child.id();
 
         // Hand ownership of the Child to the global registry. This is the
@@ -697,9 +703,7 @@ impl Supervisor {
         // abrupt runtime teardown. The id is stashed on the proc so
         // `handle_bridge_exit` can remove + reap the child (otherwise
         // every respawn leaks a registry entry + zombie process).
-        let registry_id = self
-            .registry
-            .register(proc.kind, proc.label.clone(), child);
+        let registry_id = self.registry.register(proc.kind, proc.label.clone(), child);
         *proc.current_registry_id.lock() = Some(registry_id);
 
         proc_log!(
@@ -736,14 +740,17 @@ impl Supervisor {
         let (cancel_tx, cancel_rx) = watch::channel(false);
         *proc.cancel_tx.write() = Some(cancel_tx);
 
-        Ok((StdioPipes { stdin, stdout, stderr }, cancel_rx))
+        Ok((
+            StdioPipes {
+                stdin,
+                stdout,
+                stderr,
+            },
+            cancel_rx,
+        ))
     }
 
-    async fn handle_bridge_exit(
-        self: Arc<Self>,
-        proc: Arc<SupervisedProcess>,
-        exit: BridgeExit,
-    ) {
+    async fn handle_bridge_exit(self: Arc<Self>, proc: Arc<SupervisedProcess>, exit: BridgeExit) {
         // Clear the cancel channel — this run is done.
         *proc.cancel_tx.write() = None;
 
@@ -924,9 +931,7 @@ mod tests {
             _pipes: StdioPipes,
             _cancel: CancelSignal,
         ) -> super::super::bridge::BridgeFuture {
-            Box::pin(async move {
-                BridgeExit::ProtocolError(anyhow::anyhow!("synthetic failure"))
-            })
+            Box::pin(async move { BridgeExit::ProtocolError(anyhow::anyhow!("synthetic failure")) })
         }
     }
 
@@ -1055,7 +1060,10 @@ mod tests {
         let snap = sup.snapshot();
         let p = snap.iter().find(|p| p.id == id).unwrap();
         assert!(p.crash_count >= 1);
-        assert!(p.restart_in_secs > 0, "backoff should schedule a future respawn");
+        assert!(
+            p.restart_in_secs > 0,
+            "backoff should schedule a future respawn"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1153,7 +1161,10 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
-        panic!("registry leaked {} entries after Never-policy exit", registry.len());
+        panic!(
+            "registry leaked {} entries after Never-policy exit",
+            registry.len()
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

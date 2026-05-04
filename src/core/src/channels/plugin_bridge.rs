@@ -41,41 +41,43 @@ impl ProcessBridge for ChannelPluginBridge {
             let (exit_tx, exit_rx) = oneshot::channel::<BridgeExit>();
             let thread_name = format!("{}-plugin-bridge", this.channel_kind);
 
-            let spawn_result = std::thread::Builder::new().name(thread_name).spawn(move || {
-                let rt = match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(rt) => rt,
-                    Err(e) => {
-                        let _ = exit_tx.send(BridgeExit::ProtocolError(anyhow::anyhow!(
-                            "failed to build plugin bridge runtime: {}",
-                            e
-                        )));
-                        return;
-                    }
-                };
-                rt.block_on(async move {
-                    let local = tokio::task::LocalSet::new();
-                    local
-                        .run_until(async move {
-                            let exit = run_acp_plugin_bridge(
-                                this.channel_kind,
-                                this.raw_config,
-                                pipes.stdin,
-                                pipes.stdout,
-                                this.input_tx,
-                                this.output_rx,
-                                this.conversation_manager,
-                                this.plugin_host,
-                                cancel,
-                            )
+            let spawn_result = std::thread::Builder::new()
+                .name(thread_name)
+                .spawn(move || {
+                    let rt = match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => rt,
+                        Err(e) => {
+                            let _ = exit_tx.send(BridgeExit::ProtocolError(anyhow::anyhow!(
+                                "failed to build plugin bridge runtime: {}",
+                                e
+                            )));
+                            return;
+                        }
+                    };
+                    rt.block_on(async move {
+                        let local = tokio::task::LocalSet::new();
+                        local
+                            .run_until(async move {
+                                let exit = run_acp_plugin_bridge(
+                                    this.channel_kind,
+                                    this.raw_config,
+                                    pipes.stdin,
+                                    pipes.stdout,
+                                    this.input_tx,
+                                    this.output_rx,
+                                    this.conversation_manager,
+                                    this.plugin_host,
+                                    cancel,
+                                )
+                                .await;
+                                let _ = exit_tx.send(exit);
+                            })
                             .await;
-                            let _ = exit_tx.send(exit);
-                        })
-                        .await;
+                    });
                 });
-            });
 
             if let Err(e) = spawn_result {
                 return BridgeExit::ProtocolError(anyhow::anyhow!(

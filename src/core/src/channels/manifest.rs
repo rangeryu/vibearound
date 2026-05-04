@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use crate::routing::ChannelKind;
 use crate::config;
 use crate::plugins::DiscoveredPlugin;
+use crate::routing::ChannelKind;
 
 #[derive(Debug, Clone)]
 pub struct ChannelPluginManifest {

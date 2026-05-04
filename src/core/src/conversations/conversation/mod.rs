@@ -156,7 +156,8 @@ impl Conversation {
                 .map_err(|error| {
                     tracing::info!(
                         "[Conversation] ensure_agent failed route={}: {:#}",
-                        self.route, error
+                        self.route,
+                        error
                     );
                     acp::Error::new(-32603, error.to_string())
                 })?;
@@ -186,7 +187,8 @@ impl Conversation {
 
             tracing::info!(
                 "[Conversation] prompt SENDING route={} session={}",
-                self.route, session_id
+                self.route,
+                session_id
             );
             let request = acp::PromptRequest::new(session_id, content_blocks);
             let response = acp::Agent::prompt(&*agent, request).await;
@@ -266,14 +268,16 @@ impl Conversation {
             crate::resources::resolve_agent_id(&agent_kind).map_err(anyhow::Error::msg)?;
         tracing::info!(
             "[Conversation] switch_agent route={} new_kind={}",
-            self.route, agent_kind
+            self.route,
+            agent_kind
         );
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(agent_kind.clone());
         let _ = self.change_tx.send(());
         tracing::info!(
             "[Conversation] switch_agent done route={} cli_kind={:?}",
-            self.route, agent_kind
+            self.route,
+            agent_kind
         );
         Ok(agent_kind)
     }
@@ -282,7 +286,8 @@ impl Conversation {
     pub async fn switch_profile(&self, profile: String) {
         tracing::info!(
             "[Conversation] switch_profile route={} new_profile={}",
-            self.route, profile
+            self.route,
+            profile
         );
         self.full_reset().await;
         *self.profile.lock().await = Some(profile);
@@ -330,8 +335,12 @@ impl Conversation {
 
     /// Immutable fields exposed as direct getters. `route` is already a
     /// `pub` field and callers should read it directly.
-    pub fn started_at(&self) -> u64 { self.started_at }
-    pub fn bot_identity(&self) -> Option<&str> { self.bot_identity.as_deref() }
+    pub fn started_at(&self) -> u64 {
+        self.started_at
+    }
+    pub fn bot_identity(&self) -> Option<&str> {
+        self.bot_identity.as_deref()
+    }
 
     // Agent + session lifecycle (ensure_agent, ensure_session, full_reset)
     // lives in `lifecycle.rs`.

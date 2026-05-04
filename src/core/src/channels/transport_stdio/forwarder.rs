@@ -31,19 +31,20 @@ pub(super) async fn forward_output_to_plugin(
             match serde_json::from_value::<acp::SessionNotification>(payload.clone()) {
                 Ok(mut notification) => {
                     notification.session_id = route.chat_id.clone().into();
-                    if let Err(error) =
-                        acp::Client::session_notification(conn, notification).await
+                    if let Err(error) = acp::Client::session_notification(conn, notification).await
                     {
                         tracing::info!(
                             "[{}] failed to send session_notification: {}",
-                            channel_kind, error
+                            channel_kind,
+                            error
                         );
                     }
                 }
                 Err(error) => {
                     tracing::info!(
                         "[{}] failed to parse RawAcp as SessionNotification: {}",
-                        channel_kind, error
+                        channel_kind,
+                        error
                     );
                 }
             }
@@ -78,7 +79,9 @@ pub(super) async fn forward_output_to_plugin(
             )
             .await;
         }
-        ChannelOutput::SessionReady { route, session_id, .. } => {
+        ChannelOutput::SessionReady {
+            route, session_id, ..
+        } => {
             send_ext_notification(
                 conn,
                 channel_kind,
@@ -116,26 +119,31 @@ pub(super) async fn forward_output_to_plugin(
             // ACP `requestPermission` call. The plugin's client-side handler
             // (channel-sdk/plugin.ts → renderer.requestPermission) replies,
             // and we push the response onto the waiting oneshot.
-            let request: acp::RequestPermissionRequest = match serde_json::from_value(payload) {
-                Ok(r) => r,
-                Err(e) => {
-                    tracing::info!(
+            let request: acp::RequestPermissionRequest =
+                match serde_json::from_value(payload) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::info!(
                         "[{}] failed to parse PermissionRequest payload route={} request_id={}: {}",
                         channel_kind, route, request_id, e
                     );
-                    if let Some((_, (_, tx))) = plugin_host.pending_permissions.remove(&request_id) {
-                        let _ = tx.send(acp::RequestPermissionResponse::new(
-                            acp::RequestPermissionOutcome::Cancelled,
-                        ));
+                        if let Some((_, (_, tx))) =
+                            plugin_host.pending_permissions.remove(&request_id)
+                        {
+                            let _ = tx.send(acp::RequestPermissionResponse::new(
+                                acp::RequestPermissionOutcome::Cancelled,
+                            ));
+                        }
+                        return;
                     }
-                    return;
-                }
-            };
+                };
             let response = acp::Client::request_permission(conn, request).await;
             let Some((_, (_, tx))) = plugin_host.pending_permissions.remove(&request_id) else {
                 tracing::info!(
                     "[{}] PermissionRequest response dropped — no pending route={} request_id={}",
-                    channel_kind, route, request_id
+                    channel_kind,
+                    route,
+                    request_id
                 );
                 return;
             };
@@ -146,7 +154,10 @@ pub(super) async fn forward_output_to_plugin(
                 Err(e) => {
                     tracing::info!(
                         "[{}] plugin requestPermission failed route={} request_id={}: {}",
-                        channel_kind, route, request_id, e
+                        channel_kind,
+                        route,
+                        request_id,
+                        e
                     );
                     let _ = tx.send(acp::RequestPermissionResponse::new(
                         acp::RequestPermissionOutcome::Cancelled,
@@ -169,7 +180,8 @@ async fn send_ext_notification(
             Err(error) => {
                 tracing::info!(
                     "[{}] failed to serialize ext params: {}",
-                    channel_kind, error
+                    channel_kind,
+                    error
                 );
                 return;
             }
@@ -178,7 +190,9 @@ async fn send_ext_notification(
     if let Err(error) = acp::Client::ext_notification(conn, notification).await {
         tracing::info!(
             "[{}] failed to send ext_notification {}: {}",
-            channel_kind, method, error
+            channel_kind,
+            method,
+            error
         );
     }
 }

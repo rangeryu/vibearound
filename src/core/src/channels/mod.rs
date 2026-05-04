@@ -117,7 +117,8 @@ impl ChannelManager {
                 None => {
                     tracing::info!(
                         "[{}] config=missing channels.{} — plugin disabled",
-                        channel_name, channel_name
+                        channel_name,
+                        channel_name
                     );
                     return false;
                 }

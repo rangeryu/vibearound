@@ -8,8 +8,8 @@
 
 use agent_client_protocol as acp;
 
-use crate::routing::RouteKey;
 use crate::config;
+use crate::routing::RouteKey;
 
 /// Scan content blocks for `resource_link` with `file://` URIs under the
 /// global `.cache/` staging dir. Move each file to the workspace session
@@ -40,7 +40,10 @@ pub(super) async fn relocate_cached_media(
             let src_path = uri.strip_prefix("file://").unwrap_or(&uri);
             let src = std::path::Path::new(src_path);
             if !src.exists() {
-                tracing::info!("[Conversation] relocate: source not found {}", src.display());
+                tracing::info!(
+                    "[Conversation] relocate: source not found {}",
+                    src.display()
+                );
                 continue;
             }
             let file_name = src
@@ -74,7 +77,11 @@ pub(super) async fn relocate_cached_media(
             }
 
             let new_uri = format!("file://{}", dest.to_string_lossy());
-            tracing::info!("[Conversation] relocate: {} -> {}", src.display(), dest.display());
+            tracing::info!(
+                "[Conversation] relocate: {} -> {}",
+                src.display(),
+                dest.display()
+            );
             rl.uri = new_uri;
         }
     }
