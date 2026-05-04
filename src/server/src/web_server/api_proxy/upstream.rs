@@ -3,6 +3,7 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use serde_json::{json, Value};
 
+use common::profiles::schema::ProfileDef;
 use common::profiles::{catalog, normalize_legacy_profile, schema};
 
 use super::{json_error, ProxyProtocol};
@@ -10,6 +11,7 @@ use super::{json_error, ProxyProtocol};
 pub(super) struct UpstreamEndpoint {
     pub(super) url: String,
     pub(super) protocol: ProxyProtocol,
+    pub(super) profile: ProfileDef,
 }
 
 pub(super) fn upstream_endpoint(
@@ -83,7 +85,11 @@ pub(super) fn upstream_endpoint(
         ProxyProtocol::OpenAiChat => join_versioned_endpoint(base_url, "chat/completions"),
         ProxyProtocol::AnthropicMessages => join_versioned_endpoint(base_url, "messages"),
     };
-    Ok(UpstreamEndpoint { url, protocol })
+    Ok(UpstreamEndpoint {
+        url,
+        protocol,
+        profile,
+    })
 }
 
 fn join_versioned_endpoint(base_url: &str, endpoint: &str) -> String {

@@ -10,6 +10,8 @@ use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 use va_ai_api_proxy::{DecodeState, EncodeState, WireEvent};
 
+use crate::openai_proxy::providers::ProviderProxyAdapter;
+
 use super::{json_error, ProxyProtocol};
 
 type UpstreamByteStream =
@@ -19,8 +21,14 @@ pub(super) fn translated_stream_response(
     upstream: reqwest::Response,
     upstream_protocol: ProxyProtocol,
     agent_protocol: ProxyProtocol,
+    provider_adapter: ProviderProxyAdapter,
 ) -> Response {
-    let stream = map_sse_stream(upstream, upstream_protocol, agent_protocol);
+    let stream = map_sse_stream(
+        upstream,
+        upstream_protocol,
+        agent_protocol,
+        provider_adapter,
+    );
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/event-stream")
@@ -38,11 +46,13 @@ fn map_sse_stream(
     upstream: reqwest::Response,
     upstream_protocol: ProxyProtocol,
     agent_protocol: ProxyProtocol,
+    provider_adapter: ProviderProxyAdapter,
 ) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + 'static {
     let state = SseMapState {
         upstream: Box::pin(upstream.bytes_stream()),
         upstream_protocol,
         agent_protocol,
+        provider_adapter,
         decode_state: DecodeState::default(),
         encode_state: EncodeState::default(),
         buffer: Vec::new(),
@@ -81,6 +91,7 @@ struct SseMapState {
     upstream: UpstreamByteStream,
     upstream_protocol: ProxyProtocol,
     agent_protocol: ProxyProtocol,
+    provider_adapter: ProviderProxyAdapter,
     decode_state: DecodeState,
     encode_state: EncodeState,
     buffer: Vec<u8>,
@@ -119,6 +130,9 @@ impl SseMapState {
                 return;
             }
         };
+        if self.upstream_protocol == ProxyProtocol::OpenAiChat {
+            self.provider_adapter.observe_chat_stream_chunk(&raw);
+        }
         let events = match self
             .upstream_protocol
             .decode_upstream_stream_chunk(raw, &mut self.decode_state)

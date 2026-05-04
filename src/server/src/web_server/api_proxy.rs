@@ -12,6 +12,8 @@ mod completion;
 mod stream;
 mod upstream;
 
+use crate::openai_proxy::providers::{ProviderProxyAdapter, ProviderProxyContext};
+
 use completion::translated_completion_response;
 use stream::translated_stream_response;
 use upstream::{
@@ -218,6 +220,23 @@ async fn proxy_handler(
         Ok(endpoint) => endpoint,
         Err((status, message)) => return json_error(status, &message),
     };
+    let codex_session_state = launch_id
+        .as_deref()
+        .and_then(|launch_id| state.hook_registry.codex_session_for_launch(launch_id));
+    let provider_context = ProviderProxyContext {
+        launch_id: codex_session_state
+            .as_ref()
+            .map(|state| state.launch_id.clone())
+            .or_else(|| launch_id.clone()),
+        session_id: codex_session_state
+            .as_ref()
+            .and_then(|state| state.session_id.clone()),
+        transcript_path: codex_session_state
+            .as_ref()
+            .and_then(|state| state.transcript_path.clone()),
+    };
+    let mut provider_adapter =
+        ProviderProxyAdapter::for_profile(&upstream.profile, provider_context);
 
     let universal_request = match client_protocol.decode_agent_request(original_request.clone()) {
         Ok(request) => request,
@@ -231,6 +250,9 @@ async fn proxy_handler(
         Err(error) => return json_error(StatusCode::UNPROCESSABLE_ENTITY, &error.to_string()),
     };
     normalize_target_request(&mut upstream_request, upstream.protocol);
+    if upstream.protocol == ProxyProtocol::OpenAiChat {
+        provider_adapter.prepare_chat_request(&original_request, &mut upstream_request);
+    }
 
     let stream = upstream_request
         .get("stream")
@@ -281,9 +303,20 @@ async fn proxy_handler(
     }
 
     if stream {
-        translated_stream_response(response, upstream.protocol, client_protocol)
+        translated_stream_response(
+            response,
+            upstream.protocol,
+            client_protocol,
+            provider_adapter,
+        )
     } else {
-        translated_completion_response(response, upstream.protocol, client_protocol).await
+        translated_completion_response(
+            response,
+            upstream.protocol,
+            client_protocol,
+            &mut provider_adapter,
+        )
+        .await
     }
 }
 

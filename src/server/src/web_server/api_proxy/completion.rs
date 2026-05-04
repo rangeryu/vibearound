@@ -6,12 +6,15 @@ use axum::Json;
 use serde_json::{json, Value};
 use va_ai_api_proxy::{FinishReason, UniversalEvent, Usage};
 
+use crate::openai_proxy::providers::ProviderProxyAdapter;
+
 use super::{json_error, ProxyProtocol};
 
 pub(super) async fn translated_completion_response(
     upstream: reqwest::Response,
     upstream_protocol: ProxyProtocol,
     agent_protocol: ProxyProtocol,
+    provider_adapter: &mut ProviderProxyAdapter,
 ) -> Response {
     let bytes = match upstream.bytes().await {
         Ok(bytes) => bytes,
@@ -31,6 +34,9 @@ pub(super) async fn translated_completion_response(
             );
         }
     };
+    if upstream_protocol == ProxyProtocol::OpenAiChat {
+        provider_adapter.observe_chat_completion(&raw);
+    }
     let events = match upstream_protocol.decode_upstream_response(raw) {
         Ok(events) => events,
         Err(error) => return json_error(StatusCode::BAD_GATEWAY, &error.to_string()),
@@ -50,6 +56,7 @@ struct ResponseParts {
     model: Option<String>,
     text: String,
     tool_calls: Vec<ToolCallParts>,
+    reasoning_content: String,
     usage: Option<Usage>,
     finish_reason: Option<FinishReason>,
 }
@@ -74,6 +81,9 @@ fn collect_response_parts(events: &[UniversalEvent]) -> ResponseParts {
             }
             UniversalEvent::TextDelta { text, .. } => {
                 parts.text.push_str(text);
+            }
+            UniversalEvent::ReasoningDelta { text, .. } => {
+                parts.reasoning_content.push_str(text);
             }
             UniversalEvent::ToolCallDelta {
                 id,
@@ -126,6 +136,16 @@ fn events_to_openai_response(events: &[UniversalEvent]) -> Value {
     let parts = collect_response_parts(events);
     let id = parts.id.unwrap_or_else(|| "resp_va_proxy".to_string());
     let mut output = Vec::new();
+    if !parts.reasoning_content.is_empty() {
+        output.push(json!({
+            "type": "reasoning",
+            "id": "rs_va_proxy",
+            "content": [{
+                "type": "reasoning_text",
+                "text": parts.reasoning_content,
+            }]
+        }));
+    }
     if !parts.text.is_empty() || parts.tool_calls.is_empty() {
         output.push(json!({
             "type": "message",
@@ -188,6 +208,12 @@ fn events_to_openai_chat_response(events: &[UniversalEvent]) -> Value {
         );
     } else {
         message.insert("content".to_string(), Value::String(parts.text));
+    }
+    if !parts.reasoning_content.is_empty() {
+        message.insert(
+            "reasoning_content".to_string(),
+            Value::String(parts.reasoning_content),
+        );
     }
     json!({
         "id": parts.id.unwrap_or_else(|| "chatcmpl_va_proxy".to_string()),
