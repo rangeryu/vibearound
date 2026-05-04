@@ -594,6 +594,7 @@ fn write_windows_launch_script(
     choice: TerminalChoice,
     workspace: &Path,
 ) -> anyhow::Result<PathBuf> {
+    let (command, args) = normalize_windows_launch_command(command, args);
     let script_path = match choice {
         TerminalChoice::PowerShell => {
             std::env::temp_dir().join(format!("vibearound-launch-{}.ps1", uuid::Uuid::new_v4()))
@@ -606,9 +607,9 @@ fn write_windows_launch_script(
 
     let body = match choice {
         TerminalChoice::PowerShell => {
-            build_powershell_script(env, command, args, window_label, workspace)
+            build_powershell_script(env, &command, &args, window_label, workspace)
         }
-        TerminalChoice::Cmd => build_cmd_script(env, command, args, window_label, workspace),
+        TerminalChoice::Cmd => build_cmd_script(env, &command, &args, window_label, workspace),
         other => bail!("terminal '{}' is not supported on Windows", other.id()),
     };
 
@@ -616,6 +617,152 @@ fn write_windows_launch_script(
         .with_context(|| format!("write launch script {:?}", script_path))?;
     auth::set_owner_only(&script_path).ok();
     Ok(script_path)
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn normalize_windows_launch_command(command: &str, args: &[String]) -> (String, Vec<String>) {
+    let argv = command_words_with_args(command, args);
+    let Some((program, program_args)) = argv.split_first() else {
+        return (command.to_string(), args.to_vec());
+    };
+
+    if !command_stem_eq(program, "codex") {
+        return (command.to_string(), args.to_vec());
+    }
+
+    let Some(program_path) = find_windows_command(program) else {
+        return (command.to_string(), args.to_vec());
+    };
+    let Some(ext) = program_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+    else {
+        return (command.to_string(), args.to_vec());
+    };
+    if ext != "cmd" && ext != "ps1" {
+        return (command.to_string(), args.to_vec());
+    }
+
+    let Some(codex_js) = npm_shim_js_entry(&program_path) else {
+        return (command.to_string(), args.to_vec());
+    };
+
+    let mut rewritten_args = Vec::with_capacity(program_args.len() + 1);
+    rewritten_args.push(codex_js.to_string_lossy().into_owned());
+    rewritten_args.extend(program_args.iter().cloned());
+    ("node".to_string(), rewritten_args)
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn command_stem_eq(command: &str, expected: &str) -> bool {
+    let file_name = command
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(command)
+        .trim_matches('"');
+    let stem = file_name
+        .rsplit_once('.')
+        .map(|(stem, _)| stem)
+        .unwrap_or(file_name);
+    stem.eq_ignore_ascii_case(expected)
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn find_windows_command(program: &str) -> Option<PathBuf> {
+    let program = program.trim_matches('"');
+    let path = Path::new(program);
+    if path.is_absolute() || program.contains('\\') || program.contains('/') {
+        return existing_windows_command_path(path);
+    }
+
+    let path_var = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_var) {
+        if let Some(candidate) = existing_windows_command_path(&dir.join(program)) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn existing_windows_command_path(base: &Path) -> Option<PathBuf> {
+    if base.extension().is_some() {
+        return base.exists().then(|| base.to_path_buf());
+    }
+
+    for ext in windows_path_exts() {
+        let candidate = base.with_extension(ext.trim_start_matches('.'));
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn windows_path_exts() -> Vec<String> {
+    let mut exts: Vec<String> = std::env::var("PATHEXT")
+        .ok()
+        .map(|value| {
+            value
+                .split(';')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            vec![
+                ".COM".to_string(),
+                ".EXE".to_string(),
+                ".BAT".to_string(),
+                ".CMD".to_string(),
+            ]
+        });
+    if !exts.iter().any(|ext| ext.eq_ignore_ascii_case(".PS1")) {
+        exts.push(".PS1".to_string());
+    }
+    exts
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn npm_shim_js_entry(shim_path: &Path) -> Option<PathBuf> {
+    let body = std::fs::read_to_string(shim_path).ok()?;
+    let token = extract_npm_shim_js_token(&body)?;
+    let base_dir = shim_path.parent()?;
+    let candidate = expand_npm_shim_js_token(base_dir, &token);
+    candidate.exists().then_some(candidate)
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn extract_npm_shim_js_token(body: &str) -> Option<String> {
+    for line in body.lines() {
+        let mut rest = line;
+        while let Some(start) = rest.find('"') {
+            rest = &rest[start + 1..];
+            let Some(end) = rest.find('"') else {
+                break;
+            };
+            let token = &rest[..end];
+            if let Some(js_pos) = token.to_ascii_lowercase().find(".js") {
+                return Some(token[..js_pos + 3].to_string());
+            }
+            rest = &rest[end + 1..];
+        }
+    }
+    None
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn expand_npm_shim_js_token(base_dir: &Path, token: &str) -> PathBuf {
+    let normalized = token.replace('\\', "/");
+    for prefix in ["%dp0%/", "%~dp0/", "$basedir/"] {
+        if let Some(rest) = normalized.strip_prefix(prefix) {
+            return base_dir.join(rest);
+        }
+    }
+    PathBuf::from(token)
 }
 
 #[cfg(target_os = "windows")]
@@ -1003,6 +1150,72 @@ mod tests {
             split_command_words("\"C:\\Program Files\\tool.exe\" run 'two words'"),
             vec!["C:\\Program Files\\tool.exe", "run", "two words"]
         );
+    }
+
+    #[test]
+    fn extracts_codex_js_from_npm_cmd_shim() {
+        let shim = r#"@IF EXIST "%~dp0\node.exe" (
+  "%~dp0\node.exe"  "%dp0%\node_modules\@openai\codex\bin\codex.js" %*
+) ELSE (
+  node  "%dp0%\node_modules\@openai\codex\bin\codex.js" %*
+)"#;
+
+        assert_eq!(
+            extract_npm_shim_js_token(shim).as_deref(),
+            Some("%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js")
+        );
+    }
+
+    #[test]
+    fn extracts_codex_js_from_npm_powershell_shim() {
+        let shim = r#"if (Test-Path "$basedir/node.exe") {
+  & "$basedir/node.exe" "$basedir/node_modules/@openai/codex/bin/codex.js" $args
+} else {
+  & "node.exe" "$basedir/node_modules/@openai/codex/bin/codex.js" $args
+}"#;
+
+        assert_eq!(
+            extract_npm_shim_js_token(shim).as_deref(),
+            Some("$basedir/node_modules/@openai/codex/bin/codex.js")
+        );
+    }
+
+    #[test]
+    fn windows_launch_rewrites_codex_shim_to_node_entrypoint() {
+        let root = std::env::temp_dir().join(format!(
+            "vibearound-codex-shim-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let js_path = root
+            .join("node_modules")
+            .join("@openai")
+            .join("codex")
+            .join("bin")
+            .join("codex.js");
+        std::fs::create_dir_all(js_path.parent().unwrap()).unwrap();
+        std::fs::write(&js_path, "").unwrap();
+        let shim_path = root.join("codex.ps1");
+        std::fs::write(
+            &shim_path,
+            r#"& "node.exe" "$basedir/node_modules/@openai/codex/bin/codex.js" $args"#,
+        )
+        .unwrap();
+
+        let args = vec![
+            "-c".to_string(),
+            "hooks.SessionStart=[{ hooks = [{ command = \"hook --agent codex\" }] }]".to_string(),
+        ];
+        let (command, rewritten_args) =
+            normalize_windows_launch_command(&shim_path.to_string_lossy(), &args);
+
+        assert_eq!(command, "node");
+        assert_eq!(
+            rewritten_args.first().map(String::as_str),
+            Some(js_path.to_str().unwrap())
+        );
+        assert_eq!(&rewritten_args[1..], &args[..]);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
