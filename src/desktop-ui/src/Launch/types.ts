@@ -67,6 +67,8 @@ export interface ProfileDef {
   provider_settings?: ProviderSettings;
 }
 
+export type ProfileDraft = Omit<ProfileDef, "id">;
+
 export interface ModelDef {
   id: string;
   label?: string | null;

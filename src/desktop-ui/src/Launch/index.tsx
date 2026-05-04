@@ -14,6 +14,7 @@ import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
 import {
+  createProfile,
   deleteProfile,
   getProfile,
   getLauncherPreferences,
@@ -33,6 +34,7 @@ import { LaunchSettingsMenu } from "./LaunchSettingsMenu";
 import { ProfileCard } from "./ProfileCard";
 import { ProfileConnectionDialog } from "./ProfileConnectionDialog";
 import { ProfileFormDialog } from "./ProfileFormDialog";
+import type { ProfileFormSubmit } from "./ProfileFormDialog";
 import { WorkspacePicker } from "./WorkspacePicker";
 import type {
   CatalogEntry,
@@ -160,8 +162,12 @@ export function Launch() {
     }
   }
 
-  async function handleSave(profile: ProfileDef) {
-    await upsertProfile(profile);
+  async function handleSave(submit: ProfileFormSubmit) {
+    if (submit.type === "create") {
+      await createProfile(submit.draft);
+    } else {
+      await upsertProfile(submit.profile);
+    }
     await refresh();
   }
 
@@ -294,7 +300,6 @@ export function Launch() {
       {editorOpen && (
         <ProfileFormDialog
           catalog={catalog}
-          existingProfileIds={profiles.map((profile) => profile.id)}
           initial={editing}
           onClose={() => {
             setEditorOpen(false);

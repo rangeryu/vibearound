@@ -5,6 +5,7 @@ import type {
   CompatibilityProxyMode,
   ConnectionAgentId,
   ProfileDef,
+  ProfileDraft,
   ProfileConnectionPreference,
   ProfileConnections,
   ProfileSummary,
@@ -20,6 +21,10 @@ export function getProfile(id: string): Promise<ProfileDef> {
 
 export function upsertProfile(profile: ProfileDef): Promise<void> {
   return invoke<void>("profiles_upsert", { profile });
+}
+
+export function createProfile(draft: ProfileDraft): Promise<ProfileDef> {
+  return invoke<ProfileDef>("profiles_create", { draft });
 }
 
 export function deleteProfile(id: string): Promise<void> {

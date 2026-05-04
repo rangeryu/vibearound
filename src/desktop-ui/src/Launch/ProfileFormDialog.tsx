@@ -18,10 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  CUSTOM_PROVIDER,
-  generateProfileId,
-} from "./ProfileFormDialog.constants";
+import { CUSTOM_PROVIDER } from "./ProfileFormDialog.constants";
 import { FormBody } from "./ProfileFormBody";
 import { ProviderGrid } from "./ProfileProviderGrid";
 import {
@@ -36,24 +33,27 @@ import type {
   AuthMode,
   CatalogEntry,
   ProfileDef,
+  ProfileDraft,
   ProviderSettings,
 } from "./types";
 import { isProviderApiKind } from "./types";
 
 type Step = "pick-provider" | "fill-form";
 
+export type ProfileFormSubmit =
+  | { type: "create"; draft: ProfileDraft }
+  | { type: "update"; profile: ProfileDef };
+
 interface Props {
   catalog: CatalogEntry[];
-  existingProfileIds?: string[];
   /** Set when editing -- locks step 1 and prefills step 2. */
   initial?: ProfileDef | null;
   onClose: () => void;
-  onSave: (profile: ProfileDef) => Promise<void>;
+  onSave: (submit: ProfileFormSubmit) => Promise<void>;
 }
 
 export function ProfileFormDialog({
   catalog,
-  existingProfileIds = [],
   initial,
   onClose,
   onSave,
@@ -173,8 +173,7 @@ export function ProfileFormDialog({
       }
     }
 
-    const profile: ProfileDef = {
-      id: initial?.id ?? generateProfileId(provider.id, existingProfileIds),
+    const draft: ProfileDraft = {
       label: label.trim(),
       provider: provider.id,
       auth_mode: "api_key" as AuthMode,
@@ -186,7 +185,11 @@ export function ProfileFormDialog({
 
     setSaving(true);
     try {
-      await onSave(profile);
+      await onSave(
+        initial
+          ? { type: "update", profile: { id: initial.id, ...draft } }
+          : { type: "create", draft },
+      );
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

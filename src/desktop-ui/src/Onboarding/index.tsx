@@ -16,13 +16,15 @@ import { useChannelAuth } from "./hooks/useChannelAuth";
 import { useInstallFlow } from "./hooks/useInstallFlow";
 import { buildSettings } from "./lib/buildSettings";
 import {
+  createProfile,
   deleteProfile,
   listCatalog,
   listProfiles,
   upsertProfile,
 } from "../Launch/api";
 import { ProfileFormDialog } from "../Launch/ProfileFormDialog";
-import type { CatalogEntry, ProfileDef, ProfileSummary } from "../Launch/types";
+import type { ProfileFormSubmit } from "../Launch/ProfileFormDialog";
+import type { CatalogEntry, ProfileSummary } from "../Launch/types";
 import type {
   AgentSummary,
   DiscoveredChannelPlugin,
@@ -229,8 +231,12 @@ export default function Onboarding() {
   }, []);
 
   const handleSaveProfile = useCallback(
-    async (profile: ProfileDef) => {
-      await upsertProfile(profile);
+    async (submit: ProfileFormSubmit) => {
+      if (submit.type === "create") {
+        await createProfile(submit.draft);
+      } else {
+        await upsertProfile(submit.profile);
+      }
       const nextProfiles = await listProfiles();
       setProfiles(nextProfiles);
     },

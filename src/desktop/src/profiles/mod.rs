@@ -7,12 +7,13 @@
 mod launcher;
 mod terminal;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use common::profiles::schema::{ApiTypeOverrides, ProviderSettings};
 use common::profiles::{catalog, normalize_legacy_profile, runtime, schema};
 use common::{config, resources};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
 pub use common::profiles::{AuthMode, ProfileDef};
@@ -70,6 +71,35 @@ pub struct CatalogEntry {
     pub icon: Option<String>,
     pub homepage: Option<String>,
     pub endpoints: Vec<catalog::EndpointDef>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProfileDraft {
+    pub label: String,
+    pub provider: String,
+    pub auth_mode: AuthMode,
+    pub api_types: Vec<String>,
+    #[serde(default)]
+    pub credentials: BTreeMap<String, String>,
+    #[serde(default)]
+    pub overrides: BTreeMap<String, ApiTypeOverrides>,
+    #[serde(default)]
+    pub provider_settings: ProviderSettings,
+}
+
+impl ProfileDraft {
+    fn into_profile(self, id: String) -> ProfileDef {
+        ProfileDef {
+            id,
+            label: self.label,
+            provider: self.provider,
+            auth_mode: self.auth_mode,
+            api_types: self.api_types,
+            credentials: self.credentials,
+            overrides: self.overrides,
+            provider_settings: self.provider_settings,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +160,19 @@ pub fn profiles_get(id: String) -> Result<ProfileDef, String> {
 
 #[tauri::command]
 pub fn profiles_upsert(app: tauri::AppHandle, profile: ProfileDef) -> Result<(), String> {
-    schema::validate(&profile).map_err(|e| e.to_string())?;
+    save_profile(&app, &profile)
+}
+
+#[tauri::command]
+pub fn profiles_create(app: tauri::AppHandle, draft: ProfileDraft) -> Result<ProfileDef, String> {
+    let id = schema::generate_unique_id(&draft.provider).map_err(|e| e.to_string())?;
+    let profile = draft.into_profile(id);
+    save_profile(&app, &profile)?;
+    Ok(profile)
+}
+
+fn save_profile(app: &tauri::AppHandle, profile: &ProfileDef) -> Result<(), String> {
+    schema::validate(profile).map_err(|e| e.to_string())?;
     let provider = catalog::get(&profile.provider)
         .ok_or_else(|| format!("unknown provider '{}'", profile.provider))?;
     for api_type in &profile.api_types {
@@ -141,9 +183,9 @@ pub fn profiles_upsert(app: tauri::AppHandle, profile: ProfileDef) -> Result<(),
             ));
         }
     }
-    schema::save(&profile).map_err(|e| e.to_string())?;
+    schema::save(profile).map_err(|e| e.to_string())?;
     ensure_profile_order_contains(&profile.id)?;
-    emit_launch_config_changed(&app);
+    emit_launch_config_changed(app);
     Ok(())
 }
 
