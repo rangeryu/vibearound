@@ -79,13 +79,47 @@ export const CUSTOM_PROVIDER: CatalogEntry = {
 };
 
 /**
- * Generate a fresh profile id. Format: `${provider}-${random8}` so the
+ * Generate a fresh profile id. Format: `${provider}-${shortUuid}` so the
  * same provider can host multiple profiles and the on-disk filename still
  * reflects the provider for at-a-glance inspection.
  */
-export function generateProfileId(providerId: string): string {
-  const random = Math.random().toString(36).slice(2, 10).padEnd(8, "0");
-  return `${providerId}-${random}`;
+export function generateProfileId(
+  providerId: string,
+  existingProfileIds: Iterable<string> = [],
+): string {
+  const existing = new Set(existingProfileIds);
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    const id = `${providerId}-${shortUuid()}`;
+    if (!existing.has(id)) return id;
+  }
+
+  const id = `${providerId}-${uuidHex()}`;
+  return existing.has(id) ? `${providerId}-${Date.now().toString(36)}-${shortUuid()}` : id;
+}
+
+function shortUuid(): string {
+  return uuidHex().slice(0, 12);
+}
+
+function uuidHex(): string {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID().replaceAll("-", "");
+  }
+
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, byteToHex).join("");
+  }
+
+  // Non-browser fallback for unusual test runners.
+  return Array.from({ length: 32 }, () =>
+    Math.floor(Math.random() * 16).toString(16),
+  ).join("");
+}
+
+function byteToHex(byte: number): string {
+  return byte.toString(16).padStart(2, "0");
 }
 
 export const INPUT_CLASS = "h-8 text-[13px]";

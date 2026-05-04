@@ -44,6 +44,7 @@ type Step = "pick-provider" | "fill-form";
 
 interface Props {
   catalog: CatalogEntry[];
+  existingProfileIds?: string[];
   /** Set when editing -- locks step 1 and prefills step 2. */
   initial?: ProfileDef | null;
   onClose: () => void;
@@ -52,6 +53,7 @@ interface Props {
 
 export function ProfileFormDialog({
   catalog,
+  existingProfileIds = [],
   initial,
   onClose,
   onSave,
@@ -172,7 +174,7 @@ export function ProfileFormDialog({
     }
 
     const profile: ProfileDef = {
-      id: initial?.id ?? generateProfileId(provider.id),
+      id: initial?.id ?? generateProfileId(provider.id, existingProfileIds),
       label: label.trim(),
       provider: provider.id,
       auth_mode: "api_key" as AuthMode,

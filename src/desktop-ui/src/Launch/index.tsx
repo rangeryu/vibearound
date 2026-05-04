@@ -294,6 +294,7 @@ export function Launch() {
       {editorOpen && (
         <ProfileFormDialog
           catalog={catalog}
+          existingProfileIds={profiles.map((profile) => profile.id)}
           initial={editing}
           onClose={() => {
             setEditorOpen(false);
