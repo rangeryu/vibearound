@@ -321,9 +321,9 @@ function ManualValueRow({
       </div>
       <Button
         type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 gap-1 px-2 text-[11px]"
+        variant="link"
+        size="xs"
+        className="h-auto gap-1 px-0 py-0 text-[11px] font-medium"
         onClick={onCopy}
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
