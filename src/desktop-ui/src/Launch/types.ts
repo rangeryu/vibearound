@@ -7,6 +7,7 @@
 
 export type AuthMode = "api_key" | "oauth_via_cli";
 export type CompatibilityProxyMode = "auto" | "on" | "off";
+export type ConnectionAgentId = "claude" | "codex";
 
 export interface ProfileSummary {
   id: string;
@@ -29,6 +30,16 @@ export interface LaunchTargetSummary {
   apiType: string;
   warning?: string | null;
 }
+
+export interface ProfileConnectionPreference {
+  proxyEnabled?: boolean | null;
+  targetApiType?: string | null;
+}
+
+export type ProfileConnections = Record<
+  string,
+  Partial<Record<ConnectionAgentId, ProfileConnectionPreference>>
+>;
 
 export interface ApiTypeOverrides {
   base_url?: string | null;

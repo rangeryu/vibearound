@@ -59,43 +59,43 @@ impl ProcessBridge for AcpAgentBridge {
                 ready_tx,
             } = this;
 
-            let spawn_result = std::thread::Builder::new().name(thread_name).spawn(move || {
-                let rt = match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(rt) => rt,
-                    Err(e) => {
-                        let _ = ready_tx.send(Err(anyhow!(
-                            "failed to build agent bridge runtime: {}",
-                            e
-                        )));
-                        let _ = exit_tx.send(BridgeExit::ProtocolError(anyhow!(
-                            "agent bridge runtime build failed: {}",
-                            e
-                        )));
-                        return;
-                    }
-                };
-                rt.block_on(async move {
-                    let local = tokio::task::LocalSet::new();
-                    local
-                        .run_until(async move {
-                            let exit = drive_agent_bridge(
-                                agent_id,
-                                cwd,
-                                resume_session_id,
-                                client_handler,
-                                ready_tx,
-                                pipes,
-                                cancel,
-                            )
+            let spawn_result = std::thread::Builder::new()
+                .name(thread_name)
+                .spawn(move || {
+                    let rt = match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => rt,
+                        Err(e) => {
+                            let _ = ready_tx
+                                .send(Err(anyhow!("failed to build agent bridge runtime: {}", e)));
+                            let _ = exit_tx.send(BridgeExit::ProtocolError(anyhow!(
+                                "agent bridge runtime build failed: {}",
+                                e
+                            )));
+                            return;
+                        }
+                    };
+                    rt.block_on(async move {
+                        let local = tokio::task::LocalSet::new();
+                        local
+                            .run_until(async move {
+                                let exit = drive_agent_bridge(
+                                    agent_id,
+                                    cwd,
+                                    resume_session_id,
+                                    client_handler,
+                                    ready_tx,
+                                    pipes,
+                                    cancel,
+                                )
+                                .await;
+                                let _ = exit_tx.send(exit);
+                            })
                             .await;
-                            let _ = exit_tx.send(exit);
-                        })
-                        .await;
+                    });
                 });
-            });
 
             if let Err(e) = spawn_result {
                 return BridgeExit::ProtocolError(anyhow!(
@@ -170,7 +170,9 @@ async fn drive_agent_bridge(
             Err(error) => {
                 tracing::info!(
                     "[{}-agent] failed to load session {}, starting without session: {}",
-                    agent_id, resume, error
+                    agent_id,
+                    resume,
+                    error
                 );
                 None
             }

@@ -37,7 +37,8 @@ impl StdioPluginRuntime {
         if let Err(error) = self.output_tx.send(output) {
             tracing::info!(
                 "[{}] failed to send output to ACP plugin bridge: {}",
-                self.channel_kind, error
+                self.channel_kind,
+                error
             );
         }
     }

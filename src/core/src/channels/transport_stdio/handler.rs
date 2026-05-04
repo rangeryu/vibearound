@@ -8,10 +8,10 @@ use tokio::sync::mpsc;
 
 use agent_client_protocol as acp;
 
+use crate::conversations::ConversationManager;
 use crate::proc_log;
 use crate::process::registry::ProcessKind;
 use crate::routing::RouteKey;
-use crate::conversations::ConversationManager;
 
 use super::super::plugin_host::PluginHost;
 use super::super::prompt::handle_prompt;
@@ -227,7 +227,8 @@ impl acp::Agent for PluginAgentHandler {
             other => {
                 tracing::info!(
                     "[{}] unhandled ext_notification: {}",
-                    self.channel_kind, other
+                    self.channel_kind,
+                    other
                 );
             }
         }

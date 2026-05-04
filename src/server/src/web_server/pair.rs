@@ -3,13 +3,13 @@
 //! - POST /va/api/pair/start  — generate a 6-digit code + session ID
 //! - GET  /va/api/pair/status — poll for verification + receive auth token
 
+use axum::body::Body;
 use axum::{
     extract::Query,
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
-use axum::body::Body;
 
 /// POST /va/api/pair/start — generate a pairing code.
 ///
