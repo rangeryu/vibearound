@@ -229,9 +229,6 @@ export function ProfileConnectionDialog({
                           <div className="text-[11px] font-medium">
                             {t("Manual setup")}
                           </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {t("Use any non-empty API key")}
-                          </div>
                         </div>
                         <ManualValueRow
                           label={t("Base URL")}
@@ -321,9 +318,9 @@ function ManualValueRow({
       </div>
       <Button
         type="button"
-        variant="link"
+        variant="ghost"
         size="xs"
-        className="h-auto gap-1 px-0 py-0 text-[11px] font-medium"
+        className="h-6 gap-1 px-1.5 text-[11px] font-medium text-primary hover:bg-transparent hover:text-primary"
         onClick={onCopy}
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
