@@ -68,11 +68,14 @@ export function ProfileCard({
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [defaultBusy, setDefaultBusy] = useState<string | null>(null);
-  const isDefaultProfile = profile.launchTargets.some(
-    (target) => defaultAgent === target.id && defaultProfiles[target.id] === profile.id,
-  );
   const connections = CONNECTION_AGENTS.map((agent) =>
     resolveProfileConnection(profile, profileConnections, agent),
+  );
+  const isDefaultProfile = connections.some(
+    (connection) =>
+      connection.status !== "unsupported" &&
+      defaultAgent === connection.agent.id &&
+      defaultProfiles[connection.agent.id] === profile.id,
   );
 
   async function handleLaunch(launchTarget: string) {
@@ -184,7 +187,7 @@ export function ProfileCard({
             };
             const warning = profile.apiTypeWarnings[target.apiType];
             const isDefault =
-              connection.native &&
+              connection.status !== "unsupported" &&
               defaultAgent === target.id && defaultProfiles[target.id] === profile.id;
             const statusText =
               connection.status === "via_proxy"
@@ -269,7 +272,7 @@ export function ProfileCard({
                     {launchTooltip}
                   </TooltipContent>
                 </Tooltip>
-                {connection.native && !isDefault && (
+                {connection.status !== "unsupported" && !isDefault && (
                   <Button
                     type="button"
                     variant="ghost"
