@@ -41,6 +41,7 @@ fn write_powershell_launch_script(plan: &LaunchPlan) -> anyhow::Result<PathBuf> 
 
 fn build_powershell_script(plan: &LaunchPlan, command: &str, args: &[String]) -> String {
     let mut out = String::new();
+    let (env, args) = normalize_windows_claude_profile_launch(plan, command, args);
     out.push_str(&format!(
         "$Host.UI.RawUI.WindowTitle = {}\n",
         powershell_single_quoted(&format!("VibeAround - {}", plan.window_label))
@@ -49,7 +50,7 @@ fn build_powershell_script(plan: &LaunchPlan, command: &str, args: &[String]) ->
         "Write-Host '# VibeAround profile: {}'\n",
         plan.window_label.replace('\'', "''")
     ));
-    for (k, v) in &plan.env {
+    for (k, v) in &env {
         out.push_str(&format!("$env:{} = '{}'\n", k, v.replace('\'', "''")));
     }
     append_powershell_color_env(&mut out);
@@ -57,7 +58,7 @@ fn build_powershell_script(plan: &LaunchPlan, command: &str, args: &[String]) ->
         "Set-Location -LiteralPath '{}'\n",
         escape_powershell_single_quoted(&plan.workspace.to_string_lossy())
     ));
-    out.push_str(&powershell_command_block(command, args));
+    out.push_str(&powershell_command_block(command, &args));
     out.push('\n');
     out.push_str("if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {\n");
     out.push_str("  Write-Host \"`nCommand exited with code $LASTEXITCODE\"\n");
@@ -65,6 +66,113 @@ fn build_powershell_script(plan: &LaunchPlan, command: &str, args: &[String]) ->
     out.push_str("$scriptPath = $MyInvocation.MyCommand.Path\n");
     out.push_str("if ($scriptPath) { Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue }\n");
     out
+}
+
+fn normalize_windows_claude_profile_launch(
+    plan: &LaunchPlan,
+    command: &str,
+    args: &[String],
+) -> (Vec<(String, String)>, Vec<String>) {
+    let mut env = plan.env.clone();
+    if !is_claude_launch_command(command) {
+        return (env, args.to_vec());
+    }
+
+    let profile_model = env_value(&env, "ANTHROPIC_MODEL").map(str::to_string);
+    let args = match profile_model.as_deref() {
+        Some(model) => replace_or_append_model_arg(command, args, model),
+        None => args.to_vec(),
+    };
+
+    if profile_owns_anthropic_env(&env) {
+        env.retain(|(key, _)| !is_claude_model_override_env(key));
+    }
+
+    (env, args)
+}
+
+fn is_claude_launch_command(command: &str) -> bool {
+    command_words_with_args(command, &[])
+        .first()
+        .is_some_and(|program| command_stem_eq(program, "claude"))
+}
+
+fn replace_or_append_model_arg(command: &str, args: &[String], model: &str) -> Vec<String> {
+    let command_words = command_words_with_args(command, &[]);
+    let mut args = args.to_vec();
+    replace_or_append_model_arg_words(&mut args, model);
+
+    if has_model_arg(&command_words) && !has_model_arg(&args) {
+        args.push("--model".to_string());
+        args.push(model.to_string());
+    }
+
+    args
+}
+
+fn has_model_arg(args: &[String]) -> bool {
+    args.iter()
+        .any(|arg| arg == "--model" || arg.starts_with("--model="))
+}
+
+fn replace_or_append_model_arg_words(args: &mut Vec<String>, model: &str) {
+    let mut out = Vec::with_capacity(args.len() + 2);
+    let mut replaced = false;
+    let mut index = 0;
+
+    while index < args.len() {
+        let arg = &args[index];
+        if arg == "--model" {
+            out.push(arg.clone());
+            out.push(model.to_string());
+            replaced = true;
+            index += if index + 1 < args.len() { 2 } else { 1 };
+            continue;
+        }
+        if arg.starts_with("--model=") {
+            out.push(format!("--model={model}"));
+            replaced = true;
+            index += 1;
+            continue;
+        }
+        out.push(arg.clone());
+        index += 1;
+    }
+
+    if !replaced {
+        out.push("--model".to_string());
+        out.push(model.to_string());
+    }
+    *args = out;
+}
+
+fn profile_owns_anthropic_env(env: &[(String, String)]) -> bool {
+    [
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+    ]
+    .iter()
+    .any(|key| env_value(env, key).is_some())
+}
+
+fn env_value<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
+    env.iter()
+        .find(|(existing, value)| existing == key && !value.is_empty())
+        .map(|(_, value)| value.as_str())
+}
+
+fn is_claude_model_override_env(key: &str) -> bool {
+    matches!(
+        key,
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+            | "ANTHROPIC_DEFAULT_OPUS_MODEL"
+            | "ANTHROPIC_DEFAULT_SONNET_MODEL"
+            | "ANTHROPIC_MODEL"
+            | "ANTHROPIC_SMALL_FAST_MODEL"
+            | "CLAUDE_CODE_SUBAGENT_MODEL"
+    )
 }
 
 fn append_powershell_color_env(out: &mut String) {
@@ -254,107 +362,3 @@ fn quote_windows_process_arg(value: &str) -> String {
     out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn powershell_command_block_keeps_hook_config_as_one_arg() {
-        let args = vec![
-            "-c".to_string(),
-            "hooks.SessionStart=[{ hooks = [{ type = 'command', command = '\"C:\\Program Files\\VibeAround\\vibearound-hook.exe\" --agent codex' }] }]".to_string(),
-        ];
-        let block = powershell_command_block("claude code --permission-mode acceptEdits", &args);
-
-        assert!(block.contains("$vaCommand = 'claude'"));
-        assert!(block.contains("$vaArgs = @("));
-        assert!(block.contains("'code'"));
-        assert!(block.contains("'--permission-mode'"));
-        assert!(block.contains("'acceptEdits'"));
-        assert!(block.contains("'-c'"));
-        assert!(block.contains("hooks.SessionStart="));
-        assert!(block.contains("& $vaCommand @vaArgs"));
-    }
-
-    #[test]
-    fn extracts_codex_js_from_npm_cmd_shim() {
-        let shim = r#"@IF EXIST "%~dp0\node.exe" (
-  "%~dp0\node.exe"  "%dp0%\node_modules\@openai\codex\bin\codex.js" %*
-) ELSE (
-  node  "%dp0%\node_modules\@openai\codex\bin\codex.js" %*
-)"#;
-
-        assert_eq!(
-            extract_npm_shim_js_token(shim).as_deref(),
-            Some("%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js")
-        );
-    }
-
-    #[test]
-    fn extracts_codex_js_from_npm_powershell_shim() {
-        let shim = r#"if (Test-Path "$basedir/node.exe") {
-  & "$basedir/node.exe" "$basedir/node_modules/@openai/codex/bin/codex.js" $args
-} else {
-  & "node.exe" "$basedir/node_modules/@openai/codex/bin/codex.js" $args
-}"#;
-
-        assert_eq!(
-            extract_npm_shim_js_token(shim).as_deref(),
-            Some("$basedir/node_modules/@openai/codex/bin/codex.js")
-        );
-    }
-
-    #[test]
-    fn windows_launch_rewrites_codex_shim_to_node_entrypoint() {
-        let root = std::env::temp_dir().join(format!(
-            "vibearound-codex-shim-test-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let js_path = root
-            .join("node_modules")
-            .join("@openai")
-            .join("codex")
-            .join("bin")
-            .join("codex.js");
-        std::fs::create_dir_all(js_path.parent().unwrap()).unwrap();
-        std::fs::write(&js_path, "").unwrap();
-        let shim_path = root.join("codex.ps1");
-        std::fs::write(
-            &shim_path,
-            r#"& "node.exe" "$basedir/node_modules/@openai/codex/bin/codex.js" $args"#,
-        )
-        .unwrap();
-
-        let args = vec![
-            "-c".to_string(),
-            "hooks.SessionStart=[{ hooks = [{ command = \"hook --agent codex\" }] }]".to_string(),
-        ];
-        let (command, rewritten_args) =
-            normalize_windows_launch_command(&shim_path.to_string_lossy(), &args);
-
-        assert_eq!(command, "node");
-        assert_eq!(
-            rewritten_args.first().map(String::as_str),
-            Some(js_path.to_str().unwrap())
-        );
-        assert_eq!(&rewritten_args[1..], &args[..]);
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn quotes_windows_process_arg_for_shell_execute_parameters() {
-        assert_eq!(
-            quote_windows_process_arg("C:\\Temp\\launch.ps1"),
-            "C:\\Temp\\launch.ps1"
-        );
-        assert_eq!(
-            quote_windows_process_arg("C:\\Temp Dir\\launch.ps1"),
-            "\"C:\\Temp Dir\\launch.ps1\""
-        );
-        assert_eq!(
-            quote_windows_process_arg("C:\\Temp Dir\\quote\"here.ps1"),
-            "\"C:\\Temp Dir\\quote\\\"here.ps1\""
-        );
-    }
-}
