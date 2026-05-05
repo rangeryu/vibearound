@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-import { STEPS } from "../constants";
+import type { OnboardingStep } from "../constants";
 import type { AuthFlowState, DiscoveredChannelPlugin } from "../types";
 
 interface UseChannelAuthInput {
-  step: number;
+  currentStep: OnboardingStep;
   discoveredPlugins: DiscoveredChannelPlugin[];
   channelConfigs: Record<string, Record<string, string>>;
   onConfigChange: (pluginId: string, key: string, value: string) => void;
@@ -25,7 +25,7 @@ interface UseChannelAuthResult {
  * the Channels step — otherwise the plugin process would keep polling.
  */
 export function useChannelAuth({
-  step,
+  currentStep,
   discoveredPlugins,
   channelConfigs,
   onConfigChange,
@@ -139,14 +139,13 @@ export function useChannelAuth({
   }, []);
 
   useEffect(() => {
-    const currentStep = STEPS[step];
     if (currentStep === "Channels") return;
     for (const [pluginId, state] of Object.entries(authStates)) {
       if (state.status === "generating" || state.status === "waiting") {
         void invoke("plugin_auth_cancel", { request: { pluginId } }).catch(() => {});
       }
     }
-  }, [step, authStates]);
+  }, [currentStep, authStates]);
 
   return { authStates, startAuth, cancelAuth };
 }

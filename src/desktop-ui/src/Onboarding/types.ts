@@ -1,4 +1,4 @@
-import type { AgentId, TunnelProvider } from "./constants";
+import type { AgentId, OnboardingGoal, TunnelProvider } from "./constants";
 import type { ProfileSummary } from "../Launch/types";
 
 // Resource types — returned by Tauri commands
@@ -138,6 +138,7 @@ export interface StepConfirmProps {
   agents: AgentSummary[];
   tunnels: TunnelSummary[];
   pluginRegistry: PluginRegistryEntry[];
+  selectedGoals: Set<OnboardingGoal>;
   enabledAgents: Set<AgentId>;
   tunnelProvider: TunnelProvider;
   enabledChannels: Set<string>;
