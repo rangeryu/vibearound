@@ -48,6 +48,8 @@ pub struct ProfileSummary {
     /// the UI render a ⚠ tooltip on the affected launch button without
     /// needing the full catalog client-side.
     pub api_type_warnings: std::collections::BTreeMap<String, String>,
+    /// `api_type -> model id`, sanitized for manual client setup.
+    pub api_type_models: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -127,6 +129,17 @@ pub fn profiles_list() -> Vec<ProfileSummary> {
                     }
                 }
             }
+            let api_type_models = p
+                .api_types
+                .iter()
+                .filter_map(|api_type| {
+                    p.overrides
+                        .get(api_type)
+                        .and_then(|overrides| overrides.model.as_ref())
+                        .filter(|model| !model.trim().is_empty())
+                        .map(|model| (api_type.clone(), model.clone()))
+                })
+                .collect();
             let api_type_warnings_for_targets = api_type_warnings.clone();
             ProfileSummary {
                 id: p.id,
@@ -146,6 +159,7 @@ pub fn profiles_list() -> Vec<ProfileSummary> {
                     .collect(),
                 api_types: p.api_types,
                 api_type_warnings,
+                api_type_models,
             }
         })
         .collect()

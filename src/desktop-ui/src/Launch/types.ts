@@ -22,6 +22,7 @@ export interface ProfileSummary {
    * catalog endpoint has a `compatibility_warning`. UI shows ⚠ on the
    * matching launch button. */
   apiTypeWarnings: Record<string, string>;
+  apiTypeModels: Record<string, string>;
 }
 
 export interface LaunchTargetSummary {

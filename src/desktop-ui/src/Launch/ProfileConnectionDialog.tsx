@@ -123,7 +123,12 @@ export function ProfileConnectionDialog({
                   : t("Unsupported");
             const manualConfig =
               canProxy && proxyTarget
-                ? manualProxyConfig(profile.id, agent.id, proxyTarget)
+                ? manualProxyConfig(
+                    profile.id,
+                    agent.id,
+                    proxyTarget,
+                    profile.apiTypeModels[proxyTarget],
+                  )
                 : null;
 
             return (
@@ -224,35 +229,50 @@ export function ProfileConnectionDialog({
                       {apiTypeRouteLabel(proxyTarget)}
                     </div>
                     {manualConfig && (
-                      <div className="grid gap-2 rounded-md border border-border/70 bg-muted/30 p-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="rounded-md border border-border/70 bg-muted/30 p-2">
+                        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                           <div className="text-[11px] font-medium">
                             {t("Manual setup")}
                           </div>
                         </div>
-                        <ManualValueRow
-                          label={t("Base URL")}
-                          value={manualConfig.baseUrl}
-                          copied={copiedKey === manualConfig.copyKey}
-                          copyLabel={t("Copy")}
-                          copiedLabel={t("Copied")}
-                          onCopy={() =>
-                            copyManualValue(manualConfig.copyKey, manualConfig.baseUrl)
-                          }
-                        />
-                        <ManualValueRow
-                          label={t("API key")}
-                          value={PLACEHOLDER_API_KEY}
-                          copied={copiedKey === `${manualConfig.copyKey}:key`}
-                          copyLabel={t("Copy")}
-                          copiedLabel={t("Copied")}
-                          onCopy={() =>
-                            copyManualValue(
-                              `${manualConfig.copyKey}:key`,
-                              PLACEHOLDER_API_KEY,
-                            )
-                          }
-                        />
+                        <div className="grid gap-0.5">
+                          <ManualValueRow
+                            label={t("Base URL")}
+                            value={manualConfig.baseUrl}
+                            copied={copiedKey === manualConfig.copyKey}
+                            copyLabel={t("Copy")}
+                            copiedLabel={t("Copied")}
+                            onCopy={() =>
+                              copyManualValue(manualConfig.copyKey, manualConfig.baseUrl)
+                            }
+                          />
+                          <ManualValueRow
+                            label={t("Model")}
+                            value={manualConfig.model}
+                            copied={copiedKey === `${manualConfig.copyKey}:model`}
+                            copyLabel={t("Copy")}
+                            copiedLabel={t("Copied")}
+                            onCopy={() =>
+                              copyManualValue(
+                                `${manualConfig.copyKey}:model`,
+                                manualConfig.model,
+                              )
+                            }
+                          />
+                          <ManualValueRow
+                            label={t("API key")}
+                            value={PLACEHOLDER_API_KEY}
+                            copied={copiedKey === `${manualConfig.copyKey}:key`}
+                            copyLabel={t("Copy")}
+                            copiedLabel={t("Copied")}
+                            onCopy={() =>
+                              copyManualValue(
+                                `${manualConfig.copyKey}:key`,
+                                PLACEHOLDER_API_KEY,
+                              )
+                            }
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -281,7 +301,8 @@ function manualProxyConfig(
   profileId: string,
   agentId: ConnectionAgentId,
   targetApiType: string,
-): { baseUrl: string; copyKey: string } {
+  model: string | undefined,
+): { baseUrl: string; model: string; copyKey: string } {
   const path = [
     "local-api",
     encodeURIComponent(profileId),
@@ -291,6 +312,7 @@ function manualProxyConfig(
   const versionSuffix = agentId === "claude" ? "" : "/v1";
   return {
     baseUrl: `${API_BASE}/${path}${versionSuffix}`,
+    model: model ?? "",
     copyKey: `${agentId}:${targetApiType}:base-url`,
   };
 }
@@ -313,14 +335,14 @@ function ManualValueRow({
   return (
     <div className="grid grid-cols-[76px_minmax(0,1fr)_auto] items-center gap-2">
       <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="min-w-0 break-all rounded-md bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
+      <div className="min-w-0 break-all rounded-md bg-background px-2 py-0 font-mono text-[11px] leading-5 text-foreground">
         {value}
       </div>
       <Button
         type="button"
         variant="ghost"
         size="xs"
-        className="h-6 gap-1 px-1.5 text-[11px] font-medium text-primary hover:bg-transparent hover:text-primary"
+        className="h-5 gap-1 px-1.5 text-[11px] font-medium text-primary hover:bg-primary/10 hover:text-primary"
         onClick={onCopy}
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
