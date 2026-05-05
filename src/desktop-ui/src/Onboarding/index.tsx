@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronLeft, ChevronRight, Rocket } from "lucide-react";
 import { useI18n } from "@va/i18n";
@@ -6,7 +6,7 @@ import { useI18n } from "@va/i18n";
 import { Button } from "@/components/ui/button";
 import { LanguageMenu } from "@/components/LanguageMenu";
 
-import { STEPS } from "./constants";
+import { ONBOARDING_GOALS, STEPS } from "./constants";
 import { StepAgents } from "./components/StepAgents";
 import { StepChannels } from "./components/StepChannels";
 import { StepConfirm } from "./components/StepConfirm";
@@ -32,19 +32,34 @@ import type {
   Settings,
   TunnelSummary,
 } from "./types";
-import type { AgentId, TunnelProvider } from "./constants";
+import type { AgentId, OnboardingGoal, OnboardingStep, TunnelProvider } from "./constants";
 
 const DEFAULT_ENABLED_AGENT_IDS = new Set<AgentId>(["claude", "codex"]);
 const AGENT_DISPLAY_ORDER = ["claude", "codex", "gemini", "opencode", "cursor", "kiro", "qwen-code"];
+const STEP_GOALS: Partial<Record<OnboardingStep, OnboardingGoal>> = {
+  "Quick Launch": "agents",
+  Channels: "channels",
+  Tunnel: "tunnel",
+};
 
 function orderAgents(agentDefs: AgentSummary[]): AgentSummary[] {
   const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));
   return [...agentDefs].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
 }
 
+function visibleStepsForGoals(selectedGoals: Set<OnboardingGoal>): OnboardingStep[] {
+  return STEPS.filter((candidate) => {
+    const goal = STEP_GOALS[candidate];
+    return !goal || selectedGoals.has(goal);
+  });
+}
+
 export default function Onboarding() {
   const { t } = useI18n();
   const [step, setStep] = useState(0);
+  const [selectedGoals, setSelectedGoals] = useState<Set<OnboardingGoal>>(
+    () => new Set(ONBOARDING_GOALS),
+  );
   const [settings, setSettings] = useState<Settings>({});
   const [discoveredPlugins, setDiscoveredPlugins] = useState<DiscoveredChannelPlugin[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -70,6 +85,16 @@ export default function Onboarding() {
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
   const [cfHostname, setCfHostname] = useState("");
+
+  const visibleSteps = useMemo(
+    () => visibleStepsForGoals(selectedGoals),
+    [selectedGoals],
+  );
+  const currentStep = visibleSteps[Math.min(step, visibleSteps.length - 1)] ?? "Goals";
+
+  useEffect(() => {
+    setStep((previous) => Math.min(previous, visibleSteps.length - 1));
+  }, [visibleSteps.length]);
 
   // ---- Load existing settings + resources ----
   useEffect(() => {
@@ -174,7 +199,7 @@ export default function Onboarding() {
 
   // ---- Auth flow + install orchestration (extracted hooks) ----
   const { authStates, startAuth, cancelAuth } = useChannelAuth({
-    step,
+    currentStep,
     discoveredPlugins,
     channelConfigs,
     onConfigChange: updateChannelConfig,
@@ -191,13 +216,22 @@ export default function Onboarding() {
   } = useInstallFlow();
 
   const handleFinish = useCallback(() => {
+    const finalEnabledAgents = selectedGoals.has("agents")
+      ? enabledAgents
+      : new Set<AgentId>();
+    const finalEnabledChannels = selectedGoals.has("channels")
+      ? enabledChannels
+      : new Set<string>();
+    const finalTunnelProvider = selectedGoals.has("tunnel")
+      ? tunnelProvider
+      : "none";
     const finalSettings = buildSettings({
       settings,
-      enabledAgents,
-      enabledChannels,
+      enabledAgents: finalEnabledAgents,
+      enabledChannels: finalEnabledChannels,
       channelConfigs,
       discoveredPlugins,
-      tunnelProvider,
+      tunnelProvider: finalTunnelProvider,
       ngrokToken,
       ngrokDomain,
       cfToken,
@@ -206,6 +240,7 @@ export default function Onboarding() {
     void startInstall(finalSettings);
   }, [
     settings,
+    selectedGoals,
     enabledAgents,
     enabledChannels,
     channelConfigs,
@@ -225,6 +260,18 @@ export default function Onboarding() {
         if (next.size > 1) next.delete(id);
       } else {
         next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleGoal = useCallback((goal: OnboardingGoal) => {
+    setSelectedGoals((previous) => {
+      const next = new Set(previous);
+      if (next.has(goal)) {
+        next.delete(goal);
+      } else {
+        next.add(goal);
       }
       return next;
     });
@@ -259,15 +306,16 @@ export default function Onboarding() {
     );
   }
 
-  const currentStep = STEPS[step];
-  const isLast = step === STEPS.length - 1;
-  const canNext = currentStep !== "Quick Launch" || enabledAgents.size > 0;
+  const isLast = step === visibleSteps.length - 1;
+  const canNext =
+    (currentStep !== "Goals" || selectedGoals.size > 0) &&
+    (currentStep !== "Quick Launch" || enabledAgents.size > 0);
 
   return (
     <div className="flex flex-col h-full bg-background">
       <div className="flex items-center gap-2 px-6 pt-5 pb-2">
         <div className="flex items-center gap-1 flex-1">
-          {STEPS.map((label, index) => (
+          {visibleSteps.map((label, index) => (
             <div key={label} className="flex items-center gap-1 flex-1">
               <div
                 className={`h-1 flex-1 rounded-full transition-colors ${
@@ -283,14 +331,19 @@ export default function Onboarding() {
         <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
           {t("Step {{current}} of {{total}} — {{step}}", {
             current: step + 1,
-            total: STEPS.length,
+            total: visibleSteps.length,
             step: t(currentStep),
           })}
         </span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-4">
-        {currentStep === "Welcome" && <StepWelcome />}
+        {currentStep === "Goals" && (
+          <StepWelcome
+            selectedGoals={selectedGoals}
+            onToggleGoal={toggleGoal}
+          />
+        )}
         {currentStep === "Quick Launch" && (
           <StepAgents
             agents={agents}
@@ -338,6 +391,7 @@ export default function Onboarding() {
             agents={agents}
             tunnels={tunnels}
             pluginRegistry={pluginRegistry}
+            selectedGoals={selectedGoals}
             enabledAgents={enabledAgents}
             tunnelProvider={tunnelProvider}
             enabledChannels={enabledChannels}
@@ -398,10 +452,10 @@ export default function Onboarding() {
               </Button>
             ) : (
               <Button
-                onClick={() => setStep((v) => Math.min(STEPS.length - 1, v + 1))}
+                onClick={() => setStep((v) => Math.min(visibleSteps.length - 1, v + 1))}
                 disabled={!canNext}
               >
-                {currentStep === "Welcome" ? t("Get Started") : t("Next")}
+                {currentStep === "Goals" ? t("Get Started") : t("Next")}
                 <ChevronRight className="w-4 h-4" />
               </Button>
             )}
