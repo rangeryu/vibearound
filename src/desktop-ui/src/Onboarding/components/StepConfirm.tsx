@@ -26,6 +26,7 @@ export function StepConfirm({
   agents,
   tunnels,
   pluginRegistry,
+  selectedGoals,
   enabledAgents,
   tunnelProvider,
   enabledChannels,
@@ -68,28 +69,36 @@ export function StepConfirm({
       </div>
 
       <div className="space-y-2 text-sm">
-        <SummaryRow
-          label={t("Quick Launch")}
-          value={`${agentLabels.get("claude") ?? "Claude Code"} · ${t("Direct launch")}`}
-        />
-        <SummaryRow label={t("Workspace")} value="~/.vibearound/workspaces" />
-        <SummaryRow label={t("Agents")} value={agentSummary} />
-        <SummaryRow
-          label={t("Channels")}
-          value={
-            channelNames.length > 0
-              ? channelNames.join(", ")
-              : t("None configured")
-          }
-        />
-        <SummaryRow
-          label={t("Tunnel")}
-          value={tunnelLabels.get(tunnelProvider) ?? tunnelProvider}
-        />
+        {selectedGoals.has("agents") && (
+          <>
+            <SummaryRow
+              label={t("Quick Launch")}
+              value={`${agentLabels.get("claude") ?? "Claude Code"} · ${t("Direct launch")}`}
+            />
+            <SummaryRow label={t("Workspace")} value="~/.vibearound/workspaces" />
+            <SummaryRow label={t("Agents")} value={agentSummary} />
+          </>
+        )}
+        {selectedGoals.has("channels") && (
+          <SummaryRow
+            label={t("Channels")}
+            value={
+              channelNames.length > 0
+                ? channelNames.join(", ")
+                : t("None configured")
+            }
+          />
+        )}
+        {selectedGoals.has("tunnel") && (
+          <SummaryRow
+            label={t("Tunnel")}
+            value={tunnelLabels.get(tunnelProvider) ?? tunnelProvider}
+          />
+        )}
       </div>
 
       <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
-        {t("VibeAround will add an MCP server entry to your coding agents' global settings and install a handover skill for session transfer between devices. Your existing agent settings will not be overwritten.")}
+        {t("VibeAround will set up the selected pieces and keep your existing settings intact. You can adjust everything later in settings.json.")}
       </p>
     </div>
   );

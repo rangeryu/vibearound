@@ -57,22 +57,24 @@ pub(super) fn install_skill(agent: &str) -> anyhow::Result<()> {
             let filename = format!("{}.{}", skill_name, ext);
             let target = skill_base.join(&filename);
             let _ = std::fs::create_dir_all(&skill_base);
-            std::fs::write(&target, content)
-                .with_context(|| format!("Write {:?}", target))?;
+            std::fs::write(&target, content).with_context(|| format!("Write {:?}", target))?;
             tracing::info!(
                 "[integrations] Installed {}/{} skill at {:?}",
-                agent, skill_name, target
+                agent,
+                skill_name,
+                target
             );
         } else {
             // Dedicated directory per skill (e.g. .claude/skills/vibearound/)
             let skill_dir = skill_base.join(skill_name);
             let target = skill_dir.join("SKILL.md");
             let _ = std::fs::create_dir_all(&skill_dir);
-            std::fs::write(&target, content)
-                .with_context(|| format!("Write {:?}", target))?;
+            std::fs::write(&target, content).with_context(|| format!("Write {:?}", target))?;
             tracing::info!(
                 "[integrations] Installed {}/{} skill at {:?}",
-                agent, skill_name, target
+                agent,
+                skill_name,
+                target
             );
         }
     }
@@ -122,7 +124,9 @@ pub(super) fn uninstall_skill(agent: &str) -> anyhow::Result<()> {
                 let _ = std::fs::remove_file(&target);
                 tracing::info!(
                     "[integrations] Removed {}/{} skill at {:?}",
-                    agent, skill_name, target
+                    agent,
+                    skill_name,
+                    target
                 );
             }
         } else {
@@ -131,7 +135,9 @@ pub(super) fn uninstall_skill(agent: &str) -> anyhow::Result<()> {
                 let _ = std::fs::remove_dir_all(&skill_dir);
                 tracing::info!(
                     "[integrations] Removed {}/{} skill at {:?}",
-                    agent, skill_name, skill_dir
+                    agent,
+                    skill_name,
+                    skill_dir
                 );
             }
         }

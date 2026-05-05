@@ -52,10 +52,7 @@ pub(super) fn mcp_text(id: Option<serde_json::Value>, text: &str) -> Json<serde_
 
 /// Build an MCP `tools/call` error envelope (`isError: true`) containing a
 /// text content block.
-pub(super) fn mcp_error_text(
-    id: Option<serde_json::Value>,
-    text: &str,
-) -> Json<serde_json::Value> {
+pub(super) fn mcp_error_text(id: Option<serde_json::Value>, text: &str) -> Json<serde_json::Value> {
     jsonrpc_ok(
         id,
         serde_json::json!({

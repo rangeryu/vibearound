@@ -8,9 +8,9 @@
 
 use std::sync::Arc;
 
-use crate::routing::RouteKey;
-use crate::conversations::ConversationManager;
 use crate::channels::plugin_host::PluginHost;
+use crate::conversations::ConversationManager;
+use crate::routing::RouteKey;
 
 use super::send_system_text;
 
@@ -57,7 +57,10 @@ pub(super) async fn set_session_mode_and_reply(
     route: &RouteKey,
     mode_id: &str,
 ) {
-    match conversation_manager.set_session_mode(route, mode_id.to_string()).await {
+    match conversation_manager
+        .set_session_mode(route, mode_id.to_string())
+        .await
+    {
         Ok(()) => {
             send_system_text(
                 plugin_host,

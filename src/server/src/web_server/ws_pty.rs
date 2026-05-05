@@ -3,7 +3,10 @@
 //! - GET /ws?session_id=<uuid> — attach to an existing PTY session
 
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Query, State,
+    },
     response::Response,
 };
 use bytes::Bytes;
@@ -25,12 +28,15 @@ pub async fn ws_handler(
         if let Ok(uuid) = uuid::Uuid::parse_str(sid) {
             let session_id = SessionId(uuid);
             let pty_manager = state.pty_manager.clone();
-            return ws.on_upgrade(move |socket| handle_socket_attach(socket, session_id, pty_manager));
+            return ws
+                .on_upgrade(move |socket| handle_socket_attach(socket, session_id, pty_manager));
         }
     }
     // session_id is required; reject bare /ws connections.
     ws.on_upgrade(|mut socket| async move {
-        let _ = socket.send(Message::Text("Missing or invalid session_id".into())).await;
+        let _ = socket
+            .send(Message::Text("Missing or invalid session_id".into()))
+            .await;
     })
 }
 
@@ -54,7 +60,10 @@ async fn handle_socket_attach(
     if !dump.is_empty() {
         let _ = ws_tx.send(Message::Binary(Bytes::from(dump))).await;
     }
-    let state_json = state.read().ok().and_then(|g| serde_json::to_string(&*g).ok());
+    let state_json = state
+        .read()
+        .ok()
+        .and_then(|g| serde_json::to_string(&*g).ok());
     if let Some(json) = state_json {
         let _ = ws_tx.send(Message::Text(json.into())).await;
     }

@@ -29,7 +29,12 @@ pub async fn start_web_tunnel(
 
     let forward_url = Url::parse(&format!("http://localhost:{}", PORT))
         .map_err(|e| format!("forward URL: {}", e))?;
-    let forwarder = match config.ngrok_domain.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    let forwarder = match config
+        .ngrok_domain
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
         Some(domain) => {
             proc_log!(
                 info,
@@ -84,7 +89,8 @@ impl crate::tunnels::TunnelBackend for NgrokBackend {
     async fn start_web_tunnel(
         &self,
         config: &crate::config::Config,
-    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>>
+    {
         start_web_tunnel(config).await
     }
 }

@@ -38,7 +38,6 @@ pub const SHARE_TTL_SECS: u64 = 600;
 pub(super) const SHARE_TTL: Duration = Duration::from_secs(SHARE_TTL_SECS);
 pub(super) const OWNER_FAR_FUTURE: Duration = Duration::from_secs(86_400);
 
-
 /// Alphabet for random share keys: uppercase + digits, with ambiguous
 /// I/O/0/1 removed.
 const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

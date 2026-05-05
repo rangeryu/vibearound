@@ -61,7 +61,10 @@ impl ConversationManager {
     /// getters (`route` field, `started_at()`, `bot_identity()`) don't
     /// need the state snapshot.
     pub fn list(&self) -> Vec<Arc<Conversation>> {
-        self.conversations.iter().map(|e| Arc::clone(e.value())).collect()
+        self.conversations
+            .iter()
+            .map(|e| Arc::clone(e.value()))
+            .collect()
     }
 
     /// Look up a conversation by route. Returns `None` if none has been
@@ -130,14 +133,8 @@ impl ConversationManager {
 
     /// Set the permission mode of the current session on a route.
     /// Returns an error if there is no active session yet.
-    pub async fn set_session_mode(
-        &self,
-        route: &RouteKey,
-        mode_id: String,
-    ) -> acp::Result<()> {
-        let conv = self
-            .get(route)
-            .ok_or_else(acp::Error::method_not_found)?;
+    pub async fn set_session_mode(&self, route: &RouteKey, mode_id: String) -> acp::Result<()> {
+        let conv = self.get(route).ok_or_else(acp::Error::method_not_found)?;
         conv.set_session_mode(mode_id).await
     }
 

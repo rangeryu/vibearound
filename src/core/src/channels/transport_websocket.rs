@@ -30,7 +30,12 @@ impl WebChannelManager {
         self.connections.remove(chat_id);
     }
 
-    pub fn sender(&self) -> (mpsc::UnboundedSender<ChannelOutput>, mpsc::UnboundedReceiver<ChannelOutput>) {
+    pub fn sender(
+        &self,
+    ) -> (
+        mpsc::UnboundedSender<ChannelOutput>,
+        mpsc::UnboundedReceiver<ChannelOutput>,
+    ) {
         mpsc::unbounded_channel()
     }
 
@@ -39,7 +44,8 @@ impl WebChannelManager {
         let has_conn = self.connections.contains_key(chat_id);
         tracing::info!(
             "[WebChannelManager] dispatch_output chat_id={} has_connection={}",
-            chat_id, has_conn
+            chat_id,
+            has_conn
         );
         if let Some(entry) = self.connections.get(chat_id) {
             let _ = entry.send(output);
@@ -67,12 +73,14 @@ impl WebSocketPluginRuntime {
     pub async fn send_output(&self, output: ChannelOutput) {
         tracing::info!(
             "[WebSocketPluginRuntime] send_output channel_kind={} route={}",
-            self.channel_kind, output.route_key()
+            self.channel_kind,
+            output.route_key()
         );
         if let Err(error) = self.outbound_tx.send(output) {
             tracing::info!(
                 "[{}] failed to deliver websocket output: {}",
-                self.channel_kind, error
+                self.channel_kind,
+                error
             );
         }
     }

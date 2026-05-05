@@ -41,11 +41,15 @@ fn parse_url_from_line(line: &str) -> Option<String> {
 
 /// Start localtunnel for the given port. Returns (guard, public URL) once the URL is printed.
 /// Caller must keep the guard and await `guard.wait()` to keep the tunnel alive.
-pub async fn start(port: u16) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
-    let tunnel_def = crate::resources::tunnel_by_id("localtunnel")
-        .expect("localtunnel not in tunnels.json");
+pub async fn start(
+    port: u16,
+) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+    let tunnel_def =
+        crate::resources::tunnel_by_id("localtunnel").expect("localtunnel not in tunnels.json");
     let program = tunnel_def.program.as_deref().unwrap_or("npx");
-    let base_args: Vec<&str> = tunnel_def.args.as_ref()
+    let base_args: Vec<&str> = tunnel_def
+        .args
+        .as_ref()
         .map(|a| a.iter().map(|s| s.as_str()).collect())
         .unwrap_or_else(|| vec!["localtunnel", "--port"]);
 
@@ -56,11 +60,11 @@ pub async fn start(port: u16) -> Result<(crate::tunnels::TunnelGuard, String), B
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let error_hint = crate::resources::tunnel_spawn_error_hint(tunnel_def)
-        .unwrap_or("is Node/npx installed?");
-    let mut child = cmd.spawn().map_err(|e| {
-        format!("Failed to spawn {} ({}): {}", program, error_hint, e)
-    })?;
+    let error_hint =
+        crate::resources::tunnel_spawn_error_hint(tunnel_def).unwrap_or("is Node/npx installed?");
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn {} ({}): {}", program, error_hint, e))?;
     let pid = child.id();
 
     let stdout = child
@@ -101,7 +105,8 @@ pub async fn start(port: u16) -> Result<(crate::tunnels::TunnelGuard, String), B
 }
 
 /// Start tunnel for the default web dashboard port.
-pub async fn start_web_tunnel() -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_web_tunnel(
+) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
     start(PORT).await
 }
 
@@ -117,7 +122,8 @@ impl crate::tunnels::TunnelBackend for LocaltunnelBackend {
     async fn start_web_tunnel(
         &self,
         _config: &crate::config::Config,
-    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(crate::tunnels::TunnelGuard, String), Box<dyn std::error::Error + Send + Sync>>
+    {
         start_web_tunnel().await
     }
 }

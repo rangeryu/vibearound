@@ -136,6 +136,8 @@ pub struct TunnelSummary {
 #[derive(serde::Serialize)]
 pub struct PluginSummary {
     pub id: String,
+    pub kind: String,
+    pub slug: String,
     pub name: String,
     pub description: String,
     pub github: String,
@@ -192,8 +194,11 @@ pub fn list_tunnels() -> Vec<TunnelSummary> {
 pub fn list_plugin_registry() -> Vec<PluginSummary> {
     common::resources::PLUGINS
         .iter()
+        .filter(|p| p.is_kind("channel"))
         .map(|p| PluginSummary {
             id: p.id.clone(),
+            kind: p.kind.clone(),
+            slug: p.install_dir_name().to_string(),
             name: p.name.clone(),
             description: p.description.clone(),
             github: p.github.clone(),

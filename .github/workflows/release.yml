@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -50,6 +52,19 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --cwd src --frozen-lockfile
 
+      - name: Resolve release metadata
+        id: release
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./src/desktop/package.json').version")"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v${VERSION}"
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
       - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v0
         env:
@@ -57,16 +72,50 @@ jobs:
         with:
           projectPath: src/desktop
           tauriScript: bun tauri
-          tagName: v__VERSION__
-          releaseName: VibeAround v__VERSION__
+          tagName: ${{ steps.release.outputs.tag }}
+          releaseName: VibeAround ${{ steps.release.outputs.tag }}
           releaseBody: |
             VibeAround desktop release.
 
             Assets built by GitHub Actions:
             - Windows x64 installer
+            - Windows x64 portable ZIP
             - Ubuntu/Linux x64 packages
 
             macOS DMG is built locally and attached separately.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Package Windows portable ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.release.outputs.version }}"
+          $dist = "VibeAround-win-$version-portable"
+          $zip = "$dist.zip"
+
+          Remove-Item -Recurse -Force $dist -ErrorAction SilentlyContinue
+          Remove-Item -Force $zip -ErrorAction SilentlyContinue
+
+          New-Item -ItemType Directory -Force $dist | Out-Null
+          Copy-Item "src/target/release/vibearound-desktop.exe" "$dist/VibeAround.exe"
+          Copy-Item "src/target/release/vibearound-hook.exe" "$dist/vibearound-hook.exe"
+
+          New-Item -ItemType Directory -Force "$dist/_up_/web" | Out-Null
+          Copy-Item -Recurse "src/web/dist" "$dist/_up_/web/dist"
+
+          New-Item -ItemType Directory -Force "$dist/icons" | Out-Null
+          Copy-Item "src/desktop/icons/32x32.png" "$dist/icons/32x32.png"
+
+          Compress-Archive -Path "$dist/*" -DestinationPath $zip -Force
+
+      - name: Upload Windows portable ZIP
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.release.outputs.tag }}" \
+            "VibeAround-win-${{ steps.release.outputs.version }}-portable.zip" \
+            --clobber

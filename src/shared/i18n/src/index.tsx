@@ -34,6 +34,7 @@ const zhCN: Record<string, string> = {
   Back: "返回",
   Next: "下一步",
   Confirm: "确认",
+  Save: "保存",
   "Get Started": "开始",
   "Save changes": "保存更改",
   "Create profile": "创建 profile",
@@ -172,15 +173,49 @@ const zhCN: Record<string, string> = {
   "Launch {{agent}} via {{apiType}}": "通过 {{apiType}} 启动 {{agent}}",
   "Click to launch {{agent}} via {{apiType}} anyway.":
     "仍然通过 {{apiType}} 启动 {{agent}}。",
+  "Connection settings": "连接设置",
+  "{{label}} Connections": "{{label}} 连接",
+  "Choose how Claude Code and Codex CLI connect through this profile.":
+    "选择 Claude Code 和 Codex CLI 如何通过这个 profile 连接。",
+  Native: "原生",
+  "Via proxy": "通过代理",
+  Unsupported: "不支持",
+  "Requires {{protocol}}": "需要 {{protocol}}",
+  "Default route": "默认路径",
+  "Enable proxy": "启用代理",
+  "Proxy target": "代理目标",
+  "via proxy": "通过代理",
+  unsupported: "不支持",
+  "{{agent}} routes through proxy to {{provider}} {{apiType}}":
+    "{{agent}} 通过代理连接到 {{provider}} {{apiType}}",
+  "{{agent}} is unsupported for this profile": "这个 profile 不支持 {{agent}}",
   "Delete profile \"{{label}}\"?": "删除 profile「{{label}}」？",
   "Reorder {{label}}": "重新排序 {{label}}",
 
   // Onboarding
+  Goals: "目标",
   Welcome: "欢迎",
   "Quick Launch": "快速启动",
   "Welcome to VibeAround": "欢迎使用 VibeAround",
   "Let's set things up so you can vibe code from anywhere. This will only take a minute — configure your agents, messaging channels, and tunnel.":
     "先完成几个简单设置，你就可以从任何地方 vibe code。只需一分钟，配置 Agent、消息频道和隧道即可。",
+  "How will you use VibeAround?": "你打算如何使用 VibeAround？",
+  "Choose what you want to set up now. You can change this later at any time, so skip anything you're unsure about.":
+    "选择现在要配置的部分。之后可以随时修改，不确定的内容先跳过也没关系。",
+  "Coding agent launch": "Coding Agent 启动",
+  "Launch Claude, Codex, and other CLIs quickly":
+    "快速启动 Claude、Codex 等 CLI",
+  "Use multiple provider profiles": "使用多个 provider profile",
+  "Route clients through the local API proxy": "通过本地 API proxy 转发客户端请求",
+  "IM integration": "IM 对接",
+  "Connect messaging platforms and bot plugins": "连接消息平台和 bot 插件",
+  "Start and continue coding sessions from your phone":
+    "从手机发起和接管 coding session",
+  "Use QR login and plugin-specific settings": "支持扫码登录和插件配置",
+  "Expose local webhooks and remote access when needed":
+    "按需暴露本地 webhook 和远程访问",
+  "Use Cloudflare, ngrok, or localtunnel": "支持 Cloudflare、ngrok、localtunnel",
+  "Skip this when you only work locally": "只在本机使用时可以跳过",
   "Step {{current}} of {{total}} — {{step}}": "第 {{current}} / {{total}} 步 — {{step}}",
   "Continue Anyway": "仍然继续",
   "Open VibeAround": "打开 VibeAround",

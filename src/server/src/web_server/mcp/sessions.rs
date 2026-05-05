@@ -55,7 +55,9 @@ fn find_latest_claude_session(cwd: &std::path::Path) -> Option<String> {
                 continue;
             };
             let Ok(meta) = path.metadata() else { continue };
-            let Ok(modified) = meta.modified() else { continue };
+            let Ok(modified) = meta.modified() else {
+                continue;
+            };
 
             match &best {
                 Some((best_time, _)) if modified <= *best_time => {}
@@ -104,7 +106,9 @@ fn find_latest_gemini_session(cwd: &std::path::Path) -> Option<String> {
                 continue;
             }
             let Ok(meta) = path.metadata() else { continue };
-            let Ok(modified) = meta.modified() else { continue };
+            let Ok(modified) = meta.modified() else {
+                continue;
+            };
 
             match &best {
                 Some((best_time, _)) if modified <= *best_time => {}
@@ -161,7 +165,9 @@ fn find_latest_codex_session(cwd: &std::path::Path) -> Option<String> {
                 continue;
             }
             let Ok(meta) = path.metadata() else { continue };
-            let Ok(modified) = meta.modified() else { continue };
+            let Ok(modified) = meta.modified() else {
+                continue;
+            };
 
             // Skip if older than current best
             if let Some((best_time, _)) = best {

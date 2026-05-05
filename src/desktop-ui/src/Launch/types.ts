@@ -7,6 +7,7 @@
 
 export type AuthMode = "api_key" | "oauth_via_cli";
 export type CompatibilityProxyMode = "auto" | "on" | "off";
+export type ConnectionAgentId = "claude" | "codex";
 
 export interface ProfileSummary {
   id: string;
@@ -21,6 +22,7 @@ export interface ProfileSummary {
    * catalog endpoint has a `compatibility_warning`. UI shows ⚠ on the
    * matching launch button. */
   apiTypeWarnings: Record<string, string>;
+  apiTypeModels: Record<string, string>;
 }
 
 export interface LaunchTargetSummary {
@@ -29,6 +31,16 @@ export interface LaunchTargetSummary {
   apiType: string;
   warning?: string | null;
 }
+
+export interface ProfileConnectionPreference {
+  proxyEnabled?: boolean | null;
+  targetApiType?: string | null;
+}
+
+export type ProfileConnections = Record<
+  string,
+  Partial<Record<ConnectionAgentId, ProfileConnectionPreference>>
+>;
 
 export interface ApiTypeOverrides {
   base_url?: string | null;
@@ -55,6 +67,8 @@ export interface ProfileDef {
   overrides: Record<string, ApiTypeOverrides>;
   provider_settings?: ProviderSettings;
 }
+
+export type ProfileDraft = Omit<ProfileDef, "id">;
 
 export interface ModelDef {
   id: string;

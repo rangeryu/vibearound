@@ -212,6 +212,7 @@ fn main() {
             onboarding::cancel_onboarding_install,
             profiles::profiles_list,
             profiles::profiles_get,
+            profiles::profiles_create,
             profiles::profiles_upsert,
             profiles::profiles_delete,
             profiles::profiles_reorder,
@@ -224,6 +225,7 @@ fn main() {
             profiles::launcher_set_terminal,
             profiles::launcher_set_workspace,
             profiles::launcher_set_compatibility_proxy,
+            profiles::launcher_set_profile_connection,
         ])
         .setup({
             let daemon = Arc::clone(&daemon);

@@ -49,7 +49,10 @@ fn init_data_dir() {
     }
     let settings_path = dir.join("settings.json");
     if !settings_path.exists() {
-        tracing::info!("[VibeAround] Creating default settings.json at {:?}", settings_path);
+        tracing::info!(
+            "[VibeAround] Creating default settings.json at {:?}",
+            settings_path
+        );
         if let Err(e) = std::fs::write(&settings_path, DEFAULT_SETTINGS_JSON) {
             tracing::info!("[VibeAround] Failed to write settings.json: {}", e);
         } else if let Err(e) = crate::auth::set_owner_only(&settings_path) {
@@ -312,7 +315,12 @@ fn load_settings_from(path: &std::path::Path) -> Config {
                 .collect::<Vec<_>>()
         })
         .filter(|v: &Vec<String>| !v.is_empty())
-        .unwrap_or_else(|| crate::resources::AGENTS.iter().map(|a| a.id.clone()).collect());
+        .unwrap_or_else(|| {
+            crate::resources::AGENTS
+                .iter()
+                .map(|a| a.id.clone())
+                .collect()
+        });
 
     Config {
         tunnel_provider,
@@ -334,10 +342,19 @@ fn load_settings_from(path: &std::path::Path) -> Config {
 /// Base URL for preview links. Reads from the config cache.
 pub fn preview_base_url() -> Option<String> {
     let cfg = ensure_loaded();
-    cfg.preview_base_url.clone()
+    cfg.preview_base_url
+        .clone()
         .filter(|s| !s.is_empty())
-        .or_else(|| cfg.cloudflare_hostname.as_ref().map(|h| format!("https://{}", h.trim())))
-        .or_else(|| cfg.ngrok_domain.as_ref().map(|d| format!("https://{}", d.trim())))
+        .or_else(|| {
+            cfg.cloudflare_hostname
+                .as_ref()
+                .map(|h| format!("https://{}", h.trim()))
+        })
+        .or_else(|| {
+            cfg.ngrok_domain
+                .as_ref()
+                .map(|d| format!("https://{}", d.trim()))
+        })
 }
 
 /// Parse verbose config from a channel JSON object.
@@ -422,7 +439,10 @@ impl Default for Config {
             tmux_detach_others: true,
             default_agent: "claude".to_string(),
             default_profiles: BTreeMap::new(),
-            enabled_agents: crate::resources::AGENTS.iter().map(|a| a.id.clone()).collect(),
+            enabled_agents: crate::resources::AGENTS
+                .iter()
+                .map(|a| a.id.clone())
+                .collect(),
             raw_channels: serde_json::Value::Object(serde_json::Map::new()),
         }
     }

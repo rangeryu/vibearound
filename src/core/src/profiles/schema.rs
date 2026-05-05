@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context};
+use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 
 use crate::{auth, config};
@@ -109,12 +110,20 @@ fn profile_path(id: &str) -> PathBuf {
 // Validation
 // ---------------------------------------------------------------------------
 
+const MAX_PROFILE_ID_LEN: usize = 64;
+const GENERATED_ID_SUFFIX_LEN: usize = 12;
+const GENERATED_ID_ATTEMPTS: usize = 16;
+const GENERATED_ID_ALPHABET: [char; 36] = [
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
+    't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+];
+
 /// Profile ids form filenames + are exposed to shells; constrain them to a
 /// safe alphabet so a malicious id can't escape the profiles directory or
 /// confuse downstream consumers.
 pub fn is_valid_id(id: &str) -> bool {
     !id.is_empty()
-        && id.len() <= 64
+        && id.len() <= MAX_PROFILE_ID_LEN
         && id
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
@@ -134,6 +143,38 @@ pub fn validate(profile: &ProfileDef) -> anyhow::Result<()> {
         bail!("profile must declare at least one api kind");
     }
     Ok(())
+}
+
+pub fn generate_unique_id(provider_id: &str) -> anyhow::Result<String> {
+    let prefix = generated_id_prefix(provider_id)?;
+    for _ in 0..GENERATED_ID_ATTEMPTS {
+        let id = format!(
+            "{prefix}-{}",
+            nanoid!(GENERATED_ID_SUFFIX_LEN, &GENERATED_ID_ALPHABET)
+        );
+        if !profile_path(&id).exists() {
+            return Ok(id);
+        }
+    }
+
+    bail!(
+        "failed to generate a unique profile id for provider '{}' after {} attempts",
+        provider_id,
+        GENERATED_ID_ATTEMPTS
+    )
+}
+
+fn generated_id_prefix(provider_id: &str) -> anyhow::Result<String> {
+    let provider_id = provider_id.trim();
+    if !is_valid_id(provider_id) {
+        bail!(
+            "invalid provider id '{}': generated profile ids require ^[a-z0-9_-]{{1,64}}$ provider ids",
+            provider_id
+        );
+    }
+
+    let max_prefix_len = MAX_PROFILE_ID_LEN - GENERATED_ID_SUFFIX_LEN - 1;
+    Ok(provider_id.chars().take(max_prefix_len).collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +296,20 @@ mod tests {
         assert!(!is_valid_id("../etc"));
         assert!(!is_valid_id("kimi.personal"));
         assert!(!is_valid_id(&"a".repeat(65)));
+    }
+
+    #[test]
+    fn generated_id_prefix_preserves_valid_provider_id() {
+        assert_eq!(generated_id_prefix("deepseek").unwrap(), "deepseek");
+        assert_eq!(
+            generated_id_prefix("minimax-global").unwrap(),
+            "minimax-global"
+        );
+    }
+
+    #[test]
+    fn generated_id_prefix_truncates_to_leave_suffix_room() {
+        assert_eq!(generated_id_prefix(&"a".repeat(64)).unwrap().len(), 51);
     }
 
     #[test]

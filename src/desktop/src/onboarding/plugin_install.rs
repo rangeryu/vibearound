@@ -1,10 +1,10 @@
-//! Plugin installation: git clone, npm install/build, and post-install verification.
+//! Plugin installation: git clone plus kind-specific install/build steps.
 
 use anyhow::{bail, Context};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use common::{config, plugins};
+use common::{plugins, resources};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,116 +117,134 @@ where
     F: FnMut(String),
     C: Fn() -> bool,
 {
-    let plugins_dir = config::data_dir().join("plugins");
-    let target_dir = plugins_dir.join(&request.plugin_id);
+    let plugin_def = resources::plugin_by_id(&request.plugin_id);
+    let plugin_kind = plugin_def
+        .map(|plugin| plugin.kind.as_str())
+        .unwrap_or("channel");
+    let install_steps = install_steps_for(plugin_def);
+    let plugins_dir = plugins::user_plugins_dir();
+    let target_dir = plugins_dir.join(
+        plugin_def
+            .map(resources::PluginDef::install_dir_name)
+            .unwrap_or(request.plugin_id.as_str()),
+    );
     let mut logs = Vec::new();
 
     std::fs::create_dir_all(&plugins_dir).context("creating plugins directory")?;
 
-    // If a previous install left a partial directory (no dist/), wipe it for a clean clone.
-    let needs_clone = if target_dir.exists() {
-        if target_dir.join("dist").exists() {
-            tracing::info!(
-                "[install_plugin] {} already built, skipping clone",
-                request.plugin_id
-            );
-            logs.push("Existing plugin directory has dist/; skipping git clone".into());
-            on_log("Existing plugin directory has dist/; skipping git clone".into());
-            false
+    if has_step(&install_steps, "git_clone") {
+        // If a previous install left a partial directory, wipe it for a clean clone.
+        let needs_clone = if target_dir.exists() {
+            if installed_tree_complete(&target_dir, plugin_kind) {
+                tracing::info!(
+                    "[install_plugin] {} already installed at {:?}, skipping clone",
+                    request.plugin_id,
+                    target_dir
+                );
+                logs.push("Existing plugin directory is complete; skipping git clone".into());
+                on_log("Existing plugin directory is complete; skipping git clone".into());
+                false
+            } else {
+                tracing::info!(
+                    "[install_plugin] {} has a stale install at {:?}, re-cloning",
+                    request.plugin_id,
+                    target_dir
+                );
+                std::fs::remove_dir_all(&target_dir).context("removing stale plugin directory")?;
+                true
+            }
         } else {
-            tracing::info!(
-                "[install_plugin] {} has no dist (stale install), re-cloning",
-                request.plugin_id
-            );
-            std::fs::remove_dir_all(&target_dir).context("removing stale plugin directory")?;
             true
-        }
-    } else {
-        true
-    };
+        };
 
-    if needs_clone {
-        tracing::info!(
-            "[install_plugin] cloning {} → {:?}",
-            request.github_url,
-            target_dir
-        );
-        let message = format!("Running: git clone --depth 1 {}", request.github_url);
-        logs.push(message.clone());
-        on_log(message);
-        let mut command = common::process::env::command("git");
-        command.args([
-            "clone",
-            "--depth",
-            "1",
-            &request.github_url,
-            &target_dir.to_string_lossy(),
-        ]);
-        let output = command_streaming(command, &mut on_log, &is_cancelled)
-            .await
-            .context("git clone")?;
-        push_output_logs(&mut logs, "git clone", &output);
+        if needs_clone {
+            tracing::info!(
+                "[install_plugin] cloning {} → {:?}",
+                request.github_url,
+                target_dir
+            );
+            let message = format!("Running: git clone --depth 1 {}", request.github_url);
+            logs.push(message.clone());
+            on_log(message);
+            let mut command = common::process::env::command("git");
+            command.args([
+                "clone",
+                "--depth",
+                "1",
+                &request.github_url,
+                &target_dir.to_string_lossy(),
+            ]);
+            let output = command_streaming(command, &mut on_log, &is_cancelled)
+                .await
+                .context("git clone")?;
+            push_output_logs(&mut logs, "git clone", &output);
+            if !output.status.success() {
+                bail!(
+                    "git clone failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+    } else if !target_dir.exists() {
+        bail!("plugin directory does not exist: {}", target_dir.display());
+    }
+
+    if has_step(&install_steps, "npm_install") {
+        tracing::info!("[install_plugin] npm install in {:?}", target_dir);
+        logs.push("Running: npm install".into());
+        on_log("Running: npm install".into());
+        let output = command_streaming(
+            npm_process(&["install"], &target_dir).await?,
+            &mut on_log,
+            &is_cancelled,
+        )
+        .await
+        .context("npm install")?;
+        push_output_logs(&mut logs, "npm install", &output);
         if !output.status.success() {
             bail!(
-                "git clone failed: {}",
+                "npm install failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
         }
     }
 
-    tracing::info!("[install_plugin] npm install in {:?}", target_dir);
-    logs.push("Running: npm install".into());
-    on_log("Running: npm install".into());
-    let output = command_streaming(
-        npm_process(&["install"], &target_dir).await?,
-        &mut on_log,
-        &is_cancelled,
-    )
-        .await
-        .context("npm install")?;
-    push_output_logs(&mut logs, "npm install", &output);
-    if !output.status.success() {
-        bail!(
-            "npm install failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    tracing::info!("[install_plugin] npm run build in {:?}", target_dir);
-    logs.push("Running: npm run build".into());
-    on_log("Running: npm run build".into());
-    let output = command_streaming(
-        npm_process(&["run", "build"], &target_dir).await?,
-        &mut on_log,
-        &is_cancelled,
-    )
+    if has_step(&install_steps, "npm_build") {
+        tracing::info!("[install_plugin] npm run build in {:?}", target_dir);
+        logs.push("Running: npm run build".into());
+        on_log("Running: npm run build".into());
+        let output = command_streaming(
+            npm_process(&["run", "build"], &target_dir).await?,
+            &mut on_log,
+            &is_cancelled,
+        )
         .await
         .context("npm run build")?;
-    push_output_logs(&mut logs, "npm run build", &output);
-    if !output.status.success() {
-        bail!(
-            "npm run build failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        push_output_logs(&mut logs, "npm run build", &output);
+        if !output.status.success() {
+            bail!(
+                "npm run build failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
     }
 
-    // Build must produce dist/main.js — its absence means tsc had silent errors.
-    let main_script = target_dir.join("dist").join("main.js");
-    if !main_script.exists() {
-        bail!(
-            "build succeeded but dist/main.js was not produced (tsc may have emitted errors).\nstdout: {}\nstderr: {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
+    if plugin_kind == "channel" {
+        // Channel builds must produce dist/main.js; its absence usually means tsc had silent errors.
+        let main_script = target_dir.join("dist").join("main.js");
+        if !main_script.exists() {
+            bail!("channel plugin install did not produce dist/main.js");
+        }
+        logs.push("Verified: dist/main.js exists".into());
+        on_log("Verified: dist/main.js exists".into());
     }
-    logs.push("Verified: dist/main.js exists".into());
-    on_log("Verified: dist/main.js exists".into());
 
-    let actual_id = match plugins::channel::find(&request.plugin_id) {
+    let actual_id = match discover_installed_plugin(&request.plugin_id, plugin_kind) {
         Some(p) => {
             tracing::info!(
-                "[install_plugin] {} discoverable (manifest id='{}')",
+                "[install_plugin] {} discoverable as {} plugin (manifest id='{}')",
                 request.plugin_id,
+                plugin_kind,
                 p.manifest.id
             );
             p.manifest.id.clone()
@@ -234,12 +252,12 @@ where
         None => {
             let fallback_id = plugin_manifest_id(&target_dir);
             tracing::info!(
-                "[install_plugin] ERROR: {} built but not discoverable (manifest id={:?})",
+                "[install_plugin] ERROR: {} installed but not discoverable (manifest id={:?})",
                 request.plugin_id,
                 fallback_id
             );
             bail!(
-                "plugin built but is not discoverable as '{}{}'",
+                "plugin installed but is not discoverable as '{}{}'",
                 request.plugin_id,
                 fallback_id
                     .as_deref()
@@ -261,18 +279,62 @@ where
 pub fn check_plugin_status(plugin_id: String) -> String {
     // Check both user plugins dir (~/.vibearound/plugins/) and project plugins dir (src/plugins/)
     // via the discovery system which searches both paths.
-    if plugins::channel::find(&plugin_id).is_some() {
+    if plugins::find(&plugin_id).is_some() {
         return "ready".to_string();
     }
 
-    let target_dir = config::data_dir().join("plugins").join(&plugin_id);
+    let plugin_def = resources::plugin_by_id(&plugin_id);
+    let plugin_kind = plugin_def
+        .map(|plugin| plugin.kind.as_str())
+        .unwrap_or("channel");
+    let target_dir = plugins::user_plugins_dir().join(
+        plugin_def
+            .map(resources::PluginDef::install_dir_name)
+            .unwrap_or(plugin_id.as_str()),
+    );
     if !target_dir.join("plugin.json").exists() {
         return "not_installed".to_string();
     }
-    if !target_dir.join("dist").join("main.js").exists() {
+    if plugin_kind == "channel" && !target_dir.join("dist").join("main.js").exists() {
         return "installed_not_built".to_string();
     }
     "installed_not_discoverable".to_string()
+}
+
+fn default_install_steps() -> Vec<String> {
+    vec![
+        "git_clone".to_string(),
+        "npm_install".to_string(),
+        "npm_build".to_string(),
+    ]
+}
+
+fn install_steps_for(plugin_def: Option<&resources::PluginDef>) -> Vec<String> {
+    match plugin_def {
+        Some(plugin) if !plugin.install_steps.is_empty() => plugin.install_steps.clone(),
+        _ => default_install_steps(),
+    }
+}
+
+fn has_step(steps: &[String], step: &str) -> bool {
+    steps.iter().any(|value| value == step)
+}
+
+fn installed_tree_complete(target_dir: &std::path::Path, plugin_kind: &str) -> bool {
+    if !target_dir.join("plugin.json").exists() {
+        return false;
+    }
+    plugin_kind != "channel" || target_dir.join("dist").join("main.js").exists()
+}
+
+fn discover_installed_plugin(
+    plugin_id: &str,
+    plugin_kind: &str,
+) -> Option<plugins::DiscoveredPlugin> {
+    match plugin_kind {
+        "channel" => plugins::channel::find(plugin_id),
+        _ => plugins::find(plugin_id),
+    }
 }
 
 fn plugin_manifest_id(target_dir: &std::path::Path) -> Option<String> {

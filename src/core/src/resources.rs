@@ -111,11 +111,29 @@ pub struct TunnelOverride {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PluginDef {
     pub id: String,
+    #[serde(default = "default_plugin_kind")]
+    pub kind: String,
+    #[serde(default)]
+    pub slug: Option<String>,
     pub name: String,
     pub description: String,
     pub github: String,
     #[serde(default)]
     pub install_steps: Vec<String>,
+}
+
+impl PluginDef {
+    pub fn is_kind(&self, kind: &str) -> bool {
+        self.kind == kind
+    }
+
+    pub fn install_dir_name(&self) -> &str {
+        self.slug.as_deref().unwrap_or(&self.id)
+    }
+}
+
+fn default_plugin_kind() -> String {
+    "channel".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -159,29 +177,23 @@ pub struct PtyTheme {
 // Parsed statics — parsed once on first access
 // ---------------------------------------------------------------------------
 
-pub static AGENTS: LazyLock<Vec<AgentDef>> = LazyLock::new(|| {
-    serde_json::from_str(AGENTS_JSON).expect("Failed to parse agents.json")
-});
+pub static AGENTS: LazyLock<Vec<AgentDef>> =
+    LazyLock::new(|| serde_json::from_str(AGENTS_JSON).expect("Failed to parse agents.json"));
 
-pub static TUNNELS: LazyLock<Vec<TunnelDef>> = LazyLock::new(|| {
-    serde_json::from_str(TUNNELS_JSON).expect("Failed to parse tunnels.json")
-});
+pub static TUNNELS: LazyLock<Vec<TunnelDef>> =
+    LazyLock::new(|| serde_json::from_str(TUNNELS_JSON).expect("Failed to parse tunnels.json"));
 
-pub static PLUGINS: LazyLock<Vec<PluginDef>> = LazyLock::new(|| {
-    serde_json::from_str(PLUGINS_JSON).expect("Failed to parse plugins.json")
-});
+pub static PLUGINS: LazyLock<Vec<PluginDef>> =
+    LazyLock::new(|| serde_json::from_str(PLUGINS_JSON).expect("Failed to parse plugins.json"));
 
-pub static MCP_TOOLS: LazyLock<Vec<McpToolDef>> = LazyLock::new(|| {
-    serde_json::from_str(MCP_TOOLS_JSON).expect("Failed to parse mcp-tools.json")
-});
+pub static MCP_TOOLS: LazyLock<Vec<McpToolDef>> =
+    LazyLock::new(|| serde_json::from_str(MCP_TOOLS_JSON).expect("Failed to parse mcp-tools.json"));
 
-pub static COMMANDS: LazyLock<CommandsDef> = LazyLock::new(|| {
-    serde_json::from_str(COMMANDS_JSON).expect("Failed to parse commands.json")
-});
+pub static COMMANDS: LazyLock<CommandsDef> =
+    LazyLock::new(|| serde_json::from_str(COMMANDS_JSON).expect("Failed to parse commands.json"));
 
-pub static PTY_ENV: LazyLock<PtyEnvDef> = LazyLock::new(|| {
-    serde_json::from_str(PTY_ENV_JSON).expect("Failed to parse pty-env.json")
-});
+pub static PTY_ENV: LazyLock<PtyEnvDef> =
+    LazyLock::new(|| serde_json::from_str(PTY_ENV_JSON).expect("Failed to parse pty-env.json"));
 
 // ---------------------------------------------------------------------------
 // Lookup helpers
@@ -195,9 +207,9 @@ pub fn agent_by_id(id: &str) -> Option<&'static AgentDef> {
 /// Find an agent definition by any alias (including the primary ID).
 pub fn agent_by_alias(alias: &str) -> Option<&'static AgentDef> {
     let lower = alias.trim().to_lowercase();
-    AGENTS.iter().find(|a| {
-        a.id == lower || a.aliases.iter().any(|al| al == &lower)
-    })
+    AGENTS
+        .iter()
+        .find(|a| a.id == lower || a.aliases.iter().any(|al| al == &lower))
 }
 
 /// Resolve an agent alias to the canonical agent ID.
@@ -262,7 +274,10 @@ pub fn mcp_tools_list_json() -> serde_json::Value {
                 for key in ["agent_kind", "kind"] {
                     if let Some(prop) = props.get_mut(key) {
                         if let Some(obj) = prop.as_object_mut() {
-                            obj.insert("enum".to_string(), serde_json::Value::Array(agent_ids.clone()));
+                            obj.insert(
+                                "enum".to_string(),
+                                serde_json::Value::Array(agent_ids.clone()),
+                            );
                         }
                     }
                 }
@@ -301,9 +316,18 @@ mod tests {
         assert!(!TUNNELS.is_empty(), "tunnels.json should not be empty");
         assert!(!PLUGINS.is_empty(), "plugins.json should not be empty");
         assert!(!MCP_TOOLS.is_empty(), "mcp-tools.json should not be empty");
-        assert!(!COMMANDS.system_commands.is_empty(), "commands.json should not be empty");
-        assert!(!PTY_ENV.env.is_empty(), "pty-env.json env should not be empty");
-        assert!(!PTY_ENV.themes.is_empty(), "pty-env.json themes should not be empty");
+        assert!(
+            !COMMANDS.system_commands.is_empty(),
+            "commands.json should not be empty"
+        );
+        assert!(
+            !PTY_ENV.env.is_empty(),
+            "pty-env.json env should not be empty"
+        );
+        assert!(
+            !PTY_ENV.themes.is_empty(),
+            "pty-env.json themes should not be empty"
+        );
     }
 
     #[test]
@@ -314,17 +338,36 @@ mod tests {
         assert!(agent_by_alias("nonexistent").is_none());
     }
 
+    #[test]
+    fn plugin_registry_uses_kind_and_slug() {
+        let telegram = plugin_by_id("telegram").expect("telegram plugin must exist");
+        assert!(telegram.is_kind("channel"));
+        assert_eq!(telegram.install_dir_name(), "va-plugin-channel-telegram");
+
+        assert!(PLUGINS.iter().all(|plugin| plugin.is_kind("channel")));
+        assert!(
+            plugin_by_id("deepseek").is_none(),
+            "DeepSeek is a built-in profile catalog entry, not an installable plugin"
+        );
+    }
 
     #[test]
     fn mcp_tools_list_injects_agent_enums() {
         let tools = mcp_tools_list_json();
         let tools_arr = tools["tools"].as_array().unwrap();
         // Find a tool with agent_kind property
-        let handover = tools_arr.iter().find(|t| t["name"] == "prepare_handover").unwrap();
+        let handover = tools_arr
+            .iter()
+            .find(|t| t["name"] == "prepare_handover")
+            .unwrap();
         let agent_kind_enum = &handover["inputSchema"]["properties"]["agent_kind"]["enum"];
         assert!(agent_kind_enum.is_array());
-        let ids: Vec<&str> = agent_kind_enum.as_array().unwrap()
-            .iter().filter_map(|v| v.as_str()).collect();
+        let ids: Vec<&str> = agent_kind_enum
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
         assert!(ids.contains(&"claude"));
         assert!(ids.contains(&"gemini"));
     }

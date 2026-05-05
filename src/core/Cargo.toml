@@ -1,6 +1,6 @@
 [package]
 name = "common"
-version = "0.5.4"
+version = "0.5.5"
 description = "VibeAround shared logic: PTY, session registry, tunnel, headless CLI, IM (Telegram)"
 edition = "2021"
 rust-version = "1.82"
@@ -26,7 +26,9 @@ thiserror = "1"
 toml = "0.8"
 toml_edit = "0.22"
 rand = "0.8"
+nanoid = "0.5"
 parking_lot = "0.12"
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+include_dir = "0.7"

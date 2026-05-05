@@ -7,12 +7,13 @@
 mod launcher;
 mod terminal;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use common::profiles::schema::{ApiTypeOverrides, ProviderSettings};
 use common::profiles::{catalog, normalize_legacy_profile, runtime, schema};
 use common::{config, resources};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
 pub use common::profiles::{AuthMode, ProfileDef};
@@ -47,6 +48,8 @@ pub struct ProfileSummary {
     /// the UI render a ⚠ tooltip on the affected launch button without
     /// needing the full catalog client-side.
     pub api_type_warnings: std::collections::BTreeMap<String, String>,
+    /// `api_type -> model id`, sanitized for manual client setup.
+    pub api_type_models: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -70,6 +73,35 @@ pub struct CatalogEntry {
     pub icon: Option<String>,
     pub homepage: Option<String>,
     pub endpoints: Vec<catalog::EndpointDef>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProfileDraft {
+    pub label: String,
+    pub provider: String,
+    pub auth_mode: AuthMode,
+    pub api_types: Vec<String>,
+    #[serde(default)]
+    pub credentials: BTreeMap<String, String>,
+    #[serde(default)]
+    pub overrides: BTreeMap<String, ApiTypeOverrides>,
+    #[serde(default)]
+    pub provider_settings: ProviderSettings,
+}
+
+impl ProfileDraft {
+    fn into_profile(self, id: String) -> ProfileDef {
+        ProfileDef {
+            id,
+            label: self.label,
+            provider: self.provider,
+            auth_mode: self.auth_mode,
+            api_types: self.api_types,
+            credentials: self.credentials,
+            overrides: self.overrides,
+            provider_settings: self.provider_settings,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +129,17 @@ pub fn profiles_list() -> Vec<ProfileSummary> {
                     }
                 }
             }
+            let api_type_models = p
+                .api_types
+                .iter()
+                .filter_map(|api_type| {
+                    p.overrides
+                        .get(api_type)
+                        .and_then(|overrides| overrides.model.as_ref())
+                        .filter(|model| !model.trim().is_empty())
+                        .map(|model| (api_type.clone(), model.clone()))
+                })
+                .collect();
             let api_type_warnings_for_targets = api_type_warnings.clone();
             ProfileSummary {
                 id: p.id,
@@ -116,6 +159,7 @@ pub fn profiles_list() -> Vec<ProfileSummary> {
                     .collect(),
                 api_types: p.api_types,
                 api_type_warnings,
+                api_type_models,
             }
         })
         .collect()
@@ -130,7 +174,19 @@ pub fn profiles_get(id: String) -> Result<ProfileDef, String> {
 
 #[tauri::command]
 pub fn profiles_upsert(app: tauri::AppHandle, profile: ProfileDef) -> Result<(), String> {
-    schema::validate(&profile).map_err(|e| e.to_string())?;
+    save_profile(&app, &profile)
+}
+
+#[tauri::command]
+pub fn profiles_create(app: tauri::AppHandle, draft: ProfileDraft) -> Result<ProfileDef, String> {
+    let id = schema::generate_unique_id(&draft.provider).map_err(|e| e.to_string())?;
+    let profile = draft.into_profile(id);
+    save_profile(&app, &profile)?;
+    Ok(profile)
+}
+
+fn save_profile(app: &tauri::AppHandle, profile: &ProfileDef) -> Result<(), String> {
+    schema::validate(profile).map_err(|e| e.to_string())?;
     let provider = catalog::get(&profile.provider)
         .ok_or_else(|| format!("unknown provider '{}'", profile.provider))?;
     for api_type in &profile.api_types {
@@ -141,9 +197,9 @@ pub fn profiles_upsert(app: tauri::AppHandle, profile: ProfileDef) -> Result<(),
             ));
         }
     }
-    schema::save(&profile).map_err(|e| e.to_string())?;
+    schema::save(profile).map_err(|e| e.to_string())?;
     ensure_profile_order_contains(&profile.id)?;
-    emit_launch_config_changed(&app);
+    emit_launch_config_changed(app);
     Ok(())
 }
 
@@ -151,6 +207,7 @@ pub fn profiles_upsert(app: tauri::AppHandle, profile: ProfileDef) -> Result<(),
 pub fn profiles_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
     schema::delete(&id).map_err(|e| e.to_string())?;
     clear_default_profile_references(&id)?;
+    terminal::remove_profile_connections(&id).map_err(|e| e.to_string())?;
     emit_launch_config_changed(&app);
     Ok(())
 }
@@ -188,10 +245,7 @@ pub fn profiles_launch(id: String, launch_target: String) -> Result<(), String> 
     let profile = schema::load(&id)
         .map(normalize_legacy_profile)
         .ok_or_else(|| format!("profile '{id}' not found"))?;
-    if !runtime::launch_targets_for_api_types(&profile.api_types)
-        .iter()
-        .any(|(target, _, _)| *target == launch_target)
-    {
+    if !profile_can_launch_agent(&profile, &launch_target) {
         return Err(format!("profile '{id}' cannot launch '{launch_target}'"));
     }
     launcher::launch(&profile, &launch_target).map_err(|e| e.to_string())
@@ -252,6 +306,9 @@ pub struct LauncherPreferences {
     /// Global policy for wrapping OpenAI-compatible profile launches through
     /// VibeAround's local compatibility proxy.
     pub compatibility_proxy: terminal::CompatibilityProxyMode,
+    /// Per-profile connection choices for launch targets that can run via
+    /// the local API proxy.
+    pub profile_connections: terminal::ProfileConnectionPreferences,
 }
 
 #[derive(Debug, Serialize)]
@@ -292,6 +349,7 @@ pub fn launcher_get_preferences() -> LauncherPreferences {
         default_agent: canonical_agent_id(&cfg.default_agent),
         default_profiles: cfg.default_profiles.clone(),
         compatibility_proxy: terminal::read_compatibility_proxy_preference(),
+        profile_connections: terminal::read_profile_connections(),
     }
 }
 
@@ -301,10 +359,7 @@ pub fn profiles_launch_default() -> Result<(), String> {
     let agent_id = canonical_agent_id(&cfg.default_agent);
     if let Some(profile_id) = cfg.default_profile_for(&agent_id) {
         if let Some(profile) = schema::load(&profile_id).map(normalize_legacy_profile) {
-            if runtime::launch_targets_for_api_types(&profile.api_types)
-                .iter()
-                .any(|(target, _, _)| *target == agent_id)
-            {
+            if profile_can_launch_agent(&profile, &agent_id) {
                 return launcher::launch(&profile, &agent_id).map_err(|e| e.to_string());
             }
         }
@@ -329,10 +384,7 @@ pub fn launcher_set_default(
         let profile = schema::load(profile_id)
             .map(normalize_legacy_profile)
             .ok_or_else(|| format!("profile '{profile_id}' not found"))?;
-        if !runtime::launch_targets_for_api_types(&profile.api_types)
-            .iter()
-            .any(|(target, _, _)| *target == agent_id)
-        {
+        if !profile_can_launch_agent(&profile, &agent_id) {
             return Err(format!("profile '{profile_id}' cannot launch '{agent_id}'"));
         }
     }
@@ -367,6 +419,12 @@ pub fn launcher_set_default(
 pub fn launcher_set_terminal(terminal_id: String) -> Result<(), String> {
     let choice = terminal::TerminalChoice::from_id(&terminal_id)
         .ok_or_else(|| format!("unknown terminal: '{}'", terminal_id))?;
+    if !terminal::TerminalChoice::ALL.contains(&choice) {
+        return Err(format!(
+            "terminal '{}' is not supported on this platform",
+            terminal_id
+        ));
+    }
     terminal::write_preference(choice).map_err(|e| e.to_string())
 }
 
@@ -382,6 +440,110 @@ pub fn launcher_set_compatibility_proxy(app: tauri::AppHandle, mode: String) -> 
     terminal::write_compatibility_proxy_preference(mode).map_err(|e| e.to_string())?;
     emit_launch_config_changed(&app);
     Ok(())
+}
+
+#[tauri::command]
+pub fn launcher_set_profile_connection(
+    app: tauri::AppHandle,
+    profile_id: String,
+    agent_id: String,
+    proxy_enabled: bool,
+    target_api_type: Option<String>,
+) -> Result<(), String> {
+    let agent_id = match agent_id.as_str() {
+        "claude" | "codex" => agent_id,
+        other => return Err(format!("unsupported connection target: '{other}'")),
+    };
+    let profile = schema::load(&profile_id)
+        .map(normalize_legacy_profile)
+        .ok_or_else(|| format!("profile '{profile_id}' not found"))?;
+    let target_api_type = target_api_type
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let target_api_type = if proxy_enabled {
+        let target_api_type =
+            target_api_type.or_else(|| recommended_proxy_target(&profile.api_types, &agent_id));
+        let target_api_type = target_api_type.ok_or_else(|| {
+            format!(
+                "profile '{}' has no API kind that can be used as a proxy target",
+                profile.id
+            )
+        })?;
+        if !profile
+            .api_types
+            .iter()
+            .any(|api_type| api_type == &target_api_type)
+        {
+            return Err(format!(
+                "profile '{}' does not expose api kind '{}'",
+                profile.id, target_api_type
+            ));
+        }
+        if !is_proxy_target_api_type(&target_api_type) {
+            return Err(format!(
+                "api kind '{}' cannot be used as a proxy target",
+                target_api_type
+            ));
+        }
+        Some(target_api_type)
+    } else {
+        target_api_type.filter(|api_type| profile.api_types.iter().any(|value| value == api_type))
+    };
+
+    terminal::write_profile_connection_preference(
+        &profile.id,
+        &agent_id,
+        terminal::ProfileConnectionPreference {
+            proxy_enabled,
+            target_api_type,
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    emit_launch_config_changed(&app);
+    Ok(())
+}
+
+fn is_proxy_target_api_type(api_type: &str) -> bool {
+    matches!(api_type, "anthropic" | "openai-responses" | "openai-chat")
+}
+
+fn recommended_proxy_target(api_types: &[String], agent_id: &str) -> Option<String> {
+    let order: &[&str] = match agent_id {
+        "claude" => &["openai-responses", "openai-chat", "anthropic"],
+        "codex" => &["anthropic", "openai-chat", "openai-responses"],
+        _ => &[],
+    };
+    order
+        .iter()
+        .find(|candidate| api_types.iter().any(|api_type| api_type == **candidate))
+        .map(|candidate| (*candidate).to_string())
+}
+
+fn profile_can_launch_agent(profile: &ProfileDef, agent_id: &str) -> bool {
+    runtime::launch_targets_for_api_types(&profile.api_types)
+        .iter()
+        .any(|(target, _, _)| *target == agent_id)
+        || profile_proxy_target(profile, agent_id).is_some()
+}
+
+fn profile_proxy_target(profile: &ProfileDef, agent_id: &str) -> Option<String> {
+    let connections = terminal::read_profile_connections();
+    let preference = connections.get(&profile.id)?.get(agent_id)?;
+    if !preference.proxy_enabled {
+        return None;
+    }
+    let target_api_type = preference
+        .target_api_type
+        .clone()
+        .or_else(|| recommended_proxy_target(&profile.api_types, agent_id))?;
+    if !profile
+        .api_types
+        .iter()
+        .any(|api_type| api_type == &target_api_type)
+    {
+        return None;
+    }
+    is_proxy_target_api_type(&target_api_type).then_some(target_api_type)
 }
 
 fn launcher_workspace_options() -> Vec<WorkspaceOption> {

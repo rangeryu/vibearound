@@ -64,8 +64,8 @@ where
         &mut on_log,
         is_cancelled,
     )
-        .await
-        .with_context(|| format!("running npm install {}", npm_package))?;
+    .await
+    .with_context(|| format!("running npm install {}", npm_package))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();

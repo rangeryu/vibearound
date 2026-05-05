@@ -1,58 +1,74 @@
 [
   {
     "id": "telegram",
+    "kind": "channel",
+    "slug": "va-plugin-channel-telegram",
     "name": "Telegram",
     "description": "Use a BotFather token to chat with VibeAround in Telegram.",
-    "github": "https://github.com/jazzenchen/vibearound-plugin-telegram",
+    "github": "https://github.com/jazzenchen/va-plugin-channel-telegram",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
   },
   {
     "id": "feishu",
+    "kind": "channel",
+    "slug": "va-plugin-channel-feishu",
     "name": "Feishu (Lark)",
     "description": "Provide app credentials for your Feishu bot integration.",
-    "github": "https://github.com/jazzenchen/vibearound-plugin-feishu",
+    "github": "https://github.com/jazzenchen/va-plugin-channel-feishu",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
   },
   {
     "id": "discord",
+    "kind": "channel",
+    "slug": "va-plugin-channel-discord",
     "name": "Discord",
     "description": "Use a Discord bot token to chat via @mention or DM.",
-    "github": "https://github.com/jazzenchen/vibearound-plugin-discord",
+    "github": "https://github.com/jazzenchen/va-plugin-channel-discord",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
   },
   {
     "id": "slack",
+    "kind": "channel",
+    "slug": "va-plugin-channel-slack",
     "name": "Slack",
     "description": "Use a Slack bot with Socket Mode to chat via DM.",
-    "github": "https://github.com/jazzenchen/vibearound-plugin-slack",
+    "github": "https://github.com/jazzenchen/va-plugin-channel-slack",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
   },
   {
     "id": "weixin-openclaw-bridge",
+    "kind": "channel",
+    "slug": "va-plugin-channel-weixin-openclaw-bridge",
     "name": "WeChat",
     "description": "Connect via QR code authorization through OpenClaw bridge.",
-    "github": "https://github.com/jazzenchen/vibearound-plugin-weixin-openclaw-bridge",
+    "github": "https://github.com/jazzenchen/va-plugin-channel-weixin-openclaw-bridge",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
   },
   {
     "id": "dingtalk",
+    "kind": "channel",
+    "slug": "va-plugin-channel-dingtalk",
     "name": "DingTalk",
     "description": "Connect DingTalk via Stream API (no public IP required).",
-    "github": "https://github.com/jazzenchen/vibearound-plugin-dingtalk",
+    "github": "https://github.com/jazzenchen/va-plugin-channel-dingtalk",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
   },
   {
     "id": "wecom",
+    "kind": "channel",
+    "slug": "va-plugin-channel-wecom",
     "name": "WeCom",
     "description": "Connect WeCom (企业微信) AI Bot via WebSocket persistent connection.",
-    "github": "https://github.com/jazzenchen/vibearound-plugin-wecom",
+    "github": "https://github.com/jazzenchen/va-plugin-channel-wecom",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
   },
   {
     "id": "qqbot",
+    "kind": "channel",
+    "slug": "va-plugin-channel-qqbot",
     "name": "QQ Bot",
     "description": "Connect QQ Guild Bot via WebSocket gateway (no public IP required).",
-    "github": "https://github.com/jazzenchen/vibearound-plugin-qqbot",
+    "github": "https://github.com/jazzenchen/va-plugin-channel-qqbot",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
   }
 ]

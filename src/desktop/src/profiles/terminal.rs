@@ -7,10 +7,11 @@
 //! Adding more terminals (Ghostty, WezTerm, Warp, …) is a matter of:
 //!   1. adding a variant to `TerminalChoice`,
 //!   2. teaching `detect_installed` how to find it, and
-//!   3. adding a `spawn_*` function in `launcher.rs`.
+//!   3. adding an OS/terminal executor under `launcher/`.
 //! No catalog changes; no schema migration.
 
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -26,7 +27,14 @@ pub enum TerminalChoice {
     Terminal,
     Iterm2,
     PowerShell,
-    Cmd,
+    SystemTerminal,
+    GnomeTerminal,
+    Konsole,
+    XfceTerminal,
+    Xterm,
+    Kitty,
+    Alacritty,
+    WezTerm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -36,6 +44,18 @@ pub enum CompatibilityProxyMode {
     On,
     Off,
 }
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileConnectionPreference {
+    #[serde(default)]
+    pub proxy_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_api_type: Option<String>,
+}
+
+pub type ProfileConnectionPreferences =
+    BTreeMap<String, BTreeMap<String, ProfileConnectionPreference>>;
 
 impl CompatibilityProxyMode {
     #[cfg(test)]
@@ -64,16 +84,32 @@ impl TerminalChoice {
     #[cfg(target_os = "macos")]
     pub const ALL: &'static [TerminalChoice] = &[Self::Terminal, Self::Iterm2];
     #[cfg(target_os = "windows")]
-    pub const ALL: &'static [TerminalChoice] = &[Self::PowerShell, Self::Cmd];
+    pub const ALL: &'static [TerminalChoice] = &[Self::PowerShell];
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    pub const ALL: &'static [TerminalChoice] = &[];
+    pub const ALL: &'static [TerminalChoice] = &[
+        Self::SystemTerminal,
+        Self::GnomeTerminal,
+        Self::Konsole,
+        Self::XfceTerminal,
+        Self::Xterm,
+        Self::Kitty,
+        Self::Alacritty,
+        Self::WezTerm,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
             Self::Terminal => "terminal",
             Self::Iterm2 => "iterm2",
             Self::PowerShell => "powershell",
-            Self::Cmd => "cmd",
+            Self::SystemTerminal => "system-terminal",
+            Self::GnomeTerminal => "gnome-terminal",
+            Self::Konsole => "konsole",
+            Self::XfceTerminal => "xfce4-terminal",
+            Self::Xterm => "xterm",
+            Self::Kitty => "kitty",
+            Self::Alacritty => "alacritty",
+            Self::WezTerm => "wezterm",
         }
     }
 
@@ -82,7 +118,14 @@ impl TerminalChoice {
             Self::Terminal => "Terminal.app",
             Self::Iterm2 => "iTerm2",
             Self::PowerShell => "PowerShell",
-            Self::Cmd => "Command Prompt",
+            Self::SystemTerminal => "System terminal",
+            Self::GnomeTerminal => "GNOME Terminal",
+            Self::Konsole => "Konsole",
+            Self::XfceTerminal => "XFCE Terminal",
+            Self::Xterm => "xterm",
+            Self::Kitty => "Kitty",
+            Self::Alacritty => "Alacritty",
+            Self::WezTerm => "WezTerm",
         }
     }
 
@@ -91,7 +134,14 @@ impl TerminalChoice {
             "terminal" => Some(Self::Terminal),
             "iterm2" => Some(Self::Iterm2),
             "powershell" => Some(Self::PowerShell),
-            "cmd" => Some(Self::Cmd),
+            "system-terminal" => Some(Self::SystemTerminal),
+            "gnome-terminal" => Some(Self::GnomeTerminal),
+            "konsole" => Some(Self::Konsole),
+            "xfce4-terminal" => Some(Self::XfceTerminal),
+            "xterm" => Some(Self::Xterm),
+            "kitty" => Some(Self::Kitty),
+            "alacritty" => Some(Self::Alacritty),
+            "wezterm" => Some(Self::WezTerm),
             _ => None,
         }
     }
@@ -107,7 +157,7 @@ impl TerminalChoice {
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
-            Self::Terminal
+            Self::SystemTerminal
         }
     }
 }
@@ -134,9 +184,55 @@ fn is_installed(choice: TerminalChoice) -> bool {
         // Terminal.app ships with macOS; assume present.
         TerminalChoice::Terminal => cfg!(target_os = "macos"),
         TerminalChoice::Iterm2 => std::path::Path::new("/Applications/iTerm.app").exists(),
-        // Both ship with supported Windows versions.
+        // PowerShell ships with supported Windows versions.
         TerminalChoice::PowerShell => cfg!(target_os = "windows"),
-        TerminalChoice::Cmd => cfg!(target_os = "windows"),
+        TerminalChoice::SystemTerminal => [
+            "xdg-terminal-exec",
+            "x-terminal-emulator",
+            "gnome-terminal",
+            "konsole",
+            "xfce4-terminal",
+            "kitty",
+            "alacritty",
+            "wezterm",
+            "xterm",
+        ]
+        .iter()
+        .any(|program| command_in_path(program)),
+        TerminalChoice::GnomeTerminal => command_in_path("gnome-terminal"),
+        TerminalChoice::Konsole => command_in_path("konsole"),
+        TerminalChoice::XfceTerminal => command_in_path("xfce4-terminal"),
+        TerminalChoice::Xterm => command_in_path("xterm"),
+        TerminalChoice::Kitty => command_in_path("kitty"),
+        TerminalChoice::Alacritty => command_in_path("alacritty"),
+        TerminalChoice::WezTerm => command_in_path("wezterm"),
+    }
+}
+
+fn command_in_path(program: &str) -> bool {
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path_var).any(|dir| is_executable_file(&dir.join(program)))
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+
+    #[cfg(not(unix))]
+    {
+        true
     }
 }
 
@@ -152,6 +248,8 @@ struct LauncherPrefsFile {
     workspace: Option<PathBuf>,
     #[serde(default)]
     compatibility_proxy: Option<CompatibilityProxyMode>,
+    #[serde(default)]
+    profile_connections: ProfileConnectionPreferences,
 }
 
 fn prefs_path() -> PathBuf {
@@ -199,6 +297,37 @@ pub fn write_compatibility_proxy_preference(mode: CompatibilityProxyMode) -> any
     write_prefs_file(&prefs)
 }
 
+pub fn read_profile_connections() -> ProfileConnectionPreferences {
+    read_prefs_file().profile_connections
+}
+
+pub fn write_profile_connection_preference(
+    profile_id: &str,
+    agent_id: &str,
+    preference: ProfileConnectionPreference,
+) -> anyhow::Result<()> {
+    let mut prefs = read_prefs_file();
+    let profile_connections = prefs
+        .profile_connections
+        .entry(profile_id.to_string())
+        .or_default();
+    if preference.proxy_enabled || preference.target_api_type.is_some() {
+        profile_connections.insert(agent_id.to_string(), preference);
+    } else {
+        profile_connections.remove(agent_id);
+    }
+    if profile_connections.is_empty() {
+        prefs.profile_connections.remove(profile_id);
+    }
+    write_prefs_file(&prefs)
+}
+
+pub fn remove_profile_connections(profile_id: &str) -> anyhow::Result<()> {
+    let mut prefs = read_prefs_file();
+    prefs.profile_connections.remove(profile_id);
+    write_prefs_file(&prefs)
+}
+
 pub fn resolve_workspace_preference() -> anyhow::Result<PathBuf> {
     match read_workspace_preference() {
         Some(path) => canonical_workspace_path(&path),
@@ -212,7 +341,28 @@ pub fn canonical_workspace_path(path: &std::path::Path) -> anyhow::Result<PathBu
     if !canonical.is_dir() {
         anyhow::bail!("workspace is not a directory: {}", canonical.display());
     }
-    Ok(canonical)
+    Ok(strip_windows_unc_prefix(canonical))
+}
+
+/// Strip the `\\?\` extended-length path prefix that `std::fs::canonicalize`
+/// adds on Windows.  CMD and many tools choke on it.
+fn strip_windows_unc_prefix(p: PathBuf) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        let s = p.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            // Only strip if it's a regular drive path (e.g. \\?\D:\...).
+            // True UNC shares like \\?\UNC\server\share must keep the prefix.
+            if rest.len() >= 2 && rest.as_bytes()[1] == b':' {
+                return PathBuf::from(rest.to_string());
+            }
+        }
+        p
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        p
+    }
 }
 
 pub fn launch_home_dir() -> anyhow::Result<PathBuf> {

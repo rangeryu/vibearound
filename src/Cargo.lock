@@ -633,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -641,6 +641,8 @@ dependencies = [
  "bytes",
  "chrono",
  "dashmap",
+ "include_dir",
+ "nanoid",
  "ngrok",
  "parking_lot",
  "portable-pty",
@@ -2115,6 +2117,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "include_dir"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "923d117408f1e49d914f1a379a309cffe4f18c05cf4e3d12e613a15fc81bd0dd"
+dependencies = [
+ "include_dir_macros",
+]
+
+[[package]]
+name = "include_dir_macros"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cab85a7ed0bd5f0e76d93846e0147172bed2e2d3f859bcc33a8d9699cad1a75"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2550,6 +2571,15 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "nanoid"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8628de41fe064cc3f0cf07f3d299ee3e73521adaff72278731d5c8cae3797873"
+dependencies = [
+ "rand 0.9.2",
 ]
 
 [[package]]
@@ -4253,7 +4283,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -4271,6 +4301,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "uuid",
+ "va-ai-api-proxy",
 ]
 
 [[package]]
@@ -5648,6 +5679,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "va-ai-api-proxy"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5667,7 +5706,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibearound-desktop"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "common",
@@ -5688,7 +5727,7 @@ dependencies = [
 
 [[package]]
 name = "vibearound-hook"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "serde_json",

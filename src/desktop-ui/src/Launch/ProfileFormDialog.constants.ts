@@ -78,16 +78,6 @@ export const CUSTOM_PROVIDER: CatalogEntry = {
   ],
 };
 
-/**
- * Generate a fresh profile id. Format: `${provider}-${random8}` so the
- * same provider can host multiple profiles and the on-disk filename still
- * reflects the provider for at-a-glance inspection.
- */
-export function generateProfileId(providerId: string): string {
-  const random = Math.random().toString(36).slice(2, 10).padEnd(8, "0");
-  return `${providerId}-${random}`;
-}
-
 export const INPUT_CLASS = "h-8 text-[13px]";
 export const MONO_INPUT_CLASS = "h-8 text-[13px] font-mono";
 export const SECRET_INPUT_CLASS = "h-8 pr-8 text-[13px] font-mono";
