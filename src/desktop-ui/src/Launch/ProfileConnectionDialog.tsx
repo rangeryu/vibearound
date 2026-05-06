@@ -131,7 +131,7 @@ export function ProfileConnectionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-2 px-4 pb-1">
+        <div className="flex flex-1 min-h-0 flex-col gap-2 overflow-y-auto px-4 pb-1">
           {resolved.map((connection) => {
             const { agent } = connection;
             const current = draft[agent.id];
@@ -466,7 +466,7 @@ function ManualSettingDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 overflow-y-auto px-4 pb-4">
+        <div className="grid flex-1 min-h-0 gap-3 overflow-y-auto px-4 pb-4">
           <div className="grid gap-2 rounded-md border border-border/70 bg-muted/25 p-3 text-[12px]">
             <ConfigInfoRow label={t("Configuration file")} value={setting.filePath} />
           </div>
