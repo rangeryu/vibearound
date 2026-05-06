@@ -37,19 +37,21 @@ export function StepConfirm({
   const { t } = useI18n();
   if (isInstalling) {
     return (
-      <InstallProgressView
-        tasks={installTasks}
-        complete={installComplete}
-      />
+      <InstallProgressView tasks={installTasks} complete={installComplete} />
     );
   }
 
   const agentLabels = new Map(agents.map((a) => [a.id, a.display_name]));
   const tunnelLabels = new Map(tunnels.map((t) => [t.id, t.display_name]));
 
-  const agentSummary = Array.from(enabledAgents)
-    .map((id) => agentLabels.get(id) ?? id)
-    .join(", ");
+  const selectedAgentLabels = Array.from(enabledAgents).map(
+    (id) => agentLabels.get(id) ?? id,
+  );
+  const agentSummary = selectedAgentLabels.join(", ");
+  const quickLaunchSummary =
+    enabledAgents.size > 0
+      ? `${selectedAgentLabels[0]} · ${t("Direct launch")}`
+      : t("Disabled");
 
   const channelNames = Array.from(enabledChannels).map((id) => {
     const registry = pluginRegistry.find((p) => p.id === id);
@@ -64,19 +66,24 @@ export function StepConfirm({
           {t("Ready to Launch")}
         </h2>
         <p className="text-xs text-muted-foreground mt-1">
-          {t("Review your configuration. You can always change these in settings.json later.")}
+          {t(
+            "Review your configuration. You can always change these in settings.json later.",
+          )}
         </p>
       </div>
 
       <div className="space-y-2 text-sm">
         {selectedGoals.has("agents") && (
           <>
+            <SummaryRow label={t("Quick Launch")} value={quickLaunchSummary} />
             <SummaryRow
-              label={t("Quick Launch")}
-              value={`${agentLabels.get("claude") ?? "Claude Code"} · ${t("Direct launch")}`}
+              label={t("Workspace")}
+              value="~/.vibearound/workspaces"
             />
-            <SummaryRow label={t("Workspace")} value="~/.vibearound/workspaces" />
-            <SummaryRow label={t("Agents")} value={agentSummary} />
+            <SummaryRow
+              label={t("Agents")}
+              value={agentSummary || t("None selected")}
+            />
           </>
         )}
         {selectedGoals.has("channels") && (
@@ -98,7 +105,9 @@ export function StepConfirm({
       </div>
 
       <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
-        {t("VibeAround will set up the selected pieces and keep your existing settings intact. You can adjust everything later in settings.json.")}
+        {t(
+          "VibeAround will set up the selected pieces and keep your existing settings intact. You can adjust everything later in settings.json.",
+        )}
       </p>
     </div>
   );
@@ -211,7 +220,9 @@ function TaskRow({ task }: { task: InstallTaskProgress }) {
               variant="ghost"
               size="icon-xs"
               className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
-              aria-label={expanded ? t("Collapse install log") : t("Expand install log")}
+              aria-label={
+                expanded ? t("Collapse install log") : t("Expand install log")
+              }
             >
               {expanded ? (
                 <ChevronDown className="h-3.5 w-3.5" />
@@ -241,9 +252,7 @@ function StatusIcon({ status }: { status: InstallTaskProgress["status"] }) {
     case "pending":
       return <CircleDot className="w-3.5 h-3.5 text-muted-foreground/40" />;
     case "running":
-      return (
-        <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
-      );
+      return <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />;
     case "done":
       return <Check className="w-3.5 h-3.5 text-green-500" />;
     case "skipped":

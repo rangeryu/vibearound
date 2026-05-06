@@ -56,23 +56,12 @@ export function Workspaces() {
   };
 
   const removeWorkspace = async (path: string) => {
+    if (!window.confirm(t('Delete workspace "{{label}}"?', { label: path }))) {
+      return;
+    }
     try {
       const res = await apiFetch(`/api/workspaces/remove`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      fetchWorkspaces();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  const setDefault = async (path: string) => {
-    try {
-      const res = await apiFetch(`/api/workspaces/default`, {
-        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
       });
@@ -88,7 +77,7 @@ export function Workspaces() {
       <PageHeader
         icon={<FolderOpen className="w-4 h-4 text-primary" />}
         title={t("Workspaces")}
-        description={t("Workspace folders where agents build projects. The built-in workspace is used when no default folder is selected.")}
+        description={t("Workspace folders where agents build projects. The built-in workspace is always the default.")}
         actions={(
           <>
             <Button
@@ -148,17 +137,6 @@ export function Workspaces() {
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              {!ws.is_default && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setDefault(ws.path)}
-                  title={t("Set as default")}
-                >
-                  <Star className="w-3.5 h-3.5 text-muted-foreground" />
-                </Button>
-              )}
               {!ws.is_builtin && (
                 <Button
                   type="button"

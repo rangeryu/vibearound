@@ -32,10 +32,23 @@ import type {
   Settings,
   TunnelSummary,
 } from "./types";
-import type { AgentId, OnboardingGoal, OnboardingStep, TunnelProvider } from "./constants";
+import type {
+  AgentId,
+  OnboardingGoal,
+  OnboardingStep,
+  TunnelProvider,
+} from "./constants";
 
 const DEFAULT_ENABLED_AGENT_IDS = new Set<AgentId>(["claude", "codex"]);
-const AGENT_DISPLAY_ORDER = ["claude", "codex", "gemini", "opencode", "cursor", "kiro", "qwen-code"];
+const AGENT_DISPLAY_ORDER = [
+  "claude",
+  "codex",
+  "gemini",
+  "opencode",
+  "cursor",
+  "kiro",
+  "qwen-code",
+];
 const STEP_GOALS: Partial<Record<OnboardingStep, OnboardingGoal>> = {
   "Quick Launch": "agents",
   Channels: "channels",
@@ -44,10 +57,14 @@ const STEP_GOALS: Partial<Record<OnboardingStep, OnboardingGoal>> = {
 
 function orderAgents(agentDefs: AgentSummary[]): AgentSummary[] {
   const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));
-  return [...agentDefs].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
+  return [...agentDefs].sort(
+    (a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999),
+  );
 }
 
-function visibleStepsForGoals(selectedGoals: Set<OnboardingGoal>): OnboardingStep[] {
+function visibleStepsForGoals(
+  selectedGoals: Set<OnboardingGoal>,
+): OnboardingStep[] {
   return STEPS.filter((candidate) => {
     const goal = STEP_GOALS[candidate];
     return !goal || selectedGoals.has(goal);
@@ -61,7 +78,9 @@ export default function Onboarding() {
     () => new Set<OnboardingGoal>(),
   );
   const [settings, setSettings] = useState<Settings>({});
-  const [discoveredPlugins, setDiscoveredPlugins] = useState<DiscoveredChannelPlugin[]>([]);
+  const [discoveredPlugins, setDiscoveredPlugins] = useState<
+    DiscoveredChannelPlugin[]
+  >([]);
   const [loaded, setLoaded] = useState(false);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
@@ -70,17 +89,26 @@ export default function Onboarding() {
   // Resource data from backend
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [tunnels, setTunnels] = useState<TunnelSummary[]>([]);
-  const [pluginRegistry, setPluginRegistry] = useState<PluginRegistryEntry[]>([]);
+  const [pluginRegistry, setPluginRegistry] = useState<PluginRegistryEntry[]>(
+    [],
+  );
 
   // Agents
   const [enabledAgents, setEnabledAgents] = useState<Set<AgentId>>(new Set());
   // Channels
-  const [enabledChannels, setEnabledChannels] = useState<Set<string>>(new Set());
-  const [channelConfigs, setChannelConfigs] = useState<Record<string, Record<string, string>>>({});
-  const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(new Set());
+  const [enabledChannels, setEnabledChannels] = useState<Set<string>>(
+    new Set(),
+  );
+  const [channelConfigs, setChannelConfigs] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Tunnel
-  const [tunnelProvider, setTunnelProvider] = useState<TunnelProvider>("cloudflare");
+  const [tunnelProvider, setTunnelProvider] =
+    useState<TunnelProvider>("cloudflare");
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
@@ -90,7 +118,8 @@ export default function Onboarding() {
     () => visibleStepsForGoals(selectedGoals),
     [selectedGoals],
   );
-  const currentStep = visibleSteps[Math.min(step, visibleSteps.length - 1)] ?? "Goals";
+  const currentStep =
+    visibleSteps[Math.min(step, visibleSteps.length - 1)] ?? "Goals";
 
   useEffect(() => {
     setStep((previous) => Math.min(previous, visibleSteps.length - 1));
@@ -107,59 +136,75 @@ export default function Onboarding() {
       listCatalog(),
       listProfiles(),
     ])
-      .then(([loadedSettings, plugins, agentDefs, tunnelDefs, pluginDefs, catalogDefs, profileDefs]) => {
-        const orderedAgents = orderAgents(agentDefs);
-        setSettings(loadedSettings);
-        setDiscoveredPlugins(plugins);
-        setAgents(orderedAgents);
-        setTunnels(tunnelDefs);
-        setPluginRegistry(pluginDefs);
-        setCatalog(catalogDefs);
-        setProfiles(profileDefs);
+      .then(
+        ([
+          loadedSettings,
+          plugins,
+          agentDefs,
+          tunnelDefs,
+          pluginDefs,
+          catalogDefs,
+          profileDefs,
+        ]) => {
+          const orderedAgents = orderAgents(agentDefs);
+          setSettings(loadedSettings);
+          setDiscoveredPlugins(plugins);
+          setAgents(orderedAgents);
+          setTunnels(tunnelDefs);
+          setPluginRegistry(pluginDefs);
+          setCatalog(catalogDefs);
+          setProfiles(profileDefs);
 
-        if (loadedSettings.enabled_agents?.length) {
-          setEnabledAgents(new Set(loadedSettings.enabled_agents as AgentId[]));
-        } else {
-          setEnabledAgents(
-            new Set(
-              orderedAgents
-                .map((agent) => agent.id)
-                .filter((id) => DEFAULT_ENABLED_AGENT_IDS.has(id)),
-            ),
-          );
-        }
-        const channels = loadedSettings.channels ?? {};
-        const enabled = new Set<string>();
-        const configs: Record<string, Record<string, string>> = {};
-        for (const [id, channelConfig] of Object.entries(channels)) {
-          enabled.add(id);
-          const configMap: Record<string, string> = {};
-          for (const [key, value] of Object.entries(channelConfig)) {
-            if (key !== "verbose" && typeof value === "string") {
-              configMap[key] = value;
-            }
+          if (Array.isArray(loadedSettings.enabled_agents)) {
+            setEnabledAgents(
+              new Set(loadedSettings.enabled_agents as AgentId[]),
+            );
+          } else {
+            setEnabledAgents(
+              new Set(
+                orderedAgents
+                  .map((agent) => agent.id)
+                  .filter((id) => DEFAULT_ENABLED_AGENT_IDS.has(id)),
+              ),
+            );
           }
-          configs[id] = configMap;
-        }
-        setEnabledChannels(enabled);
-        setChannelConfigs(configs);
+          const channels = loadedSettings.channels ?? {};
+          const enabled = new Set<string>();
+          const configs: Record<string, Record<string, string>> = {};
+          for (const [id, channelConfig] of Object.entries(channels)) {
+            enabled.add(id);
+            const configMap: Record<string, string> = {};
+            for (const [key, value] of Object.entries(channelConfig)) {
+              if (key !== "verbose" && typeof value === "string") {
+                configMap[key] = value;
+              }
+            }
+            configs[id] = configMap;
+          }
+          setEnabledChannels(enabled);
+          setChannelConfigs(configs);
 
-        const provider = loadedSettings.tunnel?.provider;
-        if (
-          provider === "none" ||
-          provider === "cloudflare" ||
-          provider === "ngrok" ||
-          provider === "localtunnel"
-        ) {
-          setTunnelProvider(provider);
-        }
-        if (loadedSettings.tunnel?.ngrok?.auth_token) setNgrokToken(loadedSettings.tunnel.ngrok.auth_token);
-        if (loadedSettings.tunnel?.ngrok?.domain) setNgrokDomain(loadedSettings.tunnel.ngrok.domain);
-        if (loadedSettings.tunnel?.cloudflare?.tunnel_token) setCfToken(loadedSettings.tunnel.cloudflare.tunnel_token);
-        if (loadedSettings.tunnel?.cloudflare?.hostname) setCfHostname(loadedSettings.tunnel.cloudflare.hostname);
+          const provider = loadedSettings.tunnel?.provider;
+          if (
+            provider === "none" ||
+            provider === "cloudflare" ||
+            provider === "ngrok" ||
+            provider === "localtunnel"
+          ) {
+            setTunnelProvider(provider);
+          }
+          if (loadedSettings.tunnel?.ngrok?.auth_token)
+            setNgrokToken(loadedSettings.tunnel.ngrok.auth_token);
+          if (loadedSettings.tunnel?.ngrok?.domain)
+            setNgrokDomain(loadedSettings.tunnel.ngrok.domain);
+          if (loadedSettings.tunnel?.cloudflare?.tunnel_token)
+            setCfToken(loadedSettings.tunnel.cloudflare.tunnel_token);
+          if (loadedSettings.tunnel?.cloudflare?.hostname)
+            setCfHostname(loadedSettings.tunnel.cloudflare.hostname);
 
-        setLoaded(true);
-      })
+          setLoaded(true);
+        },
+      )
       .catch(() => setLoaded(true));
   }, []);
 
@@ -173,29 +218,37 @@ export default function Onboarding() {
     });
   }, []);
 
-  const updateChannelConfig = useCallback((pluginId: string, key: string, value: string) => {
-    setChannelConfigs((prev) => ({
-      ...prev,
-      [pluginId]: { ...(prev[pluginId] ?? {}), [key]: value },
-    }));
-  }, []);
+  const updateChannelConfig = useCallback(
+    (pluginId: string, key: string, value: string) => {
+      setChannelConfigs((prev) => ({
+        ...prev,
+        [pluginId]: { ...(prev[pluginId] ?? {}), [key]: value },
+      }));
+    },
+    [],
+  );
 
-  const installPlugin = useCallback(async (pluginId: string, githubUrl: string) => {
-    setInstallingPlugins((prev) => new Set(prev).add(pluginId));
-    try {
-      await invoke("install_plugin", { request: { pluginId, githubUrl } });
-      const plugins = await invoke<DiscoveredChannelPlugin[]>("list_channel_plugins");
-      setDiscoveredPlugins(plugins);
-    } catch (error) {
-      console.error(`Failed to install plugin ${pluginId}:`, error);
-    } finally {
-      setInstallingPlugins((prev) => {
-        const next = new Set(prev);
-        next.delete(pluginId);
-        return next;
-      });
-    }
-  }, []);
+  const installPlugin = useCallback(
+    async (pluginId: string, githubUrl: string) => {
+      setInstallingPlugins((prev) => new Set(prev).add(pluginId));
+      try {
+        await invoke("install_plugin", { request: { pluginId, githubUrl } });
+        const plugins = await invoke<DiscoveredChannelPlugin[]>(
+          "list_channel_plugins",
+        );
+        setDiscoveredPlugins(plugins);
+      } catch (error) {
+        console.error(`Failed to install plugin ${pluginId}:`, error);
+      } finally {
+        setInstallingPlugins((prev) => {
+          const next = new Set(prev);
+          next.delete(pluginId);
+          return next;
+        });
+      }
+    },
+    [],
+  );
 
   // ---- Auth flow + install orchestration (extracted hooks) ----
   const { authStates, startAuth, cancelAuth } = useChannelAuth({
@@ -257,7 +310,7 @@ export default function Onboarding() {
     setEnabledAgents((previous) => {
       const next = new Set(previous);
       if (next.has(id)) {
-        if (next.size > 1) next.delete(id);
+        next.delete(id);
       } else {
         next.add(id);
       }
@@ -277,37 +330,44 @@ export default function Onboarding() {
     });
   }, []);
 
-  const handleSaveProfile = useCallback(
-    async (submit: ProfileFormSubmit) => {
-      if (submit.type === "create") {
-        await createProfile(submit.draft);
-      } else {
-        await upsertProfile(submit.profile);
-      }
+  const handleSaveProfile = useCallback(async (submit: ProfileFormSubmit) => {
+    if (submit.type === "create") {
+      await createProfile(submit.draft);
+    } else {
+      await upsertProfile(submit.profile);
+    }
+    const nextProfiles = await listProfiles();
+    setProfiles(nextProfiles);
+  }, []);
+
+  const handleDeleteProfile = useCallback(
+    async (id: string) => {
+      const profile = profiles.find((item) => item.id === id);
+      if (
+        profile &&
+        !window.confirm(
+          t('Delete profile "{{label}}"?', { label: profile.label }),
+        )
+      )
+        return;
+      await deleteProfile(id);
       const nextProfiles = await listProfiles();
       setProfiles(nextProfiles);
     },
-    [],
+    [profiles, t],
   );
-
-  const handleDeleteProfile = useCallback(async (id: string) => {
-    const profile = profiles.find((item) => item.id === id);
-    if (profile && !window.confirm(t("Delete profile \"{{label}}\"?", { label: profile.label }))) return;
-    await deleteProfile(id);
-    const nextProfiles = await listProfiles();
-    setProfiles(nextProfiles);
-  }, [profiles, t]);
 
   if (!loaded) {
     return (
       <div className="flex items-center justify-center h-full">
-        <span className="text-sm text-muted-foreground animate-pulse">{t("Loading…")}</span>
+        <span className="text-sm text-muted-foreground animate-pulse">
+          {t("Loading…")}
+        </span>
       </div>
     );
   }
 
   const isLast = step === visibleSteps.length - 1;
-  const canNext = currentStep !== "Quick Launch" || enabledAgents.size > 0;
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -405,21 +465,17 @@ export default function Onboarding() {
           <>
             <div />
             {installComplete ? (
-              <Button
-                onClick={completeInstall}
-              >
+              <Button onClick={completeInstall}>
                 <Rocket className="w-4 h-4" />
-                {installTasks.some((task) =>
-                  task.status === "error" || task.status === "cancelled"
+                {installTasks.some(
+                  (task) =>
+                    task.status === "error" || task.status === "cancelled",
                 )
                   ? t("Continue Anyway")
                   : t("Open VibeAround")}
               </Button>
             ) : (
-              <Button
-                onClick={cancelInstall}
-                variant="outline"
-              >
+              <Button onClick={cancelInstall} variant="outline">
                 {t("Cancel")}
               </Button>
             )}
@@ -435,10 +491,7 @@ export default function Onboarding() {
               {t("Back")}
             </Button>
             {isLast ? (
-              <Button
-                onClick={handleFinish}
-                disabled={finishing}
-              >
+              <Button onClick={handleFinish} disabled={finishing}>
                 {finishing ? (
                   <>{t("Confirming…")}</>
                 ) : (
@@ -450,8 +503,9 @@ export default function Onboarding() {
               </Button>
             ) : (
               <Button
-                onClick={() => setStep((v) => Math.min(visibleSteps.length - 1, v + 1))}
-                disabled={!canNext}
+                onClick={() =>
+                  setStep((v) => Math.min(visibleSteps.length - 1, v + 1))
+                }
               >
                 {currentStep === "Goals" ? t("Get Started") : t("Next")}
                 <ChevronRight className="w-4 h-4" />

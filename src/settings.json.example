@@ -1,6 +1,5 @@
 {
   "workspaces": [],
-  "default_workspace": "",
   "default_agent": "opencode",
   "enabled_agents": ["claude", "gemini", "opencode", "codex"],
   "tunnel": {
