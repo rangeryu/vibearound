@@ -78,7 +78,8 @@
     },
     "pty": {
       "command": "opencode"
-    }
+    },
+    "resume_template": "cd {cwd} && opencode --session {session_id}"
   },
   {
     "id": "cursor",
