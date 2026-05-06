@@ -84,6 +84,7 @@ const zhCN: Record<string, string> = {
   // Launch
   "One-click coding agent in your Terminal": "一键在终端启动 Coding Agent",
   "New profile": "新建 profile",
+  "New workspace": "新建工作区",
   "Quick launch": "快速启动",
   "Launch the default CLI": "启动默认 CLI",
   "Launch {{agent}} directly": "直接启动 {{agent}}",
@@ -91,15 +92,51 @@ const zhCN: Record<string, string> = {
   "Terminal opened for {{profile}}": "已为 {{profile}} 打开终端",
   "{{agent}} launched (no env injected)": "{{agent}} 已启动（未注入环境变量）",
   "Quick launch opened": "已打开快速启动",
+  "Resume launch opened": "已打开恢复启动",
+  "Resume Session": "恢复会话",
+  "Launch with selected profile, workspace, and session":
+    "使用所选 profile、工作区和会话启动",
+  "No session to resume": "没有可恢复的会话",
+  "No launch agents enabled": "没有启用可启动的 agent",
+  "Loading launch settings": "正在读取启动设置",
+  Disabled: "已禁用",
+  "None selected": "未选择",
+  "Direct profile is fixed": "Direct profile 固定在顶部",
+  "Direct profile cannot be edited or deleted": "Direct profile 不能编辑或删除",
+  "Default workspace is fixed": "默认工作区是固定的",
+  "Default workspace cannot be edited or deleted": "默认工作区不能编辑或删除",
+  "This item cannot be reordered": "此项不能拖拽排序",
+  "Reordering unavailable while launching": "启动中暂时不能排序",
+  "No actions available": "没有可用操作",
+  "Quick Launch will start a new session": "快速启动会开启新会话",
+  "Use existing CLI login": "使用 CLI 已有登录态",
+  "Native CLI login": "CLI 原生登录",
+  Direct: "直接",
+  "Proxy on": "代理开启",
+  Proxy: "代理",
+  "Set default": "设为默认",
+  "Manual config": "手动配置",
+  "Proxy settings": "代理设置",
+  "{{count}} sessions": "{{count}} 个会话",
+  "For {{workspace}}": "{{workspace}} 下",
+  "Last session": "最近会话",
+  "No session in this workspace": "此工作区暂无会话",
+  "Show archived": "显示已归档",
+  Archived: "已归档",
   "Quick Launch default updated": "已更新快速启动默认 profile",
   "Direct Quick Launch default updated": "已更新直接快速启动默认项",
   "Profile order updated": "Profile 顺序已更新",
+  "Profile deleted": "已删除 profile",
+  "Workspace order updated": "工作区顺序已更新",
+  "Workspace removed": "已移除工作区",
+  'Delete workspace "{{label}}"?': "删除工作区「{{label}}」？",
   "No profiles yet": "还没有 profile",
   "Add your provider's API key once. From then on it's one click to launch claude or codex with that key already wired up — VibeAround opens a fresh Terminal window and stays out of the way.":
     "只需保存一次服务商 API key，之后一键即可用该 key 启动 Claude 或 Codex。VibeAround 会打开新的终端窗口，其余交给 CLI 自己运行。",
   "Add your first profile": "添加第一个 profile",
   "Direct launch": "直接启动",
-  "Direct launch stays pinned above profiles": "直接启动固定显示在 profile 上方",
+  "Direct launch stays pinned above profiles":
+    "直接启动固定显示在 profile 上方",
   "No profile — uses each CLI's existing login session":
     "不使用 profile，沿用各 CLI 已有登录会话",
   "Use {{agent}} as Quick Launch default without a profile":
@@ -124,7 +161,8 @@ const zhCN: Record<string, string> = {
   "Base URL": "Base URL",
   "Leave blank to use the catalog default.": "留空则使用 catalog 默认值。",
   "Required for custom endpoints.": "自定义 endpoint 必填。",
-  "Endpoint URL from the provider dashboard.": "服务商控制台里的 endpoint URL。",
+  "Endpoint URL from the provider dashboard.":
+    "服务商控制台里的 endpoint URL。",
   "Deployment name": "部署名称",
   Model: "模型",
   "Select a model": "选择模型",
@@ -135,7 +173,8 @@ const zhCN: Record<string, string> = {
   "Thinking mode": "Thinking 模式",
   "Replay reasoning content": "回放 reasoning content",
   "API kinds": "API 类型",
-  "Select every API shape this endpoint supports.": "选择这个 endpoint 支持的所有 API 形态。",
+  "Select every API shape this endpoint supports.":
+    "选择这个 endpoint 支持的所有 API 形态。",
   Hide: "隐藏",
   Reveal: "显示",
   "Search providers": "搜索服务商",
@@ -206,7 +245,7 @@ const zhCN: Record<string, string> = {
   "{{agent}} routes through proxy to {{provider}} {{apiType}}":
     "{{agent}} 通过代理连接到 {{provider}} {{apiType}}",
   "{{agent}} is unsupported for this profile": "这个 profile 不支持 {{agent}}",
-  "Delete profile \"{{label}}\"?": "删除 profile「{{label}}」？",
+  'Delete profile "{{label}}"?': "删除 profile「{{label}}」？",
   "Reorder {{label}}": "重新排序 {{label}}",
 
   // Onboarding
@@ -223,7 +262,8 @@ const zhCN: Record<string, string> = {
   "Launch Claude, Codex, and other CLIs quickly":
     "快速启动 Claude、Codex 等 CLI",
   "Use multiple provider profiles": "使用多个 provider profile",
-  "Route clients through the local API proxy": "通过本地 API proxy 转发客户端请求",
+  "Route clients through the local API proxy":
+    "通过本地 API proxy 转发客户端请求",
   "IM integration": "IM 对接",
   "Connect messaging platforms and bot plugins": "连接消息平台和 bot 插件",
   "Start and continue coding sessions from your phone":
@@ -231,9 +271,11 @@ const zhCN: Record<string, string> = {
   "Use QR login and plugin-specific settings": "支持扫码登录和插件配置",
   "Expose local webhooks and remote access when needed":
     "按需暴露本地 webhook 和远程访问",
-  "Use Cloudflare, ngrok, or localtunnel": "支持 Cloudflare、ngrok、localtunnel",
+  "Use Cloudflare, ngrok, or localtunnel":
+    "支持 Cloudflare、ngrok、localtunnel",
   "Skip this when you only work locally": "只在本机使用时可以跳过",
-  "Step {{current}} of {{total}} — {{step}}": "第 {{current}} / {{total}} 步 — {{step}}",
+  "Step {{current}} of {{total}} — {{step}}":
+    "第 {{current}} / {{total}} 步 — {{step}}",
   "Continue Anyway": "仍然继续",
   "Open VibeAround": "打开 VibeAround",
   "Confirming…": "确认中…",
@@ -262,7 +304,8 @@ const zhCN: Record<string, string> = {
   "Waiting…": "等待中…",
   Connect: "连接",
   "QR code": "二维码",
-  "Scan with the app and confirm on your phone.": "用 App 扫码，并在手机上确认。",
+  "Scan with the app and confirm on your phone.":
+    "用 App 扫码，并在手机上确认。",
   "Expose your local server to the internet for IM webhooks and remote access. Skip if you only use it locally.":
     "将本地服务暴露到互联网，用于 IM webhook 和远程访问。如果只本地使用，可以跳过。",
   Recommended: "推荐",
@@ -299,7 +342,8 @@ const zhCN: Record<string, string> = {
   "MCP config installed": "MCP 配置已安装",
   "Skill file installed": "Skill 文件已安装",
   "Plugin not found in registry": "Registry 中未找到插件",
-  "Running: git clone + npm install + build": "正在运行：git clone + npm install + build",
+  "Running: git clone + npm install + build":
+    "正在运行：git clone + npm install + build",
   "MCP config": "MCP 配置",
   "Skill file": "Skill 文件",
   "CLI install": "CLI 安装",
@@ -317,15 +361,14 @@ const zhCN: Record<string, string> = {
   "Share key expired": "分享 key 已过期",
   "Close (kills dev server)": "关闭（会终止开发服务器）",
   Close: "关闭",
-  "Workspace folders where agents build projects. The built-in workspace is used when no default folder is selected.":
-    "Agent 构建项目时使用的工作区文件夹。未选择默认文件夹时，会使用内置工作区。",
+  "Workspace folders where agents build projects. The built-in workspace is always the default.":
+    "Agent 构建项目时使用的工作区文件夹。内置工作区始终是默认工作区。",
   "Select Workspace Folder": "选择工作区文件夹",
   Selecting: "选择中",
   "Selecting…": "选择中…",
   "Add Folder": "添加文件夹",
   "Built-in": "内置",
   Default: "默认",
-  "Set as default": "设为默认",
   "Remove workspace": "移除工作区",
   "No workspaces configured": "未配置工作区",
   "unified runtime for ai coding agents": "面向 AI Coding Agent 的统一运行时",
@@ -339,7 +382,8 @@ const zhCN: Record<string, string> = {
   "Switch to dark theme": "切换到深色主题",
   "Tab view": "标签视图",
   "Grid view": "网格视图",
-  "WebSocket follows page host (tunnel works on phone)": "WebSocket 跟随页面 host（手机隧道可用）",
+  "WebSocket follows page host (tunnel works on phone)":
+    "WebSocket 跟随页面 host（手机隧道可用）",
   "Tunnel: — (see desktop tray)": "隧道：—（见桌面托盘）",
   "Exit Maximized": "退出最大化",
   "{{count}} proc": "{{count}} 个进程",
@@ -379,16 +423,20 @@ const zhCN: Record<string, string> = {
 
   // Pairing
   "Token is required.": "必须填写 token。",
-  "That doesn't look like a VibeAround auth token.": "这看起来不像 VibeAround auth token。",
+  "That doesn't look like a VibeAround auth token.":
+    "这看起来不像 VibeAround auth token。",
   "Pair your browser": "配对浏览器",
-  "Connect this browser to your VibeAround instance.": "将这个浏览器连接到你的 VibeAround 实例。",
+  "Connect this browser to your VibeAround instance.":
+    "将这个浏览器连接到你的 VibeAround 实例。",
   "Generating pairing code…": "正在生成配对码…",
   "Your pairing code": "你的配对码",
-  "Waiting for /pair {{code}} · {{seconds}}s": "等待 /pair {{code}} · {{seconds}} 秒",
+  "Waiting for /pair {{code}} · {{seconds}}s":
+    "等待 /pair {{code}} · {{seconds}} 秒",
   "Code expired": "配对码已过期",
   "✓ Paired! Loading dashboard…": "✓ 已配对，正在加载控制台…",
   "How to pair": "如何配对",
-  "Open any IM channel connected to VibeAround.": "打开任意已连接 VibeAround 的 IM 频道。",
+  "Open any IM channel connected to VibeAround.":
+    "打开任意已连接 VibeAround 的 IM 频道。",
   "This page will update automatically.": "此页面会自动更新。",
   "Generate new code": "生成新的配对码",
   "I have a token — paste it": "我已有 token，直接粘贴",
@@ -429,7 +477,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     [locale],
   );
 
-  const value = useMemo(() => ({ locale, setLocale, t }), [locale, setLocale, t]);
+  const value = useMemo(
+    () => ({ locale, setLocale, t }),
+    [locale, setLocale, t],
+  );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
@@ -442,8 +493,12 @@ export function useI18n(): I18nContextValue {
   return value;
 }
 
-export function translate(locale: Locale, key: string, params?: Params): string {
-  const template = locale === "zh-CN" ? zhCN[key] ?? key : key;
+export function translate(
+  locale: Locale,
+  key: string,
+  params?: Params,
+): string {
+  const template = locale === "zh-CN" ? (zhCN[key] ?? key) : key;
   if (!params) return template;
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, name: string) => {
     const value = params[name];
