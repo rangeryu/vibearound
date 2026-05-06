@@ -78,7 +78,8 @@
     },
     "pty": {
       "command": "opencode"
-    }
+    },
+    "resume_template": "cd {cwd} && opencode --session {session_id}"
   },
   {
     "id": "cursor",
@@ -117,7 +118,6 @@
     "pty": {
       "command": "kiro-cli"
     },
-    "resume_template": "cd {cwd} && kiro-cli --resume {session_id}",
     "global_config": {
       "settings_path": ".kiro/settings/mcp.json",
       "mcp_key": "mcpServers",

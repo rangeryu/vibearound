@@ -361,4 +361,3 @@ fn quote_windows_process_arg(value: &str) -> String {
     out.push('"');
     out
 }
-

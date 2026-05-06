@@ -323,8 +323,26 @@ pub struct WorkspaceOption {
     pub is_default: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchSessionSummary {
+    pub agent_id: String,
+    pub session_id: String,
+    pub title: String,
+    pub workspace: String,
+    pub updated_at: u64,
+    pub short_id: String,
+    pub archived: bool,
+}
+
 #[tauri::command]
-pub fn launcher_get_preferences() -> LauncherPreferences {
+pub async fn launcher_get_preferences() -> Result<LauncherPreferences, String> {
+    tauri::async_runtime::spawn_blocking(launcher_preferences)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn launcher_preferences() -> LauncherPreferences {
     let installed_ids: std::collections::HashSet<&'static str> = terminal::detect_installed()
         .iter()
         .map(|c| c.id())
@@ -337,7 +355,6 @@ pub fn launcher_get_preferences() -> LauncherPreferences {
             installed: installed_ids.contains(c.id()),
         })
         .collect();
-    let workspace_options = launcher_workspace_options();
     let workspace = terminal::resolve_workspace_preference()
         .unwrap_or_else(|_| terminal::launch_home_dir().unwrap_or_else(|_| config::data_dir()))
         .to_string_lossy()
@@ -347,13 +364,20 @@ pub fn launcher_get_preferences() -> LauncherPreferences {
         terminal: terminal::read_preference().id().to_string(),
         options,
         workspace,
-        workspace_options,
+        workspace_options: Vec::new(),
         default_agent: canonical_agent_id(&cfg.default_agent),
         enabled_agents: cfg.enabled_agents.clone(),
         default_profiles: cfg.default_profiles.clone(),
         compatibility_proxy: terminal::read_compatibility_proxy_preference(),
         profile_connections: terminal::read_profile_connections(),
     }
+}
+
+#[tauri::command]
+pub async fn launcher_list_workspaces() -> Result<Vec<WorkspaceOption>, String> {
+    tauri::async_runtime::spawn_blocking(launcher_workspace_options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -368,6 +392,57 @@ pub fn profiles_launch_default() -> Result<(), String> {
         }
     }
     launcher::launch_direct(&agent_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn profiles_launch_resume(
+    id: String,
+    launch_target: String,
+    session_id: String,
+) -> Result<(), String> {
+    let profile = schema::load(&id)
+        .map(normalize_legacy_profile)
+        .ok_or_else(|| format!("profile '{id}' not found"))?;
+    if !profile_can_launch_agent(&profile, &launch_target) {
+        return Err(format!("profile '{id}' cannot launch '{launch_target}'"));
+    }
+    launcher::launch_resume(&profile, &launch_target, &session_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn profiles_launch_direct_resume(agent_id: String, session_id: String) -> Result<(), String> {
+    let agent_id = canonical_agent_id(&agent_id);
+    launcher::launch_direct_resume(&agent_id, &session_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn launcher_list_sessions(
+    agent_id: String,
+    workspace_path: String,
+    include_archived: bool,
+) -> Result<Vec<LaunchSessionSummary>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let agent_id = canonical_agent_id(&agent_id);
+        common::launch_sessions::list_for_agent_workspace_with_archived(
+            &agent_id,
+            Path::new(&workspace_path),
+            25,
+            include_archived,
+        )
+        .into_iter()
+        .map(|session| LaunchSessionSummary {
+            short_id: common::launch_sessions::short_id(&session.session_id),
+            agent_id: session.agent_id,
+            session_id: session.session_id,
+            title: session.title,
+            workspace: session.workspace,
+            updated_at: session.updated_at,
+            archived: session.archived,
+        })
+        .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -432,8 +507,115 @@ pub fn launcher_set_terminal(terminal_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn launcher_set_workspace(workspace_path: String) -> Result<(), String> {
-    terminal::write_workspace_preference(PathBuf::from(workspace_path)).map_err(|e| e.to_string())
+pub fn launcher_set_workspace(app: tauri::AppHandle, workspace_path: String) -> Result<(), String> {
+    let path = terminal::canonical_workspace_path(Path::new(&workspace_path))
+        .map_err(|e| e.to_string())?;
+    register_launcher_workspace(&path)?;
+    terminal::write_workspace_preference(path).map_err(|e| e.to_string())?;
+    emit_launch_config_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn launcher_remove_workspace(
+    app: tauri::AppHandle,
+    workspace_path: String,
+) -> Result<(), String> {
+    let path = PathBuf::from(workspace_path);
+    let cfg = config::ensure_loaded();
+    let builtin = config::builtin_workspaces_dir();
+    if paths_equal(&path, &builtin) {
+        return Err("Cannot remove the built-in workspace".to_string());
+    }
+    if !cfg
+        .workspaces
+        .iter()
+        .any(|workspace| paths_equal(workspace, &path))
+    {
+        return Err(format!("workspace is not registered: {}", path.display()));
+    }
+
+    config::update_settings_json(|root| {
+        if let Some(arr) = root
+            .get_mut("workspaces")
+            .and_then(|value| value.as_array_mut())
+        {
+            arr.retain(|value| {
+                value
+                    .as_str()
+                    .map(|candidate| !paths_equal(Path::new(candidate), &path))
+                    .unwrap_or(true)
+            });
+        }
+    })
+    .map_err(|e| e.to_string())?;
+
+    if terminal::read_workspace_preference()
+        .as_ref()
+        .map(|selected| paths_equal(selected, &path))
+        .unwrap_or(false)
+    {
+        let fallback = config::ensure_loaded().resolve_workspace("codex");
+        terminal::write_workspace_preference(fallback).map_err(|e| e.to_string())?;
+    }
+
+    emit_launch_config_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn launcher_reorder_workspaces(
+    app: tauri::AppHandle,
+    workspace_paths: Vec<String>,
+) -> Result<(), String> {
+    let cfg = config::ensure_loaded();
+    let builtin = config::builtin_workspaces_dir();
+    let mut seen = HashSet::new();
+    let mut ordered = Vec::new();
+
+    for path in workspace_paths {
+        let canonical = PathBuf::from(path);
+        if paths_equal(&canonical, &builtin) {
+            continue;
+        }
+        if cfg
+            .workspaces
+            .iter()
+            .any(|workspace| paths_equal(workspace, &canonical))
+            && seen.insert(canonical.clone())
+        {
+            ordered.push(canonical);
+        }
+    }
+
+    for workspace in &cfg.workspaces {
+        if paths_equal(workspace, &builtin) {
+            continue;
+        }
+        if seen.insert(workspace.clone()) {
+            ordered.push(workspace.clone());
+        }
+    }
+
+    let mut final_order = Vec::new();
+    final_order.extend(ordered);
+
+    config::update_settings_json(|root| {
+        if let Some(obj) = root.as_object_mut() {
+            obj.insert(
+                "workspaces".into(),
+                serde_json::Value::Array(
+                    final_order
+                        .iter()
+                        .map(|path| serde_json::Value::String(path.to_string_lossy().to_string()))
+                        .collect(),
+                ),
+            );
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    emit_launch_config_changed(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -550,19 +732,18 @@ fn profile_proxy_target(profile: &ProfileDef, agent_id: &str) -> Option<String> 
 }
 
 fn launcher_workspace_options() -> Vec<WorkspaceOption> {
-    let cfg = config::ensure_loaded();
     let builtin = config::builtin_workspaces_dir();
     let home = terminal::launch_home_dir().unwrap_or_else(|_| config::data_dir());
     let selected = terminal::resolve_workspace_preference().ok();
-    let default_workspace = cfg
-        .default_workspace
-        .clone()
-        .unwrap_or_else(|| builtin.clone());
+    if let Some(path) = selected.as_ref() {
+        let _ = register_launcher_workspace(path);
+    }
+    let cfg = config::ensure_loaded();
 
     let mut out = Vec::new();
     push_workspace_option(&mut out, &home, "Home", "home", false);
     for workspace in cfg.all_workspaces() {
-        let is_default = paths_equal(&workspace, &default_workspace);
+        let is_default = paths_equal(&workspace, &builtin);
         let kind = if paths_equal(&workspace, &builtin) {
             "built-in"
         } else {
@@ -687,6 +868,55 @@ fn ensure_profile_order_contains(profile_id: &str) -> Result<(), String> {
 
 fn emit_launch_config_changed(app: &tauri::AppHandle) {
     let _ = app.emit(crate::tray::LAUNCH_CONFIG_CHANGED_EVENT, ());
+}
+
+fn register_launcher_workspace(path: &Path) -> Result<(), String> {
+    let builtin = config::builtin_workspaces_dir();
+    if paths_equal(path, &builtin) {
+        return Ok(());
+    }
+    if terminal::launch_home_dir()
+        .as_ref()
+        .map(|home| paths_equal(path, home))
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+
+    let cfg = config::ensure_loaded();
+    if cfg
+        .workspaces
+        .iter()
+        .any(|workspace| paths_equal(workspace, path))
+    {
+        return Ok(());
+    }
+
+    config::update_settings_json(|root| {
+        if !root.is_object() {
+            *root = serde_json::json!({});
+        }
+        if let Some(obj) = root.as_object_mut() {
+            let workspaces = obj
+                .entry("workspaces")
+                .or_insert_with(|| serde_json::json!([]));
+            if !workspaces.is_array() {
+                *workspaces = serde_json::json!([]);
+            }
+            if let Some(arr) = workspaces.as_array_mut() {
+                let already_registered = arr
+                    .iter()
+                    .filter_map(|value| value.as_str())
+                    .any(|candidate| paths_equal(Path::new(candidate), path));
+                if !already_registered {
+                    arr.push(serde_json::Value::String(
+                        path.to_string_lossy().to_string(),
+                    ));
+                }
+            }
+        }
+    })
+    .map_err(|e| e.to_string())
 }
 
 fn push_workspace_option(
