@@ -44,6 +44,7 @@ logs/
 tests/
 
 # Temp & cache
+tmp/
 *.tmp
 *.temp
 .turbo
