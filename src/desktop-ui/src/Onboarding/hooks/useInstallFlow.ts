@@ -4,12 +4,20 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { InstallTaskInfo, InstallTaskProgress, Settings } from "../types";
 
+interface OnboardingInstallScope {
+  agents: boolean;
+  channels: boolean;
+}
+
 interface UseInstallFlowResult {
   finishing: boolean;
   isInstalling: boolean;
   installComplete: boolean;
   installTasks: InstallTaskProgress[];
-  startInstall: (finalSettings: Settings) => Promise<void>;
+  startInstall: (
+    finalSettings: Settings,
+    scope: OnboardingInstallScope,
+  ) => Promise<void>;
   cancelInstall: () => Promise<void>;
   completeInstall: () => Promise<void>;
 }
@@ -31,11 +39,15 @@ export function useInstallFlow(): UseInstallFlowResult {
   const [installTasks, setInstallTasks] = useState<InstallTaskProgress[]>([]);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
 
-  const startInstall = useCallback(async (finalSettings: Settings) => {
+  const startInstall = useCallback(async (
+    finalSettings: Settings,
+    scope: OnboardingInstallScope,
+  ) => {
     setFinishing(true);
     try {
       const manifest = await invoke<InstallTaskInfo[]>("get_install_manifest", {
         settings: finalSettings,
+        scope,
       });
       setInstallTasks(
         manifest.map((t) => ({
@@ -79,7 +91,10 @@ export function useInstallFlow(): UseInstallFlowResult {
 
       unlistenRefs.current = [unlistenProgress, unlistenComplete];
 
-      await invoke("start_onboarding_install", { settings: finalSettings });
+      await invoke("start_onboarding_install", {
+        settings: finalSettings,
+        scope,
+      });
     } catch (error) {
       console.error("start_onboarding_install failed:", error);
       setFinishing(false);

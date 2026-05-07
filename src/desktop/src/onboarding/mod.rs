@@ -337,8 +337,11 @@ pub async fn finish_onboarding<R: Runtime>(
 /// Returns the list of install tasks for the given settings, so the frontend
 /// can pre-populate the progress list before install starts.
 #[tauri::command]
-pub fn get_install_manifest(settings: Value) -> Vec<InstallTaskInfo> {
-    install_orchestration::get_install_manifest(&settings)
+pub fn get_install_manifest(
+    settings: Value,
+    scope: Option<install_orchestration::InstallScope>,
+) -> Vec<InstallTaskInfo> {
+    install_orchestration::get_install_manifest(&settings, scope.unwrap_or_default())
 }
 
 /// Orchestrates the full onboarding install sequence. Saves settings, then
@@ -349,8 +352,9 @@ pub async fn start_onboarding_install<R: Runtime>(
     app: AppHandle<R>,
     install_state: State<'_, OnboardingInstallState>,
     settings: Value,
+    scope: Option<install_orchestration::InstallScope>,
 ) -> Result<(), String> {
-    install_orchestration::start(app, &install_state, settings).await
+    install_orchestration::start(app, &install_state, settings, scope.unwrap_or_default()).await
 }
 
 /// Cancel a running onboarding install.

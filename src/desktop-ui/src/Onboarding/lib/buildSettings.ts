@@ -3,6 +3,9 @@ import type { AgentId, TunnelProvider } from "../constants";
 
 export interface BuildSettingsInput {
   settings: Settings;
+  configureAgents?: boolean;
+  configureChannels?: boolean;
+  configureTunnel?: boolean;
   enabledAgents: Set<AgentId>;
   enabledChannels: Set<string>;
   channelConfigs: Record<string, Record<string, string>>;
@@ -22,6 +25,9 @@ export interface BuildSettingsInput {
 export function buildSettings(input: BuildSettingsInput): Settings {
   const {
     settings,
+    configureAgents = true,
+    configureChannels = true,
+    configureTunnel = true,
     enabledAgents,
     enabledChannels,
     channelConfigs,
@@ -35,58 +41,72 @@ export function buildSettings(input: BuildSettingsInput): Settings {
 
   const result: Settings = {
     ...settings,
-    enabled_agents: Array.from(enabledAgents),
   };
-  delete result.default_workspace;
-  delete result.default_agent;
-  delete result.default_profiles;
+  if (configureAgents) {
+    result.enabled_agents = Array.from(enabledAgents);
+    delete result.default_workspace;
+    delete result.default_agent;
+    delete result.default_profiles;
+  }
 
-  const channels: Record<string, Record<string, unknown>> = {};
-  for (const id of enabledChannels) {
-    const config: Record<string, unknown> = {};
-    const userConfig = channelConfigs[id] ?? {};
+  if (configureChannels) {
+    const channels: Record<string, Record<string, unknown>> = {};
+    for (const id of enabledChannels) {
+      const config: Record<string, unknown> = {};
+      const userConfig = channelConfigs[id] ?? {};
 
-    for (const [key, value] of Object.entries(userConfig)) {
-      if (value) config[key] = value;
-    }
+      for (const [key, value] of Object.entries(userConfig)) {
+        if (value) config[key] = value;
+      }
 
-    const discovered = discoveredPlugins.find((p) => p.id === id);
-    if (discovered?.configSchema?.properties) {
-      for (const [key, prop] of Object.entries(discovered.configSchema.properties)) {
-        if (prop.hidden && prop.default && !config[key]) {
-          config[key] = prop.default;
+      const discovered = discoveredPlugins.find((p) => p.id === id);
+      if (discovered?.configSchema?.properties) {
+        for (const [key, prop] of Object.entries(
+          discovered.configSchema.properties,
+        )) {
+          if (prop.hidden && prop.default && !config[key]) {
+            config[key] = prop.default;
+          }
         }
       }
+
+      const existingVerbose = (
+        settings.channels as
+          | Record<string, Record<string, unknown>>
+          | undefined
+      )?.[id]?.verbose;
+      config.verbose = existingVerbose ?? {
+        show_thinking: false,
+        show_tool_use: false,
+      };
+
+      channels[id] = config;
     }
 
-    const existingVerbose = (settings.channels as Record<string, Record<string, unknown>> | undefined)
-      ?.[id]?.verbose;
-    config.verbose = existingVerbose ?? { show_thinking: false, show_tool_use: false };
-
-    channels[id] = config;
+    if (Object.keys(channels).length > 0) {
+      result.channels = channels;
+    } else {
+      delete result.channels;
+    }
   }
 
-  if (Object.keys(channels).length > 0) {
-    result.channels = channels;
-  } else {
-    delete result.channels;
-  }
-
-  if (tunnelProvider !== "none") {
-    const tunnel: Settings["tunnel"] = { provider: tunnelProvider };
-    if (tunnelProvider === "ngrok") {
-      tunnel.ngrok = {};
-      if (ngrokToken.trim()) tunnel.ngrok.auth_token = ngrokToken.trim();
-      if (ngrokDomain.trim()) tunnel.ngrok.domain = ngrokDomain.trim();
+  if (configureTunnel) {
+    if (tunnelProvider !== "none") {
+      const tunnel: Settings["tunnel"] = { provider: tunnelProvider };
+      if (tunnelProvider === "ngrok") {
+        tunnel.ngrok = {};
+        if (ngrokToken.trim()) tunnel.ngrok.auth_token = ngrokToken.trim();
+        if (ngrokDomain.trim()) tunnel.ngrok.domain = ngrokDomain.trim();
+      }
+      if (tunnelProvider === "cloudflare") {
+        tunnel.cloudflare = {};
+        if (cfToken.trim()) tunnel.cloudflare.tunnel_token = cfToken.trim();
+        if (cfHostname.trim()) tunnel.cloudflare.hostname = cfHostname.trim();
+      }
+      result.tunnel = tunnel;
+    } else {
+      delete result.tunnel;
     }
-    if (tunnelProvider === "cloudflare") {
-      tunnel.cloudflare = {};
-      if (cfToken.trim()) tunnel.cloudflare.tunnel_token = cfToken.trim();
-      if (cfHostname.trim()) tunnel.cloudflare.hostname = cfHostname.trim();
-    }
-    result.tunnel = tunnel;
-  } else {
-    delete result.tunnel;
   }
 
   return result;

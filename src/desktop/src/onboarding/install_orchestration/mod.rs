@@ -30,12 +30,42 @@ use crate::onboarding::{
 use steps::{install_channel_plugin, install_npm_agent, install_script_agent};
 use util::{emit_progress, log_line, resolve_enabled_agents};
 
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallScope {
+    #[serde(default = "default_true")]
+    pub agents: bool,
+    #[serde(default = "default_true")]
+    pub channels: bool,
+}
+
+impl Default for InstallScope {
+    fn default() -> Self {
+        Self {
+            agents: true,
+            channels: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// Returns the list of install tasks for the given settings, so the frontend
 /// can pre-populate the progress list before install starts.
-pub fn get_install_manifest(settings: &Value) -> Vec<InstallTaskInfo> {
+pub fn get_install_manifest(settings: &Value, scope: InstallScope) -> Vec<InstallTaskInfo> {
     let all_agents = common::resources::agent_ids();
-    let enabled_agents = resolve_enabled_agents(settings, &all_agents);
-    let enabled_channels = enabled_channel_ids(settings);
+    let enabled_agents = if scope.agents {
+        resolve_enabled_agents(settings, &all_agents)
+    } else {
+        Vec::new()
+    };
+    let enabled_channels = if scope.channels {
+        enabled_channel_ids(settings)
+    } else {
+        Vec::new()
+    };
     let needs_acp_agents = !enabled_channels.is_empty();
 
     let mut tasks = Vec::new();
@@ -95,6 +125,7 @@ pub async fn start<R: Runtime>(
     app: AppHandle<R>,
     install_state: &OnboardingInstallState,
     settings: Value,
+    scope: InstallScope,
 ) -> Result<(), String> {
     install_state.cancelled.store(false, Ordering::Relaxed);
 
@@ -124,7 +155,7 @@ pub async fn start<R: Runtime>(
     let log_file_arc = Arc::clone(&install_state.log_file);
 
     tauri::async_runtime::spawn(async move {
-        run_install(app, val, cancelled, child_proc, log_file_arc).await;
+        run_install(app, val, scope, cancelled, child_proc, log_file_arc).await;
     });
 
     Ok(())
@@ -144,13 +175,22 @@ pub async fn cancel(install_state: &OnboardingInstallState) -> Result<(), String
 async fn run_install<R: Runtime>(
     app: AppHandle<R>,
     settings: Value,
+    scope: InstallScope,
     cancelled: Arc<AtomicBool>,
     _child_proc: Arc<Mutex<Option<tokio::process::Child>>>,
     log_file: Arc<Mutex<Option<std::fs::File>>>,
 ) {
     let all_agents = common::resources::agent_ids();
-    let enabled_agents = resolve_enabled_agents(&settings, &all_agents);
-    let enabled_channels = enabled_channel_ids(&settings);
+    let enabled_agents = if scope.agents {
+        resolve_enabled_agents(&settings, &all_agents)
+    } else {
+        Vec::new()
+    };
+    let enabled_channels = if scope.channels {
+        enabled_channel_ids(&settings)
+    } else {
+        Vec::new()
+    };
     let needs_acp_agents = !enabled_channels.is_empty();
     let mut had_error = false;
 
