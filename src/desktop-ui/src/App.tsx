@@ -1,21 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Activity, Globe, Bot, MessageSquare, X, RefreshCw, ExternalLink, Settings, Wifi, WifiOff, FolderOpen, Eye, Play, Rocket,
+  Activity,
+  Globe,
+  Bot,
+  MessageSquare,
+  X,
+  RefreshCw,
+  ExternalLink,
+  Settings,
+  Wifi,
+  WifiOff,
+  Eye,
+  Play,
+  Rocket,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 import type { TunnelStatus } from "@va/client";
-import { useChannelsState, type ChannelRuntime } from "./hooks/useChannelsState";
+import {
+  useChannelsState,
+  type ChannelRuntime,
+} from "./hooks/useChannelsState";
 import { useTunnelsState, type TunnelRuntime } from "./hooks/useTunnelsState";
 import { useAgentsRuntime, type AgentRuntime } from "./hooks/useAgentsRuntime";
 import { openDashboardUrl, DAEMON_PORT } from "./lib/api";
 import { Button } from "@/components/ui/button";
 import { PageHeader, PageShell, SectionCard } from "@/components/page";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
-import { Workspaces } from "./Workspaces";
 import { Previews } from "./Previews";
 import { Launch } from "./Launch";
+import { getLauncherPreferences, type LauncherPreferences } from "./Launch/api";
 import { LanguageMenu } from "./components/LanguageMenu";
 
 // ---------------------------------------------------------------------------
@@ -27,27 +48,40 @@ import { LanguageMenu } from "./components/LanguageMenu";
 type Pres = { label: string; color: string; running: boolean };
 type Translate = ReturnType<typeof useI18n>["t"];
 
-function channelStatusPresentation(status: ChannelRuntime["status"], t: Translate): Pres {
+function channelStatusPresentation(
+  status: ChannelRuntime["status"],
+  t: Translate,
+): Pres {
   switch (status) {
-    case "running":     return { label: t("Running"),     color: "bg-emerald-500", running: true };
-    case "spawning":    return { label: t("Spawning"),    color: "bg-amber-500",   running: false };
-    case "not_started": return { label: t("Not started"), color: "bg-zinc-400",    running: false };
-    case "stopped":     return { label: t("Stopped"),     color: "bg-zinc-400",    running: false };
-    case "crashed":     return { label: t("Crashed"),     color: "bg-red-500",     running: false };
+    case "running":
+      return { label: t("Running"), color: "bg-emerald-500", running: true };
+    case "spawning":
+      return { label: t("Spawning"), color: "bg-amber-500", running: false };
+    case "not_started":
+      return { label: t("Not started"), color: "bg-zinc-400", running: false };
+    case "stopped":
+      return { label: t("Stopped"), color: "bg-zinc-400", running: false };
+    case "crashed":
+      return { label: t("Crashed"), color: "bg-red-500", running: false };
   }
 }
 
 function tunnelStatusPresentation(status: TunnelStatus, t: Translate): Pres {
   switch (status.state) {
-    case "running": return { label: t("Running"), color: "bg-emerald-500", running: true };
-    case "stopped": return { label: t("Stopped"), color: "bg-zinc-400",    running: false };
-    case "failed":  return { label: t("Failed"),  color: "bg-red-500",     running: false };
+    case "running":
+      return { label: t("Running"), color: "bg-emerald-500", running: true };
+    case "stopped":
+      return { label: t("Stopped"), color: "bg-zinc-400", running: false };
+    case "failed":
+      return { label: t("Failed"), color: "bg-red-500", running: false };
   }
 }
 
 function agentStatusPresentation(agent: AgentRuntime, t: Translate): Pres {
-  if (agent.failed) return { label: t("Failed"), color: "bg-red-500", running: false };
-  if (agent.busy) return { label: t("Busy"), color: "bg-amber-500", running: true };
+  if (agent.failed)
+    return { label: t("Failed"), color: "bg-red-500", running: false };
+  if (agent.busy)
+    return { label: t("Busy"), color: "bg-amber-500", running: true };
   return { label: t("Idle"), color: "bg-emerald-500", running: true };
 }
 
@@ -59,14 +93,20 @@ function StatusDot({ colorClass }: { colorClass: string }) {
 // Per-domain row components
 // ---------------------------------------------------------------------------
 
-function ChannelRow({ channel, onStart, onStop, t }: {
+function ChannelRow({
+  channel,
+  onStart,
+  onStop,
+  t,
+}: {
   channel: ChannelRuntime;
   onStart: () => void;
   onStop: () => void;
   t: Translate;
 }) {
   const pres = channelStatusPresentation(channel.status, t);
-  const showRestartIn = channel.status === "crashed" && channel.restart_in_secs > 0;
+  const showRestartIn =
+    channel.status === "crashed" && channel.restart_in_secs > 0;
   return (
     <Row
       dot={pres.color}
@@ -74,14 +114,28 @@ function ChannelRow({ channel, onStart, onStop, t }: {
       label={pres.label}
       running={pres.running}
       title={channel.reason ?? pres.label}
-      suffix={showRestartIn ? ` · ${t("retry {{seconds}}s", { seconds: channel.restart_in_secs })}` : null}
+      suffix={
+        showRestartIn
+          ? ` · ${t("retry {{seconds}}s", { seconds: channel.restart_in_secs })}`
+          : null
+      }
       actions={
         <>
           {!pres.running && (
-            <IconBtn onClick={onStart} title={t("Start")} icon={<Play className="w-3 h-3" />} hover="emerald" />
+            <IconBtn
+              onClick={onStart}
+              title={t("Start")}
+              icon={<Play className="w-3 h-3" />}
+              hover="emerald"
+            />
           )}
           {pres.running && (
-            <IconBtn onClick={onStop} title={t("Stop")} icon={<X className="w-3 h-3" />} hover="destructive" />
+            <IconBtn
+              onClick={onStop}
+              title={t("Stop")}
+              icon={<X className="w-3 h-3" />}
+              hover="destructive"
+            />
           )}
         </>
       }
@@ -89,12 +143,22 @@ function ChannelRow({ channel, onStart, onStop, t }: {
   );
 }
 
-function TunnelRow({ tunnel, onKill, t }: { tunnel: TunnelRuntime; onKill: () => void; t: Translate }) {
+function TunnelRow({
+  tunnel,
+  onKill,
+  t,
+}: {
+  tunnel: TunnelRuntime;
+  onKill: () => void;
+  t: Translate;
+}) {
   const pres = tunnelStatusPresentation(tunnel.status, t);
   const tooltip =
-    tunnel.status.state === "stopped" ? (tunnel.status.reason ?? pres.label)
-    : tunnel.status.state === "failed" ? tunnel.status.error
-    : pres.label;
+    tunnel.status.state === "stopped"
+      ? (tunnel.status.reason ?? pres.label)
+      : tunnel.status.state === "failed"
+        ? tunnel.status.error
+        : pres.label;
   return (
     <Row
       dot={pres.color}
@@ -106,14 +170,27 @@ function TunnelRow({ tunnel, onKill, t }: { tunnel: TunnelRuntime; onKill: () =>
       tailLink={tunnel.url ? { url: tunnel.url } : undefined}
       actions={
         pres.running ? (
-          <IconBtn onClick={onKill} title={t("Stop")} icon={<X className="w-3 h-3" />} hover="destructive" />
+          <IconBtn
+            onClick={onKill}
+            title={t("Stop")}
+            icon={<X className="w-3 h-3" />}
+            hover="destructive"
+          />
         ) : null
       }
     />
   );
 }
 
-function AgentRow({ agent, onKill, t }: { agent: AgentRuntime; onKill: () => void; t: Translate }) {
+function AgentRow({
+  agent,
+  onKill,
+  t,
+}: {
+  agent: AgentRuntime;
+  onKill: () => void;
+  t: Translate;
+}) {
   const pres = agentStatusPresentation(agent, t);
   const kindLabel = agent.cli_kind ?? "agent";
   const name = `${kindLabel} (${agent.route_key})`;
@@ -127,14 +204,29 @@ function AgentRow({ agent, onKill, t }: { agent: AgentRuntime; onKill: () => voi
       secondary={agent.agent_version ? `v${agent.agent_version}` : undefined}
       actions={
         pres.running ? (
-          <IconBtn onClick={onKill} title={t("Stop")} icon={<X className="w-3 h-3" />} hover="destructive" />
+          <IconBtn
+            onClick={onKill}
+            title={t("Stop")}
+            icon={<X className="w-3 h-3" />}
+            hover="destructive"
+          />
         ) : null
       }
     />
   );
 }
 
-function Row({ dot, name, label, running, title, suffix, secondary, tailLink, actions }: {
+function Row({
+  dot,
+  name,
+  label,
+  running,
+  title,
+  suffix,
+  secondary,
+  tailLink,
+  actions,
+}: {
   dot: string;
   name: string;
   label: string;
@@ -150,7 +242,9 @@ function Row({ dot, name, label, running, title, suffix, secondary, tailLink, ac
       <StatusDot colorClass={dot} />
       <span className="text-xs font-medium flex-1 truncate">{name}</span>
       {secondary && (
-        <span className="text-[10px] text-muted-foreground/70 truncate max-w-[100px]">{secondary}</span>
+        <span className="text-[10px] text-muted-foreground/70 truncate max-w-[100px]">
+          {secondary}
+        </span>
       )}
       <span
         className={`text-[10px] tabular-nums ${running ? "text-muted-foreground/60" : "text-muted-foreground/80"}`}
@@ -179,15 +273,21 @@ function Row({ dot, name, label, running, title, suffix, secondary, tailLink, ac
   );
 }
 
-function IconBtn({ onClick, title, icon, hover }: {
+function IconBtn({
+  onClick,
+  title,
+  icon,
+  hover,
+}: {
   onClick: () => void;
   title: string;
   icon: React.ReactNode;
   hover: "destructive" | "emerald";
 }) {
-  const hoverClass = hover === "destructive"
-    ? "hover:text-destructive"
-    : "hover:text-emerald-500";
+  const hoverClass =
+    hover === "destructive"
+      ? "hover:text-destructive"
+      : "hover:text-emerald-500";
   return (
     <Button
       type="button"
@@ -226,31 +326,70 @@ function App() {
   return <Dashboard />;
 }
 
-type DashboardPage = "launch" | "status" | "previews" | "workspaces";
+type DashboardPage = "launch" | "status" | "previews";
 
 function Dashboard() {
   const { t } = useI18n();
   const [page, setPage] = useState<DashboardPage>("launch");
+  const [launcherPrefs, setLauncherPrefs] =
+    useState<LauncherPreferences | null>(null);
+  const [launcherPrefsLoaded, setLauncherPrefsLoaded] = useState(false);
 
   const channels = useChannelsState();
   const tunnels = useTunnelsState();
   const agents = useAgentsRuntime();
 
-  const anyEverLoaded = channels.everLoaded || tunnels.everLoaded || agents.everLoaded;
-  const anyConnected = channels.connected || tunnels.connected || agents.connected;
+  const anyEverLoaded =
+    channels.everLoaded || tunnels.everLoaded || agents.everLoaded;
+  const anyConnected =
+    channels.connected || tunnels.connected || agents.connected;
   const firstError = channels.error ?? tunnels.error ?? agents.error ?? null;
+
+  const refreshLauncherPrefs = useCallback(() => {
+    void getLauncherPreferences()
+      .then((prefs) => {
+        setLauncherPrefs(prefs);
+        setLauncherPrefsLoaded(true);
+      })
+      .catch(() => {
+        setLauncherPrefs(null);
+        setLauncherPrefsLoaded(true);
+      });
+  }, []);
 
   const refreshAll = useCallback(() => {
     void channels.refresh();
     void tunnels.refresh();
     void agents.refresh();
-  }, [channels, tunnels, agents]);
+    refreshLauncherPrefs();
+  }, [channels, tunnels, agents, refreshLauncherPrefs]);
 
   const everHadData = useRef(false);
   const [startTime] = useState(() => Date.now());
   const [timedOut, setTimedOut] = useState(false);
+  const launchEnabled = !launcherPrefsLoaded
+    ? false
+    : launcherPrefs
+      ? launcherPrefs.enabledAgents.length > 0
+      : true;
+  const launchDisabledReason = !launcherPrefsLoaded
+    ? t("Loading launch settings")
+    : !launchEnabled
+      ? t("No launch agents enabled")
+      : null;
+  const effectivePage = !launchEnabled && page === "launch" ? "status" : page;
 
   if (anyEverLoaded) everHadData.current = true;
+
+  useEffect(() => {
+    refreshLauncherPrefs();
+  }, [refreshLauncherPrefs]);
+
+  useEffect(() => {
+    if (launcherPrefsLoaded && !launchEnabled && page === "launch") {
+      setPage("status");
+    }
+  }, [launchEnabled, launcherPrefsLoaded, page]);
 
   useEffect(() => {
     if (anyEverLoaded || everHadData.current) return;
@@ -272,12 +411,17 @@ function Dashboard() {
   if (timedOut && !anyEverLoaded) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3">
-        <p className="text-xs text-destructive">{t("Server failed to start")}</p>
+        <p className="text-xs text-destructive">
+          {t("Server failed to start")}
+        </p>
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          onClick={() => { setTimedOut(false); refreshAll(); }}
+          onClick={() => {
+            setTimedOut(false);
+            refreshAll();
+          }}
           className="text-primary hover:text-primary"
         >
           <RefreshCw className="w-3 h-3" /> {t("Retry")}
@@ -290,15 +434,47 @@ function Dashboard() {
     <div className="h-full flex flex-col">
       <header className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
         <Tabs
-          value={page}
-          onValueChange={(value) => setPage(value as DashboardPage)}
+          value={effectivePage}
+          onValueChange={(value) => {
+            if (value === "launch" && !launchEnabled) return;
+            setPage(value as DashboardPage);
+          }}
           className="contents"
         >
           <TabsList>
-            <TabsTrigger value="launch"><Rocket /> {t("Launch")}</TabsTrigger>
-            <TabsTrigger value="status"><Activity /> {t("Status")}</TabsTrigger>
-            <TabsTrigger value="previews"><Eye /> {t("Previews")}</TabsTrigger>
-            <TabsTrigger value="workspaces"><FolderOpen /> {t("Workspaces")}</TabsTrigger>
+            <TooltipProvider>
+              {launchDisabledReason ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="inline-flex cursor-not-allowed"
+                      tabIndex={0}
+                      role="button"
+                      aria-disabled="true"
+                      aria-label={launchDisabledReason}
+                      title={launchDisabledReason}
+                    >
+                      <TabsTrigger value="launch" disabled>
+                        <Rocket /> {t("Launch")}
+                      </TabsTrigger>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {launchDisabledReason}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <TabsTrigger value="launch">
+                  <Rocket /> {t("Launch")}
+                </TabsTrigger>
+              )}
+            </TooltipProvider>
+            <TabsTrigger value="status">
+              <Activity /> {t("Status")}
+            </TabsTrigger>
+            <TabsTrigger value="previews">
+              <Eye /> {t("Previews")}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-2">
@@ -333,23 +509,29 @@ function Dashboard() {
       </header>
 
       {firstError && (
-        <div className="px-3 py-1 bg-destructive/10 text-destructive text-xs">{firstError}</div>
+        <div className="px-3 py-1 bg-destructive/10 text-destructive text-xs">
+          {firstError}
+        </div>
       )}
 
-      {page === "workspaces" ? (
-        <div className="flex-1 overflow-y-auto"><Workspaces /></div>
-      ) : page === "previews" ? (
-        <div className="flex-1 overflow-y-auto"><Previews /></div>
-      ) : page === "launch" ? (
-        <div className="flex-1 min-h-0"><Launch /></div>
+      {effectivePage === "previews" ? (
+        <div className="flex-1 overflow-y-auto">
+          <Previews />
+        </div>
+      ) : effectivePage === "launch" ? (
+        <div className="flex-1 min-h-0">
+          <Launch />
+        </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
           <PageShell className="space-y-3">
             <PageHeader
               icon={<Activity className="w-4 h-4 text-primary" />}
               title={t("Status")}
-              description={t("Runtime health for tunnels, agents, and messaging channels.")}
-              actions={(
+              description={t(
+                "Runtime health for tunnels, agents, and messaging channels.",
+              )}
+              actions={
                 <Button
                   type="button"
                   variant="ghost"
@@ -357,12 +539,14 @@ function Dashboard() {
                   className="text-primary hover:text-primary"
                   onClick={(e) => {
                     e.preventDefault();
-                    void openDashboardUrl(`http://127.0.0.1:${DAEMON_PORT}/va/`);
+                    void openDashboardUrl(
+                      `http://127.0.0.1:${DAEMON_PORT}/va/`,
+                    );
                   }}
                 >
                   {t("Open Web Dashboard")} <ExternalLink className="w-3 h-3" />
                 </Button>
-              )}
+              }
             />
 
             <SectionCard
@@ -371,7 +555,9 @@ function Dashboard() {
               badge={tunnels.tunnels.length}
             >
               {tunnels.tunnels.length === 0 ? (
-                <p className="text-xs text-muted-foreground px-3 py-2">{t("No tunnel running")}</p>
+                <p className="text-xs text-muted-foreground px-3 py-2">
+                  {t("No tunnel running")}
+                </p>
               ) : (
                 tunnels.tunnels.map((tunnel) => (
                   <TunnelRow
@@ -390,10 +576,17 @@ function Dashboard() {
               badge={agents.agents.length}
             >
               {agents.agents.length === 0 ? (
-                <p className="text-xs text-muted-foreground px-3 py-2">{t("No agents running")}</p>
+                <p className="text-xs text-muted-foreground px-3 py-2">
+                  {t("No agents running")}
+                </p>
               ) : (
                 agents.agents.map((a) => (
-                  <AgentRow key={a.route_key} agent={a} onKill={() => agents.kill(a.route_key)} t={t} />
+                  <AgentRow
+                    key={a.route_key}
+                    agent={a}
+                    onKill={() => agents.kill(a.route_key)}
+                    t={t}
+                  />
                 ))
               )}
             </SectionCard>
@@ -404,7 +597,9 @@ function Dashboard() {
               badge={channels.channels.length}
             >
               {channels.channels.length === 0 ? (
-                <p className="text-xs text-muted-foreground px-3 py-2">{t("No channels running")}</p>
+                <p className="text-xs text-muted-foreground px-3 py-2">
+                  {t("No channels running")}
+                </p>
               ) : (
                 channels.channels.map((c) => (
                   <ChannelRow

@@ -30,5 +30,6 @@ nanoid = "0.5"
 parking_lot = "0.12"
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 tracing = "0.1"
+tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 include_dir = "0.7"

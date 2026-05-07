@@ -39,6 +39,18 @@ export function launchProfile(id: string, launchTarget: string): Promise<void> {
   return invoke<void>("profiles_launch", { id, launchTarget });
 }
 
+export function launchProfileResume(
+  id: string,
+  launchTarget: string,
+  sessionId: string,
+): Promise<void> {
+  return invoke<void>("profiles_launch_resume", {
+    id,
+    launchTarget,
+    sessionId,
+  });
+}
+
 export function launchDefault(): Promise<void> {
   return invoke<void>("profiles_launch_default");
 }
@@ -46,6 +58,13 @@ export function launchDefault(): Promise<void> {
 /** Direct launch — no env, CLI uses whatever global OAuth the user has. */
 export function launchDirect(agentId: string): Promise<void> {
   return invoke<void>("profiles_launch_direct", { agentId });
+}
+
+export function launchDirectResume(
+  agentId: string,
+  sessionId: string,
+): Promise<void> {
+  return invoke<void>("profiles_launch_direct_resume", { agentId, sessionId });
 }
 
 export interface AgentSummary {
@@ -78,6 +97,16 @@ export interface LauncherPreferences {
   profileConnections: ProfileConnections;
 }
 
+export interface LaunchSessionSummary {
+  agentId: string;
+  sessionId: string;
+  title: string;
+  workspace: string;
+  updatedAt: number;
+  shortId: string;
+  archived: boolean;
+}
+
 export interface WorkspaceOption {
   path: string;
   label: string;
@@ -90,12 +119,38 @@ export function getLauncherPreferences(): Promise<LauncherPreferences> {
   return invoke<LauncherPreferences>("launcher_get_preferences");
 }
 
+export function listLauncherWorkspaces(): Promise<WorkspaceOption[]> {
+  return invoke<WorkspaceOption[]>("launcher_list_workspaces");
+}
+
+export function listLaunchSessions(
+  agentId: string,
+  workspacePath: string,
+  includeArchived = false,
+): Promise<LaunchSessionSummary[]> {
+  return invoke<LaunchSessionSummary[]>("launcher_list_sessions", {
+    agentId,
+    workspacePath,
+    includeArchived,
+  });
+}
+
 export function setLauncherTerminal(terminalId: string): Promise<void> {
   return invoke<void>("launcher_set_terminal", { terminalId });
 }
 
 export function setLauncherWorkspace(workspacePath: string): Promise<void> {
   return invoke<void>("launcher_set_workspace", { workspacePath });
+}
+
+export function removeLauncherWorkspace(workspacePath: string): Promise<void> {
+  return invoke<void>("launcher_remove_workspace", { workspacePath });
+}
+
+export function reorderLauncherWorkspaces(
+  workspacePaths: string[],
+): Promise<void> {
+  return invoke<void>("launcher_reorder_workspaces", { workspacePaths });
 }
 
 export function setLauncherCompatibilityProxy(

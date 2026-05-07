@@ -12,11 +12,9 @@ pub async fn list_workspaces_handler() -> Json<crate::api_types::WorkspacesRespo
         .iter()
         .map(|ws| {
             let is_builtin = *ws == builtin;
-            let is_default = cfg.default_workspace.as_ref() == Some(ws)
-                || (cfg.default_workspace.is_none() && is_builtin);
             crate::api_types::WorkspaceItem {
                 path: ws.to_string_lossy().to_string(),
-                is_default,
+                is_default: is_builtin,
                 is_builtin,
             }
         })
@@ -24,11 +22,7 @@ pub async fn list_workspaces_handler() -> Json<crate::api_types::WorkspacesRespo
 
     Json(crate::api_types::WorkspacesResponse {
         workspaces: items,
-        default_workspace: cfg
-            .default_workspace
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| builtin.to_string_lossy().to_string()),
+        default_workspace: builtin.to_string_lossy().to_string(),
     })
 }
 
@@ -81,38 +75,8 @@ pub async fn remove_workspace_handler(
         if let Some(arr) = root.get_mut("workspaces").and_then(|v| v.as_array_mut()) {
             arr.retain(|v| v.as_str() != Some(&body.path));
         }
-        if root.get("default_workspace").and_then(|v| v.as_str()) == Some(&body.path) {
-            if let Some(obj) = root.as_object_mut() {
-                obj.remove("default_workspace");
-            }
-        }
     })
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     Ok(Json(serde_json::json!({ "removed": body.path })))
-}
-
-/// PUT /api/workspaces/default -- set the default workspace.
-pub async fn set_default_workspace_handler(
-    Json(body): Json<WorkspacePathBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let path = std::path::PathBuf::from(&body.path);
-    if !path.exists() || !path.is_dir() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!("Path does not exist: {}", body.path),
-        ));
-    }
-    config::update_settings_json(|root| {
-        if let Some(obj) = root.as_object_mut() {
-            if body.path.is_empty() {
-                obj.remove("default_workspace");
-            } else {
-                obj.insert("default_workspace".into(), serde_json::json!(body.path));
-            }
-        }
-    })
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-
-    Ok(Json(serde_json::json!({ "default_workspace": body.path })))
 }

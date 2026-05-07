@@ -234,10 +234,6 @@ pub async fn run_web_server(
             "/api/workspaces/remove",
             post(api::remove_workspace_handler),
         )
-        .route(
-            "/api/workspaces/default",
-            axum::routing::put(api::set_default_workspace_handler),
-        )
         .route("/mcp", post(mcp::mcp_handler))
         .route_layer(axum::middleware::from_fn_with_state(
             auth_state.clone(),

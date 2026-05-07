@@ -26,7 +26,6 @@ export interface PluginRegistryEntry {
 export interface Settings {
   onboarded?: boolean;
   workspaces?: string[];
-  default_workspace?: string;
   default_agent?: string;
   default_profiles?: Record<string, string>;
   enabled_agents?: string[];

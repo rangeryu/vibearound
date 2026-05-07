@@ -22,7 +22,6 @@ pub const DEFAULT_PORT: u16 = 12358;
 /// Minimal default settings.json content, embedded at compile time.
 const DEFAULT_SETTINGS_JSON: &str = r#"{
   "workspaces": [],
-  "default_workspace": "",
   "default_profiles": {}
 }"#;
 
@@ -94,8 +93,6 @@ pub struct Config {
     // --- Workspaces ---
     /// User-added project folders (not including the built-in ~/.vibearound/workspaces/).
     pub workspaces: Vec<PathBuf>,
-    /// User override for default workspace. None = use the built-in workspaces root.
-    pub default_workspace: Option<PathBuf>,
     pub preview_base_url: Option<String>,
     pub tmux_detach_others: bool,
     // --- Agents ---
@@ -132,14 +129,9 @@ impl Config {
     }
 
     /// Resolve the workspace directory for an agent session.
-    /// - If user set a default_workspace → use it directly
-    /// - Otherwise → ~/.vibearound/workspaces
+    /// The default workspace is fixed to ~/.vibearound/workspaces.
     pub fn resolve_workspace(&self, _agent_kind: &str) -> PathBuf {
-        if let Some(ref ws) = self.default_workspace {
-            ws.clone()
-        } else {
-            builtin_workspaces_dir()
-        }
+        builtin_workspaces_dir()
     }
 
     /// Resolve the default profile id for an agent alias/id.
@@ -237,7 +229,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
     // --- Workspaces (new format) with backward compat for old working_dir ---
-    let workspaces: Vec<PathBuf> = root
+    let mut workspaces: Vec<PathBuf> = root
         .get("workspaces")
         .and_then(|v| v.as_array())
         .map(|arr| {
@@ -249,22 +241,33 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         })
         .unwrap_or_default();
 
-    let default_workspace: Option<PathBuf> = root
+    // Backward compat: keep old workspace-like fields discoverable as regular
+    // workspaces, but the default workspace itself is fixed to the built-in root.
+    let mut add_workspace = |candidate: PathBuf| {
+        if !workspaces.contains(&candidate) {
+            workspaces.push(candidate);
+        }
+    };
+
+    if let Some(legacy_default) = root
         .get("default_workspace")
         .and_then(|v| v.as_str())
         .map(|s| expand_home(s.trim()))
         .filter(|p| !p.as_os_str().is_empty())
-        // Backward compat: if old "working_dir" exists and no new fields, use it
-        .or_else(|| {
-            if root.get("workspaces").is_none() {
-                root.get("working_dir")
-                    .and_then(|v| v.as_str())
-                    .map(|s| expand_home(s.trim()))
-                    .filter(|p| !p.as_os_str().is_empty())
-            } else {
-                None
-            }
-        });
+    {
+        add_workspace(legacy_default);
+    }
+
+    if root.get("workspaces").is_none() {
+        if let Some(legacy) = root
+            .get("working_dir")
+            .and_then(|v| v.as_str())
+            .map(|s| expand_home(s.trim()))
+            .filter(|p| !p.as_os_str().is_empty())
+        {
+            add_workspace(legacy);
+        }
+    }
 
     let preview_base_url = root
         .get("preview_base_url")
@@ -314,7 +317,6 @@ fn load_settings_from(path: &std::path::Path) -> Config {
                 .filter_map(|s| crate::resources::agent_by_alias(s).map(|def| def.id.clone()))
                 .collect::<Vec<_>>()
         })
-        .filter(|v: &Vec<String>| !v.is_empty())
         .unwrap_or_else(|| {
             crate::resources::AGENTS
                 .iter()
@@ -329,7 +331,6 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         cloudflare_tunnel_token,
         cloudflare_hostname,
         workspaces,
-        default_workspace,
         preview_base_url,
         tmux_detach_others,
         default_agent,
@@ -434,7 +435,6 @@ impl Default for Config {
             cloudflare_tunnel_token: None,
             cloudflare_hostname: None,
             workspaces: vec![],
-            default_workspace: None,
             preview_base_url: None,
             tmux_detach_others: true,
             default_agent: "claude".to_string(),
@@ -500,6 +500,41 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap(),
             serde_json::json!({ "onboarded": true })
         );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn empty_enabled_agents_stays_empty() {
+        let dir = unique_test_dir("enabled-agents");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, r#"{ "enabled_agents": [] }"#).unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert!(config.enabled_agents.is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn default_workspace_setting_is_not_used_as_default() {
+        let dir = unique_test_dir("fixed-workspace");
+        fs::create_dir_all(&dir).unwrap();
+        let legacy_workspace = dir.join("legacy-default");
+        let path = dir.join("settings.json");
+        fs::write(
+            &path,
+            serde_json::json!({
+                "default_workspace": legacy_workspace.to_string_lossy().to_string()
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert_eq!(config.resolve_workspace("codex"), builtin_workspaces_dir());
+        assert!(config.workspaces.contains(&legacy_workspace));
         fs::remove_dir_all(&dir).unwrap();
     }
 
