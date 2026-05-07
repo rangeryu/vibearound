@@ -6,7 +6,7 @@
 
 **让本地 Coding Agent 出现在你工作的每个入口。**
 
-[下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [English](README.md)
+[下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [English](README.md)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.82+-000?style=flat-square&logo=rust&logoColor=fff" alt="Rust" />
@@ -20,29 +20,25 @@
 
 VibeAround 把你的电脑变成本地优先的 AI 编程控制中心。Claude Code、Codex CLI、Gemini CLI、Cursor CLI、Kiro CLI、Qwen Code、OpenCode 仍然运行在你的项目和工具链旁边，但你可以从桌面应用、浏览器终端，甚至手机 IM 里进入它们。
 
-它面向的是日常 agentic coding 里那些真实而琐碎的循环：在正确 workspace 启动正确 Agent，不改全局配置就切换 provider，把正在运行的会话接力到手机，打开本地预览链接，然后继续往前推进。
+它面向的是日常 agentic coding 里那些真实而琐碎的循环：在正确 workspace 启动正确 Agent，不改全局配置就切换 provider，桥接不兼容的 AI API 格式，把正在运行的会话接力到手机，打开本地预览链接，然后继续往前推进。
 
 ## 你可以用它做什么
 
-### 一键启动 Coding Agent
+### 启动本地 Coding Agent
 
-从指定 workspace 启动支持的 CLI，直接运行 Claude Code、Codex、Gemini CLI、OpenCode 等 Agent。遇到需要兼容层的 provider 时，也可以让兼容 Agent 走 VibeAround 的本地 API proxy。
+在正确 workspace 里，用正确的 provider profile 启动 Claude Code、Codex CLI、Gemini CLI、OpenCode 等 Agent。
 
-### Provider profile 跟着启动走
+### 打通 AI API 格式
 
-保存 DeepSeek、Azure OpenAI、Gemini、Moonshot/Kimi、OpenRouter、MiniMax、Z.AI/GLM 或自定义 endpoint 的 profile。不同 profile 可以并行使用，不需要反复修改 CLI 的全局配置。
+让 DeepSeek、Qwen/DashScope、Kimi、MiniMax、Z.AI/GLM 等 provider 接入你喜欢的本地 Coding Agent，即使它们的 API 格式并不一样。
 
-### 在 IM 里和本地 Agent 对话
+### 从桌面、浏览器或 IM 对话
 
-通过 Telegram、飞书/Lark、Discord、Slack、微信、钉钉、企业微信或 QQ Bot 和同一个本地 Agent 对话。Agent 可以改代码、跑命令、启动开发服务，并把过程流式返回到聊天里。
+从桌面应用、浏览器终端、Telegram、飞书/Lark、Discord、Slack、微信、钉钉、企业微信或 QQ Bot 访问同一个本地 Agent。
 
-### 在多个入口之间移动会话
+### 接力会话和预览
 
-使用 `/handover` 和 `/pickup` 在终端、浏览器和 IM 之间移动同一个实时会话。你可以从电脑开始，在手机上接着处理，再回到桌面继续，不必重建上下文。
-
-### 浏览器终端和可分享预览
-
-从浏览器打开完整 shell，移动端也有 ESC、Ctrl、方向键等终端快捷输入。本地开发服务器、Markdown 和 HTML 预览可以生成带鉴权的短时链接，方便在手机或另一台设备上打开。
+用 `/handover` 和 `/pickup` 在电脑和手机之间移动实时会话，也可以把本地开发服务、Markdown 或 HTML 预览生成带鉴权的短时链接。
 
 ## 下载 VibeAround
 
@@ -70,13 +66,37 @@ Agent 通过 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 在
 
 | Agent | IM 对话 | 会话接力 | Launch profile |
 |---|---|---|---|
-| Claude Code | 支持 | 支持 | 支持 |
-| Codex CLI | 支持 | 支持 | 支持 |
-| Gemini CLI | 支持 | 支持 | 直接启动 |
-| Cursor CLI | 支持 | 支持 | 直接启动 |
-| Kiro CLI | 支持 | 支持 | 直接启动 |
-| Qwen Code | 支持 | 支持 | 直接启动 |
-| OpenCode | 支持 | 暂不支持 | 直接启动 |
+| Claude Code | ✅ | ✅ | ✅ |
+| Codex CLI | ✅ | ✅ | ✅ |
+| Gemini CLI | ✅ | ✅ | 直接启动 |
+| Cursor CLI | ✅ | ✅ | 直接启动 |
+| Kiro CLI | ✅ | ✅ | 直接启动 |
+| Qwen Code | ✅ | ✅ | 直接启动 |
+| OpenCode | ✅ | ❌ | 直接启动 |
+
+### Model providers 和 proxy 路由
+
+Provider profile 让本地 Agent 可以连接官方 API、OpenAI-compatible endpoint 或经过转换的 proxy route，而不用手动改 CLI 配置文件。
+
+| Provider | Profile 支持 |
+|---|---|
+| DeepSeek | 内置 endpoint 和 proxy route |
+| Qwen / DashScope | 内置国际站和中国站 endpoint |
+| Moonshot / Kimi | 内置 OpenAI-compatible 和 proxy route |
+| MiniMax | 内置 OpenAI-compatible 和 proxy route |
+| Z.AI / GLM | 内置 endpoint 和 proxy route |
+| Google Gemini | 内置 Gemini API profile |
+| OpenRouter | 内置 OpenRouter profile |
+| Azure OpenAI | 内置 Azure profile |
+| Custom endpoint | 自带兼容 base URL |
+
+VibeAround 的本地 API proxy 由 [va-ai-api-proxy](https://github.com/jazzenchen/va-ai-api-proxy) 驱动，重点打通三种常见 Agent API 形态：
+
+| API 形态 | 常见 endpoint |
+|---|---|
+| OpenAI Responses | `/v1/responses` |
+| OpenAI Chat Completions | `/v1/chat/completions` |
+| Anthropic Messages | `/v1/messages` |
 
 ### 频道插件
 
@@ -84,14 +104,14 @@ Agent 通过 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 在
 
 | 频道 | 认证方式 | 私聊 | 文件/图片 | 流式输出 |
 |---|---|---|---|---|
-| Telegram | Bot Token | 支持 | 支持 | 支持 |
-| 飞书 / Lark | 应用凭证 | 支持 | 支持 | 支持 |
-| Discord | Bot Token | 支持 | 支持 | 支持 |
-| Slack | Bot + App Token | 支持 | 支持 | 支持 |
-| 微信 | 二维码登录 | 支持 | 支持 | 暂不支持 |
-| 钉钉 | AppKey + Secret | 支持 | 支持 | 支持 |
-| 企业微信 | Bot ID + Secret | 支持 | 支持 | 支持 |
-| QQ Bot | App ID + Token | 支持 | 支持 | 暂不支持 |
+| Telegram | Bot Token | ✅ | ✅ | ✅ |
+| 飞书 / Lark | 应用凭证 | ✅ | ✅ | ✅ |
+| Discord | Bot Token | ✅ | ✅ | ✅ |
+| Slack | Bot + App Token | ✅ | ✅ | ✅ |
+| 微信 | 二维码登录 | ✅ | ✅ | ❌ |
+| 钉钉 | AppKey + Secret | ✅ | ✅ | ✅ |
+| 企业微信 | Bot ID + Secret | ✅ | ✅ | ✅ |
+| QQ Bot | App ID + Token | ✅ | ✅ | ❌ |
 
 ## 文档
 
@@ -106,11 +126,17 @@ Agent 通过 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 在
 ## 本地开发
 
 ```bash
+# 拉取本地 API 转换需要的 va-ai-api-proxy submodule
+git submodule update --init --recursive
 cd src
 bun install
 bun run prebuild
+
+# 启动 Tauri 桌面开发环境
 bun run dev
 ```
+
+如果 clone 时没有使用 `--recurse-submodules`，第一行会拉取 `src/va-ai-api-proxy`，它提供 VibeAround 的 AI API 转换能力。
 
 环境要求：Rust 1.82+、推荐 Node.js 24 LTS、Bun 1.3+。macOS 还需要执行 `xcode-select --install`；Linux 需要安装发行版对应的 WebKitGTK/Tauri 系统依赖。
 
@@ -128,6 +154,14 @@ bun run dev
 | `/agent <command>` | 向底层 Agent 发送斜杠命令，例如 `/agent status` |
 
 在 Slack 中，`/` 前缀会被客户端拦截，请改用 `/va` 或 `/vibearound`，例如 `/va switch claude`。
+
+## 社区
+
+加入 Discord 或微信群，提问、交流想法，或者聊聊你如何使用 VibeAround。
+
+[![Discord](https://img.shields.io/badge/Discord-Join%20VibeAround-5865F2?logo=discord&logoColor=white)](https://discord.gg/KsJWkY64GN)
+
+<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/wechat-group-compressed.webp" width="220" alt="VibeAround 微信群二维码" />
 
 ## 许可证
 

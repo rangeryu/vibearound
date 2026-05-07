@@ -6,7 +6,7 @@
 
 **Your local coding agents, everywhere you work.**
 
-[Download](https://github.com/jazzenchen/VibeAround/releases/latest) | [Demo](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [简体中文](README_CN.md)
+[Download](https://github.com/jazzenchen/VibeAround/releases/latest) | [Demo](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [简体中文](README_CN.md)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.82+-000?style=flat-square&logo=rust&logoColor=fff" alt="Rust" />
@@ -20,29 +20,25 @@
 
 VibeAround turns your own machine into a local-first command center for AI coding work. Keep Claude Code, Codex CLI, Gemini CLI, Cursor CLI, Kiro CLI, Qwen Code, and OpenCode running where your repo and tools already live, then reach them from the desktop app, a browser terminal, or the IM app on your phone.
 
-It is built for the messy, everyday loop of agentic coding: start the right agent in the right workspace, switch providers without rewriting config files, hand a live session to your phone, open a preview link, and keep moving.
+It is built for the messy, everyday loop of agentic coding: start the right agent in the right workspace, switch providers without rewriting config files, bridge incompatible AI API formats, hand a live session to your phone, open a preview link, and keep moving.
 
 ## What You Get
 
-### One-click coding agent launch
+### Launch local coding agents
 
-Start supported CLIs from a workspace with saved provider profiles. Launch Claude Code, Codex, Gemini CLI, OpenCode, and other agents directly, or route compatible agents through VibeAround's local API proxy when a provider needs translation.
+Start Claude Code, Codex CLI, Gemini CLI, OpenCode, and other agents in the right workspace with the right provider profile.
 
-### Provider profiles that travel with the launch
+### Bridge AI API formats
 
-Save profiles for DeepSeek, Azure OpenAI, Gemini, Moonshot/Kimi, OpenRouter, MiniMax, Z.AI/GLM, or a custom endpoint. Use different profiles side by side without changing a CLI's global config.
+Use providers such as DeepSeek, Qwen/DashScope, Kimi, MiniMax, and Z.AI/GLM from the local coding agent you like, even when their API formats do not match.
 
-### Chat with local agents from IM
+### Chat from desktop, browser, or IM
 
-Talk to the same local agent from Telegram, Feishu/Lark, Discord, Slack, WeChat, DingTalk, WeCom, or QQ Bot. The agent can edit code, run commands, start dev servers, and stream progress back into the conversation.
+Reach the same local agent from the desktop app, browser terminal, Telegram, Feishu/Lark, Discord, Slack, WeChat, DingTalk, WeCom, or QQ Bot.
 
-### Move sessions between surfaces
+### Handover sessions and previews
 
-Use `/handover` and `/pickup` to move a live coding session between terminal, browser, and IM. Start from your laptop, continue from your phone, then return to the desktop without rebuilding the thread from scratch.
-
-### Browser terminal and shareable previews
-
-Open a full shell from a browser, including mobile-friendly terminal controls. Share local dev servers, rendered Markdown, and HTML previews through short-lived authenticated links.
+Use `/handover` and `/pickup` to move a live session between laptop and phone, and share local dev servers, Markdown, or HTML previews through short-lived authenticated links.
 
 ## Download VibeAround
 
@@ -70,13 +66,37 @@ Agents communicate over stdio through [ACP (Agent Client Protocol)](https://agen
 
 | Agent | IM chat | Session handover | Launch profiles |
 |---|---|---|---|
-| Claude Code | Yes | Yes | Yes |
-| Codex CLI | Yes | Yes | Yes |
-| Gemini CLI | Yes | Yes | Direct launch |
-| Cursor CLI | Yes | Yes | Direct launch |
-| Kiro CLI | Yes | Yes | Direct launch |
-| Qwen Code | Yes | Yes | Direct launch |
-| OpenCode | Yes | No | Direct launch |
+| Claude Code | ✅ | ✅ | ✅ |
+| Codex CLI | ✅ | ✅ | ✅ |
+| Gemini CLI | ✅ | ✅ | Direct launch |
+| Cursor CLI | ✅ | ✅ | Direct launch |
+| Kiro CLI | ✅ | ✅ | Direct launch |
+| Qwen Code | ✅ | ✅ | Direct launch |
+| OpenCode | ✅ | ❌ | Direct launch |
+
+### Model providers and proxy routes
+
+Provider profiles let you launch local agents against first-party APIs, OpenAI-compatible endpoints, and translated routes without hand-editing CLI config files.
+
+| Provider | Profile support |
+|---|---|
+| DeepSeek | Built-in endpoints and proxy routes |
+| Qwen / DashScope | Built-in global and China endpoints |
+| Moonshot / Kimi | Built-in OpenAI-compatible and proxy routes |
+| MiniMax | Built-in OpenAI-compatible and proxy routes |
+| Z.AI / GLM | Built-in endpoints and proxy routes |
+| Google Gemini | Built-in Gemini API profile |
+| OpenRouter | Built-in OpenRouter profile |
+| Azure OpenAI | Built-in Azure profile |
+| Custom endpoint | Bring your own compatible base URL |
+
+VibeAround's local API proxy is powered by [va-ai-api-proxy](https://github.com/jazzenchen/va-ai-api-proxy). It translates between the three common agent API shapes:
+
+| API shape | Common endpoint |
+|---|---|
+| OpenAI Responses | `/v1/responses` |
+| OpenAI Chat Completions | `/v1/chat/completions` |
+| Anthropic Messages | `/v1/messages` |
 
 ### Channel plugins
 
@@ -84,14 +104,14 @@ Each IM channel runs as a standalone Node.js plugin built with [@vibearound/plug
 
 | Channel | Auth | DM | File/Image | Streaming |
 |---|---|---|---|---|
-| Telegram | Bot token | Yes | Yes | Yes |
-| Feishu / Lark | App credentials | Yes | Yes | Yes |
-| Discord | Bot token | Yes | Yes | Yes |
-| Slack | Bot + App token | Yes | Yes | Yes |
-| WeChat | QR code login | Yes | Yes | No |
-| DingTalk | AppKey + Secret | Yes | Yes | Yes |
-| WeCom | Bot ID + Secret | Yes | Yes | Yes |
-| QQ Bot | App ID + Token | Yes | Yes | No |
+| Telegram | Bot token | ✅ | ✅ | ✅ |
+| Feishu / Lark | App credentials | ✅ | ✅ | ✅ |
+| Discord | Bot token | ✅ | ✅ | ✅ |
+| Slack | Bot + App token | ✅ | ✅ | ✅ |
+| WeChat | QR code login | ✅ | ✅ | ❌ |
+| DingTalk | AppKey + Secret | ✅ | ✅ | ✅ |
+| WeCom | Bot ID + Secret | ✅ | ✅ | ✅ |
+| QQ Bot | App ID + Token | ✅ | ✅ | ❌ |
 
 ## Documentation
 
@@ -106,11 +126,17 @@ Each IM channel runs as a standalone Node.js plugin built with [@vibearound/plug
 ## Develop Locally
 
 ```bash
+# Pull the va-ai-api-proxy submodule used by local API translation
+git submodule update --init --recursive
 cd src
 bun install
 bun run prebuild
+
+# Start the Tauri desktop app in development mode
 bun run dev
 ```
+
+If you cloned without `--recurse-submodules`, the first command pulls `src/va-ai-api-proxy`, which provides VibeAround's AI API translation primitives.
 
 Prerequisites: Rust 1.82+, Node.js 24 LTS recommended, Bun 1.3+. On macOS, also run `xcode-select --install`; on Linux, install the WebKitGTK/Tauri system dependencies for your distro.
 
@@ -128,6 +154,14 @@ Prerequisites: Rust 1.82+, Node.js 24 LTS recommended, Bun 1.3+. On macOS, also 
 | `/agent <command>` | Send a slash command to the underlying agent, for example `/agent status` |
 
 In Slack, the `/` prefix is reserved by the client, so use `/va` or `/vibearound`, for example `/va switch claude`.
+
+## Community
+
+Join our Discord or WeChat community to ask questions, share ideas, and talk about how you use VibeAround.
+
+[![Discord](https://img.shields.io/badge/Discord-Join%20VibeAround-5865F2?logo=discord&logoColor=white)](https://discord.gg/KsJWkY64GN)
+
+<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/wechat-group-compressed.webp" width="220" alt="VibeAround WeChat group QR code" />
 
 ## License
 
