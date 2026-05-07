@@ -920,7 +920,6 @@ function ProfilePanel({
                   <SelectableItemCard
                     active={active}
                     disabled={!availability.launchable}
-                    disabledReason={availability.reason}
                     isDragging={isDragging}
                     onSelect={() =>
                       onSelect({ kind: "profile", profileId: profile.id })
@@ -974,7 +973,7 @@ function ProfilePanel({
                           disabledReason={
                             busy
                               ? t("Launch is already in progress")
-                              : availability.reason
+                              : undefined
                           }
                           onClick={() =>
                             void onMakeDefault({
@@ -1227,14 +1226,12 @@ function SessionPanel({
 function SelectableItemCard({
   active,
   disabled = false,
-  disabledReason,
   isDragging = false,
   children,
   onSelect,
 }: {
   active: boolean;
   disabled?: boolean;
-  disabledReason?: string;
   isDragging?: boolean;
   children: ReactNode;
   onSelect: () => void;
@@ -1245,12 +1242,11 @@ function SelectableItemCard({
     onSelect();
   }
 
-  const card = (
+  return (
     <div
       role="button"
       tabIndex={disabled ? -1 : 0}
       aria-disabled={disabled}
-      title={disabled ? disabledReason : undefined}
       onClick={() => {
         if (!disabled) onSelect();
       }}
@@ -1265,13 +1261,6 @@ function SelectableItemCard({
     >
       {children}
     </div>
-  );
-  if (!disabled || !disabledReason) return card;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{card}</TooltipTrigger>
-      <TooltipContent>{disabledReason}</TooltipContent>
-    </Tooltip>
   );
 }
 
