@@ -714,6 +714,7 @@ export function AgentLaunchBuilder({
                 disabled={busy || !canResume || !selectionLaunchable}
                 disabledReason={resumeDisabledReason}
                 onClick={() => void launchResume()}
+                variant="outline"
                 className="h-10 min-w-[160px] justify-center text-xs font-semibold"
               >
                 <Terminal className="h-3.5 w-3.5" />
@@ -724,7 +725,6 @@ export function AgentLaunchBuilder({
                 disabled={busy || !selectionLaunchable}
                 disabledReason={quickLaunchDisabledReason}
                 onClick={() => void launchNew()}
-                variant="outline"
                 className="h-10 min-w-[160px] justify-center text-xs font-semibold"
               >
                 <Rocket className="h-3.5 w-3.5" />
