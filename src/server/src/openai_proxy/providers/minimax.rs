@@ -31,6 +31,7 @@ const THINK_CLOSE_TAG: &str = "</think>";
 #[derive(Debug, Clone, Default)]
 struct MiniMaxThinkTagSplitter {
     blocks: BTreeMap<usize, ThinkBlockState>,
+    passthrough_indexes: BTreeMap<usize, usize>,
     next_index: usize,
 }
 
@@ -76,8 +77,16 @@ impl MiniMaxThinkTagSplitter {
                 } => {
                     self.blocks.entry(index).or_default();
                 }
+                UniversalEvent::ContentStart { index, block } => {
+                    let index = self.passthrough_index(index);
+                    transformed.push(UniversalEvent::ContentStart { index, block });
+                }
                 UniversalEvent::TextDelta { index, text } => {
                     self.push_text(index, &text, &mut transformed);
+                }
+                UniversalEvent::ReasoningDelta { index, text } => {
+                    let index = self.remapped_index(index);
+                    transformed.push(UniversalEvent::ReasoningDelta { index, text });
                 }
                 UniversalEvent::ContentDone {
                     index,
@@ -97,6 +106,7 @@ impl MiniMaxThinkTagSplitter {
                     if self.blocks.contains_key(&index) {
                         self.flush_text_index(index, &mut transformed);
                     } else {
+                        let index = self.remapped_index(index);
                         transformed.push(UniversalEvent::ContentDone { index, final_block });
                     }
                 }
@@ -226,6 +236,22 @@ impl MiniMaxThinkTagSplitter {
         let index = self.next_index;
         self.next_index += 1;
         index
+    }
+
+    fn passthrough_index(&mut self, original_index: usize) -> usize {
+        if let Some(index) = self.passthrough_indexes.get(&original_index) {
+            return *index;
+        }
+        let index = self.allocate_index();
+        self.passthrough_indexes.insert(original_index, index);
+        index
+    }
+
+    fn remapped_index(&self, original_index: usize) -> usize {
+        self.passthrough_indexes
+            .get(&original_index)
+            .copied()
+            .unwrap_or(original_index)
     }
 }
 
@@ -567,6 +593,69 @@ mod tests {
 
         assert_eq!(joined_reasoning(&events), "hidden");
         assert_eq!(joined_text(&events), "visible");
+    }
+
+    #[test]
+    fn remaps_following_content_blocks_after_splitting_think_tags() {
+        let mut adapter = MiniMaxProxyAdapter::default();
+        let tool_block = ContentBlock::ToolCall {
+            id: "call_1".to_string(),
+            name: "lookup".to_string(),
+            arguments: json!({}),
+            extensions: Default::default(),
+        };
+        let mut events = vec![
+            text_start(0),
+            UniversalEvent::TextDelta {
+                index: 0,
+                text: "<think>hidden</think>visible".to_string(),
+            },
+            UniversalEvent::ContentDone {
+                index: 0,
+                final_block: Some(ContentBlock::Text {
+                    text: "<think>hidden</think>visible".to_string(),
+                }),
+            },
+            UniversalEvent::ContentStart {
+                index: 1,
+                block: tool_block.clone(),
+            },
+            UniversalEvent::ToolCallDelta {
+                id: "call_1".to_string(),
+                name: Some("lookup".to_string()),
+                arguments_delta: "{}".to_string(),
+            },
+            UniversalEvent::ContentDone {
+                index: 1,
+                final_block: Some(tool_block),
+            },
+            response_done(),
+        ];
+
+        adapter.transform_upstream_events(&mut events);
+
+        assert_eq!(content_start_indexes(&events), vec![0, 1, 2]);
+        assert_eq!(content_done_indexes(&events), vec![0, 1, 2]);
+    }
+
+    fn content_start_indexes(events: &[UniversalEvent]) -> Vec<usize> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                UniversalEvent::ContentStart { index, .. } => Some(*index),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn content_done_indexes(events: &[UniversalEvent]) -> Vec<usize> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                UniversalEvent::ContentDone { index, .. } => Some(*index),
+                _ => None,
+            })
+            .collect()
     }
 
     fn text_start(index: usize) -> UniversalEvent {
