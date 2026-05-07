@@ -1,0 +1,209 @@
+//! Profile summaries sent to the Launch UI.
+
+use std::collections::BTreeMap;
+
+use common::profiles::{catalog, runtime, AuthMode, ProfileDef};
+use serde::Serialize;
+
+/// List item — does NOT include credentials. Used to render the Launch tab
+/// without ever shipping API keys to the webview after the initial save.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileSummary {
+    pub id: String,
+    pub label: String,
+    pub provider: String,
+    /// Provider's display label, resolved from the catalog. Falls back to
+    /// the raw provider id when the catalog entry is missing.
+    pub provider_label: String,
+    pub provider_icon: Option<String>,
+    pub auth_mode: AuthMode,
+    /// API kinds this provider credential declares, e.g. `anthropic`,
+    /// `openai-chat`, `gemini`.
+    pub api_types: Vec<String>,
+    /// Concrete CLI buttons the Launch tab should render.
+    pub launch_targets: Vec<LaunchTargetSummary>,
+    /// `api_type -> caveat string` for non-empty catalog compatibility warnings.
+    pub api_type_warnings: BTreeMap<String, String>,
+    /// `api_type -> model id`, sanitized for manual client setup.
+    pub api_type_models: BTreeMap<String, String>,
+    /// `api_type -> catalog model options`, used by proxy route model selection.
+    pub api_type_model_options: BTreeMap<String, Vec<catalog::ModelDef>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchTargetSummary {
+    pub id: String,
+    pub label: String,
+    pub api_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+/// Catalog entry sent to the UI. Nested catalog types intentionally keep their
+/// own wire casing so frontend template keys stay consistent end-to-end.
+#[derive(Debug, Serialize)]
+pub struct CatalogEntry {
+    pub id: String,
+    pub label: String,
+    pub icon: Option<String>,
+    pub homepage: Option<String>,
+    pub endpoints: Vec<catalog::EndpointDef>,
+}
+
+pub(super) fn profile_summaries() -> Vec<ProfileSummary> {
+    super::store::ordered_profiles()
+        .into_iter()
+        .map(profile_summary)
+        .collect()
+}
+
+pub(super) fn catalog_entries() -> Vec<CatalogEntry> {
+    catalog::all()
+        .iter()
+        .map(|c| CatalogEntry {
+            id: c.id.clone(),
+            label: c.label.clone(),
+            icon: c.icon.clone(),
+            homepage: c.homepage.clone(),
+            endpoints: c.endpoints.clone(),
+        })
+        .collect()
+}
+
+fn profile_summary(profile: ProfileDef) -> ProfileSummary {
+    let provider = catalog::get(&profile.provider);
+    let (label, icon) = match provider {
+        Some(catalog) => (catalog.label.clone(), catalog.icon.clone()),
+        None => (profile.provider.clone(), None),
+    };
+    let api_type_warnings = api_type_warnings(&profile, provider);
+    let api_type_models = api_type_models(&profile, provider);
+    let api_type_model_options = api_type_model_options(&profile, provider, &api_type_models);
+    let warnings_for_targets = api_type_warnings.clone();
+
+    ProfileSummary {
+        id: profile.id,
+        label: profile.label,
+        provider: profile.provider,
+        provider_label: label,
+        provider_icon: icon,
+        auth_mode: profile.auth_mode,
+        launch_targets: runtime::launch_targets_for_api_types(&profile.api_types)
+            .into_iter()
+            .map(|(id, label, api_type)| LaunchTargetSummary {
+                id: id.to_string(),
+                label: label.to_string(),
+                api_type: api_type.to_string(),
+                warning: warnings_for_targets.get(api_type).cloned(),
+            })
+            .collect(),
+        api_types: profile.api_types,
+        api_type_warnings,
+        api_type_models,
+        api_type_model_options,
+    }
+}
+
+fn api_type_warnings(
+    profile: &ProfileDef,
+    provider: Option<&'static catalog::ProviderCatalog>,
+) -> BTreeMap<String, String> {
+    let mut warnings = BTreeMap::new();
+    let Some(provider) = provider else {
+        return warnings;
+    };
+    for api_type in &profile.api_types {
+        let endpoint_id = profile
+            .overrides
+            .get(api_type)
+            .and_then(|overrides| overrides.endpoint_id.as_deref());
+        if let Some(endpoint) = catalog::find_endpoint(provider, api_type, endpoint_id) {
+            if let Some(warning) = &endpoint.compatibility_warning {
+                warnings.insert(api_type.clone(), warning.clone());
+            }
+        }
+    }
+    warnings
+}
+
+fn api_type_models(
+    profile: &ProfileDef,
+    provider: Option<&'static catalog::ProviderCatalog>,
+) -> BTreeMap<String, String> {
+    profile
+        .api_types
+        .iter()
+        .filter_map(|api_type| {
+            let endpoint = endpoint_for(profile, provider, api_type);
+            let model = profile
+                .overrides
+                .get(api_type)
+                .and_then(|overrides| overrides.model.as_ref())
+                .filter(|model| !model.trim().is_empty())
+                .cloned()
+                .or_else(|| {
+                    endpoint
+                        .and_then(|endpoint| endpoint.models.first())
+                        .map(|model| model.id.clone())
+                })?;
+            Some((api_type.clone(), model))
+        })
+        .collect()
+}
+
+fn api_type_model_options(
+    profile: &ProfileDef,
+    provider: Option<&'static catalog::ProviderCatalog>,
+    api_type_models: &BTreeMap<String, String>,
+) -> BTreeMap<String, Vec<catalog::ModelDef>> {
+    profile
+        .api_types
+        .iter()
+        .filter_map(|api_type| {
+            let mut models = endpoint_for(profile, provider, api_type)
+                .map(|endpoint| endpoint.models.clone())
+                .unwrap_or_default();
+            if let Some(model) = profile
+                .overrides
+                .get(api_type)
+                .and_then(|overrides| overrides.model.as_ref())
+                .filter(|model| !model.trim().is_empty())
+            {
+                if !models.iter().any(|item| item.id == *model) {
+                    models.insert(
+                        0,
+                        catalog::ModelDef {
+                            id: model.clone(),
+                            label: None,
+                        },
+                    );
+                }
+            }
+            if models.is_empty() {
+                if let Some(model) = api_type_models.get(api_type) {
+                    models.push(catalog::ModelDef {
+                        id: model.clone(),
+                        label: None,
+                    });
+                }
+            }
+            (!models.is_empty()).then_some((api_type.clone(), models))
+        })
+        .collect()
+}
+
+fn endpoint_for<'a>(
+    profile: &'a ProfileDef,
+    provider: Option<&'a catalog::ProviderCatalog>,
+    api_type: &str,
+) -> Option<&'a catalog::EndpointDef> {
+    provider.and_then(|catalog| {
+        let endpoint_id = profile
+            .overrides
+            .get(api_type)
+            .and_then(|overrides| overrides.endpoint_id.as_deref());
+        catalog::find_endpoint(catalog, api_type, endpoint_id)
+    })
+}
