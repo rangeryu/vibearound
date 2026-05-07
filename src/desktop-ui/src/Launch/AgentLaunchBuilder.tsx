@@ -716,7 +716,7 @@ export function AgentLaunchBuilder({
                 onClick={() => void launchResume()}
                 className="h-10 min-w-[160px] justify-center text-xs font-semibold"
               >
-                <Rocket className="h-3.5 w-3.5" />
+                <Terminal className="h-3.5 w-3.5" />
                 {t("Resume Session")}
               </TooltipButton>
               <TooltipButton
@@ -727,7 +727,7 @@ export function AgentLaunchBuilder({
                 variant="outline"
                 className="h-10 min-w-[160px] justify-center text-xs font-semibold"
               >
-                <Terminal className="h-3.5 w-3.5" />
+                <Rocket className="h-3.5 w-3.5" />
                 {t("Quick Launch")}
               </TooltipButton>
             </footer>
