@@ -157,11 +157,24 @@ In Slack, the `/` prefix is reserved by the client, so use `/va` or `/vibearound
 
 ## Community
 
-Join our Discord or WeChat community to ask questions, share ideas, and talk about how you use VibeAround.
+Ask questions, share ideas, and talk about how you use VibeAround.
 
-[![Discord](https://img.shields.io/badge/Discord-Join%20VibeAround-5865F2?logo=discord&logoColor=white)](https://discord.gg/KsJWkY64GN)
-
-<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/wechat-group-compressed.webp" width="220" alt="VibeAround WeChat group QR code" />
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Discord</strong><br />
+      Join the VibeAround Discord community.<br /><br />
+      <a href="https://discord.gg/KsJWkY64GN">
+        <img src="https://img.shields.io/badge/Discord-Join%20VibeAround-5865F2?logo=discord&logoColor=white" alt="Join VibeAround on Discord" />
+      </a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>WeChat</strong><br />
+      Scan the QR code to join the VibeAround WeChat group.<br /><br />
+      <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/wechat-group-compressed.webp" width="150" alt="VibeAround WeChat group QR code" />
+    </td>
+  </tr>
+</table>
 
 ## License
 
