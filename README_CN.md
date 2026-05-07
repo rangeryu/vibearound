@@ -6,7 +6,7 @@
 
 **让本地 Coding Agent 出现在你工作的每个入口。**
 
-[下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [English](README.md)
+[下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [English](README.md)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.82+-000?style=flat-square&logo=rust&logoColor=fff" alt="Rust" />
@@ -159,22 +159,7 @@ bun run dev
 
 提问、交流想法，或者聊聊你如何使用 VibeAround。
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <strong>Discord</strong><br />
-      加入 VibeAround Discord 社区。<br /><br />
-      <a href="https://discord.gg/KsJWkY64GN">
-        <img src="https://img.shields.io/badge/Discord-Join%20VibeAround-5865F2?logo=discord&logoColor=white" alt="加入 VibeAround Discord" />
-      </a>
-    </td>
-    <td width="50%" valign="top">
-      <strong>微信群</strong><br />
-      扫码加入 VibeAround 微信交流群。<br /><br />
-      <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/wechat-group-compressed.webp" width="150" alt="VibeAround 微信群二维码" />
-    </td>
-  </tr>
-</table>
+<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/wechat-group-compressed.webp" width="150" alt="VibeAround 微信群二维码" />
 
 ## 许可证
 
