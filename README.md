@@ -46,13 +46,13 @@ Open a full shell from a browser, including mobile-friendly terminal controls. S
 
 ## Download VibeAround
 
-The latest release is [VibeAround v0.5.6](https://github.com/jazzenchen/VibeAround/releases/tag/v0.5.6).
+The latest release is [VibeAround v0.5.7](https://github.com/jazzenchen/VibeAround/releases/tag/v0.5.7).
 
 | Platform | Recommended download |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.5.6_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.6/VibeAround_0.5.6_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.6/VibeAround_0.5.6_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.6/VibeAround_0.5.6_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.6/VibeAround-win-0.5.6-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.6/VibeAround_0.5.6_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.6/VibeAround_0.5.6_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.5.7_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.7/VibeAround_0.5.7_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.7/VibeAround_0.5.7_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.7/VibeAround_0.5.7_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.7/VibeAround-win-0.5.7-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.7/VibeAround_0.5.7_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.7/VibeAround_0.5.7_amd64.deb) |
 
 macOS is currently published for Apple Silicon. Windows and Linux desktop packages are produced by GitHub Actions; the macOS DMG is signed and notarized.
 
