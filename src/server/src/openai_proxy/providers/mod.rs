@@ -40,7 +40,7 @@ impl ProviderProxyAdapter {
                 context,
             )),
             "kimi" => Self::Kimi(KimiProxyAdapter::default()),
-            "minimax" => Self::MiniMax(MiniMaxProxyAdapter),
+            "minimax" => Self::MiniMax(MiniMaxProxyAdapter::default()),
             "qwen" => Self::Qwen(QwenProxyAdapter::new(profile)),
             "zai" => Self::Zai(ZaiProxyAdapter::new(profile)),
             _ => Self::None,
@@ -96,7 +96,7 @@ impl ProviderProxyAdapter {
             Self::None => {}
             Self::DeepSeek(_) => {}
             Self::Kimi(adapter) => adapter.transform_upstream_events(events),
-            Self::MiniMax(_) => {}
+            Self::MiniMax(adapter) => adapter.transform_upstream_events(events),
             Self::Qwen(_) => {}
             Self::Zai(_) => {}
         }

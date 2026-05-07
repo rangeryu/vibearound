@@ -1,7 +1,12 @@
+use std::collections::BTreeMap;
+
 use serde_json::{Number, Value};
+use va_ai_api_proxy::{ContentBlock, UniversalEvent};
 
 #[derive(Debug, Clone, Default)]
-pub struct MiniMaxProxyAdapter;
+pub struct MiniMaxProxyAdapter {
+    think_tags: MiniMaxThinkTagSplitter,
+}
 
 impl MiniMaxProxyAdapter {
     pub fn prepare_chat_request(&mut self, chat_request: &mut Value) {
@@ -14,6 +19,299 @@ impl MiniMaxProxyAdapter {
         clamp_f64_setting(object, "top_p", 0.95);
         clamp_u64_setting(object, "max_completion_tokens", 2048);
     }
+
+    pub fn transform_upstream_events(&mut self, events: &mut Vec<UniversalEvent>) {
+        self.think_tags.transform(events);
+    }
+}
+
+const THINK_OPEN_TAG: &str = "<think>";
+const THINK_CLOSE_TAG: &str = "</think>";
+
+#[derive(Debug, Clone, Default)]
+struct MiniMaxThinkTagSplitter {
+    blocks: BTreeMap<usize, ThinkBlockState>,
+    next_index: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ThinkBlockState {
+    parser: ThinkTagParser,
+    current: Option<OutputBlock>,
+    saw_delta: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OutputBlock {
+    index: usize,
+    kind: ThinkSegmentKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThinkSegmentKind {
+    Text,
+    Reasoning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ThinkSegment {
+    kind: ThinkSegmentKind,
+    text: String,
+}
+
+impl MiniMaxThinkTagSplitter {
+    fn transform(&mut self, events: &mut Vec<UniversalEvent>) {
+        if events.is_empty() {
+            return;
+        }
+
+        let original = std::mem::take(events);
+        let mut transformed = Vec::with_capacity(original.len());
+
+        for event in original {
+            match event {
+                UniversalEvent::ContentStart {
+                    index,
+                    block: ContentBlock::Text { .. },
+                } => {
+                    self.blocks.entry(index).or_default();
+                }
+                UniversalEvent::TextDelta { index, text } => {
+                    self.push_text(index, &text, &mut transformed);
+                }
+                UniversalEvent::ContentDone {
+                    index,
+                    final_block: Some(ContentBlock::Text { text }),
+                } => {
+                    let needs_final_text = self
+                        .blocks
+                        .get(&index)
+                        .map(|block| !block.saw_delta && !text.is_empty())
+                        .unwrap_or(false);
+                    if needs_final_text {
+                        self.push_text(index, &text, &mut transformed);
+                    }
+                    self.flush_text_index(index, &mut transformed);
+                }
+                UniversalEvent::ContentDone { index, final_block } => {
+                    if self.blocks.contains_key(&index) {
+                        self.flush_text_index(index, &mut transformed);
+                    } else {
+                        transformed.push(UniversalEvent::ContentDone { index, final_block });
+                    }
+                }
+                UniversalEvent::MessageDone {
+                    finish_reason,
+                    usage,
+                    extensions,
+                } => {
+                    self.flush_all_text(&mut transformed);
+                    transformed.push(UniversalEvent::MessageDone {
+                        finish_reason,
+                        usage,
+                        extensions,
+                    });
+                }
+                UniversalEvent::ResponseDone { usage, extensions } => {
+                    self.flush_all_text(&mut transformed);
+                    transformed.push(UniversalEvent::ResponseDone { usage, extensions });
+                }
+                other => transformed.push(other),
+            }
+        }
+
+        *events = transformed;
+    }
+
+    fn push_text(&mut self, index: usize, text: &str, output: &mut Vec<UniversalEvent>) {
+        let segments = {
+            let block = self.blocks.entry(index).or_default();
+            block.saw_delta = true;
+            block.parser.push(text)
+        };
+        self.emit_segments(index, segments, output);
+    }
+
+    fn flush_text_index(&mut self, index: usize, output: &mut Vec<UniversalEvent>) {
+        let segments = match self.blocks.get_mut(&index) {
+            Some(block) => block.parser.flush(),
+            None => return,
+        };
+        self.emit_segments(index, segments, output);
+        self.close_current_block(index, output);
+        self.blocks.remove(&index);
+    }
+
+    fn flush_all_text(&mut self, output: &mut Vec<UniversalEvent>) {
+        let indexes = self.blocks.keys().copied().collect::<Vec<_>>();
+        for index in indexes {
+            self.flush_text_index(index, output);
+        }
+    }
+
+    fn emit_segments(
+        &mut self,
+        original_index: usize,
+        segments: Vec<ThinkSegment>,
+        output: &mut Vec<UniversalEvent>,
+    ) {
+        for segment in segments {
+            if segment.text.is_empty() {
+                continue;
+            }
+            let index = self.ensure_output_block(original_index, segment.kind, output);
+            match segment.kind {
+                ThinkSegmentKind::Text => output.push(UniversalEvent::TextDelta {
+                    index,
+                    text: segment.text,
+                }),
+                ThinkSegmentKind::Reasoning => output.push(UniversalEvent::ReasoningDelta {
+                    index,
+                    text: segment.text,
+                }),
+            }
+        }
+    }
+
+    fn ensure_output_block(
+        &mut self,
+        original_index: usize,
+        kind: ThinkSegmentKind,
+        output: &mut Vec<UniversalEvent>,
+    ) -> usize {
+        if let Some(current) = self
+            .blocks
+            .get(&original_index)
+            .and_then(|block| block.current)
+        {
+            if current.kind == kind {
+                return current.index;
+            }
+        }
+
+        self.close_current_block(original_index, output);
+        let index = self.allocate_index();
+        output.push(UniversalEvent::ContentStart {
+            index,
+            block: match kind {
+                ThinkSegmentKind::Text => ContentBlock::Text {
+                    text: String::new(),
+                },
+                ThinkSegmentKind::Reasoning => ContentBlock::Reasoning {
+                    text: None,
+                    encrypted: None,
+                    extensions: Default::default(),
+                },
+            },
+        });
+        self.blocks.entry(original_index).or_default().current = Some(OutputBlock { index, kind });
+        index
+    }
+
+    fn close_current_block(&mut self, original_index: usize, output: &mut Vec<UniversalEvent>) {
+        let Some(current) = self
+            .blocks
+            .get_mut(&original_index)
+            .and_then(|block| block.current.take())
+        else {
+            return;
+        };
+        output.push(UniversalEvent::ContentDone {
+            index: current.index,
+            final_block: None,
+        });
+    }
+
+    fn allocate_index(&mut self) -> usize {
+        let index = self.next_index;
+        self.next_index += 1;
+        index
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct ThinkTagParser {
+    inside_think: bool,
+    pending: String,
+}
+
+impl ThinkTagParser {
+    fn push(&mut self, text: &str) -> Vec<ThinkSegment> {
+        let mut input = std::mem::take(&mut self.pending);
+        input.push_str(text);
+        self.parse_stable_input(&input, false)
+    }
+
+    fn flush(&mut self) -> Vec<ThinkSegment> {
+        let input = std::mem::take(&mut self.pending);
+        self.parse_stable_input(&input, true)
+    }
+
+    fn parse_stable_input(&mut self, input: &str, flush: bool) -> Vec<ThinkSegment> {
+        let mut segments = Vec::new();
+        let mut cursor = 0;
+
+        while cursor < input.len() {
+            let remaining = &input[cursor..];
+            let tag = if self.inside_think {
+                THINK_CLOSE_TAG
+            } else {
+                THINK_OPEN_TAG
+            };
+
+            if let Some(position) = remaining.find(tag) {
+                self.push_segment(&mut segments, &remaining[..position]);
+                cursor += position + tag.len();
+                self.inside_think = !self.inside_think;
+                continue;
+            }
+
+            let pending_len = if flush {
+                0
+            } else {
+                pending_tag_suffix_len(remaining, tag)
+            };
+            let stable_len = remaining.len() - pending_len;
+            self.push_segment(&mut segments, &remaining[..stable_len]);
+            if pending_len > 0 {
+                self.pending.push_str(&remaining[stable_len..]);
+            }
+            break;
+        }
+
+        segments
+    }
+
+    fn push_segment(&self, segments: &mut Vec<ThinkSegment>, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let kind = if self.inside_think {
+            ThinkSegmentKind::Reasoning
+        } else {
+            ThinkSegmentKind::Text
+        };
+        if let Some(previous) = segments.last_mut().filter(|segment| segment.kind == kind) {
+            previous.text.push_str(text);
+        } else {
+            segments.push(ThinkSegment {
+                kind,
+                text: text.to_string(),
+            });
+        }
+    }
+}
+
+fn pending_tag_suffix_len(text: &str, tag: &str) -> usize {
+    let text = text.as_bytes();
+    let tag = tag.as_bytes();
+    let max_len = text.len().min(tag.len().saturating_sub(1));
+    for len in (1..=max_len).rev() {
+        if text.ends_with(&tag[..len]) {
+            return len;
+        }
+    }
+    0
 }
 
 fn normalize_system_messages(object: &mut serde_json::Map<String, Value>) {
@@ -104,7 +402,7 @@ mod tests {
 
     #[test]
     fn clamps_minimax_chat_settings_to_supported_ranges() {
-        let mut adapter = MiniMaxProxyAdapter;
+        let mut adapter = MiniMaxProxyAdapter::default();
         let mut request = json!({
             "model": "MiniMax-M2.7",
             "messages": [],
@@ -122,7 +420,7 @@ mod tests {
 
     #[test]
     fn folds_system_messages_into_one_leading_message() {
-        let mut adapter = MiniMaxProxyAdapter;
+        let mut adapter = MiniMaxProxyAdapter::default();
         let mut request = json!({
             "model": "MiniMax-M2.7",
             "messages": [
@@ -150,7 +448,7 @@ mod tests {
 
     #[test]
     fn leaves_valid_minimax_chat_settings_unchanged() {
-        let mut adapter = MiniMaxProxyAdapter;
+        let mut adapter = MiniMaxProxyAdapter::default();
         let mut request = json!({
             "model": "MiniMax-M2.7",
             "messages": [],
@@ -164,5 +462,146 @@ mod tests {
         assert_eq!(request["temperature"], 0.2);
         assert_eq!(request["top_p"], 0.8);
         assert_eq!(request["max_completion_tokens"], 1024);
+    }
+
+    #[test]
+    fn converts_minimax_think_tags_to_reasoning_events() {
+        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut events = vec![
+            text_start(0),
+            UniversalEvent::TextDelta {
+                index: 0,
+                text: "<think>Need ".to_string(),
+            },
+            UniversalEvent::TextDelta {
+                index: 0,
+                text: "math</think>\n\n221".to_string(),
+            },
+            response_done(),
+        ];
+
+        adapter.transform_upstream_events(&mut events);
+
+        assert_eq!(joined_reasoning(&events), "Need math");
+        assert_eq!(joined_text(&events), "\n\n221");
+        assert!(!joined_text(&events).contains("<think>"));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            UniversalEvent::ContentStart {
+                block: ContentBlock::Reasoning { .. },
+                ..
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            UniversalEvent::ContentStart {
+                block: ContentBlock::Text { .. },
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn handles_minimax_think_tags_split_across_stream_chunks() {
+        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut events = vec![
+            text_start(0),
+            UniversalEvent::TextDelta {
+                index: 0,
+                text: "<thi".to_string(),
+            },
+            UniversalEvent::TextDelta {
+                index: 0,
+                text: "nk>hidden</thi".to_string(),
+            },
+            UniversalEvent::TextDelta {
+                index: 0,
+                text: "nk>done".to_string(),
+            },
+            response_done(),
+        ];
+
+        adapter.transform_upstream_events(&mut events);
+
+        assert_eq!(joined_reasoning(&events), "hidden");
+        assert_eq!(joined_text(&events), "done");
+    }
+
+    #[test]
+    fn preserves_plain_minimax_text_that_only_looks_like_partial_tag() {
+        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut events = vec![
+            text_start(0),
+            UniversalEvent::TextDelta {
+                index: 0,
+                text: "hello <thi".to_string(),
+            },
+            UniversalEvent::TextDelta {
+                index: 0,
+                text: "s is plain".to_string(),
+            },
+            response_done(),
+        ];
+
+        adapter.transform_upstream_events(&mut events);
+
+        assert_eq!(joined_reasoning(&events), "");
+        assert_eq!(joined_text(&events), "hello <this is plain");
+    }
+
+    #[test]
+    fn parses_final_text_block_when_no_delta_was_seen() {
+        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut events = vec![
+            text_start(0),
+            UniversalEvent::ContentDone {
+                index: 0,
+                final_block: Some(ContentBlock::Text {
+                    text: "<think>hidden</think>visible".to_string(),
+                }),
+            },
+            response_done(),
+        ];
+
+        adapter.transform_upstream_events(&mut events);
+
+        assert_eq!(joined_reasoning(&events), "hidden");
+        assert_eq!(joined_text(&events), "visible");
+    }
+
+    fn text_start(index: usize) -> UniversalEvent {
+        UniversalEvent::ContentStart {
+            index,
+            block: ContentBlock::Text {
+                text: String::new(),
+            },
+        }
+    }
+
+    fn response_done() -> UniversalEvent {
+        UniversalEvent::ResponseDone {
+            usage: None,
+            extensions: Default::default(),
+        }
+    }
+
+    fn joined_text(events: &[UniversalEvent]) -> String {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                UniversalEvent::TextDelta { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn joined_reasoning(events: &[UniversalEvent]) -> String {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                UniversalEvent::ReasoningDelta { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 }
