@@ -266,6 +266,10 @@ pub async fn run_web_server(
             post(api_proxy::responses_handler),
         )
         .route(
+            "/proxy/{profile_id}/{launch_id}/{scope}/{target_api_type}/v1/responses",
+            post(api_proxy::scoped_responses_handler),
+        )
+        .route(
             "/proxy/{profile_id}/{target_api_type}/v1/responses",
             post(api_proxy::legacy_responses_handler),
         )
@@ -274,12 +278,20 @@ pub async fn run_web_server(
             post(api_proxy::chat_completions_handler),
         )
         .route(
+            "/proxy/{profile_id}/{launch_id}/{scope}/{target_api_type}/v1/chat/completions",
+            post(api_proxy::scoped_chat_completions_handler),
+        )
+        .route(
             "/proxy/{profile_id}/{target_api_type}/v1/chat/completions",
             post(api_proxy::legacy_chat_completions_handler),
         )
         .route(
             "/proxy/{profile_id}/{launch_id}/{target_api_type}/v1/messages",
             post(api_proxy::messages_handler),
+        )
+        .route(
+            "/proxy/{profile_id}/{launch_id}/{scope}/{target_api_type}/v1/messages",
+            post(api_proxy::scoped_messages_handler),
         )
         .route(
             "/proxy/{profile_id}/{target_api_type}/v1/messages",

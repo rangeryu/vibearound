@@ -8,7 +8,7 @@ use axum::response::Response;
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
-use va_ai_api_proxy::{DecodeState, EncodeState, WireEvent};
+use va_ai_api_proxy::{DecodeState, EncodeState, UniversalEvent, WireEvent};
 
 use crate::openai_proxy::providers::ProviderProxyAdapter;
 
@@ -22,12 +22,14 @@ pub(super) fn translated_stream_response(
     upstream_protocol: ProxyProtocol,
     agent_protocol: ProxyProtocol,
     provider_adapter: ProviderProxyAdapter,
+    agent_model: Option<String>,
 ) -> Response {
     let stream = map_sse_stream(
         upstream,
         upstream_protocol,
         agent_protocol,
         provider_adapter,
+        agent_model,
     );
     Response::builder()
         .status(StatusCode::OK)
@@ -47,12 +49,14 @@ fn map_sse_stream(
     upstream_protocol: ProxyProtocol,
     agent_protocol: ProxyProtocol,
     provider_adapter: ProviderProxyAdapter,
+    agent_model: Option<String>,
 ) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + 'static {
     let state = SseMapState {
         upstream: Box::pin(upstream.bytes_stream()),
         upstream_protocol,
         agent_protocol,
         provider_adapter,
+        agent_model,
         decode_state: DecodeState::default(),
         encode_state: EncodeState::default(),
         buffer: Vec::new(),
@@ -92,6 +96,7 @@ struct SseMapState {
     upstream_protocol: ProxyProtocol,
     agent_protocol: ProxyProtocol,
     provider_adapter: ProviderProxyAdapter,
+    agent_model: Option<String>,
     decode_state: DecodeState,
     encode_state: EncodeState,
     buffer: Vec<u8>,
@@ -133,7 +138,7 @@ impl SseMapState {
         if self.upstream_protocol == ProxyProtocol::OpenAiChat {
             self.provider_adapter.observe_chat_stream_chunk(&raw);
         }
-        let events = match self
+        let mut events = match self
             .upstream_protocol
             .decode_upstream_stream_chunk(raw, &mut self.decode_state)
         {
@@ -143,6 +148,8 @@ impl SseMapState {
                 return;
             }
         };
+        self.provider_adapter.transform_upstream_events(&mut events);
+        apply_agent_model(&mut events, self.agent_model.as_deref());
         let wire_events = match self
             .agent_protocol
             .encode_agent_events(&events, &mut self.encode_state)
@@ -163,6 +170,17 @@ impl SseMapState {
         self.done = true;
         self.queue
             .push_back(Err(io::Error::new(io::ErrorKind::InvalidData, message)));
+    }
+}
+
+fn apply_agent_model(events: &mut [UniversalEvent], agent_model: Option<&str>) {
+    let Some(agent_model) = agent_model else {
+        return;
+    };
+    for event in events {
+        if let UniversalEvent::ResponseStart { model, .. } = event {
+            *model = Some(agent_model.to_string());
+        }
     }
 }
 

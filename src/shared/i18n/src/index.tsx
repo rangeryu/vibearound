@@ -223,6 +223,9 @@ const zhCN: Record<string, string> = {
   "Default route": "默认路径",
   "Enable proxy": "启用代理",
   "Proxy target": "代理目标",
+  "Manual setup": "手动配置",
+  "Click a value to copy.": "点击字段值即可复制。",
+  Copied: "已复制",
   "Manual setting": "手动配置",
   "{{agent}} manual setting": "{{agent}} 手动配置",
   "Copy this snippet into the CLI config file yourself. VibeAround does not edit the file automatically.":

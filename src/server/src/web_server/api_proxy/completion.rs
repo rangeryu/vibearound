@@ -15,6 +15,7 @@ pub(super) async fn translated_completion_response(
     upstream_protocol: ProxyProtocol,
     agent_protocol: ProxyProtocol,
     provider_adapter: &mut ProviderProxyAdapter,
+    agent_model: Option<String>,
 ) -> Response {
     let bytes = match upstream.bytes().await {
         Ok(bytes) => bytes,
@@ -37,16 +38,29 @@ pub(super) async fn translated_completion_response(
     if upstream_protocol == ProxyProtocol::OpenAiChat {
         provider_adapter.observe_chat_completion(&raw);
     }
-    let events = match upstream_protocol.decode_upstream_response(raw) {
+    let mut events = match upstream_protocol.decode_upstream_response(raw) {
         Ok(events) => events,
         Err(error) => return json_error(StatusCode::BAD_GATEWAY, &error.to_string()),
     };
+    provider_adapter.transform_upstream_events(&mut events);
+    apply_agent_model(&mut events, agent_model.as_deref());
     let body = match agent_protocol {
         ProxyProtocol::OpenAiResponses => events_to_openai_response(&events),
         ProxyProtocol::OpenAiChat => events_to_openai_chat_response(&events),
         ProxyProtocol::AnthropicMessages => events_to_anthropic_response(&events),
     };
     Json(body).into_response()
+}
+
+fn apply_agent_model(events: &mut [UniversalEvent], agent_model: Option<&str>) {
+    let Some(agent_model) = agent_model else {
+        return;
+    };
+    for event in events {
+        if let UniversalEvent::ResponseStart { model, .. } = event {
+            *model = Some(agent_model.to_string());
+        }
+    }
 }
 
 #[derive(Default)]

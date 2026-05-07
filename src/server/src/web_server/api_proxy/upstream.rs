@@ -2,6 +2,7 @@ use axum::body::Body;
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 
 use common::profiles::schema::ProfileDef;
 use common::profiles::{catalog, normalize_legacy_profile, schema};
@@ -12,6 +13,8 @@ pub(super) struct UpstreamEndpoint {
     pub(super) url: String,
     pub(super) protocol: ProxyProtocol,
     pub(super) profile: ProfileDef,
+    pub(super) headers: BTreeMap<String, String>,
+    pub(super) auth_header: bool,
 }
 
 pub(super) fn upstream_endpoint(
@@ -51,16 +54,20 @@ pub(super) fn upstream_endpoint(
             format!("unknown provider '{}'", profile.provider),
         )
     })?;
-    let endpoint = provider
-        .endpoints
-        .iter()
-        .find(|endpoint| endpoint.api_type == target_api_type)
-        .ok_or_else(|| {
+    let endpoint_id = profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| overrides.endpoint_id.as_deref());
+    let endpoint =
+        catalog::find_endpoint(provider, target_api_type, endpoint_id).ok_or_else(|| {
+            let suffix = endpoint_id
+                .map(|id| format!(" endpoint_id '{id}'"))
+                .unwrap_or_default();
             (
                 StatusCode::BAD_REQUEST,
                 format!(
-                    "provider '{}' does not expose api kind '{}'",
-                    profile.provider, target_api_type
+                    "provider '{}' does not expose api kind '{}'{}",
+                    profile.provider, target_api_type, suffix
                 ),
             )
         })?;
@@ -89,6 +96,8 @@ pub(super) fn upstream_endpoint(
         url,
         protocol,
         profile,
+        headers: endpoint.headers.clone(),
+        auth_header: endpoint.auth_header,
     })
 }
 
@@ -113,6 +122,7 @@ pub(super) fn normalize_target_request(request: &mut Value, protocol: ProxyProto
 pub(super) fn apply_upstream_auth(
     request: reqwest::RequestBuilder,
     protocol: ProxyProtocol,
+    auth_header: bool,
     headers: &HeaderMap,
     profile_api_key: Option<&str>,
 ) -> Result<reqwest::RequestBuilder, Response> {
@@ -122,7 +132,7 @@ pub(super) fn apply_upstream_auth(
     let api_key = profile_api_key
         .map(ToString::to_string)
         .or_else(|| inbound_api_key(headers));
-    if protocol.is_openai_family() {
+    if protocol.is_openai_family() || auth_header {
         let auth = match profile_api_key {
             Some(key) => Some(format!("Bearer {key}")),
             None => authorization_header(headers)
@@ -134,7 +144,15 @@ pub(super) fn apply_upstream_auth(
                 "missing Authorization or x-api-key header",
             ));
         };
-        return Ok(request.header(reqwest::header::AUTHORIZATION, auth));
+        let request = request.header(reqwest::header::AUTHORIZATION, auth);
+        if protocol == ProxyProtocol::AnthropicMessages {
+            let anthropic_version = headers
+                .get("anthropic-version")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("2023-06-01");
+            return Ok(request.header("anthropic-version", anthropic_version));
+        }
+        return Ok(request);
     }
 
     let Some(api_key) = api_key else {
@@ -230,6 +248,7 @@ mod tests {
         let request = apply_upstream_auth(
             reqwest::Client::new().post("http://127.0.0.1/v1/chat/completions"),
             ProxyProtocol::OpenAiChat,
+            false,
             &headers,
             Some("sk-profile"),
         )
@@ -258,6 +277,7 @@ mod tests {
         let request = apply_upstream_auth(
             reqwest::Client::new().post("http://127.0.0.1/v1/messages"),
             ProxyProtocol::AnthropicMessages,
+            false,
             &headers,
             Some("sk-profile"),
         )
@@ -276,5 +296,38 @@ mod tests {
             .headers()
             .get(reqwest::header::AUTHORIZATION)
             .is_none());
+    }
+
+    #[test]
+    fn anthropic_auth_header_endpoint_uses_bearer_auth() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("dummy-key"));
+
+        let request = apply_upstream_auth(
+            reqwest::Client::new().post("http://127.0.0.1/v1/messages"),
+            ProxyProtocol::AnthropicMessages,
+            true,
+            &headers,
+            Some("sk-profile"),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+
+        assert_eq!(
+            request
+                .headers()
+                .get(reqwest::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer sk-profile")
+        );
+        assert!(request.headers().get("x-api-key").is_none());
+        assert_eq!(
+            request
+                .headers()
+                .get("anthropic-version")
+                .and_then(|value| value.to_str().ok()),
+            Some("2023-06-01")
+        );
     }
 }

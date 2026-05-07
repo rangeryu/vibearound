@@ -8,6 +8,9 @@ use va_ai_api_proxy::{
     OpenAiResponsesTranslator, UniversalEvent, WireEvent, WireTranslator,
 };
 
+use common::agent_state;
+use common::profiles::{catalog, schema::ProfileDef};
+
 mod completion;
 mod stream;
 mod upstream;
@@ -97,6 +100,14 @@ impl ProxyProtocol {
     fn is_openai_family(self) -> bool {
         matches!(self, Self::OpenAiResponses | Self::OpenAiChat)
     }
+
+    fn api_type(self) -> &'static str {
+        match self {
+            Self::OpenAiResponses => "openai-responses",
+            Self::OpenAiChat => "openai-chat",
+            Self::AnthropicMessages => "anthropic",
+        }
+    }
 }
 
 pub async fn responses_handler(
@@ -109,6 +120,27 @@ pub async fn responses_handler(
         state,
         profile_id,
         Some(launch_id),
+        None,
+        None,
+        target_api_type,
+        ProxyProtocol::OpenAiResponses,
+        headers,
+        original_request,
+    )
+    .await
+}
+
+pub async fn scoped_responses_handler(
+    State(state): State<AppState>,
+    Path((profile_id, launch_id, scope, target_api_type)): Path<(String, String, String, String)>,
+    headers: HeaderMap,
+    Json(original_request): Json<Value>,
+) -> Response {
+    proxy_handler(
+        state,
+        profile_id,
+        Some(launch_id),
+        Some(scope),
         None,
         target_api_type,
         ProxyProtocol::OpenAiResponses,
@@ -129,6 +161,7 @@ pub async fn legacy_responses_handler(
         profile_id,
         None,
         None,
+        None,
         target_api_type,
         ProxyProtocol::OpenAiResponses,
         headers,
@@ -143,10 +176,12 @@ pub async fn local_responses_handler(
     headers: HeaderMap,
     Json(original_request): Json<Value>,
 ) -> Response {
+    let route_scope = scope.clone();
     proxy_handler(
         state,
         profile_id,
         None,
+        Some(route_scope),
         Some(scope),
         target_api_type,
         ProxyProtocol::OpenAiResponses,
@@ -167,6 +202,27 @@ pub async fn chat_completions_handler(
         profile_id,
         Some(launch_id),
         None,
+        None,
+        target_api_type,
+        ProxyProtocol::OpenAiChat,
+        headers,
+        original_request,
+    )
+    .await
+}
+
+pub async fn scoped_chat_completions_handler(
+    State(state): State<AppState>,
+    Path((profile_id, launch_id, scope, target_api_type)): Path<(String, String, String, String)>,
+    headers: HeaderMap,
+    Json(original_request): Json<Value>,
+) -> Response {
+    proxy_handler(
+        state,
+        profile_id,
+        Some(launch_id),
+        Some(scope),
+        None,
         target_api_type,
         ProxyProtocol::OpenAiChat,
         headers,
@@ -186,6 +242,7 @@ pub async fn legacy_chat_completions_handler(
         profile_id,
         None,
         None,
+        None,
         target_api_type,
         ProxyProtocol::OpenAiChat,
         headers,
@@ -200,10 +257,12 @@ pub async fn local_chat_completions_handler(
     headers: HeaderMap,
     Json(original_request): Json<Value>,
 ) -> Response {
+    let route_scope = scope.clone();
     proxy_handler(
         state,
         profile_id,
         None,
+        Some(route_scope),
         Some(scope),
         target_api_type,
         ProxyProtocol::OpenAiChat,
@@ -224,6 +283,27 @@ pub async fn messages_handler(
         profile_id,
         Some(launch_id),
         None,
+        None,
+        target_api_type,
+        ProxyProtocol::AnthropicMessages,
+        headers,
+        original_request,
+    )
+    .await
+}
+
+pub async fn scoped_messages_handler(
+    State(state): State<AppState>,
+    Path((profile_id, launch_id, scope, target_api_type)): Path<(String, String, String, String)>,
+    headers: HeaderMap,
+    Json(original_request): Json<Value>,
+) -> Response {
+    proxy_handler(
+        state,
+        profile_id,
+        Some(launch_id),
+        Some(scope),
+        None,
         target_api_type,
         ProxyProtocol::AnthropicMessages,
         headers,
@@ -243,6 +323,7 @@ pub async fn legacy_messages_handler(
         profile_id,
         None,
         None,
+        None,
         target_api_type,
         ProxyProtocol::AnthropicMessages,
         headers,
@@ -257,10 +338,12 @@ pub async fn local_messages_handler(
     headers: HeaderMap,
     Json(original_request): Json<Value>,
 ) -> Response {
+    let route_scope = scope.clone();
     proxy_handler(
         state,
         profile_id,
         None,
+        Some(route_scope),
         Some(scope),
         target_api_type,
         ProxyProtocol::AnthropicMessages,
@@ -274,6 +357,7 @@ async fn proxy_handler(
     state: AppState,
     profile_id: String,
     launch_id: Option<String>,
+    route_scope: Option<String>,
     manual_scope: Option<String>,
     target_api_type: String,
     client_protocol: ProxyProtocol,
@@ -284,6 +368,12 @@ async fn proxy_handler(
         Ok(endpoint) => endpoint,
         Err((status, message)) => return json_error(status, &message),
     };
+    let model_mapping = proxy_model_mapping(
+        &upstream.profile,
+        route_scope.as_deref(),
+        client_protocol.api_type(),
+        &target_api_type,
+    );
     let codex_session_state = launch_id
         .as_deref()
         .and_then(|launch_id| state.hook_registry.codex_session_for_launch(launch_id));
@@ -313,10 +403,14 @@ async fn proxy_handler(
         .as_ref()
         .and_then(|_| upstream.profile.credentials.get("api_key").cloned());
 
-    let universal_request = match client_protocol.decode_agent_request(original_request.clone()) {
+    let mut universal_request = match client_protocol.decode_agent_request(original_request.clone())
+    {
         Ok(request) => request,
         Err(error) => return json_error(StatusCode::BAD_REQUEST, &error.to_string()),
     };
+    if let Some(mapping) = &model_mapping {
+        universal_request.model = Some(mapping.upstream_model.clone());
+    }
     let mut upstream_request = match upstream
         .protocol
         .encode_upstream_request(&universal_request)
@@ -327,6 +421,8 @@ async fn proxy_handler(
     normalize_target_request(&mut upstream_request, upstream.protocol);
     if upstream.protocol == ProxyProtocol::OpenAiChat {
         provider_adapter.prepare_chat_request(&original_request, &mut upstream_request);
+    } else if upstream.protocol == ProxyProtocol::AnthropicMessages {
+        provider_adapter.prepare_anthropic_request(&mut upstream_request);
     }
 
     let stream = upstream_request
@@ -343,14 +439,18 @@ async fn proxy_handler(
         }
     };
 
-    let request = state
+    let mut request = state
         .preview_client
         .post(&upstream.url)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(body);
+    for (name, value) in &upstream.headers {
+        request = request.header(name.as_str(), value.as_str());
+    }
     let request = match apply_upstream_auth(
         request,
         upstream.protocol,
+        upstream.auth_header,
         &headers,
         manual_profile_api_key.as_deref(),
     ) {
@@ -362,9 +462,12 @@ async fn proxy_handler(
         target: "server::web_server::api_proxy",
         profile_id = %profile_id,
         launch_id = ?launch_id,
+        route_scope = ?route_scope,
         manual_scope = ?manual_scope,
         target_api_type = %target_api_type,
         upstream = %redacted_url(&upstream.url),
+        proxy_model = ?model_mapping.as_ref().map(|mapping| mapping.upstream_model.as_str()),
+        agent_model = ?model_mapping.as_ref().map(|mapping| mapping.agent_model.as_str()),
         stream = stream,
         "API proxy forwarding request"
     );
@@ -389,6 +492,7 @@ async fn proxy_handler(
             upstream.protocol,
             client_protocol,
             provider_adapter,
+            model_mapping.map(|mapping| mapping.agent_model),
         )
     } else {
         translated_completion_response(
@@ -396,9 +500,79 @@ async fn proxy_handler(
             upstream.protocol,
             client_protocol,
             &mut provider_adapter,
+            model_mapping.map(|mapping| mapping.agent_model),
         )
         .await
     }
+}
+
+#[derive(Debug, Clone)]
+struct ProxyModelMapping {
+    upstream_model: String,
+    agent_model: String,
+}
+
+fn proxy_model_mapping(
+    profile: &ProfileDef,
+    route_scope: Option<&str>,
+    client_api_type: &str,
+    target_api_type: &str,
+) -> Option<ProxyModelMapping> {
+    let agent_id = agent_id_from_scope(route_scope?, client_api_type)?;
+    let prefs = agent_state::read_prefs();
+    let preference = prefs.profile_connections.get(&profile.id)?.get(agent_id)?;
+    let proxy = preference.proxy.get(client_api_type)?;
+    if !proxy.enabled {
+        return None;
+    }
+    let configured_target = proxy.target_api_type.as_deref().unwrap_or(target_api_type);
+    if configured_target != target_api_type {
+        return None;
+    }
+    let upstream_model = clean_model_id(proxy.upstream_model.as_deref())
+        .or_else(|| default_model(profile, target_api_type))?;
+    let agent_model =
+        clean_model_id(proxy.fake_model_id.as_deref()).unwrap_or_else(|| upstream_model.clone());
+    Some(ProxyModelMapping {
+        upstream_model,
+        agent_model,
+    })
+}
+
+fn agent_id_from_scope(scope: &str, client_api_type: &str) -> Option<&'static str> {
+    for agent_id in ["claude", "codex", "opencode"] {
+        let prefix = format!("{agent_id}-");
+        if scope.strip_prefix(&prefix) == Some(client_api_type) {
+            return Some(agent_id);
+        }
+    }
+    None
+}
+
+fn default_model(profile: &ProfileDef, target_api_type: &str) -> Option<String> {
+    let provider = catalog::get(&profile.provider)?;
+    let endpoint_id = profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| overrides.endpoint_id.as_deref());
+    let endpoint = catalog::find_endpoint(provider, target_api_type, endpoint_id)?;
+    profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| clean_model_id(overrides.model.as_deref()))
+        .or_else(|| {
+            endpoint
+                .models
+                .first()
+                .and_then(|model| clean_model_id(Some(&model.id)))
+        })
+}
+
+fn clean_model_id(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn manual_scope_session_id(scope: &str) -> Result<String, Response> {

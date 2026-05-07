@@ -183,7 +183,7 @@ export function ProfileCard({
             const target = {
               id: connection.agent.id,
               label: connection.agent.label,
-              apiType: connection.agent.requiredApiType,
+              apiType: connection.selectedApiType,
             };
             const warning = profile.apiTypeWarnings[target.apiType];
             const isDefault =
@@ -196,13 +196,13 @@ export function ProfileCard({
                   ? apiTypeBadge(target.apiType)
                   : t("unsupported");
             const title =
-              connection.status === "via_proxy" && connection.targetApiType
+              connection.status === "via_proxy" && connection.selected.targetApiType
                 ? t("{{agent}} routes through proxy to {{provider}} {{apiType}}", {
                     agent: target.label,
                     provider: profile.providerLabel,
-                    apiType: apiTypeProtocolLabel(connection.targetApiType),
+                    apiType: apiTypeProtocolLabel(connection.selected.targetApiType),
                   })
-                : connection.native
+                : connection.selected.native
                   ? t("Launch {{agent}} via {{apiType}}", {
                       agent: target.label,
                       apiType: apiTypeShort(target.apiType),
