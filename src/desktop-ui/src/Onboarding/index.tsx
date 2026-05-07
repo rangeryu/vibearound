@@ -269,28 +269,29 @@ export default function Onboarding() {
   } = useInstallFlow();
 
   const handleFinish = useCallback(() => {
-    const finalEnabledAgents = selectedGoals.has("agents")
-      ? enabledAgents
-      : new Set<AgentId>();
-    const finalEnabledChannels = selectedGoals.has("channels")
-      ? enabledChannels
-      : new Set<string>();
-    const finalTunnelProvider = selectedGoals.has("tunnel")
-      ? tunnelProvider
-      : "none";
+    const configureAgents = selectedGoals.has("agents");
+    const configureChannels = selectedGoals.has("channels");
+    const configureTunnel = selectedGoals.has("tunnel");
+    const installScope = {
+      agents: configureAgents,
+      channels: configureChannels,
+    };
     const finalSettings = buildSettings({
       settings,
-      enabledAgents: finalEnabledAgents,
-      enabledChannels: finalEnabledChannels,
+      configureAgents,
+      configureChannels,
+      configureTunnel,
+      enabledAgents,
+      enabledChannels,
       channelConfigs,
       discoveredPlugins,
-      tunnelProvider: finalTunnelProvider,
+      tunnelProvider,
       ngrokToken,
       ngrokDomain,
       cfToken,
       cfHostname,
     });
-    void startInstall(finalSettings);
+    void startInstall(finalSettings, installScope);
   }, [
     settings,
     selectedGoals,
