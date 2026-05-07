@@ -1,6 +1,7 @@
 //! Per-install-step executors: npm ACP agents, script-based agents,
 //! channel plugins. Each function emits `running` → `done`/`error`
-//! progress events and appends stdout/stderr to the onboarding log.
+//! progress events and appends only high-signal command summaries to the
+//! onboarding log.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -10,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::onboarding::{plugin_install, InstallProgressEvent};
 
-use super::util::{emit_progress, log_line, output_excerpt};
+use super::util::{emit_progress, log_command_output_summary, log_line, output_excerpt};
 
 pub(super) async fn install_npm_agent<R: Runtime>(
     app: &AppHandle<R>,
@@ -74,8 +75,7 @@ pub(super) async fn install_npm_agent<R: Runtime>(
     .await
     {
         Ok(out) => {
-            log_line(log_file, &format!("[{}] stdout:\n{}", agent_id, out.stdout));
-            log_line(log_file, &format!("[{}] stderr:\n{}", agent_id, out.stderr));
+            log_command_output_summary(log_file, agent_id, &out.stdout, &out.stderr);
             emit_progress(
                 app,
                 &InstallProgressEvent {
@@ -155,8 +155,7 @@ pub(super) async fn install_script_agent<R: Runtime>(
 
     match common::agent::auto_install_agent_cmd_with_output(install_cmd, agent_id).await {
         Ok(out) => {
-            log_line(log_file, &format!("[{}] stdout:\n{}", agent_id, out.stdout));
-            log_line(log_file, &format!("[{}] stderr:\n{}", agent_id, out.stderr));
+            log_command_output_summary(log_file, agent_id, &out.stdout, &out.stderr);
             if let Some(stdout) = output_excerpt("stdout", &out.stdout) {
                 emit_progress(
                     app,
@@ -312,14 +311,19 @@ pub(super) async fn install_channel_plugin<R: Runtime>(
                 );
             } else {
                 *had_error = true;
+                let message = resp.message;
                 emit_progress(
                     app,
                     &InstallProgressEvent {
                         id: task_id,
                         label: format!("{} — Plugin install", label),
                         status: "error".into(),
-                        message: Some(resp.message),
+                        message: Some(message.clone()),
                     },
+                );
+                log_line(
+                    log_file,
+                    &format!("[plugin:{}] ERROR: {}", channel_id, message),
                 );
             }
         }

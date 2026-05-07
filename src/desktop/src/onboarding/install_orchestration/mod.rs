@@ -159,7 +159,10 @@ async fn run_install<R: Runtime>(
     if !enabled_agents.is_empty() {
         log_line(
             &log_file,
-            "[onboarding] Running sync_integrations (global MCP + skills sweep)",
+            &format!(
+                "[onboarding] Syncing MCP config and skills for {} enabled agent(s)",
+                enabled_agents.len()
+            ),
         );
         common::agent::sync_integrations(&settings);
     }
@@ -187,8 +190,6 @@ async fn run_install<R: Runtime>(
                     message: Some("Installing MCP config…".into()),
                 },
             );
-            log_line(&log_file, &format!("[{}] Installing MCP config", agent_id));
-
             emit_progress(
                 &app,
                 &InstallProgressEvent {
@@ -265,6 +266,11 @@ async fn run_install<R: Runtime>(
         serde_json::json!({
             "status": final_status,
         }),
+    );
+
+    log_line(
+        &log_file,
+        &format!("[onboarding] Install finished with status: {final_status}"),
     );
 
     let mut lf = log_file.lock().await;

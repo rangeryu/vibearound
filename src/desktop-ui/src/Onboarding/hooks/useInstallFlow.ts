@@ -61,7 +61,9 @@ export function useInstallFlow(): UseInstallFlowResult {
                   ...task,
                   status: status as InstallTaskProgress["status"],
                   message,
-                  logs: message ? [...(task.logs ?? []), message] : task.logs,
+                  logs: shouldAppendInstallLog(status, message)
+                    ? [...(task.logs ?? []), message]
+                    : task.logs,
                 }
               : task,
           ),
@@ -129,4 +131,8 @@ export function useInstallFlow(): UseInstallFlowResult {
     cancelInstall,
     completeInstall,
   };
+}
+
+function shouldAppendInstallLog(status: string, message?: string): message is string {
+  return Boolean(message && status !== "running" && status !== "done");
 }
