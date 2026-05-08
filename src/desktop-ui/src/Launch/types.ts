@@ -24,6 +24,7 @@ export interface ProfileSummary {
   apiTypeWarnings: Record<string, string>;
   apiTypeModels: Record<string, string>;
   apiTypeModelOptions: Record<string, ModelDef[]>;
+  apiTypeHeaders: Record<string, Record<string, string>>;
 }
 
 export interface LaunchTargetSummary {
@@ -43,6 +44,7 @@ export interface ProfileProxyPreference {
   targetApiType?: string | null;
   upstreamModel?: string | null;
   fakeModelId?: string | null;
+  headers?: Record<string, string> | null;
 }
 
 export type ProfileConnections = Record<

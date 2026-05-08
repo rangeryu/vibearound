@@ -101,6 +101,7 @@ export function emptyConnectionDraft(
               : item.targetApiType,
           upstreamModel: current?.upstreamModel ?? item.upstreamModel,
           fakeModelId: current?.fakeModelId ?? item.fakeModelId,
+          headers: current?.headers ?? {},
         };
       }
       return [

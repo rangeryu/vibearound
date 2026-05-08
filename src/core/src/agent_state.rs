@@ -65,6 +65,10 @@ pub struct ProfileProxyPreference {
     /// `upstream_model` before calling the provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fake_model_id: Option<String>,
+    /// Extra provider headers for this proxy route. Catalog default headers
+    /// remain owned by the provider catalog and cannot be overridden here.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
 }
 
 pub type ProfileConnectionPreferences =
@@ -310,5 +314,6 @@ fn connection_preference_is_empty(preference: &ProfileConnectionPreference) -> b
                     .map(str::trim)
                     .unwrap_or_default()
                     .is_empty()
+                && (!proxy.enabled || proxy.headers.is_empty())
         })
 }

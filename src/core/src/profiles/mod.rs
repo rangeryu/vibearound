@@ -7,6 +7,7 @@
 //! profiles.
 
 pub mod catalog;
+pub mod headers;
 pub mod render;
 pub mod runtime;
 pub mod schema;

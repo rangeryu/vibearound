@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use common::agent_state;
-use common::profiles::ProfileDef;
+use common::profiles::{catalog, headers, ProfileDef};
 
 use super::terminal;
 
@@ -69,10 +69,21 @@ pub(super) fn sanitize_profile_connection_preference(
             .fake_model_id
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let headers = if proxy_preference.enabled {
+            match target_api_type.as_deref() {
+                Some(target_api_type) => {
+                    sanitize_proxy_headers(profile, target_api_type, &proxy_preference.headers)?
+                }
+                None => BTreeMap::new(),
+            }
+        } else {
+            BTreeMap::new()
+        };
         if proxy_preference.enabled
             || target_api_type.is_some()
             || upstream_model.is_some()
             || fake_model_id.is_some()
+            || !headers.is_empty()
         {
             proxy.insert(
                 client_api_type,
@@ -81,6 +92,7 @@ pub(super) fn sanitize_profile_connection_preference(
                     target_api_type,
                     upstream_model,
                     fake_model_id,
+                    headers,
                 },
             );
         }
@@ -245,6 +257,30 @@ fn validate_proxy_target(profile: &ProfileDef, target_api_type: &str) -> Result<
     Ok(())
 }
 
+fn sanitize_proxy_headers(
+    profile: &ProfileDef,
+    target_api_type: &str,
+    custom_headers: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, String> {
+    let provider = catalog::get(&profile.provider)
+        .ok_or_else(|| format!("unknown provider '{}'", profile.provider))?;
+    let endpoint_id = profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| overrides.endpoint_id.as_deref());
+    let endpoint =
+        catalog::find_endpoint(provider, target_api_type, endpoint_id).ok_or_else(|| {
+            let suffix = endpoint_id
+                .map(|id| format!(" endpoint_id '{id}'"))
+                .unwrap_or_default();
+            format!(
+                "provider '{}' does not support api kind '{}'{}",
+                profile.provider, target_api_type, suffix
+            )
+        })?;
+    headers::sanitize_custom_headers(custom_headers, &endpoint.headers).map_err(|e| e.to_string())
+}
+
 fn agent_client_api_types(agent_id: &str) -> &'static [&'static str] {
     match agent_id {
         "claude" => &["anthropic"],
@@ -280,6 +316,7 @@ fn legacy_profile_connections() -> agent_state::ProfileConnectionPreferences {
                         target_api_type: preference.target_api_type,
                         upstream_model: None,
                         fake_model_id: None,
+                        headers: BTreeMap::new(),
                     },
                 );
             }
@@ -347,6 +384,7 @@ mod tests {
                 target_api_type: Some(" openai-chat ".to_string()),
                 upstream_model: Some(" qwen3-coder-next ".to_string()),
                 fake_model_id: Some(" ".to_string()),
+                headers: BTreeMap::new(),
             },
         );
         proxy.insert(

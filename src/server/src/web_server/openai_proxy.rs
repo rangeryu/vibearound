@@ -11,7 +11,9 @@ use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use serde_json::{json, Value};
 
-use common::profiles::{catalog, normalize_legacy_profile, schema};
+use common::profiles::{
+    catalog, headers::merged_upstream_headers, normalize_legacy_profile, schema,
+};
 
 use crate::agent_hooks::CodexSessionState;
 use crate::openai_proxy::{
@@ -110,6 +112,7 @@ async fn responses_handler_inner(
     let upstream = match state
         .preview_client
         .post(upstream_endpoint.url)
+        .headers(upstream_endpoint.headers)
         .header(reqwest::header::AUTHORIZATION, auth)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(body)
@@ -173,6 +176,7 @@ async fn responses_handler_inner(
 
 struct UpstreamChatCompletionsEndpoint {
     url: String,
+    headers: reqwest::header::HeaderMap,
     provider_adapter: ProviderProxyAdapter,
 }
 
@@ -230,8 +234,15 @@ fn upstream_chat_completions_endpoint(
             format!("profile '{}' has no chat base URL", profile.id),
         ));
     }
+    let headers = merged_upstream_headers(&endpoint.headers, None).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("invalid upstream headers: {e}"),
+        )
+    })?;
     Ok(UpstreamChatCompletionsEndpoint {
         url: format!("{base_url}/chat/completions"),
+        headers,
         provider_adapter: ProviderProxyAdapter::for_profile(&profile, provider_context),
     })
 }
