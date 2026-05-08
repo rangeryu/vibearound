@@ -87,10 +87,10 @@ pub fn acp_agents_dir() -> std::path::PathBuf {
 /// them to extract the JS path.
 pub fn resolve_acp_agent_bin(bin_name: &str) -> anyhow::Result<std::path::PathBuf> {
     let bin_dir = acp_agents_dir().join("node_modules").join(".bin");
-    let bin_path = bin_dir.join(bin_name);
 
     #[cfg(unix)]
     {
+        let bin_path = bin_dir.join(bin_name);
         if !bin_path.exists() {
             anyhow::bail!(
                 "ACP agent binary '{}' not found at {:?}. Run onboarding to install it.",
@@ -115,34 +115,75 @@ pub fn resolve_acp_agent_bin(bin_name: &str) -> anyhow::Result<std::path::PathBu
                 cmd_path
             );
         }
-        // .cmd files contain a line like: @node "path\to\script.js" %*
         let content = std::fs::read_to_string(&cmd_path)?;
-        for line in content.lines() {
-            let trimmed = line.trim().trim_start_matches('@');
-            // Look for: node "..." or node ...
-            if let Some(rest) = trimmed
-                .strip_prefix("node ")
-                .or_else(|| trimmed.strip_prefix("node.exe "))
-            {
-                let js_path = rest
-                    .trim()
-                    .trim_matches('"')
-                    .trim_end_matches(" %*")
-                    .trim_end_matches(" %~dp0")
-                    .trim_matches('"');
-                let resolved = bin_dir.join(js_path);
-                if resolved.exists() {
-                    return Ok(std::fs::canonicalize(&resolved)?);
-                }
-                // Try as absolute path
-                let abs = std::path::PathBuf::from(js_path);
-                if abs.exists() {
-                    return Ok(std::fs::canonicalize(&abs)?);
-                }
+        for js_path in windows_npm_cmd_js_entries(&content, &bin_dir) {
+            if js_path.exists() {
+                return Ok(windows_user_path(std::fs::canonicalize(&js_path)?));
             }
         }
         anyhow::bail!("could not parse JS entry from {:?}", cmd_path);
     }
+}
+
+#[cfg(windows)]
+fn windows_npm_cmd_js_entries(content: &str, bin_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut entries = Vec::new();
+    for token in windows_cmd_quoted_tokens(content) {
+        let Some(js_pos) = token.to_ascii_lowercase().find(".js") else {
+            continue;
+        };
+        let token = &token[..js_pos + 3];
+        entries.push(expand_windows_npm_cmd_js_token(bin_dir, token));
+    }
+    entries
+}
+
+#[cfg(windows)]
+fn windows_cmd_quoted_tokens(content: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    for line in content.lines() {
+        let mut rest = line;
+        while let Some(start) = rest.find('"') {
+            rest = &rest[start + 1..];
+            let Some(end) = rest.find('"') else {
+                break;
+            };
+            tokens.push(rest[..end].to_string());
+            rest = &rest[end + 1..];
+        }
+    }
+    tokens
+}
+
+#[cfg(windows)]
+fn expand_windows_npm_cmd_js_token(bin_dir: &std::path::Path, token: &str) -> std::path::PathBuf {
+    let normalized = token.replace('\\', "/");
+    for prefix in ["%dp0%/", "%~dp0/"] {
+        if let Some(rest) = normalized.strip_prefix(prefix) {
+            let mut path = bin_dir.to_path_buf();
+            for segment in rest.split('/') {
+                if segment.is_empty() {
+                    continue;
+                }
+                path.push(segment);
+            }
+            return path;
+        }
+    }
+
+    std::path::PathBuf::from(token)
+}
+
+#[cfg(windows)]
+fn windows_user_path(path: std::path::PathBuf) -> std::path::PathBuf {
+    let value = path.to_string_lossy();
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        return std::path::PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = value.strip_prefix(r"\\?\") {
+        return std::path::PathBuf::from(rest);
+    }
+    path
 }
 
 // ---------------------------------------------------------------------------
@@ -302,4 +343,72 @@ fn enrich_windows_path(env: &mut HashMap<String, String>) {
         }
     }
     env.insert("PATH".to_string(), parts.join(sep));
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_npm_cmd_wrappers_that_use_prog_variable() {
+        let content = r#"@ECHO off
+GOTO start
+:find_dp0
+SET dp0=%~dp0
+EXIT /b
+:start
+SETLOCAL
+CALL :find_dp0
+
+IF EXIST "%dp0%\node.exe" (
+  SET "_prog=%dp0%\node.exe"
+) ELSE (
+  SET "_prog=node"
+  SET PATHEXT=%PATHEXT:;.JS;=;%
+)
+
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\..\@zed-industries\codex-acp\bin\codex-acp.js" %*
+"#;
+        let bin_dir = std::path::Path::new(r"C:\Users\jazze\.vibearound\plugins\node_modules\.bin");
+
+        let entries = windows_npm_cmd_js_entries(content, bin_dir);
+
+        assert_eq!(
+            entries,
+            vec![std::path::PathBuf::from(
+                r"C:\Users\jazze\.vibearound\plugins\node_modules\.bin\..\@zed-industries\codex-acp\bin\codex-acp.js"
+            )]
+        );
+    }
+
+    #[test]
+    fn parses_legacy_npm_cmd_wrappers_that_call_node_directly() {
+        let content = r#"@node "%~dp0\..\pkg\dist\index.js" %*"#;
+        let bin_dir = std::path::Path::new(r"C:\va\plugins\node_modules\.bin");
+
+        let entries = windows_npm_cmd_js_entries(content, bin_dir);
+
+        assert_eq!(
+            entries,
+            vec![std::path::PathBuf::from(
+                r"C:\va\plugins\node_modules\.bin\..\pkg\dist\index.js"
+            )]
+        );
+    }
+
+    #[test]
+    fn strips_extended_path_prefix_before_passing_entry_to_node() {
+        assert_eq!(
+            windows_user_path(std::path::PathBuf::from(
+                r"\\?\C:\Users\jazze\.vibearound\plugins\entry.js"
+            )),
+            std::path::PathBuf::from(r"C:\Users\jazze\.vibearound\plugins\entry.js")
+        );
+        assert_eq!(
+            windows_user_path(std::path::PathBuf::from(
+                r"\\?\UNC\server\share\plugins\entry.js"
+            )),
+            std::path::PathBuf::from(r"\\server\share\plugins\entry.js")
+        );
+    }
 }
