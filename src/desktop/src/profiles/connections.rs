@@ -69,10 +69,16 @@ pub(super) fn sanitize_profile_connection_preference(
             .fake_model_id
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let headers = if proxy_preference.enabled {
+            prune_proxy_headers(proxy_preference.headers)
+        } else {
+            BTreeMap::new()
+        };
         if proxy_preference.enabled
             || target_api_type.is_some()
             || upstream_model.is_some()
             || fake_model_id.is_some()
+            || !headers.is_empty()
         {
             proxy.insert(
                 client_api_type,
@@ -81,6 +87,7 @@ pub(super) fn sanitize_profile_connection_preference(
                     target_api_type,
                     upstream_model,
                     fake_model_id,
+                    headers,
                 },
             );
         }
@@ -245,6 +252,16 @@ fn validate_proxy_target(profile: &ProfileDef, target_api_type: &str) -> Result<
     Ok(())
 }
 
+fn prune_proxy_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {
+    headers
+        .into_iter()
+        .filter_map(|(name, value)| {
+            let name = name.trim().to_string();
+            (!name.is_empty()).then_some((name, value))
+        })
+        .collect()
+}
+
 fn agent_client_api_types(agent_id: &str) -> &'static [&'static str] {
     match agent_id {
         "claude" => &["anthropic"],
@@ -280,6 +297,7 @@ fn legacy_profile_connections() -> agent_state::ProfileConnectionPreferences {
                         target_api_type: preference.target_api_type,
                         upstream_model: None,
                         fake_model_id: None,
+                        headers: BTreeMap::new(),
                     },
                 );
             }
@@ -347,6 +365,12 @@ mod tests {
                 target_api_type: Some(" openai-chat ".to_string()),
                 upstream_model: Some(" qwen3-coder-next ".to_string()),
                 fake_model_id: Some(" ".to_string()),
+                headers: [
+                    (" Authorization ".to_string(), "Bearer custom".to_string()),
+                    (" ".to_string(), "ignored".to_string()),
+                ]
+                .into_iter()
+                .collect(),
             },
         );
         proxy.insert(
@@ -370,6 +394,11 @@ mod tests {
         assert_eq!(route.target_api_type.as_deref(), Some("openai-chat"));
         assert_eq!(route.upstream_model.as_deref(), Some("qwen3-coder-next"));
         assert!(route.fake_model_id.is_none());
+        assert_eq!(
+            route.headers.get("Authorization").map(String::as_str),
+            Some("Bearer custom")
+        );
+        assert!(!route.headers.contains_key(""));
         assert_eq!(sanitized.proxy.len(), 1);
     }
 }

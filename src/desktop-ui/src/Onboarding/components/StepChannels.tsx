@@ -133,7 +133,7 @@ function PluginCard({
   );
 
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden scroll-mt-4">
+    <section className="rounded-md border border-border bg-card overflow-hidden scroll-mt-4">
       <div className="flex items-start justify-between gap-4 px-4 py-4">
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -289,7 +289,7 @@ function AuthFlowSection({
 
       {authState?.qrCodeUrl && (
         <div className="flex flex-col items-center gap-2 pt-1 scroll-mt-6">
-          <div className="rounded-lg border bg-white p-3 shadow-sm">
+          <div className="rounded-md border bg-white p-3 shadow-sm">
             <QRCodeSVG
               value={authState.qrCodeUrl}
               size={176}

@@ -109,7 +109,7 @@ export function Workspaces() {
         <StatusBanner>{error}</StatusBanner>
       )}
 
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="rounded-md border border-border bg-card overflow-hidden">
         {data?.workspaces.map((ws, i) => (
           <div
             key={ws.path}

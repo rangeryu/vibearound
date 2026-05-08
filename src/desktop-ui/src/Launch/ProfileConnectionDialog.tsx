@@ -1,12 +1,11 @@
 import { useMemo, useState } from "react";
-import { Check, Copy, FileText, Info, Plug, ShieldCheck } from "lucide-react";
+import { FileText, Info, Plug, ShieldCheck } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { API_BASE } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +30,19 @@ import {
   recommendedProxyTarget,
   resolveProfileConnection,
 } from "./connections";
+import {
+  HeaderSettingDialog,
+  HeaderSummaryButton,
+  type HeaderSetting,
+} from "./ProfileConnectionHeaders";
+import {
+  ManualSettingDialog,
+  ManualValueRow,
+  PLACEHOLDER_API_KEY,
+  buildManualSetting,
+  manualProxyConfig,
+  type ManualSetting,
+} from "./ProfileConnectionManualGuide";
 import type {
   ConnectionAgentId,
   ModelDef,
@@ -38,23 +50,6 @@ import type {
   ProfileConnections,
   ProfileSummary,
 } from "./types";
-
-const PLACEHOLDER_API_KEY = "anything-non-empty";
-
-interface ManualProxyConfig {
-  baseUrl: string;
-  model: string;
-  copyKey: string;
-}
-
-interface ManualSetting {
-  agentId: ConnectionAgentId;
-  agentLabel: string;
-  copyKey: string;
-  filePath: string;
-  profileName?: string;
-  snippet: string;
-}
 
 interface Props {
   profile: ProfileSummary;
@@ -80,6 +75,7 @@ export function ProfileConnectionDialog({
   const [error, setError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [manualSetting, setManualSetting] = useState<ManualSetting | null>(null);
+  const [headerSetting, setHeaderSetting] = useState<HeaderSetting | null>(null);
 
   const resolved = useMemo(
     () => {
@@ -116,6 +112,26 @@ export function ProfileConnectionDialog({
     }
   }
 
+  function updateProxyHeaders(setting: HeaderSetting, headers: Record<string, string>) {
+    setDraft((prev) => ({
+      ...prev,
+      [setting.agentId]: {
+        ...prev[setting.agentId],
+        selectedApiType:
+          prev[setting.agentId].selectedApiType ?? setting.clientApiType,
+        proxy: {
+          ...(prev[setting.agentId].proxy ?? {}),
+          [setting.clientApiType]: {
+            ...(prev[setting.agentId].proxy?.[setting.clientApiType] ?? {}),
+            enabled: true,
+            targetApiType: setting.targetApiType,
+            headers,
+          },
+        },
+      },
+    }));
+  }
+
   return (
     <>
     <Dialog
@@ -123,11 +139,12 @@ export function ProfileConnectionDialog({
       onOpenChange={(open) => {
         if (!open) {
           setManualSetting(null);
+          setHeaderSetting(null);
           onClose();
         }
       }}
     >
-      <DialogContent className="w-[760px]">
+      <DialogContent className="w-[min(740px,calc(100vw-32px))]">
         <DialogHeader>
           <DialogTitle>{t("{{label}} Connections", { label: profile.label })}</DialogTitle>
           <DialogDescription>
@@ -218,7 +235,7 @@ export function ProfileConnectionDialog({
                     </div>
                     <div className="mt-0.5 text-[11px] text-muted-foreground">
                       {t("Client API: {{protocol}}", {
-                        protocol: apiTypeProtocolLabel(selectedApiType),
+                        protocol: apiTypeProtocolDisplayLabel(selectedApiType),
                       })}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
@@ -228,9 +245,9 @@ export function ProfileConnectionDialog({
                       </span>
                       <span className="font-mono text-foreground/80">
                         {selectedConnection.native
-                          ? `${profile.providerLabel} · ${apiTypeProtocolLabel(selectedApiType)}`
+                          ? `${profile.providerLabel} · ${apiTypeProtocolDisplayLabel(selectedApiType)}`
                           : selectedConnection.proxyEnabled && selectedConnection.targetApiType
-                            ? `${apiTypeProtocolLabel(selectedApiType)} -> ${profile.providerLabel} ${apiTypeRouteLabel(selectedConnection.targetApiType)}`
+                            ? `${apiTypeProtocolDisplayLabel(selectedApiType)} -> ${profile.providerLabel} ${apiTypeRouteDisplayLabel(selectedConnection.targetApiType)}`
                           : t("Unsupported")}
                       </span>
                     </div>
@@ -249,13 +266,13 @@ export function ProfileConnectionDialog({
                         }));
                       }}
                     >
-                      <SelectTrigger size="sm" className="h-8 w-[220px] shrink-0 text-xs">
+                      <SelectTrigger size="sm" className="h-8 w-[clamp(10rem,24vw,220px)] shrink-0 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {agent.supportedApiTypes.map((apiType) => (
                           <SelectItem key={apiType} value={apiType} className="text-xs">
-                            {apiTypeProtocolLabel(apiType)}
+                            {apiTypeProtocolDisplayLabel(apiType)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -320,29 +337,23 @@ export function ProfileConnectionDialog({
                             <div className="flex items-center gap-2">
                               <Plug className="h-3.5 w-3.5 text-primary" />
                               <div className="text-[11px] font-medium">{t("Proxy target")}</div>
-                              {manualConfig && (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="xs"
-                                  className="ml-auto h-7 gap-1.5 rounded-md border-primary/40 bg-primary/5 px-2.5 text-[11px] font-medium text-primary shadow-xs hover:bg-primary/10 hover:text-primary"
+                              <div className="ml-auto">
+                                <HeaderSummaryButton
+                                  defaultHeaders={profile.apiTypeHeaders[proxyTarget] ?? {}}
+                                  headers={currentProxy.headers ?? {}}
+                                  disabled={saving}
                                   onClick={() =>
-                                    setManualSetting(
-                                      buildManualSetting(
-                                        profile,
-                                        agent.id,
-                                        agent.label,
-                                        client.apiType,
-                                        proxyTarget,
-                                        manualConfig,
-                                      ),
-                                    )
+                                    setHeaderSetting({
+                                      agentId: agent.id,
+                                      agentLabel: agent.label,
+                                      clientApiType: client.apiType,
+                                      targetApiType: proxyTarget,
+                                      defaultHeaders: profile.apiTypeHeaders[proxyTarget] ?? {},
+                                      headers: currentProxy.headers ?? {},
+                                    })
                                   }
-                                >
-                                  <FileText className="h-3 w-3" />
-                                  {t("Manual setting")}
-                                </Button>
-                              )}
+                                />
+                              </div>
                               <Select
                                 value={proxyTarget}
                                 onValueChange={(value) => {
@@ -360,6 +371,7 @@ export function ProfileConnectionDialog({
                                           enabled: true,
                                           targetApiType: value,
                                           upstreamModel: nextModel,
+                                          headers: {},
                                         },
                                       },
                                     },
@@ -368,16 +380,15 @@ export function ProfileConnectionDialog({
                               >
                                 <SelectTrigger
                                   size="sm"
-                                  className={`!h-7 min-h-0 w-[230px] px-2.5 py-0 text-[11px] leading-none [&_svg]:h-3.5 [&_svg]:w-3.5 ${
-                                    manualConfig ? "" : "ml-auto"
-                                  }`}
+                                  className="!h-7 min-h-0 w-[clamp(10rem,28vw,210px)] px-2.5 py-0 text-[11px] leading-none [&_svg]:h-3.5 [&_svg]:w-3.5"
                                 >
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {client.targetOptions.map((apiType) => (
                                     <SelectItem key={apiType} value={apiType} className="text-xs">
-                                      {profile.providerLabel} · {apiTypeProtocolLabel(apiType)}
+                                      {profile.providerLabel} ·{" "}
+                                      {apiTypeProtocolDisplayLabel(apiType)}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -460,10 +471,11 @@ export function ProfileConnectionDialog({
                               </label>
                             </div>
                             <div className="font-mono text-[11px] leading-5 text-primary">
-                              {apiTypeProtocolLabel(client.apiType)} -&gt; proxy -&gt;{" "}
-                              {profile.providerLabel} {apiTypeRouteLabel(proxyTarget)}
+                              {apiTypeProtocolDisplayLabel(client.apiType)} -&gt;{" "}
+                              {t("Proxy")} -&gt; {profile.providerLabel}{" "}
+                              {apiTypeRouteDisplayLabel(proxyTarget)}
                               {upstreamModel ? ` · ${upstreamModel}` : ""}
-                              {fakeModelId ? ` as ${fakeModelId}` : ""}
+                              {fakeModelId ? ` ${t("as")} ${fakeModelId}` : ""}
                             </div>
                             {manualConfig && (
                               <div className="rounded-md border border-border/70 bg-muted/30 p-2">
@@ -471,6 +483,27 @@ export function ProfileConnectionDialog({
                                   <div className="text-[11px] font-medium">
                                     {t("Manual setup")}
                                   </div>
+                                  <Button
+                                    type="button"
+                                    variant="link"
+                                    size="xs"
+                                    className="h-auto cursor-pointer gap-1 px-0 py-0 text-[11px] font-medium"
+                                    onClick={() =>
+                                      setManualSetting(
+                                        buildManualSetting(
+                                          profile,
+                                          agent.id,
+                                          agent.label,
+                                          client.apiType,
+                                          proxyTarget,
+                                          manualConfig,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    <FileText className="h-3 w-3" />
+                                    {t("Setup guide")}
+                                  </Button>
                                   <div className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                                     <Info className="h-3 w-3" />
                                     {t("Click a value to copy.")}
@@ -541,29 +574,26 @@ export function ProfileConnectionDialog({
         onClose={() => setManualSetting(null)}
       />
     )}
+    {headerSetting && (
+      <HeaderSettingDialog
+        setting={headerSetting}
+        onSave={(headers) => {
+          updateProxyHeaders(headerSetting, headers);
+          setHeaderSetting(null);
+        }}
+        onClose={() => setHeaderSetting(null)}
+      />
+    )}
     </>
   );
 }
 
-function manualProxyConfig(
-  profileId: string,
-  agentId: ConnectionAgentId,
-  clientApiType: string,
-  targetApiType: string,
-  model: string | undefined,
-): ManualProxyConfig {
-  const path = [
-    "local-api",
-    encodeURIComponent(profileId),
-    encodeURIComponent(`${agentId}-${clientApiType}`),
-    encodeURIComponent(targetApiType),
-  ].join("/");
-  const versionSuffix = clientApiType === "anthropic" ? "" : "/v1";
-  return {
-    baseUrl: `${API_BASE}/${path}${versionSuffix}`,
-    model: model ?? "",
-    copyKey: `${agentId}:${clientApiType}:${targetApiType}:base-url`,
-  };
+function apiTypeProtocolDisplayLabel(apiType: string): string {
+  return apiTypeProtocolLabel(apiType);
+}
+
+function apiTypeRouteDisplayLabel(apiType: string): string {
+  return apiTypeRouteLabel(apiType);
 }
 
 function cleanModelId(value: string | null | undefined): string {
@@ -581,275 +611,4 @@ function proxyModelOptions(
     options.unshift({ id: model, label: null });
   }
   return options;
-}
-
-function buildManualSetting(
-  profile: ProfileSummary,
-  agentId: ConnectionAgentId,
-  agentLabel: string,
-  clientApiType: string,
-  targetApiType: string,
-  manualConfig: ManualProxyConfig,
-): ManualSetting {
-  const model = manualConfig.model || "<model-id>";
-  if (agentId === "codex") {
-    const profileName = codexProfileName(profile.id, targetApiType);
-    const providerName = profileName;
-    return {
-      agentId,
-      agentLabel,
-      copyKey: `${manualConfig.copyKey}:codex-config`,
-      filePath: "~/.codex/config.toml",
-      profileName,
-      snippet: [
-        `profile = ${tomlString(profileName)}`,
-        "",
-        `[profiles.${profileName}]`,
-        `model = ${tomlString(model)}`,
-        `model_provider = ${tomlString(providerName)}`,
-        `model_reasoning_effort = "medium"`,
-        "",
-        `[model_providers.${providerName}]`,
-        `name = ${tomlString(`VibeAround ${profile.providerLabel}`)}`,
-        `base_url = ${tomlString(manualConfig.baseUrl)}`,
-        `wire_api = "responses"`,
-        `requires_openai_auth = false`,
-      ].join("\n"),
-    };
-  }
-
-  if (agentId === "opencode") {
-    const npm =
-      clientApiType === "anthropic"
-        ? "@ai-sdk/anthropic"
-        : clientApiType === "openai-chat"
-          ? "@ai-sdk/openai-compatible"
-          : "@ai-sdk/openai";
-    return {
-      agentId,
-      agentLabel,
-      copyKey: `${manualConfig.copyKey}:opencode-config`,
-      filePath: "~/.config/opencode/opencode.json",
-      snippet: JSON.stringify(
-        {
-          $schema: "https://opencode.ai/config.json",
-          model: `${profile.provider}/${model}`,
-          provider: {
-            [profile.provider]: {
-              npm,
-              name: `VibeAround ${profile.providerLabel}`,
-              options: {
-                baseURL: manualConfig.baseUrl,
-                apiKey: PLACEHOLDER_API_KEY,
-                setCacheKey: true,
-              },
-              models: {
-                [model]: { name: model },
-              },
-            },
-          },
-        },
-        null,
-        2,
-      ),
-    };
-  }
-
-  const claudeEnv: Record<string, string> = {
-    ANTHROPIC_BASE_URL: manualConfig.baseUrl,
-    ANTHROPIC_API_KEY: PLACEHOLDER_API_KEY,
-    ANTHROPIC_AUTH_TOKEN: PLACEHOLDER_API_KEY,
-    ANTHROPIC_MODEL: model,
-  };
-  if (profile.provider === "deepseek") {
-    claudeEnv.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
-    claudeEnv.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
-    claudeEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL = "deepseek-v4-flash";
-    claudeEnv.CLAUDE_CODE_SUBAGENT_MODEL = "deepseek-v4-flash";
-    claudeEnv.CLAUDE_CODE_EFFORT_LEVEL = "max";
-  }
-
-  return {
-    agentId,
-    agentLabel,
-    copyKey: `${manualConfig.copyKey}:claude-settings`,
-    filePath: "~/.claude/settings.json",
-    snippet: `"env": ${JSON.stringify(claudeEnv, null, 2)}`,
-  };
-}
-
-function codexProfileName(profileId: string, targetApiType: string): string {
-  return `vibearound_${safeConfigKey(profileId)}_${safeConfigKey(targetApiType)}`;
-}
-
-function safeConfigKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "") || "profile";
-}
-
-function tomlString(value: string): string {
-  return JSON.stringify(value);
-}
-
-function ManualSettingDialog({
-  setting,
-  copiedKey,
-  onCopy,
-  onClose,
-}: {
-  setting: ManualSetting;
-  copiedKey: string | null;
-  onCopy: (key: string, value: string) => void;
-  onClose: () => void;
-}) {
-  const { t } = useI18n();
-  const isCodex = setting.agentId === "codex";
-  const isOpenCode = setting.agentId === "opencode";
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[700px]">
-        <DialogHeader>
-          <DialogTitle>
-            {t("{{agent}} manual setting", { agent: setting.agentLabel })}
-          </DialogTitle>
-          <DialogDescription>
-            {t("Copy this snippet into the CLI config file yourself. VibeAround does not edit the file automatically.")}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid flex-1 min-h-0 gap-3 overflow-y-auto px-4 pb-4">
-          <div className="grid gap-2 rounded-md border border-border/70 bg-muted/25 p-3 text-[12px]">
-            <ConfigInfoRow label={t("Configuration file")} value={setting.filePath} />
-          </div>
-
-          <div className="rounded-md border border-border/70 p-3">
-            <div className="text-[12px] font-medium">{t("How to modify")}</div>
-            <ol className="mt-2 space-y-1.5 pl-4 text-[12px] leading-relaxed text-muted-foreground">
-              {isCodex ? (
-                <>
-                  <li>{t("Open the Codex config file, then add this snippet or update the existing VibeAround profile block.")}</li>
-                  <li>{t("The top-level profile line makes plain codex use this VibeAround profile by default.")}</li>
-                </>
-              ) : isOpenCode ? (
-                <>
-                  <li>{t("Open the OpenCode config file, then add or merge this provider block.")}</li>
-                  <li>{t("Use any non-empty API key value when the local proxy is already running with a saved profile key.")}</li>
-                </>
-              ) : (
-                <>
-                  <li>{t("Paste this property inside the root JSON object of Claude settings.")}</li>
-                  <li>{t("If env already exists, merge these keys into the existing env object instead of creating another env block.")}</li>
-                </>
-              )}
-            </ol>
-          </div>
-
-          <ConfigSnippetBlock
-            title={
-              isCodex
-                ? t("Codex config snippet")
-                : isOpenCode
-                  ? t("OpenCode config snippet")
-                  : t("Config snippet")
-            }
-            snippet={setting.snippet}
-            copied={copiedKey === setting.copyKey}
-            onCopy={() => onCopy(setting.copyKey, setting.snippet)}
-          />
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ConfigSnippetBlock({
-  title,
-  snippet,
-  copied,
-  onCopy,
-}: {
-  title: string;
-  snippet: string;
-  copied: boolean;
-  onCopy: () => void;
-}) {
-  const { t } = useI18n();
-
-  return (
-    <div
-      className={`overflow-hidden rounded-md border ${
-        copied
-          ? "border-primary/60 bg-primary/10"
-          : "border-primary/30 bg-primary/5"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-2 border-b border-primary/20 px-3 py-2">
-        <div className="text-[12px] font-medium text-primary">{title}</div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          className="h-6 gap-1.5 px-2 text-[11px] font-medium text-primary hover:bg-primary/10 hover:text-primary"
-          onClick={onCopy}
-        >
-          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-          {copied ? t("Copied") : t("Copy config")}
-        </Button>
-      </div>
-      <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground">
-        {snippet}
-      </pre>
-    </div>
-  );
-}
-
-function ConfigInfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="shrink-0 text-muted-foreground">{label}</div>
-      <div className="break-all font-mono text-foreground">{value}</div>
-    </div>
-  );
-}
-
-function ManualValueRow({
-  label,
-  value,
-  copied,
-  onCopy,
-}: {
-  label: string;
-  value: string;
-  copied: boolean;
-  onCopy: () => void;
-}) {
-  const { t } = useI18n();
-
-  return (
-    <div className="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-1">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <button
-        type="button"
-        className={`group flex min-w-0 cursor-pointer items-center rounded px-0.5 py-0 text-left font-mono text-[11px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-          copied
-            ? "bg-primary/10 text-primary"
-            : "text-foreground hover:bg-primary/5 hover:text-primary"
-        }`}
-        onClick={onCopy}
-        title={value}
-      >
-        <span className="min-w-0 flex-1 truncate">{value}</span>
-        {copied && (
-          <span className="ml-1.5 inline-flex shrink-0 items-center gap-1 text-[10px] font-sans">
-            <Check className="h-3 w-3" />
-            {t("Copied")}
-          </span>
-        )}
-      </button>
-    </div>
-  );
 }

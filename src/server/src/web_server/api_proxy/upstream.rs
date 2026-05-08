@@ -1,5 +1,5 @@
 use axum::body::Body;
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap as InboundHeaderMap, StatusCode};
 use axum::response::Response;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -123,7 +123,7 @@ pub(super) fn apply_upstream_auth(
     request: reqwest::RequestBuilder,
     protocol: ProxyProtocol,
     auth_header: bool,
-    headers: &HeaderMap,
+    headers: &InboundHeaderMap,
     profile_api_key: Option<&str>,
 ) -> Result<reqwest::RequestBuilder, Response> {
     let profile_api_key = profile_api_key
@@ -174,14 +174,14 @@ pub(super) fn apply_upstream_auth(
     Ok(request.header("anthropic-version", anthropic_version))
 }
 
-fn authorization_header(headers: &HeaderMap) -> Option<String> {
+fn authorization_header(headers: &InboundHeaderMap) -> Option<String> {
     headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .map(ToString::to_string)
 }
 
-fn inbound_api_key(headers: &HeaderMap) -> Option<String> {
+fn inbound_api_key(headers: &InboundHeaderMap) -> Option<String> {
     headers
         .get("x-api-key")
         .and_then(|value| value.to_str().ok())

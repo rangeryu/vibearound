@@ -29,6 +29,9 @@ pub struct ProfileSummary {
     pub api_type_models: BTreeMap<String, String>,
     /// `api_type -> catalog model options`, used by proxy route model selection.
     pub api_type_model_options: BTreeMap<String, Vec<catalog::ModelDef>>,
+    /// `api_type -> provider catalog headers`, displayed as immutable defaults
+    /// in proxy route settings.
+    pub api_type_headers: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,6 +84,7 @@ fn profile_summary(profile: ProfileDef) -> ProfileSummary {
     let api_type_warnings = api_type_warnings(&profile, provider);
     let api_type_models = api_type_models(&profile, provider);
     let api_type_model_options = api_type_model_options(&profile, provider, &api_type_models);
+    let api_type_headers = api_type_headers(&profile, provider);
     let warnings_for_targets = api_type_warnings.clone();
 
     ProfileSummary {
@@ -103,6 +107,7 @@ fn profile_summary(profile: ProfileDef) -> ProfileSummary {
         api_type_warnings,
         api_type_models,
         api_type_model_options,
+        api_type_headers,
     }
 }
 
@@ -190,6 +195,20 @@ fn api_type_model_options(
                 }
             }
             (!models.is_empty()).then_some((api_type.clone(), models))
+        })
+        .collect()
+}
+
+fn api_type_headers(
+    profile: &ProfileDef,
+    provider: Option<&'static catalog::ProviderCatalog>,
+) -> BTreeMap<String, BTreeMap<String, String>> {
+    profile
+        .api_types
+        .iter()
+        .filter_map(|api_type| {
+            let headers = endpoint_for(profile, provider, api_type)?.headers.clone();
+            (!headers.is_empty()).then_some((api_type.clone(), headers))
         })
         .collect()
 }

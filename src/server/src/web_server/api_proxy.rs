@@ -8,8 +8,8 @@ use va_ai_api_proxy::{
     OpenAiResponsesTranslator, UniversalEvent, WireEvent, WireTranslator,
 };
 
-use common::agent_state;
 use common::profiles::{catalog, schema::ProfileDef};
+use common::{agent_state, profiles::headers::merged_upstream_headers};
 
 mod completion;
 mod stream;
@@ -368,10 +368,15 @@ async fn proxy_handler(
         Ok(endpoint) => endpoint,
         Err((status, message)) => return json_error(status, &message),
     };
-    let model_mapping = proxy_model_mapping(
+    let proxy_preference = proxy_route_preference(
         &upstream.profile,
         route_scope.as_deref(),
         client_protocol.api_type(),
+        &target_api_type,
+    );
+    let model_mapping = proxy_model_mapping(
+        &upstream.profile,
+        proxy_preference.as_ref(),
         &target_api_type,
     );
     let codex_session_state = launch_id
@@ -439,14 +444,22 @@ async fn proxy_handler(
         }
     };
 
-    let mut request = state
+    let upstream_headers = match merged_upstream_headers(
+        &upstream.headers,
+        proxy_preference
+            .as_ref()
+            .map(|preference| &preference.headers),
+    ) {
+        Ok(headers) => headers,
+        Err(error) => return json_error(StatusCode::BAD_REQUEST, &error.to_string()),
+    };
+
+    let request = state
         .preview_client
         .post(&upstream.url)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .headers(upstream_headers)
         .body(body);
-    for (name, value) in &upstream.headers {
-        request = request.header(name.as_str(), value.as_str());
-    }
     let request = match apply_upstream_auth(
         request,
         upstream.protocol,
@@ -512,12 +525,12 @@ struct ProxyModelMapping {
     agent_model: String,
 }
 
-fn proxy_model_mapping(
+fn proxy_route_preference(
     profile: &ProfileDef,
     route_scope: Option<&str>,
     client_api_type: &str,
     target_api_type: &str,
-) -> Option<ProxyModelMapping> {
+) -> Option<agent_state::ProfileProxyPreference> {
     let agent_id = agent_id_from_scope(route_scope?, client_api_type)?;
     let prefs = agent_state::read_prefs();
     let preference = prefs.profile_connections.get(&profile.id)?.get(agent_id)?;
@@ -529,6 +542,15 @@ fn proxy_model_mapping(
     if configured_target != target_api_type {
         return None;
     }
+    Some(proxy.clone())
+}
+
+fn proxy_model_mapping(
+    profile: &ProfileDef,
+    proxy: Option<&agent_state::ProfileProxyPreference>,
+    target_api_type: &str,
+) -> Option<ProxyModelMapping> {
+    let proxy = proxy?;
     let upstream_model = clean_model_id(proxy.upstream_model.as_deref())
         .or_else(|| default_model(profile, target_api_type))?;
     let agent_model =

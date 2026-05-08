@@ -15,6 +15,7 @@ mod ws_domains;
 mod ws_pty;
 
 use axum::body::Body;
+use axum::extract::DefaultBodyLimit;
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, delete, get, post};
@@ -31,6 +32,8 @@ use common::pty::{PtySessionManager, Registry};
 use common::tunnels::TunnelManager;
 
 use self::auth::{require_auth, AuthState};
+
+const LOCAL_PROXY_BODY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 
 /// Client sends this as JSON over Text frame to resize the PTY (e.g. after xterm-addon-fit).
 #[derive(serde::Deserialize)]
@@ -248,7 +251,7 @@ pub async fn run_web_server(
     // Preview routes are also un-authed — the 8-char slug itself acts as a
     // short-lived authentication token (10-min TTL, cryptographically random;
     // single source of truth: `common::previews::SHARE_TTL_SECS`).
-    let public = Router::new()
+    let proxy_routes = Router::new()
         // Profile-launched CLIs cannot attach the VibeAround bearer token
         // separately from their upstream OpenAI API key. This route is
         // localhost-only and requires the CLI's Authorization header; it
@@ -311,6 +314,10 @@ pub async fn run_web_server(
             "/local-api/{profile_id}/{scope}/{target_api_type}/v1/messages",
             post(api_proxy::local_messages_handler),
         )
+        .layer(DefaultBodyLimit::max(LOCAL_PROXY_BODY_LIMIT_BYTES));
+
+    let public = Router::new()
+        .merge(proxy_routes)
         .route(
             "/internal/agent-hooks/codex",
             post(agent_hooks::codex_hook_handler),
