@@ -82,7 +82,7 @@ function SectionCard({
   className?: string
 }) {
   return (
-    <section className={cn("border border-border rounded-lg overflow-hidden", className)}>
+    <section className={cn("border border-border rounded-md overflow-hidden", className)}>
       {(title || icon || badge !== undefined) && (
         <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/40 border-b border-border">
           {icon}

@@ -86,7 +86,7 @@ export function Previews() {
         <StatusBanner>{error}</StatusBanner>
       )}
 
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="rounded-md border border-border bg-card overflow-hidden">
         {data?.previews.map((p, i) => (
           <PreviewRow
             key={p.slug}

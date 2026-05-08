@@ -121,7 +121,7 @@ export function ProfileCard({
           <div
             ref={dragHandleRef}
             role="button"
-            tabIndex={0}
+            tabIndex={dragHandleDisabled ? -1 : 0}
             aria-label={t("Reorder {{label}}", { label: profile.label })}
             aria-disabled={dragHandleDisabled}
             className={`mt-0.5 h-7 w-5 shrink-0 rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground inline-flex items-center justify-center select-none ${
