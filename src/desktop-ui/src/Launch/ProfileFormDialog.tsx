@@ -29,6 +29,7 @@ import {
   pruneOverrides,
   pruneProviderSettings,
   providerApiKindEndpoints,
+  providerApiKindsEditable,
   selectedEndpoint,
   stripEmpty,
 } from "./profileFormHelpers";
@@ -129,7 +130,7 @@ export function ProfileFormDialog({
   }, [provider, editing]);
 
   useEffect(() => {
-    if (!provider || provider.id === "custom") return;
+    if (!provider || providerApiKindsEditable(provider)) return;
     const apiKinds = providerApiKindEndpoints(provider).map((e) => e.api_type);
     setSelectedApiTypes((current) =>
       arraysEqual(current, apiKinds) ? current : apiKinds,

@@ -12,7 +12,7 @@ use futures_util::{Stream, StreamExt};
 use serde_json::{json, Value};
 
 use common::profiles::{
-    catalog, headers::merged_upstream_headers, normalize_legacy_profile, schema,
+    catalog, headers::merged_upstream_headers, normalize_legacy_profile_and_persist, schema,
 };
 
 use crate::agent_hooks::CodexSessionState;
@@ -196,7 +196,7 @@ fn upstream_chat_completions_endpoint(
     provider_context: ProviderProxyContext,
 ) -> Result<UpstreamChatCompletionsEndpoint, (StatusCode, String)> {
     let profile = schema::load(profile_id)
-        .map(normalize_legacy_profile)
+        .map(normalize_legacy_profile_and_persist)
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,

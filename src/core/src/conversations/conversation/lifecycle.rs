@@ -126,7 +126,7 @@ impl Conversation {
         ];
         if profile_uses_vibearound_credentials(&profile) {
             if let Some(profile_def) =
-                profiles::schema::load(&profile).map(profiles::normalize_legacy_profile)
+                profiles::schema::load(&profile).map(profiles::normalize_legacy_profile_and_persist)
             {
                 match profiles::runtime::env_for_launch(&profile_def, &agent_id) {
                     Ok(profile_env) => {

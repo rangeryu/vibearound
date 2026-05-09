@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use common::agent_state;
 use common::profiles::schema::{ApiTypeOverrides, ProviderSettings};
-use common::profiles::{catalog, normalize_legacy_profile, schema};
+use common::profiles::{catalog, normalize_legacy_profile_and_persist, schema};
 use common::{config, profiles::AuthMode};
 use serde::Deserialize;
 
@@ -41,7 +41,7 @@ impl ProfileDraft {
 
 pub(super) fn get_profile(id: &str) -> Result<schema::ProfileDef, String> {
     schema::load(id)
-        .map(normalize_legacy_profile)
+        .map(normalize_legacy_profile_and_persist)
         .ok_or_else(|| format!("profile '{id}' not found"))
 }
 
@@ -85,7 +85,7 @@ pub(super) fn delete_profile(id: &str) -> Result<(), String> {
 pub(super) fn reorder_profiles(profile_ids: Vec<String>) -> Result<(), String> {
     let profiles: Vec<_> = schema::list()
         .into_iter()
-        .map(normalize_legacy_profile)
+        .map(normalize_legacy_profile_and_persist)
         .collect();
     let existing_ids: HashSet<_> = profiles.iter().map(|profile| profile.id.as_str()).collect();
     let mut seen = HashSet::new();
@@ -110,7 +110,7 @@ pub(super) fn reorder_profiles(profile_ids: Vec<String>) -> Result<(), String> {
 pub(crate) fn ordered_profiles() -> Vec<schema::ProfileDef> {
     let mut remaining: Vec<_> = schema::list()
         .into_iter()
-        .map(normalize_legacy_profile)
+        .map(normalize_legacy_profile_and_persist)
         .collect();
     let mut out = Vec::new();
 

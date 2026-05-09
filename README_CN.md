@@ -30,7 +30,7 @@ VibeAround 把你的电脑变成本地优先的 AI 编程控制中心。Claude C
 
 ### 打通 AI API 格式
 
-让 DeepSeek、Qwen/DashScope、Kimi、MiniMax、Z.AI/GLM 等 provider 接入你喜欢的本地 Coding Agent，即使它们的 API 格式并不一样。
+让 DeepSeek、阿里云百炼、Kimi、MiniMax、Z.AI/GLM 等 provider 接入你喜欢的本地 Coding Agent，即使它们的 API 格式并不一样。
 
 ### 从桌面、浏览器或 IM 对话
 
@@ -81,7 +81,7 @@ Provider profile 让本地 Agent 可以连接官方 API、OpenAI-compatible endp
 | Provider | Profile 支持 |
 |---|---|
 | DeepSeek | 内置 endpoint 和 proxy route |
-| Qwen / DashScope | 内置国际站和中国站 endpoint |
+| 阿里云百炼 | 内置 Coding Plan 和 Token Plan endpoint |
 | Moonshot / Kimi | 内置 OpenAI-compatible 和 proxy route |
 | MiniMax | 内置 OpenAI-compatible 和 proxy route |
 | Z.AI / GLM | 内置 endpoint 和 proxy route |

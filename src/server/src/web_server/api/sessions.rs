@@ -84,7 +84,7 @@ pub async fn create_session_handler(
                 ));
             }
             let profile = common::profiles::schema::load(profile_id)
-                .map(common::profiles::normalize_legacy_profile)
+                .map(common::profiles::normalize_legacy_profile_and_persist)
                 .ok_or_else(|| {
                     (
                         StatusCode::BAD_REQUEST,

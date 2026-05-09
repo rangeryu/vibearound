@@ -30,7 +30,7 @@ Start Claude Code, Codex CLI, Gemini CLI, OpenCode, and other agents in the righ
 
 ### Bridge AI API formats
 
-Use providers such as DeepSeek, Qwen/DashScope, Kimi, MiniMax, and Z.AI/GLM from the local coding agent you like, even when their API formats do not match.
+Use providers such as DeepSeek, Alibaba DashScope, Kimi, MiniMax, and Z.AI/GLM from the local coding agent you like, even when their API formats do not match.
 
 ### Chat from desktop, browser, or IM
 
@@ -81,7 +81,7 @@ Provider profiles let you launch local agents against first-party APIs, OpenAI-c
 | Provider | Profile support |
 |---|---|
 | DeepSeek | Built-in endpoints and proxy routes |
-| Qwen / DashScope | Built-in global and China endpoints |
+| Alibaba DashScope | Built-in Coding Plan and Token Plan endpoints |
 | Moonshot / Kimi | Built-in OpenAI-compatible and proxy routes |
 | MiniMax | Built-in OpenAI-compatible and proxy routes |
 | Z.AI / GLM | Built-in endpoints and proxy routes |

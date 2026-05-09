@@ -7,7 +7,7 @@ pub async fn list_profiles_handler() -> Json<Vec<crate::api_types::ProfileLaunch
         common::profiles::connections::merged_profile_connections(&agent_prefs);
     let profiles = common::profiles::schema::list()
         .into_iter()
-        .map(common::profiles::normalize_legacy_profile)
+        .map(common::profiles::normalize_legacy_profile_and_persist)
         .map(|profile| {
             let launch_targets =
                 common::profiles::connections::launch_targets_for_profile_with_connections(

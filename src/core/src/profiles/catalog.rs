@@ -409,7 +409,7 @@ mod tests {
         assert!(entries.len() >= 5);
         assert!(get("moonshot").is_some());
         assert!(get("kimi").is_some());
-        assert!(get("qwen").is_some());
+        assert!(get("dashscope").is_some());
         assert!(get("openrouter").is_some());
         assert!(get("minimax").is_some());
         assert!(get("deepseek").is_some());
@@ -446,8 +446,8 @@ mod tests {
     }
 
     #[test]
-    fn qwen_exposes_endpoint_flavors_under_one_api_type() {
-        let provider = get("qwen").expect("qwen must exist");
+    fn dashscope_exposes_protocol_specific_plan_endpoints() {
+        let provider = get("dashscope").expect("dashscope must exist");
         let endpoints: Vec<_> = provider
             .endpoints
             .iter()
@@ -457,21 +457,29 @@ mod tests {
         assert_eq!(
             endpoints,
             vec![
-                "coding-global",
-                "coding-cn",
-                "standard-global",
-                "standard-cn"
+                "coding-plan",
+                "coding-plan-cn",
+                "token-plan",
+                "token-plan-cn"
             ]
         );
-        let standard = find_endpoint(provider, "openai-chat", Some("standard-global"))
-            .expect("standard global endpoint");
+        let anthropic_endpoints: Vec<_> = provider
+            .endpoints
+            .iter()
+            .filter(|e| e.api_type == "anthropic")
+            .map(endpoint_id)
+            .collect();
+        assert_eq!(anthropic_endpoints, vec!["coding-plan", "coding-plan-cn"]);
+
+        let token = find_endpoint(provider, "openai-chat", Some("token-plan"))
+            .expect("token plan endpoint");
         assert_eq!(
-            standard.default_base_url,
+            token.default_base_url,
             "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
         );
 
-        let coding = find_endpoint(provider, "openai-chat", Some("coding-global"))
-            .expect("coding global endpoint");
+        let coding = find_endpoint(provider, "openai-chat", Some("coding-plan"))
+            .expect("coding plan endpoint");
         assert_eq!(
             coding.default_base_url,
             "https://coding-intl.dashscope.aliyuncs.com/v1"
@@ -491,6 +499,14 @@ mod tests {
             Some("openai")
         );
         assert!(coding.models.iter().any(|model| model.id == "qwen3.6-plus"));
+
+        let anthropic = find_endpoint(provider, "anthropic", Some("coding-plan"))
+            .expect("coding plan anthropic endpoint");
+        assert_eq!(
+            anthropic.default_base_url,
+            "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"
+        );
+        assert!(anthropic.auth_header);
     }
 
     #[test]

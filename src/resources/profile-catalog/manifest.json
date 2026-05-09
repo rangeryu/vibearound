@@ -9,8 +9,8 @@
       "file": "kimi.json"
     },
     {
-      "id": "qwen",
-      "file": "qwen.json"
+      "id": "dashscope",
+      "file": "dashscope.json"
     },
     {
       "id": "openrouter",

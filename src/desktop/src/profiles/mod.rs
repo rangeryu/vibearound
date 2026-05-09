@@ -16,7 +16,7 @@ mod workspace;
 use std::path::PathBuf;
 
 use common::agent_state;
-use common::profiles::{normalize_legacy_profile, schema};
+use common::profiles::{normalize_legacy_profile_and_persist, schema};
 use common::{config, resources};
 use tauri::Emitter;
 
@@ -85,7 +85,7 @@ pub fn profiles_reorder(app: tauri::AppHandle, profile_ids: Vec<String>) -> Resu
 #[tauri::command]
 pub fn profiles_launch(id: String, launch_target: String) -> Result<(), String> {
     let profile = schema::load(&id)
-        .map(normalize_legacy_profile)
+        .map(normalize_legacy_profile_and_persist)
         .ok_or_else(|| format!("profile '{id}' not found"))?;
     if !profile_can_launch_agent(&profile, &launch_target) {
         return Err(format!("profile '{id}' cannot launch '{launch_target}'"));
@@ -134,7 +134,7 @@ pub fn profiles_launch_default() -> Result<(), String> {
     let agent_id = agent_state::resolve_default_agent(&agent_prefs, &cfg);
     let profile_id = agent_state::resolve_default_profile(&agent_prefs, &cfg, &agent_id);
     if let Some(profile_id) = profile_id {
-        if let Some(profile) = schema::load(&profile_id).map(normalize_legacy_profile) {
+        if let Some(profile) = schema::load(&profile_id).map(normalize_legacy_profile_and_persist) {
             if profile_can_launch_agent(&profile, &agent_id) {
                 return launcher::launch(&profile, &agent_id).map_err(|e| e.to_string());
             }
@@ -150,7 +150,7 @@ pub fn profiles_launch_resume(
     session_id: String,
 ) -> Result<(), String> {
     let profile = schema::load(&id)
-        .map(normalize_legacy_profile)
+        .map(normalize_legacy_profile_and_persist)
         .ok_or_else(|| format!("profile '{id}' not found"))?;
     if !profile_can_launch_agent(&profile, &launch_target) {
         return Err(format!("profile '{id}' cannot launch '{launch_target}'"));
@@ -276,7 +276,7 @@ pub fn launcher_set_profile_connection(
         other => return Err(format!("unsupported connection target: '{other}'")),
     };
     let profile = schema::load(&profile_id)
-        .map(normalize_legacy_profile)
+        .map(normalize_legacy_profile_and_persist)
         .ok_or_else(|| format!("profile '{profile_id}' not found"))?;
     let preference = sanitize_profile_connection_preference(&profile, &agent_id, preference)?;
 

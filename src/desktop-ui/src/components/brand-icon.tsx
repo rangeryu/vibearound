@@ -14,6 +14,7 @@ const CLI_LOGOS: Record<string, string> = {
 
 const PROVIDER_LOGOS: Record<string, string> = {
   azure: "/brand/provider-azure.svg",
+  dashscope: "/brand/provider-dashscope.svg",
   deepseek: "/brand/provider-deepseek-color.svg",
   gemini: "/brand/provider-gemini-color.svg",
   minimax: "/brand/provider-minimax-color.svg",

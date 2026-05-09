@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use common::agent_state;
-use common::profiles::{normalize_legacy_profile, schema};
+use common::profiles::{normalize_legacy_profile_and_persist, schema};
 use common::{config, resources};
 use serde::Serialize;
 
@@ -123,7 +123,7 @@ pub(super) fn validate_agent_profile_selection(
 
     if let Some(profile_id) = &profile_id {
         let profile = schema::load(profile_id)
-            .map(normalize_legacy_profile)
+            .map(normalize_legacy_profile_and_persist)
             .ok_or_else(|| format!("profile '{profile_id}' not found"))?;
         if !profile_can_launch_agent(&profile, &agent_id) {
             return Err(format!("profile '{profile_id}' cannot launch '{agent_id}'"));

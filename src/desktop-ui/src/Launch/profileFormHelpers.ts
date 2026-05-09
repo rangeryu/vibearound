@@ -88,6 +88,10 @@ export function providerApiKindEndpoints(provider: CatalogEntry): CatalogEntry["
   return out;
 }
 
+export function providerApiKindsEditable(provider: CatalogEntry): boolean {
+  return provider.id === "custom" || provider.id === "dashscope";
+}
+
 export function endpointsForApiType(
   provider: CatalogEntry,
   apiType: string,

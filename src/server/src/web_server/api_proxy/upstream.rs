@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 use common::profiles::schema::ProfileDef;
-use common::profiles::{catalog, normalize_legacy_profile, schema};
+use common::profiles::{catalog, normalize_legacy_profile_and_persist, schema};
 
 use super::{json_error, ProxyProtocol};
 
@@ -28,7 +28,7 @@ pub(super) fn upstream_endpoint(
         )
     })?;
     let profile = schema::load(profile_id)
-        .map(normalize_legacy_profile)
+        .map(normalize_legacy_profile_and_persist)
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,

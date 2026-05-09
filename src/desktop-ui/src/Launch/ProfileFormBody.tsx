@@ -21,6 +21,7 @@ import {
   endpointId,
   endpointLabel,
   endpointsForApiType,
+  providerApiKindsEditable,
   providerApiKindEndpoints,
   selectedEndpoint,
   collectFields,
@@ -64,7 +65,7 @@ export function FormBody({
   const { t } = useI18n();
   const fieldDefs = collectFields(provider, selectedApiTypes, "api_key");
   const apiKindEndpoints = providerApiKindEndpoints(provider);
-  const apiKindsEditable = provider.id === "custom";
+  const apiKindsEditable = providerApiKindsEditable(provider);
 
   return (
     <div className="space-y-3">
@@ -121,7 +122,6 @@ export function FormBody({
                     <span className="font-mono px-1.5 py-0.5 rounded bg-muted">
                       {apiTypeShort(apiType)}
                     </span>
-                    <span className="text-muted-foreground">{apiType}</span>
                   </div>
                   {endpointOptions.length > 1 && (
                     <FieldRow label={t("Endpoint type")}>
