@@ -2,7 +2,7 @@
 //! Native menu with quick actions; "Show Window" opens the main webview window.
 //! During onboarding, service-related items are disabled until `onboarding-complete` fires.
 
-use std::sync::atomic::Ordering;
+use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -87,7 +87,7 @@ impl TrayText {
             Self::LaunchWithoutProfile => "Launch Without Profile",
             Self::OpenDashboard => "Open Dashboard",
             Self::OpenTunnel => "Open Tunnel",
-            Self::Proxy => "Proxy",
+            Self::Proxy => "proxy",
             Self::Quit => "Quit",
         }
     }
@@ -231,7 +231,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             .enabled(launch_enabled)
             .build(app)?;
     let direct_launch_menu = build_direct_launch_submenu(app, launch_enabled, locale)?;
-    let profile_menus = build_profile_submenus(app, launch_enabled, locale)?;
+    let profile_menus = build_agent_profile_submenus(app, launch_enabled, locale)?;
     let open_local_item =
         MenuItemBuilder::with_id(MENU_OPEN_LOCAL, locale.text(TrayText::OpenDashboard))
             .enabled(launch_enabled)
@@ -285,65 +285,117 @@ fn build_direct_launch_submenu<R: Runtime>(
     builder.build()
 }
 
-fn build_profile_submenus<R: Runtime>(
+#[derive(Debug)]
+struct AgentProfileMenuGroup {
+    agent_id: &'static str,
+    label: &'static str,
+    entries: Vec<AgentProfileMenuEntry>,
+}
+
+#[derive(Debug)]
+struct AgentProfileMenuEntry {
+    profile_id: String,
+    label: String,
+    uses_proxy_label: bool,
+}
+
+fn build_agent_profile_submenus<R: Runtime>(
     app: &AppHandle<R>,
     launch_enabled: bool,
     locale: UiLocale,
 ) -> tauri::Result<Vec<tauri::menu::Submenu<R>>> {
     let profiles = crate::profiles::ordered_profiles();
-
-    if profiles.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let provider_counts = profile_provider_counts(&profiles);
     let agent_prefs = common::agent_state::read_prefs();
     let profile_connections =
         common::profiles::connections::merged_profile_connections(&agent_prefs);
-    let mut out = Vec::new();
-    for profile in &profiles {
-        let targets = common::profiles::connections::launch_targets_for_profile_with_connections(
-            profile,
-            &profile_connections,
-        );
-        if targets.is_empty() {
-            continue;
-        }
 
-        let title = profile_menu_title(profile, &provider_counts);
-        let mut profile_builder = SubmenuBuilder::with_id(
+    let groups = agent_profile_menu_groups(&profiles, &profile_connections);
+    let mut out = Vec::new();
+
+    for group in groups {
+        let mut agent_builder = SubmenuBuilder::with_id(
             app,
-            format!("launch_profile_menu:{}", profile.id),
-            menu_text(&title),
+            format!("launch_profile_agent_menu:{}", group.agent_id),
+            menu_text(group.label),
         )
         .enabled(launch_enabled);
 
-        for target in targets {
-            let label = profile_target_menu_label(&target, locale);
-            let item = MenuItemBuilder::with_id(
-                format!("{}{}:{}", MENU_LAUNCH_PROFILE_PREFIX, profile.id, target.id),
-                menu_text(&label),
-            )
-            .enabled(launch_enabled)
-            .build(app)?;
-            profile_builder = profile_builder.item(&item);
+        for entry in group.entries {
+            let menu_id = format!(
+                "{}{}:{}",
+                MENU_LAUNCH_PROFILE_PREFIX, entry.profile_id, group.agent_id
+            );
+            let label = profile_entry_menu_label(&entry, locale);
+            let item = MenuItemBuilder::with_id(menu_id, menu_text(&label))
+                .enabled(launch_enabled)
+                .build(app)?;
+            agent_builder = agent_builder.item(&item);
         }
 
-        let profile_menu = profile_builder.build()?;
-        out.push(profile_menu);
+        let agent_menu = agent_builder.build()?;
+        out.push(agent_menu);
     }
 
     Ok(out)
 }
 
-fn profile_target_menu_label(
-    target: &common::profiles::connections::ProfileLaunchTarget,
-    locale: UiLocale,
-) -> String {
-    if target.proxy_target_api_type.is_some() {
-        format!("{} ({})", target.label, locale.text(TrayText::Proxy))
+fn agent_profile_menu_groups(
+    profiles: &[common::profiles::ProfileDef],
+    connections: &common::agent_state::ProfileConnectionPreferences,
+) -> Vec<AgentProfileMenuGroup> {
+    if profiles.is_empty() {
+        return Vec::new();
+    }
+
+    let provider_counts = profile_provider_counts(profiles);
+    let mut groups: BTreeMap<&'static str, AgentProfileMenuGroup> = BTreeMap::new();
+    for profile in profiles {
+        let profile_label = profile_menu_title(profile, &provider_counts);
+        let targets = common::profiles::connections::launch_targets_for_profile_with_connections(
+            profile,
+            connections,
+        );
+        for target in targets {
+            let group = groups
+                .entry(target.id)
+                .or_insert_with(|| AgentProfileMenuGroup {
+                    agent_id: target.id,
+                    label: target.label,
+                    entries: Vec::new(),
+                });
+            group.entries.push(AgentProfileMenuEntry {
+                profile_id: profile.id.clone(),
+                label: profile_label.clone(),
+                uses_proxy_label: target_uses_proxy_label(&target),
+            });
+        }
+    }
+
+    ordered_agent_profile_menu_groups(groups)
+}
+
+fn ordered_agent_profile_menu_groups(
+    mut groups: BTreeMap<&'static str, AgentProfileMenuGroup>,
+) -> Vec<AgentProfileMenuGroup> {
+    let mut out = Vec::with_capacity(groups.len());
+    for agent in common::resources::AGENTS.iter() {
+        if let Some(group) = groups.remove(agent.id.as_str()) {
+            out.push(group);
+        }
+    }
+    out.extend(groups.into_values());
+    out
+}
+
+fn target_uses_proxy_label(target: &common::profiles::connections::ProfileLaunchTarget) -> bool {
+    target.proxy_target_api_type.is_some()
+}
+
+fn profile_entry_menu_label(entry: &AgentProfileMenuEntry, locale: UiLocale) -> String {
+    if entry.uses_proxy_label {
+        format!("{} ({})", entry.label, locale.text(TrayText::Proxy))
     } else {
-        target.label.to_string()
+        entry.label.clone()
     }
 }
 
@@ -451,10 +503,26 @@ fn menu_text(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
     use common::profiles::connections::ProfileLaunchTarget;
+    use common::profiles::schema::{AuthMode, ProfileDef, ProviderSettings};
+
+    fn profile(id: &str, label: &str, api_types: &[&str]) -> ProfileDef {
+        ProfileDef {
+            id: id.to_string(),
+            label: label.to_string(),
+            provider: "custom".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: api_types.iter().map(|value| (*value).to_string()).collect(),
+            credentials: BTreeMap::new(),
+            overrides: BTreeMap::new(),
+            provider_settings: ProviderSettings::default(),
+        }
+    }
 
     #[test]
-    fn profile_target_label_marks_proxy_routes() {
+    fn proxy_launch_targets_use_proxy_label() {
         let target = ProfileLaunchTarget {
             id: "codex",
             label: "Codex",
@@ -462,18 +530,11 @@ mod tests {
             proxy_target_api_type: Some("anthropic".to_string()),
         };
 
-        assert_eq!(
-            profile_target_menu_label(&target, UiLocale::En),
-            "Codex (Proxy)"
-        );
-        assert_eq!(
-            profile_target_menu_label(&target, UiLocale::ZhCn),
-            "Codex (代理)"
-        );
+        assert!(target_uses_proxy_label(&target));
     }
 
     #[test]
-    fn profile_target_label_leaves_native_routes_plain() {
+    fn native_launch_targets_do_not_use_proxy_label() {
         let target = ProfileLaunchTarget {
             id: "gemini",
             label: "Gemini CLI",
@@ -481,9 +542,68 @@ mod tests {
             proxy_target_api_type: None,
         };
 
+        assert!(!target_uses_proxy_label(&target));
+    }
+
+    #[test]
+    fn profile_entry_label_marks_proxy_routes() {
+        let entry = AgentProfileMenuEntry {
+            profile_id: "deepseek".to_string(),
+            label: "DeepSeek".to_string(),
+            uses_proxy_label: true,
+        };
+
         assert_eq!(
-            profile_target_menu_label(&target, UiLocale::En),
-            "Gemini CLI"
+            profile_entry_menu_label(&entry, UiLocale::En),
+            "DeepSeek (proxy)"
         );
+        assert_eq!(
+            profile_entry_menu_label(&entry, UiLocale::ZhCn),
+            "DeepSeek (代理)"
+        );
+    }
+
+    #[test]
+    fn profile_launch_groups_are_agent_first_with_profile_entries() {
+        let profiles = vec![
+            profile("anthropic-profile", "Anthropic Profile", &["anthropic"]),
+            profile("openai-profile", "OpenAI Profile", &["openai-responses"]),
+        ];
+        let connections = [(
+            "anthropic-profile".to_string(),
+            [(
+                "codex".to_string(),
+                common::agent_state::ProfileConnectionPreference {
+                    selected_api_type: Some("openai-responses".to_string()),
+                    proxy: [(
+                        "openai-responses".to_string(),
+                        common::agent_state::ProfileProxyPreference {
+                            enabled: true,
+                            target_api_type: Some("anthropic".to_string()),
+                            ..Default::default()
+                        },
+                    )]
+                    .into_iter()
+                    .collect(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        )]
+        .into_iter()
+        .collect();
+
+        let groups = agent_profile_menu_groups(&profiles, &connections);
+        let codex = groups
+            .iter()
+            .find(|group| group.agent_id == "codex")
+            .expect("codex group");
+
+        assert_eq!(codex.label, "Codex");
+        assert_eq!(codex.entries.len(), 2);
+        assert_eq!(codex.entries[0].profile_id, "anthropic-profile");
+        assert!(codex.entries[0].uses_proxy_label);
+        assert_eq!(codex.entries[1].profile_id, "openai-profile");
+        assert!(!codex.entries[1].uses_proxy_label);
     }
 }
