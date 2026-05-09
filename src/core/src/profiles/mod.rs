@@ -16,6 +16,11 @@ pub mod schema;
 
 pub use schema::{AuthMode, ProfileDef};
 
+const DASHSCOPE_PROVIDER_ID: &str = "dashscope";
+const DASHSCOPE_LABEL: &str = "Alibaba DashScope";
+const LEGACY_QWEN_PROVIDER_ID: &str = "qwen";
+const LEGACY_QWEN_LABEL: &str = "Qwen / DashScope";
+
 pub fn normalize_legacy_profile(mut profile: ProfileDef) -> ProfileDef {
     normalize_legacy_dashscope_profile(&mut profile);
 
@@ -55,11 +60,15 @@ pub fn normalize_legacy_profile_and_persist(profile: ProfileDef) -> ProfileDef {
 }
 
 fn normalize_legacy_dashscope_profile(profile: &mut ProfileDef) {
-    if profile.provider == "qwen" {
-        profile.provider = "dashscope".to_string();
+    if profile.provider == LEGACY_QWEN_PROVIDER_ID {
+        profile.provider = DASHSCOPE_PROVIDER_ID.to_string();
     }
-    if profile.provider != "dashscope" {
+    if profile.provider != DASHSCOPE_PROVIDER_ID {
         return;
+    }
+
+    if profile.label == LEGACY_QWEN_LABEL {
+        profile.label = DASHSCOPE_LABEL.to_string();
     }
 
     for overrides in profile.overrides.values_mut() {
@@ -78,14 +87,15 @@ fn normalize_legacy_dashscope_profile(profile: &mut ProfileDef) {
 }
 
 fn needs_dashscope_profile_persist(profile: &ProfileDef) -> bool {
-    profile.provider == "qwen"
-        || (profile.provider == "dashscope"
-            && profile.overrides.values().any(|overrides| {
-                matches!(
-                    overrides.endpoint_id.as_deref(),
-                    Some("coding-global" | "coding-cn" | "standard-global" | "standard-cn")
-                )
-            }))
+    profile.provider == LEGACY_QWEN_PROVIDER_ID
+        || (profile.provider == DASHSCOPE_PROVIDER_ID
+            && (profile.label == LEGACY_QWEN_LABEL
+                || profile.overrides.values().any(|overrides| {
+                    matches!(
+                        overrides.endpoint_id.as_deref(),
+                        Some("coding-global" | "coding-cn" | "standard-global" | "standard-cn")
+                    )
+                })))
 }
 
 #[cfg(test)]
@@ -109,7 +119,7 @@ mod tests {
         );
         let profile = ProfileDef {
             id: "qwen-old".to_string(),
-            label: "Alibaba DashScope".to_string(),
+            label: LEGACY_QWEN_LABEL.to_string(),
             provider: "qwen".to_string(),
             auth_mode: AuthMode::ApiKey,
             api_types: vec!["openai-chat".to_string()],
@@ -121,6 +131,7 @@ mod tests {
         let profile = normalize_legacy_profile(profile);
 
         assert_eq!(profile.provider, "dashscope");
+        assert_eq!(profile.label, DASHSCOPE_LABEL);
         assert_eq!(
             profile
                 .overrides
@@ -128,5 +139,24 @@ mod tests {
                 .and_then(|overrides| overrides.endpoint_id.as_deref()),
             Some("token-plan-cn")
         );
+    }
+
+    #[test]
+    fn preserves_custom_legacy_qwen_profile_label() {
+        let profile = ProfileDef {
+            id: "qwen-custom".to_string(),
+            label: "Work DashScope".to_string(),
+            provider: "qwen".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials: BTreeMap::new(),
+            overrides: BTreeMap::new(),
+            provider_settings: ProviderSettings::default(),
+        };
+
+        let profile = normalize_legacy_profile(profile);
+
+        assert_eq!(profile.provider, "dashscope");
+        assert_eq!(profile.label, "Work DashScope");
     }
 }
