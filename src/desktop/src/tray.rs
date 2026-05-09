@@ -61,6 +61,7 @@ impl UiLocale {
                 TrayText::LaunchWithoutProfile => "不使用 Profile 启动",
                 TrayText::OpenDashboard => "打开控制台",
                 TrayText::OpenTunnel => "打开隧道",
+                TrayText::Proxy => "代理",
                 TrayText::Quit => "退出",
             },
         }
@@ -74,6 +75,7 @@ enum TrayText {
     LaunchWithoutProfile,
     OpenDashboard,
     OpenTunnel,
+    Proxy,
     Quit,
 }
 
@@ -85,6 +87,7 @@ impl TrayText {
             Self::LaunchWithoutProfile => "Launch Without Profile",
             Self::OpenDashboard => "Open Dashboard",
             Self::OpenTunnel => "Open Tunnel",
+            Self::Proxy => "Proxy",
             Self::Quit => "Quit",
         }
     }
@@ -228,7 +231,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             .enabled(launch_enabled)
             .build(app)?;
     let direct_launch_menu = build_direct_launch_submenu(app, launch_enabled, locale)?;
-    let profile_menus = build_profile_submenus(app, launch_enabled)?;
+    let profile_menus = build_profile_submenus(app, launch_enabled, locale)?;
     let open_local_item =
         MenuItemBuilder::with_id(MENU_OPEN_LOCAL, locale.text(TrayText::OpenDashboard))
             .enabled(launch_enabled)
@@ -285,6 +288,7 @@ fn build_direct_launch_submenu<R: Runtime>(
 fn build_profile_submenus<R: Runtime>(
     app: &AppHandle<R>,
     launch_enabled: bool,
+    locale: UiLocale,
 ) -> tauri::Result<Vec<tauri::menu::Submenu<R>>> {
     let profiles = crate::profiles::ordered_profiles();
 
@@ -315,9 +319,10 @@ fn build_profile_submenus<R: Runtime>(
         .enabled(launch_enabled);
 
         for target in targets {
+            let label = profile_target_menu_label(&target, locale);
             let item = MenuItemBuilder::with_id(
                 format!("{}{}:{}", MENU_LAUNCH_PROFILE_PREFIX, profile.id, target.id),
-                menu_text(target.label),
+                menu_text(&label),
             )
             .enabled(launch_enabled)
             .build(app)?;
@@ -329,6 +334,17 @@ fn build_profile_submenus<R: Runtime>(
     }
 
     Ok(out)
+}
+
+fn profile_target_menu_label(
+    target: &common::profiles::connections::ProfileLaunchTarget,
+    locale: UiLocale,
+) -> String {
+    if target.proxy_target_api_type.is_some() {
+        format!("{} ({})", target.label, locale.text(TrayText::Proxy))
+    } else {
+        target.label.to_string()
+    }
 }
 
 fn rebuild_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
@@ -430,4 +446,44 @@ fn profile_menu_title(
 
 fn menu_text(text: &str) -> String {
     text.replace('&', "&&")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::profiles::connections::ProfileLaunchTarget;
+
+    #[test]
+    fn profile_target_label_marks_proxy_routes() {
+        let target = ProfileLaunchTarget {
+            id: "codex",
+            label: "Codex",
+            api_type: "openai-responses".to_string(),
+            proxy_target_api_type: Some("anthropic".to_string()),
+        };
+
+        assert_eq!(
+            profile_target_menu_label(&target, UiLocale::En),
+            "Codex (Proxy)"
+        );
+        assert_eq!(
+            profile_target_menu_label(&target, UiLocale::ZhCn),
+            "Codex (代理)"
+        );
+    }
+
+    #[test]
+    fn profile_target_label_leaves_native_routes_plain() {
+        let target = ProfileLaunchTarget {
+            id: "gemini",
+            label: "Gemini CLI",
+            api_type: "gemini".to_string(),
+            proxy_target_api_type: None,
+        };
+
+        assert_eq!(
+            profile_target_menu_label(&target, UiLocale::En),
+            "Gemini CLI"
+        );
+    }
 }
