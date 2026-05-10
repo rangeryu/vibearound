@@ -374,6 +374,7 @@ fn copy_fields(from: &Map<String, Value>, to: &mut Map<String, Value>, names: &[
 fn merge_consecutive_tool_calls(messages: Vec<Value>) -> Vec<Value> {
     let mut merged: Vec<Value> = Vec::new();
     let mut pending: Vec<Value> = Vec::new();
+    let mut pending_content: Option<String> = None;
 
     for message in messages {
         let role = message.get("role").and_then(Value::as_str);
@@ -387,27 +388,51 @@ fn merge_consecutive_tool_calls(messages: Vec<Value>) -> Vec<Value> {
             if let Some(tool_calls) = message.get("tool_calls").and_then(Value::as_array) {
                 pending.extend(tool_calls.clone());
             }
-        } else {
-            if !pending.is_empty() {
-                merged.push(json!({
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": std::mem::take(&mut pending),
-                }));
+        } else if role == Some("assistant") && !pending.is_empty() && !has_tool_calls {
+            if let Some(content) = message.get("content") {
+                append_pending_tool_content(&mut pending_content, content);
             }
+        } else {
+            flush_pending_tool_calls(&mut merged, &mut pending, &mut pending_content);
             merged.push(message);
         }
     }
 
-    if !pending.is_empty() {
-        merged.push(json!({
-            "role": "assistant",
-            "content": null,
-            "tool_calls": pending,
-        }));
-    }
+    flush_pending_tool_calls(&mut merged, &mut pending, &mut pending_content);
 
     merged
+}
+
+fn append_pending_tool_content(pending_content: &mut Option<String>, content: &Value) {
+    let content = value_to_string(content);
+    if content.trim().is_empty() {
+        return;
+    }
+
+    if let Some(existing) = pending_content {
+        if !existing.is_empty() {
+            existing.push_str("\n\n");
+        }
+        existing.push_str(&content);
+    } else {
+        *pending_content = Some(content);
+    }
+}
+
+fn flush_pending_tool_calls(
+    messages: &mut Vec<Value>,
+    pending: &mut Vec<Value>,
+    pending_content: &mut Option<String>,
+) {
+    if pending.is_empty() {
+        return;
+    }
+
+    messages.push(json!({
+        "role": "assistant",
+        "content": pending_content.take().map(Value::String).unwrap_or(Value::Null),
+        "tool_calls": std::mem::take(pending),
+    }));
 }
 
 fn value_to_text(value: &Value) -> Option<String> {
@@ -537,6 +562,56 @@ mod tests {
         assert_eq!(chat["messages"][0]["tool_calls"][0]["id"], "call_123");
         assert_eq!(chat["messages"][1]["role"], "tool");
         assert_eq!(chat["messages"][1]["tool_call_id"], "call_123");
+    }
+
+    #[test]
+    fn attaches_interleaved_assistant_text_to_pending_function_calls() {
+        let chat = responses_to_chat_request(json!({
+            "model": "chat-model",
+            "input": [
+                {
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "list_files",
+                    "arguments": "{\"path\":\".\"}"
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "call_2",
+                    "name": "show_file",
+                    "arguments": "{\"path\":\"Cargo.toml\"}"
+                },
+                {
+                    "role": "assistant",
+                    "content": "I will inspect the project first."
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_1",
+                    "output": "[\"Cargo.toml\"]"
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_2",
+                    "output": "[package]"
+                }
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(chat["messages"][0]["role"], "assistant");
+        assert_eq!(
+            chat["messages"][0]["content"],
+            "I will inspect the project first."
+        );
+        assert_eq!(
+            chat["messages"][0]["tool_calls"].as_array().unwrap().len(),
+            2
+        );
+        assert_eq!(chat["messages"][1]["role"], "tool");
+        assert_eq!(chat["messages"][1]["tool_call_id"], "call_1");
+        assert_eq!(chat["messages"][2]["role"], "tool");
+        assert_eq!(chat["messages"][2]["tool_call_id"], "call_2");
     }
 
     #[test]
