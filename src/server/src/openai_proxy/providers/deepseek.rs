@@ -633,16 +633,18 @@ fn inject_reasoning_content(scope: &str, chat_request: &mut Value) {
             continue;
         }
         let tool_calls = message.get("tool_calls").and_then(Value::as_array);
-        let reasoning_content = tool_calls
-            .and_then(|tool_calls| {
-                tool_calls
-                    .iter()
-                    .filter_map(|tool_call| tool_call.get("id").and_then(Value::as_str))
-                    .find_map(|call_id| lookup_reasoning(scope, call_id))
-                    .or_else(|| Some(MISSING_REASONING_CONTENT_FALLBACK.to_string()))
-            })
-            .or_else(|| lookup_reasoning_for_message(scope, message))
-            .unwrap_or_else(|| MISSING_REASONING_CONTENT_FALLBACK.to_string());
+        let reasoning_content = if let Some(tool_calls) = tool_calls {
+            tool_calls
+                .iter()
+                .filter_map(|tool_call| tool_call.get("id").and_then(Value::as_str))
+                .find_map(|call_id| lookup_reasoning(scope, call_id))
+                .unwrap_or_else(|| MISSING_REASONING_CONTENT_FALLBACK.to_string())
+        } else {
+            let Some(reasoning_content) = lookup_reasoning_for_message(scope, message) else {
+                continue;
+            };
+            reasoning_content
+        };
         if let Some(obj) = message.as_object_mut() {
             obj.insert(
                 "reasoning_content".to_string(),
@@ -1228,7 +1230,7 @@ mod tests {
     }
 
     #[test]
-    fn adds_fallback_reasoning_content_for_plain_assistant_history() {
+    fn leaves_plain_assistant_history_without_synthetic_reasoning() {
         let settings = thinking_settings();
         let mut chat_request = json!({
             "model": "deepseek-v4-flash",
@@ -1248,10 +1250,9 @@ mod tests {
             &mut chat_request,
         );
 
-        assert_eq!(
-            chat_request["messages"][0]["reasoning_content"],
-            super::MISSING_REASONING_CONTENT_FALLBACK
-        );
+        assert!(chat_request["messages"][0]
+            .get("reasoning_content")
+            .is_none());
         assert!(chat_request["messages"][1]
             .get("reasoning_content")
             .is_none());
