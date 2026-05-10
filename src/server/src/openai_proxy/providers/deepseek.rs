@@ -907,12 +907,21 @@ fn strip_anthropic_reasoning_content_blocks(chat_request: &mut Value) {
 }
 
 fn is_anthropic_reasoning_content_part(part: &Value) -> bool {
-    part.get("type").and_then(Value::as_str) == Some("unknown")
-        && part
-            .get("raw")
-            .and_then(|raw| raw.get("type"))
-            .and_then(Value::as_str)
-            == Some("reasoning")
+    let direct_type = part.get("type").and_then(Value::as_str);
+    if matches!(
+        direct_type,
+        Some("thinking" | "redacted_thinking" | "reasoning")
+    ) {
+        return true;
+    }
+
+    direct_type == Some("unknown")
+        && matches!(
+            part.get("raw")
+                .and_then(|raw| raw.get("type"))
+                .and_then(Value::as_str),
+            Some("thinking" | "redacted_thinking" | "reasoning")
+        )
 }
 
 pub(super) fn clear_reasoning_for_context(
@@ -1416,6 +1425,66 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn strips_anthropic_redacted_thinking_before_deepseek_chat() {
+        let settings = thinking_settings();
+        let original_request = json!({
+            "messages": [{
+                "role": "assistant",
+                "content": [
+                    { "type": "redacted_thinking", "data": "opaque-redacted-thinking" },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_pwd_redacted",
+                        "name": "exec_command",
+                        "input": { "cmd": "pwd" }
+                    }
+                ]
+            }, {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_pwd_redacted",
+                    "content": "/tmp/project"
+                }]
+            }]
+        });
+        let mut chat_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{
+                "role": "assistant",
+                "content": [{ "type": "redacted_thinking", "data": "opaque-redacted-thinking" }]
+            }, {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "toolu_pwd_redacted",
+                    "type": "function",
+                    "function": { "name": "exec_command", "arguments": "{\"cmd\":\"pwd\"}" }
+                }]
+            }, {
+                "role": "tool",
+                "tool_call_id": "toolu_pwd_redacted",
+                "content": "/tmp/project"
+            }]
+        });
+        let mut adapter = new_adapter("deepseek-anthropic-redacted", settings);
+
+        adapter.prepare_chat_request(
+            ProviderRequestSource::AnthropicMessages,
+            &original_request,
+            &mut chat_request,
+        );
+
+        let messages = chat_request["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["role"], "assistant");
+        assert_eq!(messages[0]["tool_calls"][0]["id"], "toolu_pwd_redacted");
+        assert!(messages[0].get("content").is_none() || messages[0]["content"].is_null());
+        assert_eq!(messages[1]["role"], "tool");
+        assert_eq!(messages[1]["tool_call_id"], "toolu_pwd_redacted");
     }
 
     #[test]
