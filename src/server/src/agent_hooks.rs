@@ -8,6 +8,8 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::openai_proxy::providers::clear_deepseek_reasoning_for_context;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CodexHookEnvelope {
     pub launch_id: String,
@@ -56,52 +58,74 @@ impl AgentHookRegistry {
         let prompt = string_field(&envelope.payload, "prompt");
         let last_assistant_message = string_field(&envelope.payload, "last_assistant_message");
 
-        let mut state = self
-            .codex_sessions_by_launch
-            .entry(envelope.launch_id.clone())
-            .or_insert_with(|| CodexSessionState {
-                launch_id: envelope.launch_id.clone(),
-                profile_id: envelope.profile_id.clone(),
-                launch_target: envelope.launch_target.clone(),
-                session_id: None,
-                transcript_path: None,
-                cwd: None,
-                model: None,
-                source: None,
-                last_event: envelope.event.clone(),
-                last_turn_id: None,
-                last_prompt: None,
-                last_assistant_message: None,
-                created_at: now.clone(),
-                updated_at: now.clone(),
-            });
+        let mut cleanup_context = None;
+        {
+            let mut state = self
+                .codex_sessions_by_launch
+                .entry(envelope.launch_id.clone())
+                .or_insert_with(|| CodexSessionState {
+                    launch_id: envelope.launch_id.clone(),
+                    profile_id: envelope.profile_id.clone(),
+                    launch_target: envelope.launch_target.clone(),
+                    session_id: None,
+                    transcript_path: None,
+                    cwd: None,
+                    model: None,
+                    source: None,
+                    last_event: envelope.event.clone(),
+                    last_turn_id: None,
+                    last_prompt: None,
+                    last_assistant_message: None,
+                    created_at: now.clone(),
+                    updated_at: now.clone(),
+                });
 
-        state.profile_id = state.profile_id.take().or(envelope.profile_id.clone());
-        state.launch_target = state
-            .launch_target
-            .take()
-            .or(envelope.launch_target.clone());
-        state.session_id = session_id.or_else(|| state.session_id.take());
-        state.transcript_path = transcript_path.or_else(|| state.transcript_path.take());
-        state.cwd = cwd.or_else(|| state.cwd.take());
-        state.model = model.or_else(|| state.model.take());
-        state.source = source.or_else(|| state.source.take());
-        state.last_event = envelope.event.clone();
-        state.last_turn_id = turn_id.or_else(|| state.last_turn_id.take());
-        state.last_prompt = prompt.or_else(|| state.last_prompt.take());
-        state.last_assistant_message =
-            last_assistant_message.or_else(|| state.last_assistant_message.take());
-        state.updated_at = now;
+            state.profile_id = state.profile_id.take().or(envelope.profile_id.clone());
+            state.launch_target = state
+                .launch_target
+                .take()
+                .or(envelope.launch_target.clone());
+            state.session_id = session_id.or_else(|| state.session_id.take());
+            state.transcript_path = transcript_path.or_else(|| state.transcript_path.take());
+            state.cwd = cwd.or_else(|| state.cwd.take());
+            state.model = model.or_else(|| state.model.take());
+            state.source = source.or_else(|| state.source.take());
+            state.last_event = envelope.event.clone();
+            state.last_turn_id = turn_id.or_else(|| state.last_turn_id.take());
+            state.last_prompt = prompt.or_else(|| state.last_prompt.take());
+            state.last_assistant_message =
+                last_assistant_message.or_else(|| state.last_assistant_message.take());
+            state.updated_at = now;
 
-        tracing::info!(
-            launch_id = %envelope.launch_id,
-            event = %envelope.event,
-            session_id = ?state.session_id,
-            transcript_path = ?state.transcript_path,
-            "[agent-hooks] Codex hook event"
-        );
+            tracing::info!(
+                launch_id = %envelope.launch_id,
+                event = %envelope.event,
+                session_id = ?state.session_id,
+                transcript_path = ?state.transcript_path,
+                "[agent-hooks] Codex hook event"
+            );
 
-        append_codex_event_jsonl(&envelope, &state);
+            append_codex_event_jsonl(&envelope, &state);
+
+            if is_codex_session_end_event(&envelope.event) {
+                cleanup_context = state.profile_id.clone().map(|profile_id| {
+                    (
+                        profile_id,
+                        state.launch_id.clone(),
+                        state.session_id.clone(),
+                    )
+                });
+            }
+        }
+
+        if let Some((profile_id, launch_id, session_id)) = cleanup_context {
+            clear_deepseek_reasoning_for_context(
+                &profile_id,
+                Some(&launch_id),
+                session_id.as_deref(),
+            );
+            self.codex_sessions_by_launch.remove(&envelope.launch_id);
+        }
     }
 
     pub fn codex_session_for_launch(&self, launch_id: &str) -> Option<CodexSessionState> {
@@ -109,6 +133,10 @@ impl AgentHookRegistry {
             .get(launch_id)
             .map(|entry| entry.value().clone())
     }
+}
+
+fn is_codex_session_end_event(event: &str) -> bool {
+    event == "SessionEnd"
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {

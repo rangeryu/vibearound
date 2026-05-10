@@ -102,7 +102,11 @@ async fn proxy_handler(
     };
     normalize_target_request(&mut upstream_request, upstream.protocol);
     if upstream.protocol == ProxyProtocol::OpenAiChat {
-        provider_adapter.prepare_chat_request(&original_request, &mut upstream_request);
+        provider_adapter.prepare_chat_request(
+            client_protocol.provider_request_source(),
+            &original_request,
+            &mut upstream_request,
+        );
     } else if upstream.protocol == ProxyProtocol::AnthropicMessages {
         provider_adapter.prepare_anthropic_request(&mut upstream_request);
     }

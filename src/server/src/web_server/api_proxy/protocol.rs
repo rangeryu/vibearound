@@ -4,6 +4,8 @@ use va_ai_api_proxy::{
     OpenAiResponsesTranslator, UniversalEvent, WireEvent, WireTranslator,
 };
 
+use crate::openai_proxy::providers::ProviderRequestSource;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ProxyProtocol {
     OpenAiResponses,
@@ -87,6 +89,14 @@ impl ProxyProtocol {
             Self::OpenAiResponses => "openai-responses",
             Self::OpenAiChat => "openai-chat",
             Self::AnthropicMessages => "anthropic",
+        }
+    }
+
+    pub(super) fn provider_request_source(self) -> ProviderRequestSource {
+        match self {
+            Self::OpenAiResponses => ProviderRequestSource::OpenAiResponses,
+            Self::OpenAiChat => ProviderRequestSource::OpenAiChat,
+            Self::AnthropicMessages => ProviderRequestSource::AnthropicMessages,
         }
     }
 }

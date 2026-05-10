@@ -18,6 +18,7 @@ use common::profiles::{
 use crate::agent_hooks::CodexSessionState;
 use crate::openai_proxy::{
     chat_completion_to_response, encode_sse_event,
+    providers::ProviderRequestSource,
     providers::{ProviderProxyAdapter, ProviderProxyContext},
     responses_to_chat_request, ChatToResponsesStream, ProxyTransformError,
 };
@@ -76,7 +77,11 @@ async fn responses_handler_inner(
         Err(error) => return transform_error(error),
     };
     let mut provider_adapter = upstream_endpoint.provider_adapter;
-    provider_adapter.prepare_chat_request(&original_request, &mut chat_request);
+    provider_adapter.prepare_chat_request(
+        ProviderRequestSource::OpenAiResponses,
+        &original_request,
+        &mut chat_request,
+    );
     log_proxy_exchange(
         &profile_id,
         launch_id.as_deref(),

@@ -10,7 +10,7 @@ use serde_json::{json, Map, Value};
 
 use crate::openai_proxy::reasoning_blob::decode_reasoning_content;
 
-use super::ProviderProxyContext;
+use super::{ProviderProxyContext, ProviderRequestSource};
 
 static REASONING_BY_CALL_ID: LazyLock<DashMap<String, String>> = LazyLock::new(DashMap::new);
 static REASONING_BY_MESSAGE: LazyLock<DashMap<String, String>> = LazyLock::new(DashMap::new);
@@ -106,6 +106,7 @@ pub struct DeepSeekProxyAdapter {
     profile_id: String,
     settings: DeepSeekProviderSettings,
     context: ProviderProxyContext,
+    request_source: Option<ProviderRequestSource>,
     stream_reasoning_content: String,
     stream_call_ids: BTreeSet<String>,
 }
@@ -120,22 +121,42 @@ impl DeepSeekProxyAdapter {
             profile_id,
             settings,
             context,
+            request_source: None,
             stream_reasoning_content: String::new(),
             stream_call_ids: BTreeSet::new(),
         }
     }
 
-    pub fn prepare_chat_request(&mut self, original_request: &Value, chat_request: &mut Value) {
+    pub fn prepare_chat_request(
+        &mut self,
+        source: ProviderRequestSource,
+        original_request: &Value,
+        chat_request: &mut Value,
+    ) {
+        self.request_source = Some(source);
+        if source == ProviderRequestSource::AnthropicMessages {
+            strip_anthropic_reasoning_content_blocks(chat_request);
+        }
+
         let tool_outputs = self.collect_tool_outputs(original_request, chat_request);
         repair_tool_call_history(&tool_outputs, chat_request);
 
-        if self.settings.thinking && self.settings.replay_reasoning_content {
-            let scope = self.reasoning_scope();
-            persist_reasoning_from_responses_input(&scope, original_request);
-            if let Some(transcript_path) = self.context.transcript_path.as_deref() {
-                persist_reasoning_from_codex_transcript(&scope, transcript_path);
+        if self.should_replay_reasoning_content(source) {
+            if let Some(scope) = self.reasoning_scope(source) {
+                match source {
+                    ProviderRequestSource::OpenAiResponses => {
+                        persist_reasoning_from_responses_input(&scope, original_request);
+                        if let Some(transcript_path) = self.context.transcript_path.as_deref() {
+                            persist_reasoning_from_codex_transcript(&scope, transcript_path);
+                        }
+                    }
+                    ProviderRequestSource::AnthropicMessages => {
+                        persist_reasoning_from_anthropic_input(&scope, original_request);
+                    }
+                    ProviderRequestSource::OpenAiChat => {}
+                }
+                inject_reasoning_content(&scope, chat_request);
             }
-            inject_reasoning_content(&scope, chat_request);
         }
 
         let Some(request) = chat_request.as_object_mut() else {
@@ -155,9 +176,9 @@ impl DeepSeekProxyAdapter {
     }
 
     pub fn observe_chat_completion(&mut self, completion: &Value) {
-        if !self.settings.thinking || !self.settings.replay_reasoning_content {
+        let Some(scope) = self.active_reasoning_scope() else {
             return;
-        }
+        };
         let Some(message) = completion
             .get("choices")
             .and_then(Value::as_array)
@@ -170,13 +191,12 @@ impl DeepSeekProxyAdapter {
         else {
             return;
         };
-        let scope = self.reasoning_scope();
         persist_reasoning_for_tool_calls(&scope, reasoning_content, message);
         store_reasoning_for_message(&scope, reasoning_content, message);
     }
 
     pub fn observe_chat_stream_chunk(&mut self, chunk: &Value) {
-        if !self.settings.thinking || !self.settings.replay_reasoning_content {
+        if self.active_reasoning_scope().is_none() {
             return;
         }
 
@@ -211,7 +231,9 @@ impl DeepSeekProxyAdapter {
         if self.stream_reasoning_content.is_empty() || self.stream_call_ids.is_empty() {
             return;
         }
-        let scope = self.reasoning_scope();
+        let Some(scope) = self.active_reasoning_scope() else {
+            return;
+        };
         for call_id in &self.stream_call_ids {
             store_reasoning(&scope, call_id, &self.stream_reasoning_content);
         }
@@ -219,9 +241,24 @@ impl DeepSeekProxyAdapter {
         self.stream_call_ids.clear();
     }
 
-    fn reasoning_scope(&self) -> String {
+    fn should_replay_reasoning_content(&self, source: ProviderRequestSource) -> bool {
+        self.settings.thinking
+            && self.settings.replay_reasoning_content
+            && source.supports_deepseek_reasoning_replay()
+    }
+
+    fn active_reasoning_scope(&self) -> Option<String> {
+        let source = self.request_source?;
+        if !self.should_replay_reasoning_content(source) {
+            return None;
+        }
+        self.reasoning_scope(source)
+    }
+
+    fn reasoning_scope(&self, source: ProviderRequestSource) -> Option<String> {
         reasoning_scope(
             &self.profile_id,
+            source,
             self.context.launch_id.as_deref(),
             self.context.session_id.as_deref(),
         )
@@ -631,6 +668,83 @@ fn persist_reasoning_from_responses_input(scope: &str, responses_request: &Value
     }
 }
 
+fn persist_reasoning_from_anthropic_input(scope: &str, anthropic_request: &Value) {
+    let Some(messages) = anthropic_request.get("messages").and_then(Value::as_array) else {
+        return;
+    };
+
+    for message in messages {
+        let Some(message) = message.as_object() else {
+            continue;
+        };
+        if message.get("role").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        persist_reasoning_from_anthropic_assistant_message(scope, message);
+    }
+}
+
+fn persist_reasoning_from_anthropic_assistant_message(
+    scope: &str,
+    message: &Map<String, Value>,
+) -> usize {
+    let Some(blocks) = message.get("content").and_then(Value::as_array) else {
+        return 0;
+    };
+
+    let mut active_reasoning: Option<String> = None;
+    let mut text_parts = Vec::new();
+    let mut stored_count = 0usize;
+
+    for block in blocks {
+        let Some(block) = block.as_object() else {
+            continue;
+        };
+        match block.get("type").and_then(Value::as_str) {
+            Some("thinking" | "redacted_thinking") => {
+                active_reasoning = anthropic_reasoning_content_from_block(block);
+            }
+            Some("tool_use") => {
+                if let (Some(reasoning_content), Some(call_id)) = (
+                    active_reasoning.as_deref(),
+                    block.get("id").and_then(Value::as_str),
+                ) {
+                    store_reasoning(scope, call_id, reasoning_content);
+                    stored_count += 1;
+                }
+            }
+            Some("text") => {
+                if let Some(text) = block.get("text").and_then(Value::as_str) {
+                    text_parts.push(text);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(reasoning_content) = active_reasoning.as_deref() {
+        let text = text_parts.join("");
+        if !text.is_empty() {
+            let mut message = Map::new();
+            message.insert("content".to_string(), Value::String(text));
+            if store_reasoning_for_message_item(scope, reasoning_content, &message) {
+                stored_count += 1;
+            }
+        }
+    }
+
+    stored_count
+}
+
+fn anthropic_reasoning_content_from_block(block: &Map<String, Value>) -> Option<String> {
+    block
+        .get("thinking")
+        .or_else(|| block.get("text"))
+        .and_then(Value::as_str)
+        .filter(|content| !content.is_empty())
+        .map(str::to_string)
+}
+
 fn reasoning_content_from_item(item: &Map<String, Value>) -> Option<String> {
     if let Some(reasoning_content) = item
         .get("encrypted_content")
@@ -751,14 +865,73 @@ fn reasoning_message_key(scope: &str, content_fingerprint: &str) -> String {
     format!("{scope}:message:{content_fingerprint}")
 }
 
-fn reasoning_scope(profile_id: &str, launch_id: Option<&str>, session_id: Option<&str>) -> String {
+fn reasoning_scope(
+    profile_id: &str,
+    source: ProviderRequestSource,
+    launch_id: Option<&str>,
+    session_id: Option<&str>,
+) -> Option<String> {
+    let source = source.replay_scope_key();
     if let Some(session_id) = session_id {
-        return format!("profile:{profile_id}:session:{session_id}");
+        return Some(format!(
+            "profile:{profile_id}:source:{source}:session:{session_id}"
+        ));
     }
     if let Some(launch_id) = launch_id {
-        return format!("profile:{profile_id}:launch:{launch_id}");
+        return Some(format!(
+            "profile:{profile_id}:source:{source}:launch:{launch_id}"
+        ));
     }
-    format!("profile:{profile_id}")
+    None
+}
+
+fn strip_anthropic_reasoning_content_blocks(chat_request: &mut Value) {
+    let Some(messages) = chat_request
+        .get_mut("messages")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+
+    for message in messages {
+        if message.get("role").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        parts.retain(|part| !is_anthropic_reasoning_content_part(part));
+    }
+}
+
+fn is_anthropic_reasoning_content_part(part: &Value) -> bool {
+    part.get("type").and_then(Value::as_str) == Some("unknown")
+        && part
+            .get("raw")
+            .and_then(|raw| raw.get("type"))
+            .and_then(Value::as_str)
+            == Some("reasoning")
+}
+
+pub(super) fn clear_reasoning_for_context(
+    profile_id: &str,
+    launch_id: Option<&str>,
+    session_id: Option<&str>,
+) {
+    for source in ProviderRequestSource::deepseek_replay_sources() {
+        if let Some(scope) = reasoning_scope(profile_id, source, None, session_id) {
+            clear_reasoning_scope(&scope);
+        }
+        if let Some(scope) = reasoning_scope(profile_id, source, launch_id, None) {
+            clear_reasoning_scope(&scope);
+        }
+    }
+}
+
+fn clear_reasoning_scope(scope: &str) {
+    let prefix = format!("{scope}:");
+    REASONING_BY_CALL_ID.retain(|key, _| !key.starts_with(&prefix));
+    REASONING_BY_MESSAGE.retain(|key, _| !key.starts_with(&prefix));
 }
 
 #[cfg(test)]
@@ -769,7 +942,7 @@ mod tests {
     use common::profiles::schema::DeepSeekProviderSettings;
     use serde_json::json;
 
-    use crate::openai_proxy::providers::ProviderProxyContext;
+    use crate::openai_proxy::providers::{ProviderProxyContext, ProviderRequestSource};
     use crate::openai_proxy::reasoning_blob::encode_reasoning_content;
 
     use super::DeepSeekProxyAdapter;
@@ -782,7 +955,11 @@ mod tests {
             "messages": [{ "role": "user", "content": "hello" }],
         });
 
-        adapter.prepare_chat_request(&json!({ "input": "hello" }), &mut request);
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": "hello" }),
+            &mut request,
+        );
 
         assert_eq!(request["thinking"]["type"], "disabled");
     }
@@ -791,6 +968,15 @@ mod tests {
     fn replays_reasoning_content_for_matching_tool_call() {
         let settings = thinking_settings();
         let mut adapter = new_adapter("deepseek-replay", settings.clone());
+        let mut first_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{ "role": "user", "content": "hello" }]
+        });
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": [] }),
+            &mut first_request,
+        );
         adapter.observe_chat_stream_chunk(&json!({
             "choices": [{
                 "delta": { "reasoning_content": "I should inspect cwd." },
@@ -829,7 +1015,11 @@ mod tests {
         });
         let mut adapter = new_adapter("deepseek-replay", settings);
 
-        adapter.prepare_chat_request(&json!({ "input": [] }), &mut next_request);
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": [] }),
+            &mut next_request,
+        );
 
         assert_eq!(next_request["thinking"]["type"], "enabled");
         assert_eq!(
@@ -880,7 +1070,11 @@ mod tests {
         });
         let mut adapter = new_adapter("deepseek-history", settings);
 
-        adapter.prepare_chat_request(&original_request, &mut chat_request);
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &original_request,
+            &mut chat_request,
+        );
 
         assert_eq!(
             chat_request["messages"][0]["reasoning_content"],
@@ -987,7 +1181,11 @@ mod tests {
             },
         );
 
-        adapter.prepare_chat_request(&json!({ "input": [] }), &mut chat_request);
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": [] }),
+            &mut chat_request,
+        );
 
         fs::remove_file(transcript_path).ok();
         assert_eq!(
@@ -1017,7 +1215,11 @@ mod tests {
         });
         let mut adapter = new_adapter("deepseek-fallback", settings);
 
-        adapter.prepare_chat_request(&json!({ "input": [] }), &mut chat_request);
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": [] }),
+            &mut chat_request,
+        );
 
         assert_eq!(
             chat_request["messages"][0]["reasoning_content"],
@@ -1040,7 +1242,11 @@ mod tests {
         });
         let mut adapter = new_adapter("deepseek-plain-fallback", settings);
 
-        adapter.prepare_chat_request(&json!({ "input": [] }), &mut chat_request);
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": [] }),
+            &mut chat_request,
+        );
 
         assert_eq!(
             chat_request["messages"][0]["reasoning_content"],
@@ -1049,6 +1255,284 @@ mod tests {
         assert!(chat_request["messages"][1]
             .get("reasoning_content")
             .is_none());
+    }
+
+    #[test]
+    fn does_not_replay_reasoning_content_for_openai_chat_source() {
+        let settings = thinking_settings();
+        let mut first_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{ "role": "user", "content": "hello" }]
+        });
+        let mut adapter = new_adapter("deepseek-chat-source", settings.clone());
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": [] }),
+            &mut first_request,
+        );
+        adapter.observe_chat_completion(&json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "reasoning_content": "I should inspect cwd.",
+                    "tool_calls": [{
+                        "id": "call_pwd",
+                        "type": "function",
+                        "function": { "name": "exec_command", "arguments": "{\"cmd\":\"pwd\"}" }
+                    }]
+                }
+            }]
+        }));
+
+        let mut chat_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_pwd",
+                    "type": "function",
+                    "function": { "name": "exec_command", "arguments": "{\"cmd\":\"pwd\"}" }
+                }]
+            }]
+        });
+        let mut adapter = new_adapter("deepseek-chat-source", settings);
+
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiChat,
+            &chat_request.clone(),
+            &mut chat_request,
+        );
+
+        assert_eq!(chat_request["thinking"]["type"], "enabled");
+        assert!(chat_request["messages"][0]
+            .get("reasoning_content")
+            .is_none());
+    }
+
+    #[test]
+    fn replays_reasoning_content_from_anthropic_thinking_tool_use() {
+        let settings = thinking_settings();
+        let original_request = json!({
+            "messages": [{
+                "role": "assistant",
+                "content": [
+                    { "type": "thinking", "thinking": "Call pwd, then answer." },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_pwd",
+                        "name": "exec_command",
+                        "input": { "cmd": "pwd" }
+                    }
+                ]
+            }, {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_pwd",
+                    "content": "/tmp/project"
+                }]
+            }]
+        });
+        let mut chat_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{
+                "role": "assistant",
+                "content": [{
+                    "type": "unknown",
+                    "raw": { "type": "reasoning", "text": "Call pwd, then answer." }
+                }]
+            }, {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "toolu_pwd",
+                    "type": "function",
+                    "function": { "name": "exec_command", "arguments": "{\"cmd\":\"pwd\"}" }
+                }]
+            }, {
+                "role": "tool",
+                "tool_call_id": "toolu_pwd",
+                "content": "/tmp/project"
+            }]
+        });
+        let mut adapter = new_adapter("deepseek-anthropic-tool", settings);
+
+        adapter.prepare_chat_request(
+            ProviderRequestSource::AnthropicMessages,
+            &original_request,
+            &mut chat_request,
+        );
+
+        let messages = chat_request["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["reasoning_content"], "Call pwd, then answer.");
+        assert_eq!(messages[0]["tool_calls"][0]["id"], "toolu_pwd");
+    }
+
+    #[test]
+    fn replays_reasoning_content_from_anthropic_thinking_text() {
+        let settings = thinking_settings();
+        let original_request = json!({
+            "messages": [{
+                "role": "assistant",
+                "content": [
+                    { "type": "thinking", "thinking": "Explain briefly." },
+                    { "type": "text", "text": "The answer is 42." }
+                ]
+            }]
+        });
+        let mut chat_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "unknown",
+                        "raw": { "type": "reasoning", "text": "Explain briefly." }
+                    },
+                    { "type": "text", "text": "The answer is 42." }
+                ]
+            }]
+        });
+        let mut adapter = new_adapter("deepseek-anthropic-text", settings);
+
+        adapter.prepare_chat_request(
+            ProviderRequestSource::AnthropicMessages,
+            &original_request,
+            &mut chat_request,
+        );
+
+        assert_eq!(
+            chat_request["messages"][0]["reasoning_content"],
+            "Explain briefly."
+        );
+        assert_eq!(
+            chat_request["messages"][0]["content"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn skips_reasoning_replay_without_launch_or_session_scope() {
+        let settings = thinking_settings();
+        let mut chat_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_old",
+                    "type": "function",
+                    "function": { "name": "exec_command", "arguments": "{\"cmd\":\"pwd\"}" }
+                }]
+            }]
+        });
+        let mut adapter = DeepSeekProxyAdapter::new(
+            "deepseek-no-scope".to_string(),
+            settings,
+            ProviderProxyContext::default(),
+        );
+
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": [] }),
+            &mut chat_request,
+        );
+
+        assert!(chat_request["messages"][0]
+            .get("reasoning_content")
+            .is_none());
+    }
+
+    #[test]
+    fn clears_launch_and_session_reasoning_scopes() {
+        let settings = thinking_settings();
+        let original_request = json!({
+            "input": [
+                {
+                    "type": "reasoning",
+                    "encrypted_content": encode_reasoning_content("Launch scoped reasoning.")
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "call_launch",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"pwd\"}"
+                }
+            ]
+        });
+        let mut launch_adapter = DeepSeekProxyAdapter::new(
+            "deepseek-clear".to_string(),
+            settings.clone(),
+            ProviderProxyContext {
+                launch_id: Some("launch-clear".to_string()),
+                session_id: None,
+                transcript_path: None,
+            },
+        );
+        let mut launch_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{ "role": "user", "content": "hello" }]
+        });
+        launch_adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &original_request,
+            &mut launch_request,
+        );
+
+        let mut session_adapter = DeepSeekProxyAdapter::new(
+            "deepseek-clear".to_string(),
+            settings,
+            ProviderProxyContext {
+                launch_id: Some("launch-clear".to_string()),
+                session_id: Some("session-clear".to_string()),
+                transcript_path: None,
+            },
+        );
+        let mut session_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{ "role": "user", "content": "hello" }]
+        });
+        session_adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({
+                "input": [
+                    {
+                        "type": "reasoning",
+                        "encrypted_content": encode_reasoning_content("Session scoped reasoning.")
+                    },
+                    {
+                        "type": "function_call",
+                        "call_id": "call_session",
+                        "name": "exec_command",
+                        "arguments": "{\"cmd\":\"pwd\"}"
+                    }
+                ]
+            }),
+            &mut session_request,
+        );
+
+        super::clear_reasoning_for_context(
+            "deepseek-clear",
+            Some("launch-clear"),
+            Some("session-clear"),
+        );
+
+        assert!(super::lookup_reasoning(
+            "profile:deepseek-clear:source:openai-responses:launch:launch-clear",
+            "call_launch"
+        )
+        .is_none());
+        assert!(super::lookup_reasoning(
+            "profile:deepseek-clear:source:openai-responses:session:session-clear",
+            "call_session"
+        )
+        .is_none());
     }
 
     #[test]
@@ -1082,7 +1566,11 @@ mod tests {
         });
         let mut adapter = new_adapter("deepseek-tool-request", DeepSeekProviderSettings::default());
 
-        adapter.prepare_chat_request(&json!({ "input": [] }), &mut chat_request);
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": [] }),
+            &mut chat_request,
+        );
 
         let messages = chat_request["messages"].as_array().unwrap();
         assert_eq!(messages.len(), 3);
@@ -1125,7 +1613,11 @@ mod tests {
             DeepSeekProviderSettings::default(),
         );
 
-        adapter.prepare_chat_request(&original_request, &mut chat_request);
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &original_request,
+            &mut chat_request,
+        );
 
         assert_eq!(chat_request["messages"][1]["role"], "tool");
         assert_eq!(chat_request["messages"][1]["tool_call_id"], "call_pwd");
@@ -1169,7 +1661,11 @@ mod tests {
             },
         );
 
-        adapter.prepare_chat_request(&json!({ "input": [] }), &mut chat_request);
+        adapter.prepare_chat_request(
+            ProviderRequestSource::OpenAiResponses,
+            &json!({ "input": [] }),
+            &mut chat_request,
+        );
 
         fs::remove_file(transcript_path).ok();
         assert_eq!(chat_request["messages"][1]["role"], "tool");
@@ -1191,7 +1687,11 @@ mod tests {
         DeepSeekProxyAdapter::new(
             profile_id.to_string(),
             settings,
-            ProviderProxyContext::default(),
+            ProviderProxyContext {
+                launch_id: Some(format!("launch-{profile_id}")),
+                session_id: Some(format!("session-{profile_id}")),
+                transcript_path: None,
+            },
         )
     }
 

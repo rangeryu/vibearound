@@ -14,6 +14,31 @@ use self::kimi::KimiProxyAdapter;
 use self::minimax::MiniMaxProxyAdapter;
 use self::zai::ZaiProxyAdapter;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderRequestSource {
+    OpenAiResponses,
+    OpenAiChat,
+    AnthropicMessages,
+}
+
+impl ProviderRequestSource {
+    pub(crate) fn replay_scope_key(self) -> &'static str {
+        match self {
+            Self::OpenAiResponses => "openai-responses",
+            Self::OpenAiChat => "openai-chat",
+            Self::AnthropicMessages => "anthropic",
+        }
+    }
+
+    pub(crate) fn supports_deepseek_reasoning_replay(self) -> bool {
+        matches!(self, Self::OpenAiResponses | Self::AnthropicMessages)
+    }
+
+    pub(crate) fn deepseek_replay_sources() -> [Self; 2] {
+        [Self::OpenAiResponses, Self::AnthropicMessages]
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ProviderProxyContext {
     pub launch_id: Option<String>,
@@ -47,10 +72,17 @@ impl ProviderProxyAdapter {
         }
     }
 
-    pub fn prepare_chat_request(&mut self, original_request: &Value, chat_request: &mut Value) {
+    pub fn prepare_chat_request(
+        &mut self,
+        source: ProviderRequestSource,
+        original_request: &Value,
+        chat_request: &mut Value,
+    ) {
         match self {
             Self::None => {}
-            Self::DeepSeek(adapter) => adapter.prepare_chat_request(original_request, chat_request),
+            Self::DeepSeek(adapter) => {
+                adapter.prepare_chat_request(source, original_request, chat_request)
+            }
             Self::Kimi(_) => {}
             Self::MiniMax(adapter) => adapter.prepare_chat_request(chat_request),
             Self::DashScope(adapter) => {
@@ -103,4 +135,12 @@ impl ProviderProxyAdapter {
             Self::Zai(_) => {}
         }
     }
+}
+
+pub fn clear_deepseek_reasoning_for_context(
+    profile_id: &str,
+    launch_id: Option<&str>,
+    session_id: Option<&str>,
+) {
+    deepseek::clear_reasoning_for_context(profile_id, launch_id, session_id);
 }
