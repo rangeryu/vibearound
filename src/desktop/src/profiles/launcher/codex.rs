@@ -5,8 +5,14 @@ use std::path::{Path, PathBuf};
 use ::common::{config, profiles};
 use anyhow::{anyhow, bail, Context};
 use profiles::ProfileDef;
+use serde::Serialize;
+use serde_json::Value as JsonValue;
+use sha2::{Digest, Sha256};
 
 const CODEX_HOOKS_FEATURE_KEY: &str = "features.hooks";
+const CODEX_SESSION_FLAGS_HOOK_SOURCE_UNIX: &str = "/<session-flags>/config.toml";
+const CODEX_SESSION_FLAGS_HOOK_SOURCE_WINDOWS: &str = r"C:\<session-flags>\config.toml";
+const CODEX_HOOK_TIMEOUT_SECS: u64 = 5;
 
 pub(super) fn apply_session_hooks(
     profile: &ProfileDef,
@@ -21,30 +27,63 @@ pub(super) fn apply_session_hooks(
     let hook_helper = resolve_hook_helper_path()?;
     push_config_arg(&mut rendered.command_args, CODEX_HOOKS_FEATURE_KEY, "true");
 
-    let command_for = |event: &str| {
+    let session_start = CodexHookSpec::new(
+        "session_start",
+        Some("startup|resume|clear"),
         build_hook_command(
             &hook_helper,
-            event,
+            "SessionStart",
             launch_id,
             &profile.id,
             launch_target,
             &format!("http://127.0.0.1:{}", config::DEFAULT_PORT),
-        )
-    };
+        ),
+    );
+    let user_prompt_submit = CodexHookSpec::new(
+        "user_prompt_submit",
+        None,
+        build_hook_command(
+            &hook_helper,
+            "UserPromptSubmit",
+            launch_id,
+            &profile.id,
+            launch_target,
+            &format!("http://127.0.0.1:{}", config::DEFAULT_PORT),
+        ),
+    );
+    let stop = CodexHookSpec::new(
+        "stop",
+        None,
+        build_hook_command(
+            &hook_helper,
+            "Stop",
+            launch_id,
+            &profile.id,
+            launch_target,
+            &format!("http://127.0.0.1:{}", config::DEFAULT_PORT),
+        ),
+    );
+    let hooks = [session_start, user_prompt_submit, stop];
+
     push_config_arg(
         &mut rendered.command_args,
         "hooks.SessionStart",
-        &hook_config_value(Some("startup|resume|clear"), &command_for("SessionStart")),
+        &hook_config_value(hooks[0].matcher, &hooks[0].command),
     );
     push_config_arg(
         &mut rendered.command_args,
         "hooks.UserPromptSubmit",
-        &hook_config_value(None, &command_for("UserPromptSubmit")),
+        &hook_config_value(hooks[1].matcher, &hooks[1].command),
     );
     push_config_arg(
         &mut rendered.command_args,
         "hooks.Stop",
-        &hook_config_value(None, &command_for("Stop")),
+        &hook_config_value(hooks[2].matcher, &hooks[2].command),
+    );
+    push_config_arg(
+        &mut rendered.command_args,
+        "hooks.state",
+        &trusted_hook_state_config_value(&hooks),
     );
     Ok(())
 }
@@ -84,11 +123,143 @@ fn hook_config_value(matcher: Option<&str>, command: &str) -> String {
         fields.push(format!("matcher = {}", toml_string(matcher)));
     }
     fields.push(format!(
-        "hooks = [{{ type = {}, command = {}, timeout = 5 }}]",
+        "hooks = [{{ type = {}, command = {}, timeout = {CODEX_HOOK_TIMEOUT_SECS} }}]",
         toml_string("command"),
         toml_string(command)
     ));
     format!("[{{ {} }}]", fields.join(", "))
+}
+
+#[derive(Debug)]
+struct CodexHookSpec {
+    state_event_name: &'static str,
+    matcher: Option<&'static str>,
+    command: String,
+}
+
+impl CodexHookSpec {
+    fn new(state_event_name: &'static str, matcher: Option<&'static str>, command: String) -> Self {
+        Self {
+            state_event_name,
+            matcher,
+            command,
+        }
+    }
+
+    fn state_key(&self) -> String {
+        format!(
+            "{}:{}:0:0",
+            session_flags_hook_source_path(),
+            self.state_event_name
+        )
+    }
+
+    fn trusted_hash(&self) -> String {
+        command_hook_hash(self.state_event_name, self.matcher, &self.command)
+    }
+}
+
+fn trusted_hook_state_config_value(hooks: &[CodexHookSpec]) -> String {
+    let entries = hooks
+        .iter()
+        .map(|hook| {
+            format!(
+                "{} = {{ trusted_hash = {} }}",
+                toml_string(&hook.state_key()),
+                toml_string(&hook.trusted_hash())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{{ {entries} }}")
+}
+
+fn session_flags_hook_source_path() -> &'static str {
+    if cfg!(target_os = "windows") {
+        CODEX_SESSION_FLAGS_HOOK_SOURCE_WINDOWS
+    } else {
+        CODEX_SESSION_FLAGS_HOOK_SOURCE_UNIX
+    }
+}
+
+#[derive(Serialize)]
+struct NormalizedHookIdentity<'a> {
+    event_name: &'a str,
+    #[serde(flatten)]
+    group: NormalizedMatcherGroup<'a>,
+}
+
+#[derive(Serialize)]
+struct NormalizedMatcherGroup<'a> {
+    matcher: Option<&'a str>,
+    hooks: [NormalizedHookHandler<'a>; 1],
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+enum NormalizedHookHandler<'a> {
+    #[serde(rename = "command")]
+    Command {
+        command: &'a str,
+        #[serde(rename = "timeout")]
+        timeout_sec: u64,
+        #[serde(rename = "async")]
+        r#async: bool,
+        #[serde(rename = "statusMessage")]
+        status_message: Option<&'a str>,
+    },
+}
+
+fn command_hook_hash(event_name: &str, matcher: Option<&str>, command: &str) -> String {
+    // Mirrors Codex's normalized hook identity hash so session-injected hooks
+    // are trusted for the exact command VibeAround launches.
+    let identity = NormalizedHookIdentity {
+        event_name,
+        group: NormalizedMatcherGroup {
+            matcher,
+            hooks: [NormalizedHookHandler::Command {
+                command,
+                timeout_sec: CODEX_HOOK_TIMEOUT_SECS,
+                r#async: false,
+                status_message: None,
+            }],
+        },
+    };
+    let value = toml::Value::try_from(identity)
+        .expect("normalized Codex hook identity should serialize to TOML");
+    version_for_toml(&value)
+}
+
+fn version_for_toml(value: &toml::Value) -> String {
+    let json = serde_json::to_value(value).unwrap_or(JsonValue::Null);
+    let canonical = canonical_json(&json);
+    let serialized = serde_json::to_vec(&canonical).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(serialized);
+    let hash = hasher.finalize();
+    let hex = hash
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("sha256:{hex}")
+}
+
+fn canonical_json(value: &JsonValue) -> JsonValue {
+    match value {
+        JsonValue::Object(map) => {
+            let mut sorted = serde_json::Map::new();
+            let mut keys = map.keys().cloned().collect::<Vec<_>>();
+            keys.sort();
+            for key in keys {
+                if let Some(value) = map.get(&key) {
+                    sorted.insert(key, canonical_json(value));
+                }
+            }
+            JsonValue::Object(sorted)
+        }
+        JsonValue::Array(items) => JsonValue::Array(items.iter().map(canonical_json).collect()),
+        other => other.clone(),
+    }
 }
 
 fn build_hook_command(
@@ -240,5 +411,35 @@ mod tests {
     fn toml_string_falls_back_when_literal_cannot_represent_value() {
         assert_eq!(toml_string("plain"), "'plain'");
         assert_eq!(toml_string("team's"), "\"team's\"");
+    }
+
+    #[test]
+    fn builds_trusted_hook_state_for_session_flags() {
+        let hooks = [
+            CodexHookSpec::new(
+                "session_start",
+                Some("startup|resume|clear"),
+                "hook --agent codex --event SessionStart".to_string(),
+            ),
+            CodexHookSpec::new(
+                "user_prompt_submit",
+                None,
+                "hook --agent codex --event UserPromptSubmit".to_string(),
+            ),
+            CodexHookSpec::new("stop", None, "hook --agent codex --event Stop".to_string()),
+        ];
+
+        let value = trusted_hook_state_config_value(&hooks);
+
+        assert!(value.contains("trusted_hash = 'sha256:"));
+        assert!(value.contains(&format!(
+            "{}:session_start:0:0",
+            session_flags_hook_source_path()
+        )));
+        assert!(value.contains(&format!(
+            "{}:user_prompt_submit:0:0",
+            session_flags_hook_source_path()
+        )));
+        assert!(value.contains(&format!("{}:stop:0:0", session_flags_hook_source_path())));
     }
 }

@@ -23,6 +23,8 @@ open = "1.7"
 tracing = "0.1"
 shell-escape = "0.1"
 uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+toml = "0.8"
 
 [features]
 default = []

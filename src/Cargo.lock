@@ -5734,6 +5734,7 @@ dependencies = [
  "serde",
  "serde_json",
  "server",
+ "sha2",
  "shell-escape",
  "tauri",
  "tauri-build",
@@ -5741,6 +5742,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-plugin-single-instance",
  "tokio",
+ "toml 0.8.2",
  "tracing",
  "uuid",
 ]
