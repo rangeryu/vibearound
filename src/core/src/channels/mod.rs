@@ -30,6 +30,7 @@ pub mod types;
 
 use std::sync::{Arc, Mutex as StdMutex};
 
+use agent_client_protocol as acp;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::conversations::event::SystemEvent;
@@ -161,6 +162,16 @@ impl ChannelManager {
 
     pub async fn send_output(&self, output: ChannelOutput) {
         self.plugin_host.send_output(output).await;
+    }
+
+    pub fn respond_permission(
+        &self,
+        channel_kind: &str,
+        request_id: &str,
+        response: acp::RequestPermissionResponse,
+    ) -> Result<(), String> {
+        self.plugin_host
+            .respond_permission(channel_kind, request_id, response)
     }
 
     pub async fn shutdown_all(&self) {

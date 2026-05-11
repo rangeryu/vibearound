@@ -180,4 +180,28 @@ impl PluginHost {
             self.pending_permissions.remove(&id);
         }
     }
+
+    /// Resolve a pending permission request from an in-process client such as
+    /// the web chat channel. Stdio plugins answer through ACP in
+    /// `transport_stdio::forwarder`; websocket channels need this small
+    /// bridge back into the same pending-permission table.
+    pub fn respond_permission(
+        &self,
+        channel_kind: &str,
+        request_id: &str,
+        response: acp::RequestPermissionResponse,
+    ) -> Result<(), String> {
+        let Some((_, (pending_channel, tx))) = self.pending_permissions.remove(request_id) else {
+            return Err("permission request is no longer pending".to_string());
+        };
+
+        if pending_channel != channel_kind {
+            self.pending_permissions
+                .insert(request_id.to_string(), (pending_channel, tx));
+            return Err("permission request belongs to a different channel".to_string());
+        }
+
+        tx.send(response)
+            .map_err(|_| "permission requester is no longer listening".to_string())
+    }
 }

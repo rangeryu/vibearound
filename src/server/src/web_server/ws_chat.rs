@@ -16,6 +16,7 @@ use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use uuid::Uuid;
 
+use agent_client_protocol as acp;
 use common::channels::{ChannelEnvelope, ChannelInput, ChannelOutput};
 use common::routing::RouteKey;
 use common::{agent_state, config};
@@ -77,12 +78,32 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
         }
     });
 
-    // Inbound: ws messages → ChannelInput → channel-input thread → ConversationManager.
+    // Inbound: ws messages → channel-input thread / permission bridge.
     while let Some(Ok(msg)) = ws_rx.next().await {
         match msg {
             Message::Text(text) => {
-                if let Some(input) = parse_channel_input(&chat_id, &text) {
-                    state.channel_hub.handle_input(input);
+                if let Some(input) = parse_web_chat_input(&chat_id, &text) {
+                    match input {
+                        WebChatInput::Message(input) => {
+                            state.channel_hub.handle_input(input);
+                        }
+                        WebChatInput::PermissionResponse {
+                            request_id,
+                            response,
+                        } => {
+                            if let Err(error) =
+                                state
+                                    .channel_hub
+                                    .respond_permission("web", &request_id, response)
+                            {
+                                tracing::warn!(
+                                    request_id = %request_id,
+                                    error = %error,
+                                    "web permission response ignored"
+                                );
+                            }
+                        }
+                    }
                 }
             }
             Message::Close(_) => break,
@@ -113,7 +134,15 @@ where
     ws_tx.send(Message::Text(body.into())).await.map_err(|_| ())
 }
 
-fn parse_channel_input(chat_id: &str, text: &str) -> Option<ChannelInput> {
+enum WebChatInput {
+    Message(ChannelInput),
+    PermissionResponse {
+        request_id: String,
+        response: acp::RequestPermissionResponse,
+    },
+}
+
+fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
     let parsed = serde_json::from_str::<serde_json::Value>(text);
 
     match parsed {
@@ -135,7 +164,7 @@ fn parse_channel_input(chat_id: &str, text: &str) -> Option<ChannelInput> {
                         .and_then(|x| x.as_str())
                         .map(str::trim)
                         .filter(|x| !x.is_empty());
-                    Some(ChannelInput::Message {
+                    Some(WebChatInput::Message(ChannelInput::Message {
                         envelope: ChannelEnvelope {
                             route: RouteKey::new("web", chat_id),
                             message_id,
@@ -146,6 +175,22 @@ fn parse_channel_input(chat_id: &str, text: &str) -> Option<ChannelInput> {
                             parent_id: None,
                             cli_kind: agent.map(ToOwned::to_owned),
                         },
+                    }))
+                }
+                "permission_response" => {
+                    let request_id = v.get("requestId").and_then(|x| x.as_str())?.to_string();
+                    let outcome = match v.get("outcome").and_then(|x| x.as_str()) {
+                        Some("cancelled") => acp::RequestPermissionOutcome::Cancelled,
+                        _ => {
+                            let option_id = v.get("optionId").and_then(|x| x.as_str())?;
+                            acp::RequestPermissionOutcome::Selected(
+                                acp::SelectedPermissionOutcome::new(option_id.to_string()),
+                            )
+                        }
+                    };
+                    Some(WebChatInput::PermissionResponse {
+                        request_id,
+                        response: acp::RequestPermissionResponse::new(outcome),
                     })
                 }
                 _ => None,
@@ -156,7 +201,7 @@ fn parse_channel_input(chat_id: &str, text: &str) -> Option<ChannelInput> {
             if trimmed.is_empty() {
                 None
             } else {
-                Some(ChannelInput::Message {
+                Some(WebChatInput::Message(ChannelInput::Message {
                     envelope: ChannelEnvelope {
                         route: RouteKey::new("web", chat_id),
                         message_id: Uuid::new_v4().to_string(),
@@ -167,7 +212,7 @@ fn parse_channel_input(chat_id: &str, text: &str) -> Option<ChannelInput> {
                         parent_id: None,
                         cli_kind: None,
                     },
-                })
+                }))
             }
         }
     }
@@ -224,5 +269,59 @@ fn acp_passthrough(
         "agent_thought_chunk" if !verbose.show_thinking => None,
         "tool_call" | "tool_call_update" if !verbose.show_tool_use => None,
         _ => Some(ChatEvent::AcpNotification { payload }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_selected_permission_response() {
+        let input = parse_web_chat_input(
+            "chat-1",
+            r#"{"type":"permission_response","requestId":"req-1","optionId":"allow-once"}"#,
+        )
+        .expect("permission response");
+
+        let WebChatInput::PermissionResponse {
+            request_id,
+            response,
+        } = input
+        else {
+            panic!("expected permission response");
+        };
+
+        assert_eq!(request_id, "req-1");
+        match response.outcome {
+            acp::RequestPermissionOutcome::Selected(selected) => {
+                assert_eq!(selected.option_id.to_string(), "allow-once");
+            }
+            acp::RequestPermissionOutcome::Cancelled => panic!("expected selected outcome"),
+            _ => panic!("expected selected outcome"),
+        }
+    }
+
+    #[test]
+    fn parses_cancelled_permission_response() {
+        let input = parse_web_chat_input(
+            "chat-1",
+            r#"{"type":"permission_response","requestId":"req-2","outcome":"cancelled"}"#,
+        )
+        .expect("permission response");
+
+        let WebChatInput::PermissionResponse {
+            request_id,
+            response,
+        } = input
+        else {
+            panic!("expected permission response");
+        };
+
+        assert_eq!(request_id, "req-2");
+        assert!(matches!(
+            response.outcome,
+            acp::RequestPermissionOutcome::Cancelled
+        ));
     }
 }

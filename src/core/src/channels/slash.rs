@@ -46,9 +46,9 @@ pub(crate) enum SlashAction {
     Unknown(String),
 }
 
-/// Strip IM line-wrapping: remove `\r\n` / `\n` / `\r` plus any trailing
-/// spaces after them. IM clients sometimes convert line breaks to spaces or
-/// sprinkle extra whitespace around user-entered commands.
+/// Normalize IM line-wrapping: replace `\r\n` / `\n` / `\r` plus any trailing
+/// spaces after them with one space. IM clients sometimes convert line breaks
+/// to spaces or sprinkle extra whitespace around user-entered commands.
 fn strip_line_wraps(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -60,6 +60,7 @@ fn strip_line_wraps(s: &str) -> String {
             while chars.peek().is_some_and(|c| *c == ' ') {
                 chars.next();
             }
+            out.push(' ');
         } else {
             out.push(c);
         }
@@ -173,5 +174,29 @@ pub(crate) fn parse_slash_command(text: &str) -> Option<SlashAction> {
             _ => Some(SlashAction::Unknown(trimmed.to_string())),
         },
         _ => Some(SlashAction::Unknown(trimmed.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn switch_agent(text: &str) -> String {
+        match parse_slash_command(text) {
+            Some(SlashAction::SwitchAgent(agent)) => agent,
+            _ => panic!("expected switch command"),
+        }
+    }
+
+    #[test]
+    fn switch_accepts_line_wrap_between_command_and_agent() {
+        assert_eq!(switch_agent("/switch\nclaude"), "claude");
+        assert_eq!(switch_agent("/switch\r\n  codex"), "codex");
+    }
+
+    #[test]
+    fn va_switch_accepts_line_wraps() {
+        assert_eq!(switch_agent("/va switch\nopencode"), "opencode");
+        assert_eq!(switch_agent("/va\nswitch codex"), "codex");
     }
 }

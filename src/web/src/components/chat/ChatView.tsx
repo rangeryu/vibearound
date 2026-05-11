@@ -32,6 +32,68 @@ type ChatMeta = {
   agentName?: string;
 };
 
+type PendingPermission = {
+  requestId: string;
+  request: unknown;
+};
+
+type PermissionOptionView = {
+  optionId: string;
+  name: string;
+  kind?: string;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringField(record: Record<string, unknown> | null | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function permissionTitle(request: unknown) {
+  const root = asRecord(request);
+  const toolCall = asRecord(root?.toolCall);
+  return (
+    stringField(toolCall, "title") ??
+    stringField(toolCall, "kind") ??
+    "Permission requested"
+  );
+}
+
+function permissionOptions(request: unknown): PermissionOptionView[] {
+  const root = asRecord(request);
+  const options = root && Array.isArray(root.options) ? root.options : [];
+  return options.flatMap((option) => {
+    const record = asRecord(option);
+    const optionId = stringField(record, "optionId");
+    return optionId
+      ? [
+          {
+            optionId,
+            name: stringField(record, "name") ?? optionId,
+            kind: stringField(record, "kind"),
+          },
+        ]
+      : [];
+  });
+}
+
+function permissionButtonClass(kind?: string) {
+  if (kind?.startsWith("reject")) {
+    return "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15";
+  }
+  return "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15";
+}
+
+function switchedAgentId(text: string) {
+  const match = /^Switched to ([A-Za-z0-9_-]+)\.$/.exec(text.trim());
+  return match?.[1];
+}
+
 export function ChatView() {
   const { t } = useI18n();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -42,6 +104,7 @@ export function ChatView() {
 
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("claude");
+  const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   const toolType = agentIdToToolType(selectedAgent);
@@ -56,6 +119,7 @@ export function ChatView() {
     ws.onclose = () => {
       setConnected(false);
       setStreaming(false);
+      setPendingPermissions([]);
     };
     ws.onerror = () => setConnected(false);
 
@@ -91,6 +155,17 @@ export function ChatView() {
         }
         case "system_text": {
           appendStandaloneAssistant(parsed.text);
+          const agentId = switchedAgentId(parsed.text);
+          if (agentId) {
+            setSelectedAgent(agentId);
+            setMeta((prev) => ({
+              ...prev,
+              agentName: undefined,
+              agentTitle: undefined,
+              agentVersion: undefined,
+              sessionId: undefined,
+            }));
+          }
           break;
         }
         case "error": {
@@ -103,9 +178,14 @@ export function ChatView() {
           break;
         }
         case "command_menu":
-        case "permission_request":
-          // Not wired into the web chat UI yet.
           break;
+        case "permission_request": {
+          setPendingPermissions((prev) => [
+            ...prev.filter((permission) => permission.requestId !== parsed.request_id),
+            { requestId: parsed.request_id, request: parsed.request },
+          ]);
+          break;
+        }
       }
     };
 
@@ -236,6 +316,27 @@ export function ChatView() {
     setSelectedAgent(agentId);
   }, []);
 
+  const sendPermissionResponse = useCallback(
+    (requestId: string, optionId: string) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      wsRef.current.send(JSON.stringify({ type: "permission_response", requestId, optionId }));
+      setPendingPermissions((prev) =>
+        prev.filter((permission) => permission.requestId !== requestId),
+      );
+    },
+    [],
+  );
+
+  const cancelPermissionRequest = useCallback((requestId: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(
+      JSON.stringify({ type: "permission_response", requestId, outcome: "cancelled" }),
+    );
+    setPendingPermissions((prev) =>
+      prev.filter((permission) => permission.requestId !== requestId),
+    );
+  }, []);
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       <div className="border-b border-border/60 bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
@@ -290,6 +391,54 @@ export function ChatView() {
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
+
+      {pendingPermissions.length > 0 && (
+        <div className="border-t border-border/60 bg-background px-4 py-3">
+          <div className="mx-auto flex max-w-3xl flex-col gap-2">
+            {pendingPermissions.map((permission) => {
+              const options = permissionOptions(permission.request);
+              return (
+                <div
+                  key={permission.requestId}
+                  className="rounded-md border border-border/70 bg-muted/25 px-3 py-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                        {t("Permission request")}
+                      </div>
+                      <div className="truncate text-sm font-medium text-foreground">
+                        {permissionTitle(permission.request)}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {options.map((option) => (
+                        <button
+                          key={option.optionId}
+                          type="button"
+                          onClick={() =>
+                            sendPermissionResponse(permission.requestId, option.optionId)
+                          }
+                          className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${permissionButtonClass(option.kind)}`}
+                        >
+                          {option.name}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => cancelPermissionRequest(permission.requestId)}
+                        className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
+                      >
+                        {t("Cancel")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <ChatInput
         value={input}

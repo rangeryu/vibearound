@@ -154,12 +154,13 @@ impl Conversation {
                 .ensure_agent(cli_kind, resume_sid, resume_cwd, downstream_handler)
                 .await
                 .map_err(|error| {
+                    let message = format!("{:#}", error);
                     tracing::info!(
                         "[Conversation] ensure_agent failed route={}: {:#}",
                         self.route,
                         error
                     );
-                    acp::Error::new(-32603, error.to_string())
+                    acp::Error::new(-32603, message)
                 })?;
 
             let session_id = self.ensure_session(&agent).await?;
