@@ -94,13 +94,15 @@ impl Agent {
         workspace: &Path,
         resume_session_id: Option<String>,
         client_handler: Arc<dyn AgentClientHandler>,
+        extra_args: Vec<String>,
         extra_env: Vec<(String, String)>,
     ) -> anyhow::Result<AgentReady> {
         let cwd = workspace.to_path_buf();
         let label = format!("{}:{}", agent_id, route);
 
         // Resolve program + args + install if needed.
-        let (program, resolved_args) = resolve_agent_program(&agent_id).await?;
+        let (program, mut resolved_args) = resolve_agent_program(&agent_id).await?;
+        resolved_args.extend(extra_args);
         tracing::info!(
             "[{}] spawning {} {} in {:?}",
             label,

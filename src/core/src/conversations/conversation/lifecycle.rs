@@ -62,7 +62,7 @@ impl Conversation {
                 .unwrap_or(false);
 
             if needs_switch {
-                let new_kind = requested_cli_kind.unwrap();
+                let new_kind = requested_cli_kind.clone().unwrap();
                 tracing::info!(
                     route = %self.route,
                     from = %resolved_cli_kind,
@@ -71,18 +71,30 @@ impl Conversation {
                 );
                 self.full_reset().await;
                 *self.cli_kind.lock().await = Some(new_kind.clone());
+                *self.profile.lock().await = None;
             } else {
                 tracing::debug!(route = %self.route, "reusing existing agent");
                 return Ok(existing);
             }
         }
 
-        let cli_kind = self.cli_kind.lock().await.clone().unwrap_or(default_agent);
+        let stored_cli_kind = self.cli_kind.lock().await.clone();
+        let cli_kind = match (stored_cli_kind.clone(), requested_cli_kind.clone()) {
+            (Some(stored), Some(requested)) if stored != requested => {
+                *self.profile.lock().await = None;
+                requested
+            }
+            (Some(stored), _) => stored,
+            (None, Some(requested)) => requested,
+            (None, None) => default_agent,
+        };
         let agent_id = crate::resources::resolve_agent_id(&cli_kind).map_err(anyhow::Error::msg)?;
         let cli_kind = agent_id.clone();
         tracing::info!(route = %self.route, cli_kind = %cli_kind, "spawning new agent");
-        let explicit_profile = self.profile.lock().await.clone();
-        let mut profile = explicit_profile
+        let profile = self
+            .profile
+            .lock()
+            .await
             .clone()
             .or_else(|| agent_state::resolve_default_profile(&agent_prefs, &cfg, &cli_kind))
             .unwrap_or_else(|| "default".to_string());
@@ -124,50 +136,24 @@ impl Conversation {
             ("VIBEAROUND_CHAT_ID".to_string(), self.route.chat_id.clone()),
             ("VIBEAROUND_AGENT_KIND".to_string(), agent_id.clone()),
         ];
+        let mut extra_args = Vec::new();
         if profile_uses_vibearound_credentials(&profile) {
-            if let Some(profile_def) =
-                profiles::schema::load(&profile).map(profiles::normalize_legacy_profile_and_persist)
-            {
-                match profiles::runtime::env_for_launch(&profile_def, &agent_id) {
-                    Ok(profile_env) => {
-                        tracing::info!(
-                            route = %self.route,
-                            cli_kind = %cli_kind,
-                            profile = %profile,
-                            "applied profile env for agent spawn"
-                        );
-                        env_vars.extend(profile_env);
-                    }
-                    Err(error) if explicit_profile.is_some() => {
-                        return Err(error).with_context(|| {
-                            format!(
-                                "failed to apply profile '{}' to agent '{}'",
-                                profile, agent_id
-                            )
-                        });
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            route = %self.route,
-                            cli_kind = %cli_kind,
-                            profile = %profile,
-                            error = %error,
-                            "default profile could not be applied; falling back to direct launch"
-                        );
-                        profile = "default".to_string();
-                    }
-                }
-            } else if explicit_profile.is_some() {
-                return Err(anyhow!("profile '{}' not found", profile));
-            } else {
-                tracing::warn!(
-                    route = %self.route,
-                    cli_kind = %cli_kind,
-                    profile = %profile,
-                    "default profile not found; falling back to direct launch"
-                );
-                profile = "default".to_string();
-            }
+            let applied =
+                materialize_profile_for_agent(&profile, &agent_id).with_context(|| {
+                    format!(
+                        "failed to apply profile '{}' to agent '{}'",
+                        profile, agent_id
+                    )
+                })?;
+            tracing::info!(
+                route = %self.route,
+                cli_kind = %cli_kind,
+                profile = %profile,
+                args = applied.command_args.len(),
+                "applied profile for agent spawn"
+            );
+            env_vars.extend(applied.env);
+            extra_args.extend(applied.command_args);
         }
 
         let ready = match Agent::spawn(
@@ -176,6 +162,7 @@ impl Conversation {
             &workspace,
             resume_session_id.clone(),
             handler,
+            extra_args,
             env_vars,
         )
         .await
@@ -266,7 +253,9 @@ impl Conversation {
         Ok(session_id)
     }
 
-    /// Kill the current agent and clear all state.
+    /// Kill the current agent and clear runtime state while preserving the
+    /// route-level agent/profile selection. Callers that change agent
+    /// identity clear the profile explicitly before the next spawn.
     ///
     /// Does not wait for any in-flight prompt — the agent shutdown signal
     /// is sent immediately. Any concurrent `acp::Agent::prompt` future will
@@ -324,4 +313,37 @@ impl Conversation {
 
 fn profile_uses_vibearound_credentials(profile: &str) -> bool {
     !matches!(profile, "default" | "none" | "off" | "direct")
+}
+
+struct AppliedProfile {
+    env: Vec<(String, String)>,
+    command_args: Vec<String>,
+}
+
+fn materialize_profile_for_agent(
+    profile_id: &str,
+    agent_id: &str,
+) -> anyhow::Result<AppliedProfile> {
+    let profile = profiles::schema::load(profile_id)
+        .map(profiles::normalize_legacy_profile_and_persist)
+        .ok_or_else(|| anyhow!("profile '{}' not found", profile_id))?;
+    let route = profiles::connections::resolve_profile_agent_route(&profile, agent_id).ok_or_else(
+        || {
+            anyhow!(
+                "profile '{}' cannot launch agent '{}'",
+                profile.id,
+                agent_id
+            )
+        },
+    )?;
+    let launch_id = uuid::Uuid::new_v4().to_string();
+    let rendered =
+        profiles::runtime::render_for_agent_route(&profile, agent_id, &launch_id, &route)?;
+    let command_args = rendered.command_args.clone();
+    let mut env = profiles::runtime::materialize_env(&profile.id, rendered)?;
+    env.push(("VIBEAROUND_LAUNCH_ID".to_string(), launch_id));
+    env.push(("VIBEAROUND_PROFILE_ID".to_string(), profile.id.clone()));
+    env.push(("VIBEAROUND_LAUNCH_TARGET".to_string(), agent_id.to_string()));
+
+    Ok(AppliedProfile { env, command_args })
 }

@@ -127,6 +127,10 @@ pub fn resolve_default_profile(
     agent_id: &str,
 ) -> Option<String> {
     let agent_id = canonical_agent_id(agent_id);
+    // The app-wide default is an agent/profile pair. When the requested agent
+    // is that pair's agent, the app-wide profile decision wins, including
+    // `None` meaning direct launch. Other agents fall back to their own
+    // per-agent default profile.
     if prefs.default_agent.is_some() && resolve_default_agent(prefs, cfg) == agent_id {
         return clean_optional_string(prefs.default_profile_id.as_deref());
     }
@@ -316,4 +320,78 @@ fn connection_preference_is_empty(preference: &ProfileConnectionPreference) -> b
                     .is_empty()
                 && (!proxy.enabled || proxy.headers.is_empty())
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_default_direct_overrides_agent_profile() {
+        let cfg = config::Config::default();
+        let prefs = AgentsPrefsFile {
+            default_agent: Some("claude".to_string()),
+            default_profile_id: None,
+            agents: [(
+                "claude".to_string(),
+                AgentLaunchPreference {
+                    profile_id: Some("deepseek".to_string()),
+                    workspace: None,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+
+        assert_eq!(resolve_default_profile(&prefs, &cfg, "claude"), None);
+    }
+
+    #[test]
+    fn switch_target_uses_agent_profile_when_not_global_default() {
+        let cfg = config::Config::default();
+        let prefs = AgentsPrefsFile {
+            default_agent: Some("codex".to_string()),
+            default_profile_id: Some("global-deepseek".to_string()),
+            agents: [(
+                "claude".to_string(),
+                AgentLaunchPreference {
+                    profile_id: Some("claude-dashscope".to_string()),
+                    workspace: None,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_default_profile(&prefs, &cfg, "claude").as_deref(),
+            Some("claude-dashscope")
+        );
+    }
+
+    #[test]
+    fn global_default_profile_overrides_same_agent_profile() {
+        let cfg = config::Config::default();
+        let prefs = AgentsPrefsFile {
+            default_agent: Some("codex".to_string()),
+            default_profile_id: Some("global-deepseek".to_string()),
+            agents: [(
+                "codex".to_string(),
+                AgentLaunchPreference {
+                    profile_id: Some("codex-small-default".to_string()),
+                    workspace: None,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_default_profile(&prefs, &cfg, "codex").as_deref(),
+            Some("global-deepseek")
+        );
+    }
 }

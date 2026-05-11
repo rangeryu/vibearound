@@ -99,6 +99,9 @@ export function agentProfileId(
   prefs: LauncherPreferences,
   agentId: string,
 ): string | undefined {
+  if (prefs.defaultAgent === agentId) {
+    return prefs.defaultProfileId ?? undefined;
+  }
   return (
     prefs.agentPreferences[agentId]?.profileId ??
     prefs.defaultProfiles[agentId] ??
