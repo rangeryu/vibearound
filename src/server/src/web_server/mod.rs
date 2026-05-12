@@ -7,7 +7,6 @@ mod api;
 mod api_proxy;
 mod auth;
 mod mcp;
-mod openai_proxy;
 mod pair;
 mod preview;
 mod ws_chat;
@@ -132,16 +131,9 @@ async fn spa_fallback_handler(
 }
 
 fn is_dashboard_api_path(path: &str) -> bool {
-    [
-        "/va/local-api/",
-        "/local-api/",
-        "/va/proxy/",
-        "/proxy/",
-        "/va/openai-proxy/",
-        "/openai-proxy/",
-    ]
-    .into_iter()
-    .any(|prefix| path.starts_with(prefix))
+    ["/va/local-api/", "/local-api/", "/va/proxy/", "/proxy/"]
+        .into_iter()
+        .any(|prefix| path.starts_with(prefix))
 }
 
 /// Runs the Axum server (static files + WebSocket + session API). Binds to 127.0.0.1 (localhost only).
@@ -252,56 +244,20 @@ pub async fn run_web_server(
     // short-lived authentication token (10-min TTL, cryptographically random;
     // single source of truth: `common::previews::SHARE_TTL_SECS`).
     let proxy_routes = Router::new()
-        // Profile-launched CLIs cannot attach the VibeAround bearer token
-        // separately from their upstream OpenAI API key. This route is
-        // localhost-only and requires the CLI's Authorization header; it
-        // never reads API keys from profile files.
-        .route(
-            "/openai-proxy/{profile_id}/{launch_id}/v1/responses",
-            post(openai_proxy::responses_handler),
-        )
-        .route(
-            "/openai-proxy/{profile_id}/v1/responses",
-            post(openai_proxy::legacy_responses_handler),
-        )
-        .route(
-            "/proxy/{profile_id}/{launch_id}/{target_api_type}/v1/responses",
-            post(api_proxy::responses_handler),
-        )
-        .route(
-            "/proxy/{profile_id}/{launch_id}/{scope}/{target_api_type}/v1/responses",
-            post(api_proxy::scoped_responses_handler),
-        )
         .route(
             "/proxy/{profile_id}/{target_api_type}/v1/responses",
             post(api_proxy::legacy_responses_handler),
-        )
-        .route(
-            "/proxy/{profile_id}/{launch_id}/{target_api_type}/v1/chat/completions",
-            post(api_proxy::chat_completions_handler),
-        )
-        .route(
-            "/proxy/{profile_id}/{launch_id}/{scope}/{target_api_type}/v1/chat/completions",
-            post(api_proxy::scoped_chat_completions_handler),
         )
         .route(
             "/proxy/{profile_id}/{target_api_type}/v1/chat/completions",
             post(api_proxy::legacy_chat_completions_handler),
         )
         .route(
-            "/proxy/{profile_id}/{launch_id}/{target_api_type}/v1/messages",
-            post(api_proxy::messages_handler),
-        )
-        .route(
-            "/proxy/{profile_id}/{launch_id}/{scope}/{target_api_type}/v1/messages",
-            post(api_proxy::scoped_messages_handler),
-        )
-        .route(
             "/proxy/{profile_id}/{target_api_type}/v1/messages",
             post(api_proxy::legacy_messages_handler),
         )
-        // Stable local API base for manually configured clients. `scope`
-        // isolates provider state such as DeepSeek reasoning/tool replay.
+        // Stable local API base for configured clients. `scope` selects the
+        // route/profile preference; it is not a proxy session identifier.
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/v1/responses",
             post(api_proxy::local_responses_handler),
@@ -420,9 +376,6 @@ mod tests {
         ));
         assert!(is_dashboard_api_path(
             "/va/proxy/profile/openai-chat/v1/responses"
-        ));
-        assert!(is_dashboard_api_path(
-            "/va/openai-proxy/profile/v1/responses"
         ));
         assert!(!is_dashboard_api_path("/va/"));
         assert!(!is_dashboard_api_path("/va/assets/index.css"));

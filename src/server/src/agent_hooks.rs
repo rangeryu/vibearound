@@ -8,8 +8,6 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::openai_proxy::providers::clear_deepseek_reasoning_for_context;
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CodexHookEnvelope {
     pub launch_id: String,
@@ -58,7 +56,7 @@ impl AgentHookRegistry {
         let prompt = string_field(&envelope.payload, "prompt");
         let last_assistant_message = string_field(&envelope.payload, "last_assistant_message");
 
-        let mut cleanup_context = None;
+        let session_ended;
         {
             let mut state = self
                 .codex_sessions_by_launch
@@ -107,31 +105,12 @@ impl AgentHookRegistry {
 
             append_codex_event_jsonl(&envelope, &state);
 
-            if is_codex_session_end_event(&envelope.event) {
-                cleanup_context = state.profile_id.clone().map(|profile_id| {
-                    (
-                        profile_id,
-                        state.launch_id.clone(),
-                        state.session_id.clone(),
-                    )
-                });
-            }
+            session_ended = is_codex_session_end_event(&envelope.event);
         }
 
-        if let Some((profile_id, launch_id, session_id)) = cleanup_context {
-            clear_deepseek_reasoning_for_context(
-                &profile_id,
-                Some(&launch_id),
-                session_id.as_deref(),
-            );
+        if session_ended {
             self.codex_sessions_by_launch.remove(&envelope.launch_id);
         }
-    }
-
-    pub fn codex_session_for_launch(&self, launch_id: &str) -> Option<CodexSessionState> {
-        self.codex_sessions_by_launch
-            .get(launch_id)
-            .map(|entry| entry.value().clone())
     }
 }
 

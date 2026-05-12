@@ -135,9 +135,6 @@ impl SseMapState {
                 return;
             }
         };
-        if self.upstream_protocol == ProxyProtocol::OpenAiChat {
-            self.provider_adapter.observe_chat_stream_chunk(&raw);
-        }
         let mut events = match self
             .upstream_protocol
             .decode_upstream_stream_chunk(raw, &mut self.decode_state)

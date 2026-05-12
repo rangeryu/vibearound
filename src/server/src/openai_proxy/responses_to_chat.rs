@@ -81,7 +81,7 @@ fn ensure_stateless_request(root: &Map<String, Value>) -> Result<()> {
         .is_some_and(|value| !value.is_null())
     {
         return Err(ProxyTransformError::Unsupported(
-            "`previous_response_id` requires local response-state expansion before Chat conversion"
+            "`previous_response_id` is not supported for Chat conversion; send full input context instead"
                 .to_string(),
         ));
     }
@@ -91,7 +91,7 @@ fn ensure_stateless_request(root: &Map<String, Value>) -> Result<()> {
         .is_some_and(|value| !value.is_null())
     {
         return Err(ProxyTransformError::Unsupported(
-            "`conversation` requires local conversation-state expansion before Chat conversion"
+            "`conversation` is not supported for Chat conversion; send full input context instead"
                 .to_string(),
         ));
     }
@@ -652,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_stateful_responses_requests_until_proxy_expands_state() {
+    fn rejects_stateful_responses_requests_without_full_context() {
         let error = responses_to_chat_request(json!({
             "model": "chat-model",
             "previous_response_id": "resp_123",

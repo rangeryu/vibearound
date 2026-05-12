@@ -75,10 +75,6 @@ pub fn chat_completion_to_response(chat: Value, original_request: &Value) -> Res
             .get("parallel_tool_calls")
             .cloned()
             .unwrap_or_else(|| json!(true)),
-        "previous_response_id": original_request
-            .get("previous_response_id")
-            .cloned()
-            .unwrap_or(Value::Null),
         "reasoning": original_request
             .get("reasoning")
             .cloned()
@@ -572,11 +568,6 @@ impl ChatToResponsesStream {
                 .get("parallel_tool_calls")
                 .cloned()
                 .unwrap_or_else(|| json!(true)),
-            "previous_response_id": self
-                .original_request
-                .get("previous_response_id")
-                .cloned()
-                .unwrap_or(Value::Null),
             "reasoning": self
                 .original_request
                 .get("reasoning")

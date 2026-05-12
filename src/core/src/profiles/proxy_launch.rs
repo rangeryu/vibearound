@@ -125,14 +125,13 @@ fn resolve_proxy_settings(
 
 fn render_claude_proxy_profile(
     profile: &ProfileDef,
-    launch_id: &str,
+    _launch_id: &str,
     settings: ProxyLaunchSettings,
 ) -> RenderedProfile {
     let proxy_base_url = format!(
-        "http://127.0.0.1:{}/va/proxy/{}/{}/{}/{}",
+        "http://127.0.0.1:{}/va/local-api/{}/{}/{}",
         config::DEFAULT_PORT,
         profile.id,
-        launch_id,
         settings.scope,
         settings.target_api_type
     );
@@ -173,14 +172,13 @@ fn render_claude_proxy_profile(
 
 fn render_codex_proxy_profile(
     profile: &ProfileDef,
-    launch_id: &str,
+    _launch_id: &str,
     settings: ProxyLaunchSettings,
 ) -> RenderedProfile {
     let proxy_base_url = format!(
-        "http://127.0.0.1:{}/va/proxy/{}/{}/{}/{}/v1",
+        "http://127.0.0.1:{}/va/local-api/{}/{}/{}/v1",
         config::DEFAULT_PORT,
         profile.id,
-        launch_id,
         settings.scope,
         settings.target_api_type
     );
@@ -239,11 +237,11 @@ fn render_codex_proxy_profile(
 
 fn render_opencode_proxy_profile(
     profile: &ProfileDef,
-    launch_id: &str,
+    _launch_id: &str,
     client_api_type: &str,
     settings: ProxyLaunchSettings,
 ) -> RenderedProfile {
-    let proxy_base_url = opencode_proxy_base_url(profile, launch_id, &settings, client_api_type);
+    let proxy_base_url = opencode_proxy_base_url(profile, &settings, client_api_type);
     let npm = match client_api_type {
         "anthropic" => "@ai-sdk/anthropic",
         "openai-chat" => "@ai-sdk/openai-compatible",
@@ -289,7 +287,6 @@ fn render_opencode_proxy_profile(
 
 fn opencode_proxy_base_url(
     profile: &ProfileDef,
-    launch_id: &str,
     settings: &ProxyLaunchSettings,
     client_api_type: &str,
 ) -> String {
@@ -299,10 +296,9 @@ fn opencode_proxy_base_url(
         "/v1"
     };
     format!(
-        "http://127.0.0.1:{}/va/proxy/{}/{}/{}/{}{}",
+        "http://127.0.0.1:{}/va/local-api/{}/{}/{}{}",
         config::DEFAULT_PORT,
         profile.id,
-        launch_id,
         settings.scope,
         settings.target_api_type,
         suffix

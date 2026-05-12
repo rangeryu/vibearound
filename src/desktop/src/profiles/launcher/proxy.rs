@@ -50,7 +50,7 @@ fn render_runtime_launch(
 fn apply_compatibility_proxy(
     profile: &ProfileDef,
     launch_target: &str,
-    launch_id: &str,
+    _launch_id: &str,
     api_type: &str,
     rendered: &mut profiles::render::RenderedProfile,
 ) -> anyhow::Result<()> {
@@ -64,10 +64,9 @@ fn apply_compatibility_proxy(
 
     let provider_key = format!("model_providers.{}", profile.provider);
     let proxy_base_url = format!(
-        "http://127.0.0.1:{}/va/openai-proxy/{}/{}/v1",
+        "http://127.0.0.1:{}/va/local-api/{}/codex-openai-chat/openai-chat/v1",
         config::DEFAULT_PORT,
-        profile.id,
-        launch_id
+        profile.id
     );
 
     codex::push_config_arg(
@@ -201,14 +200,13 @@ fn resolve_proxy_settings(
 
 fn render_claude_proxy_profile(
     profile: &ProfileDef,
-    launch_id: &str,
+    _launch_id: &str,
     settings: ProxyLaunchSettings,
 ) -> profiles::render::RenderedProfile {
     let proxy_base_url = format!(
-        "http://127.0.0.1:{}/va/proxy/{}/{}/{}/{}",
+        "http://127.0.0.1:{}/va/local-api/{}/{}/{}",
         config::DEFAULT_PORT,
         profile.id,
-        launch_id,
         settings.scope,
         settings.target_api_type
     );
@@ -249,14 +247,13 @@ fn render_claude_proxy_profile(
 
 fn render_codex_proxy_profile(
     profile: &ProfileDef,
-    launch_id: &str,
+    _launch_id: &str,
     settings: ProxyLaunchSettings,
 ) -> profiles::render::RenderedProfile {
     let proxy_base_url = format!(
-        "http://127.0.0.1:{}/va/proxy/{}/{}/{}/{}/v1",
+        "http://127.0.0.1:{}/va/local-api/{}/{}/{}/v1",
         config::DEFAULT_PORT,
         profile.id,
-        launch_id,
         settings.scope,
         settings.target_api_type
     );
@@ -319,11 +316,11 @@ fn render_codex_proxy_profile(
 
 fn render_opencode_proxy_profile(
     profile: &ProfileDef,
-    launch_id: &str,
+    _launch_id: &str,
     client_api_type: &str,
     settings: ProxyLaunchSettings,
 ) -> profiles::render::RenderedProfile {
-    let proxy_base_url = opencode_proxy_base_url(profile, launch_id, &settings, client_api_type);
+    let proxy_base_url = opencode_proxy_base_url(profile, &settings, client_api_type);
     let npm = match client_api_type {
         "anthropic" => "@ai-sdk/anthropic",
         "openai-chat" => "@ai-sdk/openai-compatible",
@@ -369,7 +366,6 @@ fn render_opencode_proxy_profile(
 
 fn opencode_proxy_base_url(
     profile: &ProfileDef,
-    launch_id: &str,
     settings: &ProxyLaunchSettings,
     client_api_type: &str,
 ) -> String {
@@ -379,10 +375,9 @@ fn opencode_proxy_base_url(
         "/v1"
     };
     format!(
-        "http://127.0.0.1:{}/va/proxy/{}/{}/{}/{}{}",
+        "http://127.0.0.1:{}/va/local-api/{}/{}/{}{}",
         config::DEFAULT_PORT,
         profile.id,
-        launch_id,
         settings.scope,
         settings.target_api_type,
         suffix

@@ -6,21 +6,21 @@ use serde_json::{json, Value};
 
 mod completion;
 mod model_mapping;
+mod passthrough;
 mod protocol;
 mod routes;
 mod stream;
 mod upstream;
 
-use crate::openai_proxy::providers::{ProviderProxyAdapter, ProviderProxyContext};
+use crate::openai_proxy::providers::ProviderProxyAdapter;
 
 use completion::translated_completion_response;
 use model_mapping::{proxy_model_mapping, proxy_route_preference};
-use protocol::ProxyProtocol;
+use passthrough::{buffered_passthrough_response, passthrough_response};
+pub(super) use protocol::ProxyProtocol;
 pub use routes::{
-    chat_completions_handler, legacy_chat_completions_handler, legacy_messages_handler,
-    legacy_responses_handler, local_chat_completions_handler, local_messages_handler,
-    local_responses_handler, messages_handler, responses_handler, scoped_chat_completions_handler,
-    scoped_messages_handler, scoped_responses_handler,
+    legacy_chat_completions_handler, legacy_messages_handler, legacy_responses_handler,
+    local_chat_completions_handler, local_messages_handler, local_responses_handler,
 };
 use stream::translated_stream_response;
 use upstream::{
@@ -30,10 +30,9 @@ use upstream::{
 
 use super::AppState;
 
-async fn proxy_handler(
+pub(super) async fn proxy_handler(
     state: AppState,
     profile_id: String,
-    launch_id: Option<String>,
     route_scope: Option<String>,
     manual_scope: Option<String>,
     target_api_type: String,
@@ -56,37 +55,85 @@ async fn proxy_handler(
         proxy_preference.as_ref(),
         &target_api_type,
     );
-    let codex_session_state = launch_id
-        .as_deref()
-        .and_then(|launch_id| state.hook_registry.codex_session_for_launch(launch_id));
-    let manual_session_id = match manual_scope.as_deref() {
-        Some(scope) => match manual_scope_session_id(scope) {
-            Ok(session_id) => Some(session_id),
-            Err(response) => return response,
-        },
-        None => None,
-    };
-    let provider_context = ProviderProxyContext {
-        launch_id: codex_session_state
-            .as_ref()
-            .map(|state| state.launch_id.clone())
-            .or_else(|| launch_id.clone()),
-        session_id: codex_session_state
-            .as_ref()
-            .and_then(|state| state.session_id.clone())
-            .or(manual_session_id),
-        transcript_path: codex_session_state
-            .as_ref()
-            .and_then(|state| state.transcript_path.clone()),
-    };
-    let mut provider_adapter =
-        ProviderProxyAdapter::for_profile(&upstream.profile, provider_context);
+    if let Some(scope) = manual_scope.as_deref() {
+        if let Err(response) = validate_manual_scope(scope) {
+            return response;
+        }
+    }
+    let mut provider_adapter = ProviderProxyAdapter::for_profile(&upstream.profile);
     let manual_profile_api_key = manual_scope
         .as_ref()
         .and_then(|_| upstream.profile.credentials.get("api_key").cloned());
 
-    let mut universal_request = match client_protocol.decode_agent_request(original_request.clone())
-    {
+    let agent_request = original_request;
+
+    if client_protocol == upstream.protocol {
+        let stream = agent_request
+            .get("stream")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let body = match serde_json::to_vec(&agent_request) {
+            Ok(body) => body,
+            Err(e) => {
+                return json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("failed to serialize proxy request: {e}"),
+                );
+            }
+        };
+        let upstream_headers = match merged_upstream_headers(
+            &upstream.headers,
+            proxy_preference
+                .as_ref()
+                .map(|preference| &preference.headers),
+        ) {
+            Ok(headers) => headers,
+            Err(error) => return json_error(StatusCode::BAD_REQUEST, &error.to_string()),
+        };
+        let request = state
+            .preview_client
+            .post(&upstream.url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .headers(upstream_headers)
+            .body(body);
+        let request = match apply_upstream_auth(
+            request,
+            upstream.protocol,
+            upstream.auth_header,
+            &headers,
+            manual_profile_api_key.as_deref(),
+        ) {
+            Ok(request) => request,
+            Err(response) => return response,
+        };
+
+        tracing::info!(
+            target: "server::web_server::api_proxy",
+            profile_id = %profile_id,
+            route_scope = ?route_scope,
+            manual_scope = ?manual_scope,
+            target_api_type = %target_api_type,
+            upstream = %redacted_url(&upstream.url),
+            stream = stream,
+            "API proxy passthrough forwarding request"
+        );
+
+        let response = match request.send().await {
+            Ok(response) => response,
+            Err(e) => {
+                return json_error(
+                    StatusCode::BAD_GATEWAY,
+                    &format!("failed to reach upstream proxy endpoint: {e}"),
+                );
+            }
+        };
+        if !stream {
+            return buffered_passthrough_response(response).await;
+        }
+        return passthrough_response(response);
+    }
+
+    let mut universal_request = match client_protocol.decode_agent_request(agent_request.clone()) {
         Ok(request) => request,
         Err(error) => return json_error(StatusCode::BAD_REQUEST, &error.to_string()),
     };
@@ -104,13 +151,12 @@ async fn proxy_handler(
     if upstream.protocol == ProxyProtocol::OpenAiChat {
         provider_adapter.prepare_chat_request(
             client_protocol.provider_request_source(),
-            &original_request,
+            &agent_request,
             &mut upstream_request,
         );
     } else if upstream.protocol == ProxyProtocol::AnthropicMessages {
         provider_adapter.prepare_anthropic_request(&mut upstream_request);
     }
-
     let stream = upstream_request
         .get("stream")
         .and_then(Value::as_bool)
@@ -155,7 +201,6 @@ async fn proxy_handler(
     tracing::info!(
         target: "server::web_server::api_proxy",
         profile_id = %profile_id,
-        launch_id = ?launch_id,
         route_scope = ?route_scope,
         manual_scope = ?manual_scope,
         target_api_type = %target_api_type,
@@ -200,7 +245,7 @@ async fn proxy_handler(
     }
 }
 
-fn manual_scope_session_id(scope: &str) -> Result<String, Response> {
+fn validate_manual_scope(scope: &str) -> Result<(), Response> {
     if scope.is_empty() {
         return Err(json_error(
             StatusCode::BAD_REQUEST,
@@ -213,7 +258,7 @@ fn manual_scope_session_id(scope: &str) -> Result<String, Response> {
             "manual proxy scope must be 1-128 characters and contain only ASCII letters, digits, '.', '_' or '-'",
         ));
     }
-    Ok(format!("manual:{scope}"))
+    Ok(())
 }
 
 fn is_manual_scope_char(ch: char) -> bool {
@@ -235,21 +280,18 @@ fn json_error(status: StatusCode, message: &str) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::manual_scope_session_id;
+    use super::validate_manual_scope;
 
     #[test]
     fn accepts_manual_proxy_scope() {
-        assert_eq!(
-            manual_scope_session_id("codex.project_1").unwrap(),
-            "manual:codex.project_1"
-        );
+        validate_manual_scope("codex.project_1").unwrap();
     }
 
     #[test]
     fn rejects_invalid_manual_proxy_scope() {
-        assert!(manual_scope_session_id("").is_err());
-        assert!(manual_scope_session_id("codex/project").is_err());
-        assert!(manual_scope_session_id("codex project").is_err());
-        assert!(manual_scope_session_id(&"a".repeat(129)).is_err());
+        assert!(validate_manual_scope("").is_err());
+        assert!(validate_manual_scope("codex/project").is_err());
+        assert!(validate_manual_scope("codex project").is_err());
+        assert!(validate_manual_scope(&"a".repeat(129)).is_err());
     }
 }

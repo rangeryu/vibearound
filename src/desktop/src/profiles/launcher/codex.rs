@@ -355,7 +355,9 @@ mod tests {
         push_config_arg(
             &mut args,
             "model_providers.deepseek.base_url",
-            &toml_string("http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1"),
+            &toml_string(
+                "http://127.0.0.1:12358/va/local-api/deepseek/codex-openai-chat/openai-chat/v1",
+            ),
         );
         push_config_arg(
             &mut args,
@@ -367,7 +369,7 @@ mod tests {
             args,
             vec![
                 "-c".to_string(),
-                "model_providers.deepseek.base_url='http://127.0.0.1:12358/va/openai-proxy/deepseek/launch-123/v1'".to_string(),
+                "model_providers.deepseek.base_url='http://127.0.0.1:12358/va/local-api/deepseek/codex-openai-chat/openai-chat/v1'".to_string(),
                 "-c".to_string(),
                 "model_providers.deepseek.wire_api='responses'".to_string(),
             ]

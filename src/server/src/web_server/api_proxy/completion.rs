@@ -4,7 +4,9 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
-use va_ai_api_proxy::{FinishReason, UniversalEvent, Usage};
+use va_ai_api_proxy::{
+    ContentBlock, FinishReason, UniversalEvent, UniversalItem, UniversalResponse, Usage,
+};
 
 use crate::openai_proxy::providers::ProviderProxyAdapter;
 
@@ -35,9 +37,6 @@ pub(super) async fn translated_completion_response(
             );
         }
     };
-    if upstream_protocol == ProxyProtocol::OpenAiChat {
-        provider_adapter.observe_chat_completion(&raw);
-    }
     let mut events = match upstream_protocol.decode_upstream_response(raw) {
         Ok(events) => events,
         Err(error) => return json_error(StatusCode::BAD_GATEWAY, &error.to_string()),
@@ -83,77 +82,83 @@ struct ToolCallParts {
 }
 
 fn collect_response_parts(events: &[UniversalEvent]) -> ResponseParts {
+    collect_response_parts_from_universal(&UniversalResponse::from_events(events))
+}
+
+fn collect_response_parts_from_universal(response: &UniversalResponse) -> ResponseParts {
     let mut parts = ResponseParts::default();
-    for event in events {
-        match event {
-            UniversalEvent::ResponseStart { id, model, .. } => {
-                parts.id = id.clone();
-                parts.model = model.clone();
+    parts.id = response.id.clone();
+    parts.model = response.model.clone();
+    parts.usage = response.usage.clone();
+    parts.finish_reason = response.finish_reason;
+
+    for item in &response.output {
+        match item {
+            UniversalItem::Message { id, content, .. } => {
+                if parts.message_id.is_none() {
+                    parts.message_id = id.clone();
+                }
+                collect_content_blocks(&mut parts, content);
             }
-            UniversalEvent::MessageStart { id, .. } => {
-                parts.message_id = Some(id.clone());
-            }
-            UniversalEvent::TextDelta { text, .. } => {
-                parts.text.push_str(text);
-            }
-            UniversalEvent::ReasoningDelta { text, .. } => {
-                parts.reasoning_content.push_str(text);
-            }
-            UniversalEvent::ToolCallDelta {
+            UniversalItem::ToolCall {
                 id,
                 name,
-                arguments_delta,
-            } => {
-                let tool_call = match parts.tool_calls.iter_mut().find(|tool_call| {
-                    tool_call.id == *id || (tool_call.id.is_empty() && !id.is_empty())
-                }) {
-                    Some(tool_call) => tool_call,
-                    None => {
-                        parts.tool_calls.push(ToolCallParts {
-                            id: id.clone(),
-                            name: None,
-                            arguments: String::new(),
-                        });
-                        parts.tool_calls.last_mut().expect("tool call was pushed")
-                    }
-                };
-                if tool_call.id.is_empty() {
-                    tool_call.id = id.clone();
-                }
-                if name.is_some() {
-                    tool_call.name = name.clone();
-                }
-                tool_call.arguments.push_str(arguments_delta);
-            }
-            UniversalEvent::MessageDone {
-                finish_reason,
-                usage,
+                arguments,
                 ..
-            } => {
-                parts.finish_reason = *finish_reason;
-                if usage.is_some() {
-                    parts.usage = usage.clone();
+            } => parts.tool_calls.push(ToolCallParts {
+                id: id.clone(),
+                name: Some(name.clone()),
+                arguments: stringify_json(arguments),
+            }),
+            UniversalItem::Reasoning { text, .. } => {
+                if let Some(text) = text {
+                    parts.reasoning_content.push_str(text);
                 }
             }
-            UniversalEvent::ResponseDone { usage, .. } => {
-                if usage.is_some() {
-                    parts.usage = usage.clone();
-                }
-            }
-            _ => {}
+            UniversalItem::ToolResult { .. } | UniversalItem::Unknown { .. } => {}
         }
     }
     parts
 }
 
+fn collect_content_blocks(parts: &mut ResponseParts, content: &[ContentBlock]) {
+    for block in content {
+        match block {
+            ContentBlock::Text { text } => parts.text.push_str(text),
+            ContentBlock::Reasoning {
+                text: Some(text), ..
+            } => parts.reasoning_content.push_str(text),
+            ContentBlock::ToolCall {
+                id,
+                name,
+                arguments,
+                ..
+            } => parts.tool_calls.push(ToolCallParts {
+                id: id.clone(),
+                name: Some(name.clone()),
+                arguments: stringify_json(arguments),
+            }),
+            _ => {}
+        }
+    }
+}
+
+fn stringify_json(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Null => String::new(),
+        value => serde_json::to_string(value).unwrap_or_default(),
+    }
+}
+
 fn events_to_openai_response(events: &[UniversalEvent]) -> Value {
     let parts = collect_response_parts(events);
-    let id = parts.id.unwrap_or_else(|| "resp_va_proxy".to_string());
+    let id = parts.id.unwrap_or_else(|| "resp_proxy".to_string());
     let mut output = Vec::new();
     if !parts.reasoning_content.is_empty() {
         output.push(json!({
             "type": "reasoning",
-            "id": "rs_va_proxy",
+            "id": "rs_proxy",
             "content": [{
                 "type": "reasoning_text",
                 "text": parts.reasoning_content,
@@ -163,7 +168,7 @@ fn events_to_openai_response(events: &[UniversalEvent]) -> Value {
     if !parts.text.is_empty() || parts.tool_calls.is_empty() {
         output.push(json!({
             "type": "message",
-            "id": parts.message_id.unwrap_or_else(|| "msg_va_proxy".to_string()),
+            "id": parts.message_id.unwrap_or_else(|| "msg_proxy".to_string()),
             "status": "completed",
             "role": "assistant",
             "content": [{
@@ -230,7 +235,7 @@ fn events_to_openai_chat_response(events: &[UniversalEvent]) -> Value {
         );
     }
     json!({
-        "id": parts.id.unwrap_or_else(|| "chatcmpl_va_proxy".to_string()),
+        "id": parts.id.unwrap_or_else(|| "chatcmpl_proxy".to_string()),
         "object": "chat.completion",
         "created": unix_timestamp(),
         "model": parts.model,
@@ -262,7 +267,7 @@ fn events_to_anthropic_response(events: &[UniversalEvent]) -> Value {
         }));
     }
     json!({
-        "id": parts.message_id.or(parts.id).unwrap_or_else(|| "msg_va_proxy".to_string()),
+        "id": parts.message_id.or(parts.id).unwrap_or_else(|| "msg_proxy".to_string()),
         "type": "message",
         "role": "assistant",
         "model": parts.model,
@@ -275,7 +280,7 @@ fn events_to_anthropic_response(events: &[UniversalEvent]) -> Value {
 
 fn tool_call_id(tool_call: &ToolCallParts) -> String {
     if tool_call.id.is_empty() {
-        "call_va_proxy".to_string()
+        "call_proxy".to_string()
     } else {
         tool_call.id.clone()
     }

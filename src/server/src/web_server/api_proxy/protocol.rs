@@ -7,7 +7,7 @@ use va_ai_api_proxy::{
 use crate::openai_proxy::providers::ProviderRequestSource;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ProxyProtocol {
+pub(in crate::web_server) enum ProxyProtocol {
     OpenAiResponses,
     OpenAiChat,
     AnthropicMessages,
