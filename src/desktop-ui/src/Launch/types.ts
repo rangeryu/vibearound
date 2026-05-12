@@ -57,6 +57,7 @@ export interface ApiTypeOverrides {
   base_url?: string | null;
   model?: string | null;
   reasoning_effort?: string | null;
+  capabilities?: ContentCapabilities | null;
 }
 
 export interface ProviderSettings {
@@ -89,6 +90,7 @@ export type ProfileDraft = Omit<ProfileDef, "id">;
 export interface ModelDef {
   id: string;
   label?: string | null;
+  capabilities?: ContentCapabilities | null;
 }
 
 export interface FieldDef {
@@ -124,6 +126,12 @@ export interface EndpointDef {
 
 export interface EndpointCapabilities {
   reasoning_effort?: boolean | null;
+  content?: ContentCapabilities | null;
+}
+
+export interface ContentCapabilities {
+  image_input?: boolean | null;
+  file_input?: boolean | null;
 }
 
 export interface CatalogEntry {

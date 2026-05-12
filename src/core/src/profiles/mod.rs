@@ -115,6 +115,7 @@ mod tests {
                 base_url: None,
                 model: None,
                 reasoning_effort: None,
+                capabilities: None,
             },
         );
         let profile = ProfileDef {

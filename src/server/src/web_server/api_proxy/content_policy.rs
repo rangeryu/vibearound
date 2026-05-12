@@ -1,0 +1,414 @@
+use common::profiles::catalog::{self, ContentCapabilities, EndpointDef};
+use common::profiles::schema::ProfileDef;
+use serde_json::Value;
+use va_ai_api_proxy::{ContentBlock, UniversalItem, UniversalRequest};
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct ContentUsage {
+    image_input: bool,
+    file_input: bool,
+}
+
+impl ContentUsage {
+    fn is_empty(self) -> bool {
+        !self.image_input && !self.file_input
+    }
+}
+
+pub(super) fn validate_request_content(
+    profile: &ProfileDef,
+    target_api_type: &str,
+    request: &UniversalRequest,
+) -> Result<(), String> {
+    let usage = request_content_usage(request);
+    if usage.is_empty() {
+        return Ok(());
+    }
+
+    let configured_model = configured_model(profile, target_api_type);
+    let model = request.model.as_deref().or(configured_model.as_deref());
+    let capabilities = resolve_content_capabilities(profile, target_api_type, model);
+
+    let mut missing = ContentUsage::default();
+    let mut unsupported = Vec::new();
+    if usage.image_input && !capabilities.image_input {
+        missing.image_input = true;
+        unsupported.push("image");
+    }
+    if usage.file_input && !capabilities.file_input {
+        missing.file_input = true;
+        unsupported.push("file");
+    }
+    if unsupported.is_empty() {
+        return Ok(());
+    }
+
+    let provider_label = catalog::get(&profile.provider)
+        .map(|provider| provider.label.as_str())
+        .unwrap_or(profile.provider.as_str());
+    let model_label = model.unwrap_or("selected model");
+    let alternatives = compatible_models(profile, target_api_type, model, missing);
+    let alternative_hint = if alternatives.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " Compatible models for {} input on this endpoint: {}.",
+            content_usage_label(missing),
+            alternatives.join(", ")
+        )
+    };
+    Err(format!(
+        "{provider_label} model '{model_label}' does not support {} input. Switch to a model that supports it, or remove the attachment.{alternative_hint}",
+        unsupported.join(" or ")
+    ))
+}
+
+fn resolve_content_capabilities(
+    profile: &ProfileDef,
+    target_api_type: &str,
+    model: Option<&str>,
+) -> ContentCapabilities {
+    let overrides = profile.overrides.get(target_api_type);
+    if let Some(capabilities) = overrides.and_then(|overrides| overrides.capabilities.clone()) {
+        return capabilities;
+    }
+
+    let Some(provider) = catalog::get(&profile.provider) else {
+        return ContentCapabilities::default();
+    };
+    let endpoint_id = selected_endpoint_id(profile, target_api_type);
+    let Some(endpoint) = catalog::find_endpoint(provider, target_api_type, endpoint_id) else {
+        return ContentCapabilities::default();
+    };
+
+    let mut capabilities = endpoint.capabilities.content.clone();
+    let model = model
+        .and_then(clean_model_id)
+        .or_else(|| configured_model(profile, target_api_type))
+        .or_else(|| {
+            endpoint
+                .models
+                .first()
+                .and_then(|model| clean_model_id(&model.id))
+        });
+    if let Some(model) = model {
+        if let Some(model_def) = endpoint
+            .models
+            .iter()
+            .find(|candidate| clean_model_id(&candidate.id).as_deref() == Some(model.as_str()))
+        {
+            capabilities = capabilities.merge(&model_def.capabilities);
+        }
+    }
+    capabilities
+}
+
+fn compatible_models(
+    profile: &ProfileDef,
+    target_api_type: &str,
+    selected_model: Option<&str>,
+    required: ContentUsage,
+) -> Vec<String> {
+    let Some(provider) = catalog::get(&profile.provider) else {
+        return Vec::new();
+    };
+    let Some(endpoint) = catalog::find_endpoint(
+        provider,
+        target_api_type,
+        selected_endpoint_id(profile, target_api_type),
+    ) else {
+        return Vec::new();
+    };
+    let selected_model = selected_model.and_then(clean_model_id);
+
+    endpoint
+        .models
+        .iter()
+        .filter_map(|model| {
+            let id = clean_model_id(&model.id)?;
+            if selected_model.as_deref() == Some(id.as_str()) {
+                return None;
+            }
+            if !supports_required_content(endpoint, &model.capabilities, required) {
+                return None;
+            }
+            Some(id)
+        })
+        .collect()
+}
+
+fn supports_required_content(
+    endpoint: &EndpointDef,
+    model_capabilities: &ContentCapabilities,
+    required: ContentUsage,
+) -> bool {
+    let capabilities = endpoint.capabilities.content.merge(model_capabilities);
+    (!required.image_input || capabilities.image_input)
+        && (!required.file_input || capabilities.file_input)
+}
+
+fn selected_endpoint_id<'a>(profile: &'a ProfileDef, target_api_type: &str) -> Option<&'a str> {
+    profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| overrides.endpoint_id.as_deref())
+}
+
+fn content_usage_label(usage: ContentUsage) -> &'static str {
+    match (usage.image_input, usage.file_input) {
+        (true, true) => "image and file",
+        (true, false) => "image",
+        (false, true) => "file",
+        (false, false) => "attachment",
+    }
+}
+
+fn configured_model(profile: &ProfileDef, target_api_type: &str) -> Option<String> {
+    profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| overrides.model.as_deref())
+        .and_then(clean_model_id)
+}
+
+fn clean_model_id(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+fn request_content_usage(request: &UniversalRequest) -> ContentUsage {
+    let mut usage = ContentUsage::default();
+    collect_blocks_usage(&request.instructions, &mut usage);
+    for item in &request.input {
+        collect_item_usage(item, &mut usage);
+    }
+    usage
+}
+
+fn collect_item_usage(item: &UniversalItem, usage: &mut ContentUsage) {
+    match item {
+        UniversalItem::Message { content, .. } | UniversalItem::ToolResult { content, .. } => {
+            collect_blocks_usage(content, usage);
+        }
+        UniversalItem::Unknown { raw } => collect_value_usage(raw, usage),
+        UniversalItem::ToolCall { .. } | UniversalItem::Reasoning { .. } => {}
+    }
+}
+
+fn collect_blocks_usage(blocks: &[ContentBlock], usage: &mut ContentUsage) {
+    for block in blocks {
+        collect_block_usage(block, usage);
+    }
+}
+
+fn collect_block_usage(block: &ContentBlock, usage: &mut ContentUsage) {
+    match block {
+        ContentBlock::Image { .. } => usage.image_input = true,
+        ContentBlock::File { .. } => usage.file_input = true,
+        ContentBlock::ToolResult { content, .. } => collect_blocks_usage(content, usage),
+        ContentBlock::Unknown { raw } => collect_value_usage(raw, usage),
+        ContentBlock::Text { .. }
+        | ContentBlock::ToolCall { .. }
+        | ContentBlock::Reasoning { .. } => {}
+    }
+}
+
+fn collect_value_usage(value: &Value, usage: &mut ContentUsage) {
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_value_usage(value, usage);
+            }
+        }
+        Value::Object(object) => {
+            let mut typed_image = false;
+            let mut typed_file = false;
+            if let Some(kind) = object.get("type").and_then(Value::as_str) {
+                match kind {
+                    "image" | "input_image" | "image_url" => {
+                        typed_image = true;
+                        usage.image_input = true;
+                    }
+                    "document" | "file" | "input_file" => {
+                        typed_file = true;
+                        usage.file_input = true;
+                    }
+                    _ => {}
+                }
+            }
+            if object.contains_key("image_url") {
+                usage.image_input = true;
+            }
+            if !typed_image
+                && (typed_file
+                    || object.contains_key("file_data")
+                    || object.contains_key("fileData")
+                    || object.contains_key("file_id")
+                    || object.contains_key("file_url")
+                    || object.contains_key("fileUrl")
+                    || object.contains_key("filename"))
+            {
+                usage.file_input = true;
+            }
+            for value in object.values() {
+                collect_value_usage(value, usage);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use common::profiles::schema::{ApiTypeOverrides, AuthMode, ProviderSettings};
+    use serde_json::json;
+    use va_ai_api_proxy::Role;
+
+    use super::*;
+
+    fn profile(provider: &str, model: &str) -> ProfileDef {
+        ProfileDef {
+            id: format!("{provider}-test"),
+            label: provider.to_string(),
+            provider: provider.to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials: BTreeMap::new(),
+            overrides: [(
+                "openai-chat".to_string(),
+                ApiTypeOverrides {
+                    model: Some(model.to_string()),
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+            provider_settings: ProviderSettings::default(),
+        }
+    }
+
+    fn image_request(model: &str) -> UniversalRequest {
+        UniversalRequest {
+            model: Some(model.to_string()),
+            input: vec![UniversalItem::Message {
+                role: Role::User,
+                id: None,
+                content: vec![ContentBlock::Image {
+                    media_type: Some("image/png".to_string()),
+                    url: Some("https://example.test/a.png".to_string()),
+                    data: None,
+                    extensions: BTreeMap::new(),
+                }],
+                extensions: BTreeMap::new(),
+            }],
+            ..UniversalRequest::default()
+        }
+    }
+
+    #[test]
+    fn rejects_image_for_text_only_model() {
+        let error = validate_request_content(
+            &profile("deepseek", "deepseek-v4-pro"),
+            "openai-chat",
+            &image_request("deepseek-v4-pro"),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("DeepSeek model 'deepseek-v4-pro'"));
+        assert!(error.contains("image input"));
+    }
+
+    #[test]
+    fn allows_catalog_image_model() {
+        validate_request_content(
+            &profile("dashscope", "qwen3.6-plus"),
+            "openai-chat",
+            &image_request("qwen3.6-plus"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn suggests_compatible_models_from_same_endpoint() {
+        let error = validate_request_content(
+            &profile("dashscope", "glm-5"),
+            "openai-chat",
+            &image_request("glm-5"),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("Alibaba DashScope model 'glm-5'"));
+        assert!(error.contains("Compatible models for image input on this endpoint"));
+        assert!(error.contains("qwen3.6-plus"));
+        assert!(error.contains("qwen3.5-plus"));
+        assert!(error.contains("kimi-k2.5"));
+    }
+
+    #[test]
+    fn custom_override_controls_image_input() {
+        let mut profile = profile("custom", "my-vision-model");
+        let error =
+            validate_request_content(&profile, "openai-chat", &image_request("my-vision-model"))
+                .unwrap_err();
+        assert!(error.contains("image input"));
+
+        let overrides = profile.overrides.get_mut("openai-chat").unwrap();
+        overrides.capabilities = Some(ContentCapabilities {
+            image_input: true,
+            file_input: false,
+        });
+
+        validate_request_content(&profile, "openai-chat", &image_request("my-vision-model"))
+            .unwrap();
+    }
+
+    #[test]
+    fn detects_unknown_file_parts() {
+        let request = UniversalRequest {
+            input: vec![UniversalItem::Unknown {
+                raw: json!({
+                    "role": "user",
+                    "content": [
+                        { "type": "input_file", "file_url": "https://example.test/a.pdf" }
+                    ]
+                }),
+            }],
+            ..UniversalRequest::default()
+        };
+
+        let error = validate_request_content(
+            &profile("deepseek", "deepseek-v4-pro"),
+            "openai-chat",
+            &request,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("file input"));
+    }
+
+    #[test]
+    fn detects_openrouter_file_data_alias() {
+        let request = UniversalRequest {
+            input: vec![UniversalItem::Unknown {
+                raw: json!({
+                    "role": "user",
+                    "content": [
+                        { "fileData": "https://example.test/a.pdf" }
+                    ]
+                }),
+            }],
+            ..UniversalRequest::default()
+        };
+
+        let error = validate_request_content(
+            &profile("deepseek", "deepseek-v4-pro"),
+            "openai-chat",
+            &request,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("file input"));
+    }
+}

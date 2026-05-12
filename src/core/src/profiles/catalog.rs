@@ -67,10 +67,33 @@ pub struct EndpointDef {
 pub struct EndpointCapabilities {
     #[serde(default)]
     pub reasoning_effort: bool,
+    #[serde(default, skip_serializing_if = "ContentCapabilities::is_empty")]
+    pub content: ContentCapabilities,
 }
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ContentCapabilities {
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub image_input: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub file_input: bool,
+}
+
+impl ContentCapabilities {
+    pub fn is_empty(&self) -> bool {
+        !self.image_input && !self.file_input
+    }
+
+    pub fn merge(&self, override_caps: &ContentCapabilities) -> ContentCapabilities {
+        ContentCapabilities {
+            image_input: self.image_input || override_caps.image_input,
+            file_input: self.file_input || override_caps.file_input,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -78,6 +101,8 @@ pub struct ModelDef {
     pub id: String,
     #[serde(default)]
     pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "ContentCapabilities::is_empty")]
+    pub capabilities: ContentCapabilities,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -311,6 +336,7 @@ pub fn custom() -> &'static ProviderCatalog {
                 models: Vec::new(),
                 capabilities: EndpointCapabilities {
                     reasoning_effort: true,
+                    ..EndpointCapabilities::default()
                 },
                 compatibility_warning: None,
                 auth_modes: vec![AuthModeDef {

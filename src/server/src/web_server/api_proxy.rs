@@ -5,6 +5,7 @@ use common::profiles::headers::merged_upstream_headers;
 use serde_json::{json, Value};
 
 mod completion;
+mod content_policy;
 mod model_mapping;
 mod passthrough;
 mod protocol;
@@ -15,6 +16,7 @@ mod upstream;
 use crate::openai_proxy::providers::ProviderProxyAdapter;
 
 use completion::translated_completion_response;
+use content_policy::validate_request_content;
 use model_mapping::{proxy_model_mapping, proxy_route_preference};
 use passthrough::{buffered_passthrough_response, passthrough_response};
 pub(super) use protocol::ProxyProtocol;
@@ -68,6 +70,18 @@ pub(super) async fn proxy_handler(
     let agent_request = original_request;
 
     if client_protocol == upstream.protocol {
+        if let Ok(mut validation_request) =
+            client_protocol.decode_agent_request(agent_request.clone())
+        {
+            if let Some(mapping) = &model_mapping {
+                validation_request.model = Some(mapping.upstream_model.clone());
+            }
+            if let Err(message) =
+                validate_request_content(&upstream.profile, &target_api_type, &validation_request)
+            {
+                return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
+            }
+        }
         let stream = agent_request
             .get("stream")
             .and_then(Value::as_bool)
@@ -139,6 +153,11 @@ pub(super) async fn proxy_handler(
     };
     if let Some(mapping) = &model_mapping {
         universal_request.model = Some(mapping.upstream_model.clone());
+    }
+    if let Err(message) =
+        validate_request_content(&upstream.profile, &target_api_type, &universal_request)
+    {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
     }
     let mut upstream_request = match upstream
         .protocol

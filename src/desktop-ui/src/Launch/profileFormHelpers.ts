@@ -161,12 +161,28 @@ export function pruneOverrides(
     if (ep?.capabilities?.reasoning_effort && ov.reasoning_effort) {
       trimmed.reasoning_effort = ov.reasoning_effort;
     }
+    if (
+      canOverrideInputSupport(provider, ep) &&
+      (ov.capabilities?.image_input || ov.capabilities?.file_input)
+    ) {
+      trimmed.capabilities = {
+        ...(ov.capabilities?.image_input ? { image_input: true } : {}),
+        ...(ov.capabilities?.file_input ? { file_input: true } : {}),
+      };
+    }
     if (ov.base_url && ov.base_url.length > 0 && ov.base_url !== defaultBaseUrl) {
       trimmed.base_url = ov.base_url;
     }
     if (Object.keys(trimmed).length > 0) out[apiType] = trimmed;
   }
   return out;
+}
+
+export function canOverrideInputSupport(
+  provider: CatalogEntry,
+  endpoint: CatalogEntry["endpoints"][number] | undefined,
+): boolean {
+  return provider.id === "custom" || (endpoint?.models.length ?? 0) === 0;
 }
 
 export function pruneProviderSettings(

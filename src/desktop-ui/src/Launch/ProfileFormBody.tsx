@@ -18,13 +18,14 @@ import {
 } from "./ProfileFormDialog.constants";
 import {
   apiKindHint,
+  canOverrideInputSupport,
+  collectFields,
   endpointId,
   endpointLabel,
   endpointsForApiType,
   providerApiKindsEditable,
   providerApiKindEndpoints,
   selectedEndpoint,
-  collectFields,
   shouldShowBaseUrl,
 } from "./profileFormHelpers";
 import type { ApiTypeOverrides, CatalogEntry, FieldDef } from "./types";
@@ -281,6 +282,44 @@ export function FormBody({
                           </SelectItem>
                         </SelectContent>
                       </Select>
+                    </FieldRow>
+                  )}
+                  {canOverrideInputSupport(provider, ep) && (
+                    <FieldRow label={t("Input support")}>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <CheckRow
+                          label="Images"
+                          checked={!!ov.capabilities?.image_input}
+                          onChange={(checked) =>
+                            setOverrides({
+                              ...overrides,
+                              [apiType]: {
+                                ...ov,
+                                capabilities: {
+                                  ...(ov.capabilities ?? {}),
+                                  image_input: checked,
+                                },
+                              },
+                            })
+                          }
+                        />
+                        <CheckRow
+                          label="Files"
+                          checked={!!ov.capabilities?.file_input}
+                          onChange={(checked) =>
+                            setOverrides({
+                              ...overrides,
+                              [apiType]: {
+                                ...ov,
+                                capabilities: {
+                                  ...(ov.capabilities ?? {}),
+                                  file_input: checked,
+                                },
+                              },
+                            })
+                          }
+                        />
+                      </div>
                     </FieldRow>
                   )}
                 </div>
