@@ -4,11 +4,13 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
-use va_ai_api_proxy::{FinishReason, UniversalEvent, Usage};
+use va_ai_api_proxy::{
+    ContentBlock, FinishReason, UniversalEvent, UniversalItem, UniversalResponse, Usage,
+};
 
 use crate::openai_proxy::providers::ProviderProxyAdapter;
 
-use super::{json_error, ProxyProtocol};
+use super::{json_error, session::ProxySessionLedger, ProxyProtocol};
 
 pub(super) async fn translated_completion_response(
     upstream: reqwest::Response,
@@ -16,7 +18,10 @@ pub(super) async fn translated_completion_response(
     agent_protocol: ProxyProtocol,
     provider_adapter: &mut ProviderProxyAdapter,
     agent_model: Option<String>,
+    session_ledger: Option<&ProxySessionLedger>,
+    agent_response_id: Option<String>,
 ) -> Response {
+    let upstream_status = upstream.status().as_u16();
     let bytes = match upstream.bytes().await {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -35,6 +40,11 @@ pub(super) async fn translated_completion_response(
             );
         }
     };
+    if let Some(ledger) = session_ledger {
+        if let Err(error) = ledger.append_upstream_response(upstream_status, &raw) {
+            tracing::warn!(error = %error, "failed to record upstream completion response");
+        }
+    }
     if upstream_protocol == ProxyProtocol::OpenAiChat {
         provider_adapter.observe_chat_completion(&raw);
     }
@@ -44,11 +54,17 @@ pub(super) async fn translated_completion_response(
     };
     provider_adapter.transform_upstream_events(&mut events);
     apply_agent_model(&mut events, agent_model.as_deref());
+    apply_agent_response_id(&mut events, agent_response_id.as_deref());
     let body = match agent_protocol {
         ProxyProtocol::OpenAiResponses => events_to_openai_response(&events),
         ProxyProtocol::OpenAiChat => events_to_openai_chat_response(&events),
         ProxyProtocol::AnthropicMessages => events_to_anthropic_response(&events),
     };
+    if let Some(ledger) = session_ledger {
+        if let Err(error) = ledger.append_agent_response(200, &body) {
+            tracing::warn!(error = %error, "failed to record agent completion response");
+        }
+    }
     Json(body).into_response()
 }
 
@@ -59,6 +75,17 @@ fn apply_agent_model(events: &mut [UniversalEvent], agent_model: Option<&str>) {
     for event in events {
         if let UniversalEvent::ResponseStart { model, .. } = event {
             *model = Some(agent_model.to_string());
+        }
+    }
+}
+
+fn apply_agent_response_id(events: &mut [UniversalEvent], response_id: Option<&str>) {
+    let Some(response_id) = response_id else {
+        return;
+    };
+    for event in events {
+        if let UniversalEvent::ResponseStart { id, .. } = event {
+            *id = Some(response_id.to_string());
         }
     }
 }
@@ -83,67 +110,73 @@ struct ToolCallParts {
 }
 
 fn collect_response_parts(events: &[UniversalEvent]) -> ResponseParts {
+    collect_response_parts_from_universal(&UniversalResponse::from_events(events))
+}
+
+fn collect_response_parts_from_universal(response: &UniversalResponse) -> ResponseParts {
     let mut parts = ResponseParts::default();
-    for event in events {
-        match event {
-            UniversalEvent::ResponseStart { id, model, .. } => {
-                parts.id = id.clone();
-                parts.model = model.clone();
+    parts.id = response.id.clone();
+    parts.model = response.model.clone();
+    parts.usage = response.usage.clone();
+    parts.finish_reason = response.finish_reason;
+
+    for item in &response.output {
+        match item {
+            UniversalItem::Message { id, content, .. } => {
+                if parts.message_id.is_none() {
+                    parts.message_id = id.clone();
+                }
+                collect_content_blocks(&mut parts, content);
             }
-            UniversalEvent::MessageStart { id, .. } => {
-                parts.message_id = Some(id.clone());
-            }
-            UniversalEvent::TextDelta { text, .. } => {
-                parts.text.push_str(text);
-            }
-            UniversalEvent::ReasoningDelta { text, .. } => {
-                parts.reasoning_content.push_str(text);
-            }
-            UniversalEvent::ToolCallDelta {
+            UniversalItem::ToolCall {
                 id,
                 name,
-                arguments_delta,
-            } => {
-                let tool_call = match parts.tool_calls.iter_mut().find(|tool_call| {
-                    tool_call.id == *id || (tool_call.id.is_empty() && !id.is_empty())
-                }) {
-                    Some(tool_call) => tool_call,
-                    None => {
-                        parts.tool_calls.push(ToolCallParts {
-                            id: id.clone(),
-                            name: None,
-                            arguments: String::new(),
-                        });
-                        parts.tool_calls.last_mut().expect("tool call was pushed")
-                    }
-                };
-                if tool_call.id.is_empty() {
-                    tool_call.id = id.clone();
-                }
-                if name.is_some() {
-                    tool_call.name = name.clone();
-                }
-                tool_call.arguments.push_str(arguments_delta);
-            }
-            UniversalEvent::MessageDone {
-                finish_reason,
-                usage,
+                arguments,
                 ..
-            } => {
-                parts.finish_reason = *finish_reason;
-                if usage.is_some() {
-                    parts.usage = usage.clone();
+            } => parts.tool_calls.push(ToolCallParts {
+                id: id.clone(),
+                name: Some(name.clone()),
+                arguments: stringify_json(arguments),
+            }),
+            UniversalItem::Reasoning { text, .. } => {
+                if let Some(text) = text {
+                    parts.reasoning_content.push_str(text);
                 }
             }
-            UniversalEvent::ResponseDone { usage, .. } => {
-                if usage.is_some() {
-                    parts.usage = usage.clone();
-                }
-            }
-            _ => {}
+            UniversalItem::ToolResult { .. } | UniversalItem::Unknown { .. } => {}
         }
     }
     parts
+}
+
+fn collect_content_blocks(parts: &mut ResponseParts, content: &[ContentBlock]) {
+    for block in content {
+        match block {
+            ContentBlock::Text { text } => parts.text.push_str(text),
+            ContentBlock::Reasoning {
+                text: Some(text), ..
+            } => parts.reasoning_content.push_str(text),
+            ContentBlock::ToolCall {
+                id,
+                name,
+                arguments,
+                ..
+            } => parts.tool_calls.push(ToolCallParts {
+                id: id.clone(),
+                name: Some(name.clone()),
+                arguments: stringify_json(arguments),
+            }),
+            _ => {}
+        }
+    }
+}
+
+fn stringify_json(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Null => String::new(),
+        value => serde_json::to_string(value).unwrap_or_default(),
+    }
 }
 
 fn events_to_openai_response(events: &[UniversalEvent]) -> Value {

@@ -6,8 +6,10 @@ use serde_json::{json, Value};
 
 mod completion;
 mod model_mapping;
+mod passthrough;
 mod protocol;
 mod routes;
+mod session;
 mod stream;
 mod upstream;
 
@@ -15,13 +17,15 @@ use crate::openai_proxy::providers::{ProviderProxyAdapter, ProviderProxyContext}
 
 use completion::translated_completion_response;
 use model_mapping::{proxy_model_mapping, proxy_route_preference};
-use protocol::ProxyProtocol;
+use passthrough::{buffered_passthrough_response, passthrough_response};
+pub(super) use protocol::ProxyProtocol;
 pub use routes::{
     chat_completions_handler, legacy_chat_completions_handler, legacy_messages_handler,
     legacy_responses_handler, local_chat_completions_handler, local_messages_handler,
     local_responses_handler, messages_handler, responses_handler, scoped_chat_completions_handler,
     scoped_messages_handler, scoped_responses_handler,
 };
+use session::{PreparedAgentRequest, ProxySessionLedger, ProxySessionMetadata};
 use stream::translated_stream_response;
 use upstream::{
     apply_upstream_auth, normalize_target_request, redacted_url, upstream_endpoint,
@@ -30,7 +34,7 @@ use upstream::{
 
 use super::AppState;
 
-async fn proxy_handler(
+pub(super) async fn proxy_handler(
     state: AppState,
     profile_id: String,
     launch_id: Option<String>,
@@ -85,8 +89,107 @@ async fn proxy_handler(
         .as_ref()
         .and_then(|_| upstream.profile.credentials.get("api_key").cloned());
 
-    let mut universal_request = match client_protocol.decode_agent_request(original_request.clone())
-    {
+    let session_metadata = ProxySessionMetadata {
+        profile_id: profile_id.clone(),
+        provider: upstream.profile.provider.clone(),
+        launch_id: launch_id.clone(),
+        route_scope: route_scope.clone(),
+        manual_scope: manual_scope.clone(),
+        agent: codex_session_state
+            .as_ref()
+            .and_then(|state| state.source.clone())
+            .or_else(|| route_scope.clone()),
+        workspace: codex_session_state
+            .as_ref()
+            .and_then(|state| state.cwd.clone()),
+        client_protocol,
+        upstream_protocol: upstream.protocol,
+    };
+    let expand_previous_response = client_protocol == ProxyProtocol::OpenAiResponses
+        && upstream.protocol != ProxyProtocol::OpenAiResponses;
+    let PreparedAgentRequest {
+        ledger: session_ledger,
+        request: agent_request,
+    } = match ProxySessionLedger::prepare(
+        session_metadata,
+        original_request,
+        expand_previous_response,
+    ) {
+        Ok(prepared) => prepared,
+        Err(error) => return json_error(StatusCode::BAD_REQUEST, &error),
+    };
+
+    if client_protocol == upstream.protocol {
+        let stream = agent_request
+            .get("stream")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if let Err(error) = session_ledger.append_upstream_request(&agent_request) {
+            tracing::warn!(error = %error, "failed to record passthrough upstream request");
+        }
+        let body = match serde_json::to_vec(&agent_request) {
+            Ok(body) => body,
+            Err(e) => {
+                return json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("failed to serialize proxy request: {e}"),
+                );
+            }
+        };
+        let upstream_headers = match merged_upstream_headers(
+            &upstream.headers,
+            proxy_preference
+                .as_ref()
+                .map(|preference| &preference.headers),
+        ) {
+            Ok(headers) => headers,
+            Err(error) => return json_error(StatusCode::BAD_REQUEST, &error.to_string()),
+        };
+        let request = state
+            .preview_client
+            .post(&upstream.url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .headers(upstream_headers)
+            .body(body);
+        let request = match apply_upstream_auth(
+            request,
+            upstream.protocol,
+            upstream.auth_header,
+            &headers,
+            manual_profile_api_key.as_deref(),
+        ) {
+            Ok(request) => request,
+            Err(response) => return response,
+        };
+
+        tracing::info!(
+            target: "server::web_server::api_proxy",
+            profile_id = %profile_id,
+            launch_id = ?launch_id,
+            route_scope = ?route_scope,
+            manual_scope = ?manual_scope,
+            target_api_type = %target_api_type,
+            upstream = %redacted_url(&upstream.url),
+            stream = stream,
+            "API proxy passthrough forwarding request"
+        );
+
+        let response = match request.send().await {
+            Ok(response) => response,
+            Err(e) => {
+                return json_error(
+                    StatusCode::BAD_GATEWAY,
+                    &format!("failed to reach upstream proxy endpoint: {e}"),
+                );
+            }
+        };
+        if !stream {
+            return buffered_passthrough_response(response, &session_ledger).await;
+        }
+        return passthrough_response(response);
+    }
+
+    let mut universal_request = match client_protocol.decode_agent_request(agent_request.clone()) {
         Ok(request) => request,
         Err(error) => return json_error(StatusCode::BAD_REQUEST, &error.to_string()),
     };
@@ -104,11 +207,14 @@ async fn proxy_handler(
     if upstream.protocol == ProxyProtocol::OpenAiChat {
         provider_adapter.prepare_chat_request(
             client_protocol.provider_request_source(),
-            &original_request,
+            &agent_request,
             &mut upstream_request,
         );
     } else if upstream.protocol == ProxyProtocol::AnthropicMessages {
         provider_adapter.prepare_anthropic_request(&mut upstream_request);
+    }
+    if let Err(error) = session_ledger.append_upstream_request(&upstream_request) {
+        tracing::warn!(error = %error, "failed to record translated upstream request");
     }
 
     let stream = upstream_request
@@ -180,6 +286,9 @@ async fn proxy_handler(
         return upstream_error_response(response).await;
     }
 
+    let agent_response_id = (client_protocol == ProxyProtocol::OpenAiResponses
+        && upstream.protocol != ProxyProtocol::OpenAiResponses)
+        .then(|| session_ledger.response_id());
     if stream {
         translated_stream_response(
             response,
@@ -187,6 +296,8 @@ async fn proxy_handler(
             client_protocol,
             provider_adapter,
             model_mapping.map(|mapping| mapping.agent_model),
+            Some(session_ledger),
+            agent_response_id,
         )
     } else {
         translated_completion_response(
@@ -195,6 +306,8 @@ async fn proxy_handler(
             client_protocol,
             &mut provider_adapter,
             model_mapping.map(|mapping| mapping.agent_model),
+            Some(&session_ledger),
+            agent_response_id,
         )
         .await
     }

@@ -12,7 +12,7 @@ use va_ai_api_proxy::{DecodeState, EncodeState, UniversalEvent, WireEvent};
 
 use crate::openai_proxy::providers::ProviderProxyAdapter;
 
-use super::{json_error, ProxyProtocol};
+use super::{json_error, session::ProxySessionLedger, ProxyProtocol};
 
 type UpstreamByteStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static>>;
@@ -23,6 +23,8 @@ pub(super) fn translated_stream_response(
     agent_protocol: ProxyProtocol,
     provider_adapter: ProviderProxyAdapter,
     agent_model: Option<String>,
+    session_ledger: Option<ProxySessionLedger>,
+    agent_response_id: Option<String>,
 ) -> Response {
     let stream = map_sse_stream(
         upstream,
@@ -30,6 +32,8 @@ pub(super) fn translated_stream_response(
         agent_protocol,
         provider_adapter,
         agent_model,
+        session_ledger,
+        agent_response_id,
     );
     Response::builder()
         .status(StatusCode::OK)
@@ -50,6 +54,8 @@ fn map_sse_stream(
     agent_protocol: ProxyProtocol,
     provider_adapter: ProviderProxyAdapter,
     agent_model: Option<String>,
+    session_ledger: Option<ProxySessionLedger>,
+    agent_response_id: Option<String>,
 ) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + 'static {
     let state = SseMapState {
         upstream: Box::pin(upstream.bytes_stream()),
@@ -57,6 +63,9 @@ fn map_sse_stream(
         agent_protocol,
         provider_adapter,
         agent_model,
+        session_ledger,
+        agent_response_id,
+        agent_response_recorded: false,
         decode_state: DecodeState::default(),
         encode_state: EncodeState::default(),
         buffer: Vec::new(),
@@ -97,6 +106,9 @@ struct SseMapState {
     agent_protocol: ProxyProtocol,
     provider_adapter: ProviderProxyAdapter,
     agent_model: Option<String>,
+    session_ledger: Option<ProxySessionLedger>,
+    agent_response_id: Option<String>,
+    agent_response_recorded: bool,
     decode_state: DecodeState,
     encode_state: EncodeState,
     buffer: Vec<u8>,
@@ -135,6 +147,11 @@ impl SseMapState {
                 return;
             }
         };
+        if let Some(ledger) = &self.session_ledger {
+            if let Err(error) = ledger.append_upstream_stream_event(&raw) {
+                tracing::warn!(error = %error, "failed to record upstream stream event");
+            }
+        }
         if self.upstream_protocol == ProxyProtocol::OpenAiChat {
             self.provider_adapter.observe_chat_stream_chunk(&raw);
         }
@@ -150,6 +167,7 @@ impl SseMapState {
         };
         self.provider_adapter.transform_upstream_events(&mut events);
         apply_agent_model(&mut events, self.agent_model.as_deref());
+        apply_agent_response_id(&mut events, self.agent_response_id.as_deref());
         let wire_events = match self
             .agent_protocol
             .encode_agent_events(&events, &mut self.encode_state)
@@ -161,6 +179,7 @@ impl SseMapState {
             }
         };
         for event in wire_events {
+            self.maybe_record_agent_wire_event(&event);
             self.queue
                 .push_back(Ok(Bytes::from(encode_wire_sse_event(event))));
         }
@@ -171,6 +190,38 @@ impl SseMapState {
         self.queue
             .push_back(Err(io::Error::new(io::ErrorKind::InvalidData, message)));
     }
+
+    fn maybe_record_agent_wire_event(&mut self, event: &WireEvent) {
+        if self.agent_response_recorded {
+            return;
+        }
+        let Some(ledger) = &self.session_ledger else {
+            return;
+        };
+        let Some(response) = terminal_agent_stream_response(&event.data) else {
+            return;
+        };
+        if let Err(error) = ledger.append_agent_response(200, response) {
+            tracing::warn!(error = %error, "failed to record agent stream response");
+        }
+        self.agent_response_recorded = true;
+    }
+}
+
+fn terminal_agent_stream_response(data: &Value) -> Option<&Value> {
+    match data.get("type").and_then(Value::as_str) {
+        Some("response.completed") => data.get("response"),
+        Some("message_stop") => Some(data),
+        Some("error") => Some(data),
+        _ => {
+            let choices = data.get("choices").and_then(Value::as_array);
+            if data.get("usage").is_some() && choices.is_some_and(Vec::is_empty) {
+                Some(data)
+            } else {
+                None
+            }
+        }
+    }
 }
 
 fn apply_agent_model(events: &mut [UniversalEvent], agent_model: Option<&str>) {
@@ -180,6 +231,17 @@ fn apply_agent_model(events: &mut [UniversalEvent], agent_model: Option<&str>) {
     for event in events {
         if let UniversalEvent::ResponseStart { model, .. } = event {
             *model = Some(agent_model.to_string());
+        }
+    }
+}
+
+fn apply_agent_response_id(events: &mut [UniversalEvent], response_id: Option<&str>) {
+    let Some(response_id) = response_id else {
+        return;
+    };
+    for event in events {
+        if let UniversalEvent::ResponseStart { id, .. } = event {
+            *id = Some(response_id.to_string());
         }
     }
 }
@@ -235,4 +297,41 @@ fn find_sse_frame_end(buffer: &[u8]) -> Option<usize> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::terminal_agent_stream_response;
+
+    #[test]
+    fn records_openai_responses_completed_payload() {
+        let event = json!({
+            "type": "response.completed",
+            "response": { "id": "resp_123", "output": [] }
+        });
+
+        let recorded = terminal_agent_stream_response(&event).expect("terminal response");
+
+        assert_eq!(recorded["id"], "resp_123");
+    }
+
+    #[test]
+    fn records_anthropic_message_stop_payload() {
+        let event = json!({ "type": "message_stop" });
+
+        let recorded = terminal_agent_stream_response(&event).expect("terminal response");
+
+        assert_eq!(recorded["type"], "message_stop");
+    }
+
+    #[test]
+    fn records_openai_chat_usage_terminal_chunk() {
+        let event = json!({ "choices": [], "usage": { "total_tokens": 12 } });
+
+        let recorded = terminal_agent_stream_response(&event).expect("terminal response");
+
+        assert_eq!(recorded["usage"]["total_tokens"], 12);
+    }
 }
