@@ -79,14 +79,15 @@ pub fn materialize_env(
     rendered: RenderedProfile,
 ) -> anyhow::Result<Vec<(String, String)>> {
     let mut env = rendered.env.clone();
-    let Some(target) = rendered.config_env else {
-        return Ok(env);
-    };
-
     let dir = profile_state_dir(profile_id);
     for sf in &rendered.settings_files {
         materialize_settings_file(&dir, &sf.rel_path, &sf.contents)?;
     }
+
+    let Some(target) = rendered.config_env else {
+        return Ok(env);
+    };
+
     match target {
         ConfigEnvTarget::Directory(env_name) => {
             env.push((env_name.to_string(), dir.to_string_lossy().into_owned()));

@@ -2,6 +2,7 @@
 
 use ::common::{config, profiles};
 use anyhow::{anyhow, bail};
+use profiles::codex_metadata::{self, CodexModelCatalogSpec};
 use profiles::ProfileDef;
 use serde_json::{json, Map, Value};
 
@@ -114,6 +115,8 @@ struct ProxyLaunchSettings {
     provider_label: String,
     api_key: String,
     model: String,
+    model_context_window: Option<u64>,
+    model_capabilities: profiles::catalog::ContentCapabilities,
     reasoning_effort: String,
 }
 
@@ -177,6 +180,14 @@ fn resolve_proxy_settings(
         .filter(|model| !model.is_empty())
         .map(ToOwned::to_owned)
         .unwrap_or(profile_model);
+    let model_def = endpoint
+        .models
+        .iter()
+        .find(|model_def| model_def.id == upstream_model);
+    let model_context_window = model_def.and_then(|model_def| model_def.context_window);
+    let model_capabilities = model_def
+        .map(|model_def| endpoint.capabilities.content.merge(&model_def.capabilities))
+        .unwrap_or_else(|| endpoint.capabilities.content.clone());
     let model = fake_model_id
         .map(str::trim)
         .filter(|model| !model.is_empty())
@@ -194,6 +205,8 @@ fn resolve_proxy_settings(
         provider_label: provider.label.clone(),
         api_key,
         model,
+        model_context_window,
+        model_capabilities,
         reasoning_effort,
     })
 }
@@ -247,7 +260,7 @@ fn render_claude_proxy_profile(
 
 fn render_codex_proxy_profile(
     profile: &ProfileDef,
-    _launch_id: &str,
+    launch_id: &str,
     settings: ProxyLaunchSettings,
 ) -> profiles::render::RenderedProfile {
     let proxy_base_url = format!(
@@ -275,6 +288,35 @@ fn render_codex_proxy_profile(
         "model_reasoning_effort",
         &codex::toml_string(&settings.reasoning_effort),
     );
+    let mut settings_files = Vec::new();
+    if let Some(context_window) = settings.model_context_window {
+        codex::push_config_arg(
+            &mut command_args,
+            "model_context_window",
+            &context_window.to_string(),
+        );
+        if let Some(model_catalog_json) =
+            codex_metadata::build_model_catalog_json(CodexModelCatalogSpec {
+                model: &settings.model,
+                provider_label: &settings.provider_label,
+                context_window,
+                capabilities: &settings.model_capabilities,
+            })
+        {
+            let rel_path = format!("codex-model-catalog-{launch_id}.json");
+            let catalog_path = profiles::runtime::profile_state_dir(&profile.id).join(&rel_path);
+            let catalog_path = catalog_path.to_string_lossy();
+            codex::push_config_arg(
+                &mut command_args,
+                "model_catalog_json",
+                &codex::toml_string(catalog_path.as_ref()),
+            );
+            settings_files.push(profiles::render::RenderedSettingsFile {
+                rel_path,
+                contents: model_catalog_json,
+            });
+        }
+    }
     push_provider_config_arg(
         &mut command_args,
         &provider_key,
@@ -308,7 +350,7 @@ fn render_codex_proxy_profile(
 
     profiles::render::RenderedProfile {
         env: vec![("OPENAI_API_KEY".to_string(), settings.api_key)],
-        settings_files: Vec::new(),
+        settings_files,
         command_args,
         config_env: None,
     }
@@ -386,4 +428,67 @@ fn opencode_proxy_base_url(
 
 fn push_provider_config_arg(args: &mut Vec<String>, provider_key: &str, field: &str, value: &str) {
     codex::push_config_arg(args, &format!("{provider_key}.{field}"), value);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use ::common::profiles::schema::ApiTypeOverrides;
+    use ::common::profiles::{AuthMode, ProfileDef};
+
+    use super::*;
+
+    #[test]
+    fn codex_proxy_launch_includes_catalog_context_window() {
+        let profile = dashscope_profile();
+
+        let rendered = render_proxy_launch(
+            &profile,
+            "codex",
+            "launch-test",
+            "openai-responses",
+            "openai-chat",
+            Some("qwen3.6-plus"),
+            None,
+        )
+        .expect("codex proxy launch renders");
+
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model='qwen3.6-plus'"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model_context_window=1000000"));
+    }
+
+    fn dashscope_profile() -> ProfileDef {
+        let mut credentials = BTreeMap::new();
+        credentials.insert("api_key".to_string(), "test-key".to_string());
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "openai-chat".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: Some("coding-plan".to_string()),
+                base_url: None,
+                model: Some("qwen3.6-plus".to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                capabilities: None,
+            },
+        );
+
+        ProfileDef {
+            id: "dashscope-test".to_string(),
+            label: "DashScope Test".to_string(),
+            provider: "dashscope".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials,
+            overrides,
+            provider_settings: Default::default(),
+        }
+    }
 }
