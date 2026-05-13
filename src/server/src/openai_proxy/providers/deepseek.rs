@@ -553,7 +553,7 @@ fn collect_reasoning_from_gemini_model_content(
         if let Some(function_call) = part.get("functionCall").and_then(Value::as_object) {
             if let (Some(reasoning_content), Some(call_id)) = (
                 active_reasoning.as_deref(),
-                function_call.get("name").and_then(Value::as_str),
+                gemini_function_call_id(function_call),
             ) {
                 store_reasoning(reasoning, call_id, reasoning_content);
                 stored_count += 1;
@@ -577,6 +577,13 @@ fn collect_reasoning_from_gemini_model_content(
     }
 
     stored_count
+}
+
+fn gemini_function_call_id(function_call: &Map<String, Value>) -> Option<&str> {
+    function_call
+        .get("id")
+        .and_then(Value::as_str)
+        .or_else(|| function_call.get("name").and_then(Value::as_str))
 }
 
 fn is_gemini_thought_part(part: &Map<String, Value>) -> bool {
@@ -1011,6 +1018,7 @@ mod tests {
                     { "thought": true, "text": "Call pwd, then answer." },
                     {
                         "functionCall": {
+                            "id": "call_pwd",
                             "name": "exec_command",
                             "args": { "cmd": "pwd" }
                         }
@@ -1020,6 +1028,7 @@ mod tests {
                 "role": "user",
                 "parts": [{
                     "functionResponse": {
+                        "id": "call_pwd",
                         "name": "exec_command",
                         "response": { "output": "/tmp/project" }
                     }
@@ -1032,13 +1041,13 @@ mod tests {
                 "role": "assistant",
                 "content": null,
                 "tool_calls": [{
-                    "id": "exec_command",
+                    "id": "call_pwd",
                     "type": "function",
                     "function": { "name": "exec_command", "arguments": "{\"cmd\":\"pwd\"}" }
                 }]
             }, {
                 "role": "tool",
-                "tool_call_id": "exec_command",
+                "tool_call_id": "call_pwd",
                 "content": "{\"output\":\"/tmp/project\"}"
             }]
         });
