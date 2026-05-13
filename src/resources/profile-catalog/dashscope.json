@@ -17,6 +17,7 @@
         {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -24,6 +25,7 @@
         {
           "id": "kimi-k2.5",
           "label": "kimi-k2.5",
+          "context_window": 256000,
           "capabilities": {
             "image_input": true
           }
@@ -39,6 +41,7 @@
         {
           "id": "qwen3.5-plus",
           "label": "qwen3.5-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -96,6 +99,7 @@
         {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -103,6 +107,7 @@
         {
           "id": "kimi-k2.5",
           "label": "kimi-k2.5",
+          "context_window": 256000,
           "capabilities": {
             "image_input": true
           }
@@ -118,6 +123,7 @@
         {
           "id": "qwen3.5-plus",
           "label": "qwen3.5-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -177,6 +183,7 @@
         {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -184,6 +191,7 @@
         {
           "id": "kimi-k2.5",
           "label": "kimi-k2.5",
+          "context_window": 256000,
           "capabilities": {
             "image_input": true
           }
@@ -199,6 +207,7 @@
         {
           "id": "qwen3.5-plus",
           "label": "qwen3.5-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -265,6 +274,7 @@
         {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -272,6 +282,7 @@
         {
           "id": "kimi-k2.5",
           "label": "kimi-k2.5",
+          "context_window": 256000,
           "capabilities": {
             "image_input": true
           }
@@ -287,6 +298,7 @@
         {
           "id": "qwen3.5-plus",
           "label": "qwen3.5-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -353,6 +365,7 @@
         {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -360,6 +373,7 @@
         {
           "id": "qwen3.5-plus",
           "label": "qwen3.5-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -390,7 +404,8 @@
         },
         {
           "id": "kimi-k2.5",
-          "label": "kimi-k2.5"
+          "label": "kimi-k2.5",
+          "context_window": 256000
         },
         {
           "id": "deepseek-v3.2",
@@ -442,6 +457,7 @@
         {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -449,6 +465,7 @@
         {
           "id": "qwen3.5-plus",
           "label": "qwen3.5-plus",
+          "context_window": 1000000,
           "capabilities": {
             "image_input": true
           }
@@ -479,7 +496,8 @@
         },
         {
           "id": "kimi-k2.5",
-          "label": "kimi-k2.5"
+          "label": "kimi-k2.5",
+          "context_window": 256000
         },
         {
           "id": "deepseek-v3.2",

@@ -182,6 +182,7 @@ fn api_type_model_options(
                         catalog::ModelDef {
                             id: model.clone(),
                             label: None,
+                            context_window: None,
                             capabilities: Default::default(),
                         },
                     );
@@ -192,6 +193,7 @@ fn api_type_model_options(
                     models.push(catalog::ModelDef {
                         id: model.clone(),
                         label: None,
+                        context_window: None,
                         capabilities: Default::default(),
                     });
                 }

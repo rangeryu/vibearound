@@ -13,11 +13,13 @@
       "models": [
         {
           "id": "MiniMax-M2.7",
-          "label": "MiniMax M2.7"
+          "label": "MiniMax M2.7",
+          "context_window": 204800
         },
         {
           "id": "MiniMax-M2.7-highspeed",
-          "label": "MiniMax M2.7 highspeed"
+          "label": "MiniMax M2.7 highspeed",
+          "context_window": 204800
         }
       ],
       "auth_modes": [
@@ -52,11 +54,13 @@
       "models": [
         {
           "id": "MiniMax-M2.7",
-          "label": "MiniMax M2.7"
+          "label": "MiniMax M2.7",
+          "context_window": 204800
         },
         {
           "id": "MiniMax-M2.7-highspeed",
-          "label": "MiniMax M2.7 highspeed"
+          "label": "MiniMax M2.7 highspeed",
+          "context_window": 204800
         }
       ],
       "auth_modes": [
@@ -90,11 +94,13 @@
       "models": [
         {
           "id": "MiniMax-M2.7",
-          "label": "MiniMax M2.7"
+          "label": "MiniMax M2.7",
+          "context_window": 204800
         },
         {
           "id": "MiniMax-M2.7-highspeed",
-          "label": "MiniMax M2.7 highspeed"
+          "label": "MiniMax M2.7 highspeed",
+          "context_window": 204800
         }
       ],
       "auth_modes": [
@@ -135,11 +141,13 @@
       "models": [
         {
           "id": "MiniMax-M2.7",
-          "label": "MiniMax M2.7"
+          "label": "MiniMax M2.7",
+          "context_window": 204800
         },
         {
           "id": "MiniMax-M2.7-highspeed",
-          "label": "MiniMax M2.7 highspeed"
+          "label": "MiniMax M2.7 highspeed",
+          "context_window": 204800
         }
       ],
       "auth_modes": [

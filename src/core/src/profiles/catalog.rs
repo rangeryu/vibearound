@@ -101,6 +101,8 @@ pub struct ModelDef {
     pub id: String,
     #[serde(default)]
     pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
     #[serde(default, skip_serializing_if = "ContentCapabilities::is_empty")]
     pub capabilities: ContentCapabilities,
 }

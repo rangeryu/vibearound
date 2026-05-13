@@ -10,15 +10,18 @@
       "models": [
         {
           "id": "deepseek-v4-pro",
-          "label": "DeepSeek V4 Pro"
+          "label": "DeepSeek V4 Pro",
+          "context_window": 1000000
         },
         {
           "id": "deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash"
+          "label": "DeepSeek V4 Flash",
+          "context_window": 1000000
         },
         {
           "id": "deepseek-v4-pro[1m]",
-          "label": "DeepSeek V4 Pro [1m] (Claude Code only)"
+          "label": "DeepSeek V4 Pro [1m] (Claude Code only)",
+          "context_window": 1000000
         }
       ],
       "auth_modes": [
@@ -57,15 +60,18 @@
       "models": [
         {
           "id": "deepseek-v4-pro",
-          "label": "DeepSeek V4 Pro"
+          "label": "DeepSeek V4 Pro",
+          "context_window": 1000000
         },
         {
           "id": "deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash"
+          "label": "DeepSeek V4 Flash",
+          "context_window": 1000000
         },
         {
           "id": "deepseek-v4-pro[1m]",
-          "label": "DeepSeek V4 Pro [1m] (Claude Code only)"
+          "label": "DeepSeek V4 Pro [1m] (Claude Code only)",
+          "context_window": 1000000
         }
       ],
       "auth_modes": [

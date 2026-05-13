@@ -13,15 +13,18 @@
       "models": [
         {
           "id": "kimi-for-coding",
-          "label": "Kimi Code"
+          "label": "Kimi Code",
+          "context_window": 256000
         },
         {
           "id": "kimi-code",
-          "label": "Kimi Code (legacy alias)"
+          "label": "Kimi Code (legacy alias)",
+          "context_window": 256000
         },
         {
           "id": "k2p5",
-          "label": "Kimi Code (legacy)"
+          "label": "Kimi Code (legacy)",
+          "context_window": 256000
         }
       ],
       "auth_modes": [
