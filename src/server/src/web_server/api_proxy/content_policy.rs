@@ -92,11 +92,7 @@ fn resolve_content_capabilities(
                 .and_then(|model| clean_model_id(&model.id))
         });
     if let Some(model) = model {
-        if let Some(model_def) = endpoint
-            .models
-            .iter()
-            .find(|candidate| clean_model_id(&candidate.id).as_deref() == Some(model.as_str()))
-        {
+        if let Some(model_def) = catalog::find_model(endpoint, &model) {
             capabilities = capabilities.merge(&model_def.capabilities);
         }
     }
@@ -126,7 +122,11 @@ fn compatible_models(
         .iter()
         .filter_map(|model| {
             let id = clean_model_id(&model.id)?;
-            if selected_model.as_deref() == Some(id.as_str()) {
+            if selected_model
+                .as_deref()
+                .map(|selected| catalog::model_matches(model, selected))
+                .unwrap_or(false)
+            {
                 return None;
             }
             if !supports_required_content(endpoint, &model.capabilities, required) {
