@@ -1,10 +1,11 @@
 {
   "id": "moonshot",
-  "label": "Moonshot / Kimi",
+  "label": "Kimi / Moonshot",
   "icon": "🌙",
   "homepage": "https://platform.moonshot.cn",
   "endpoints": [
     {
+      "label": "Moonshot Anthropic",
       "api_type": "anthropic",
       "default_base_url": "https://api.moonshot.cn/anthropic",
       "models": [
@@ -42,6 +43,56 @@
       ]
     },
     {
+      "id": "kimi-coding",
+      "label": "Kimi Coding",
+      "api_type": "anthropic",
+      "default_base_url": "https://api.kimi.com/coding/",
+      "headers": {
+        "User-Agent": "claude-code/0.1.0"
+      },
+      "models": [
+        {
+          "id": "kimi-for-coding",
+          "label": "Kimi Code",
+          "context_window": 256000
+        },
+        {
+          "id": "kimi-code",
+          "label": "Kimi Code (legacy alias)",
+          "context_window": 256000
+        },
+        {
+          "id": "k2p5",
+          "label": "Kimi Code (legacy)",
+          "context_window": 256000
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use Kimi Coding API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "Kimi Coding API key",
+              "secret": true,
+              "required": true,
+              "placeholder": "sk-..."
+            }
+          ],
+          "render": {
+            "env": {
+              "ANTHROPIC_API_KEY": "{{api_key}}",
+              "ANTHROPIC_BASE_URL": "{{base_url}}",
+              "ANTHROPIC_MODEL": "{{model}}"
+            },
+            "settings_files": []
+          }
+        }
+      ]
+    },
+    {
+      "label": "Moonshot OpenAI-compatible",
       "api_type": "openai-chat",
       "default_base_url": "https://api.moonshot.cn/v1",
       "models": [

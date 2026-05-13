@@ -36,6 +36,10 @@ pub struct ProviderCatalog {
     pub icon: Option<String>,
     #[serde(default)]
     pub homepage: Option<String>,
+    /// Hide legacy/alias providers from the "new profile" picker while
+    /// keeping them loadable for existing saved profiles.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hidden_from_picker: bool,
     pub endpoints: Vec<EndpointDef>,
 }
 
@@ -294,6 +298,7 @@ pub fn custom() -> &'static ProviderCatalog {
         label: "Custom".to_string(),
         icon: Some("✨".to_string()),
         homepage: None,
+        hidden_from_picker: false,
         endpoints: vec![
             EndpointDef {
                 id: None,
@@ -456,11 +461,19 @@ mod tests {
             .collect();
         assert!(api_types.contains(&"anthropic"));
         assert!(api_types.contains(&"openai-chat"));
+        let kimi_coding =
+            find_endpoint(provider, "anthropic", Some("kimi-coding")).expect("kimi coding");
+        assert_eq!(kimi_coding.default_base_url, "https://api.kimi.com/coding/");
+        assert_eq!(
+            kimi_coding.headers.get("User-Agent").map(String::as_str),
+            Some("claude-code/0.1.0")
+        );
     }
 
     #[test]
     fn kimi_coding_sets_coding_endpoint_headers() {
         let provider = get("kimi").expect("kimi must exist");
+        assert!(provider.hidden_from_picker);
         let endpoint = provider
             .endpoints
             .iter()

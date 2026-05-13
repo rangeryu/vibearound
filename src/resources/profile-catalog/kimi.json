@@ -3,6 +3,7 @@
   "label": "Kimi Coding",
   "icon": "K",
   "homepage": "https://www.kimi.com/code",
+  "hidden_from_picker": true,
   "endpoints": [
     {
       "api_type": "anthropic",

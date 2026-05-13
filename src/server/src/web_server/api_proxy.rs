@@ -61,7 +61,8 @@ pub(super) async fn proxy_handler(
             return response;
         }
     }
-    let mut provider_adapter = ProviderProxyAdapter::for_profile(&upstream.profile);
+    let mut provider_adapter =
+        ProviderProxyAdapter::for_profile(&upstream.profile, &target_api_type);
     let manual_profile_api_key = manual_scope
         .as_ref()
         .and_then(|_| upstream.profile.credentials.get("api_key").cloned());

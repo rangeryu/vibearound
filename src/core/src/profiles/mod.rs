@@ -21,9 +21,14 @@ const DASHSCOPE_PROVIDER_ID: &str = "dashscope";
 const DASHSCOPE_LABEL: &str = "Alibaba DashScope";
 const LEGACY_QWEN_PROVIDER_ID: &str = "qwen";
 const LEGACY_QWEN_LABEL: &str = "Qwen / DashScope";
+const MOONSHOT_PROVIDER_ID: &str = "moonshot";
+const LEGACY_KIMI_PROVIDER_ID: &str = "kimi";
+const KIMI_CODING_ENDPOINT_ID: &str = "kimi-coding";
+const KIMI_CODING_LEGACY_BASE_URL: &str = "https://api.kimi.com/coding";
 
 pub fn normalize_legacy_profile(mut profile: ProfileDef) -> ProfileDef {
     normalize_legacy_dashscope_profile(&mut profile);
+    normalize_legacy_kimi_profile(&mut profile);
 
     if profile.provider == "azure" && profile.api_types.iter().any(|t| t == "openai-chat") {
         let chat_overrides = profile.overrides.remove("openai-chat");
@@ -42,15 +47,16 @@ pub fn normalize_legacy_profile(mut profile: ProfileDef) -> ProfileDef {
 }
 
 pub fn normalize_legacy_profile_and_persist(profile: ProfileDef) -> ProfileDef {
-    let should_persist_dashscope_migration = needs_dashscope_profile_persist(&profile);
+    let should_persist_profile_migration =
+        needs_dashscope_profile_persist(&profile) || needs_kimi_profile_persist(&profile);
     let profile = normalize_legacy_profile(profile);
 
-    // TODO(0.6.x): remove this qwen -> dashscope migration patch once old
-    // profile files have had a release window to be rewritten on load.
-    if should_persist_dashscope_migration {
+    // TODO(0.6.x): remove these legacy provider migrations once old profile
+    // files have had a release window to be rewritten on load.
+    if should_persist_profile_migration {
         if let Err(error) = schema::save(&profile) {
             tracing::warn!(
-                "[profiles] failed to persist legacy qwen profile migration for '{}': {}",
+                "[profiles] failed to persist legacy profile migration for '{}': {}",
                 profile.id,
                 error
             );
@@ -87,6 +93,35 @@ fn normalize_legacy_dashscope_profile(profile: &mut ProfileDef) {
     }
 }
 
+fn normalize_legacy_kimi_profile(profile: &mut ProfileDef) {
+    if profile.provider != LEGACY_KIMI_PROVIDER_ID {
+        return;
+    }
+
+    profile.provider = MOONSHOT_PROVIDER_ID.to_string();
+    if profile
+        .api_types
+        .iter()
+        .any(|api_type| api_type == "anthropic")
+    {
+        let overrides = profile
+            .overrides
+            .entry("anthropic".to_string())
+            .or_default();
+        if matches!(overrides.endpoint_id.as_deref(), None | Some("anthropic")) {
+            overrides.endpoint_id = Some(KIMI_CODING_ENDPOINT_ID.to_string());
+        }
+        if overrides
+            .base_url
+            .as_deref()
+            .map(|base_url| base_url.trim_end_matches('/'))
+            == Some(KIMI_CODING_LEGACY_BASE_URL)
+        {
+            overrides.base_url = None;
+        }
+    }
+}
+
 fn needs_dashscope_profile_persist(profile: &ProfileDef) -> bool {
     profile.provider == LEGACY_QWEN_PROVIDER_ID
         || (profile.provider == DASHSCOPE_PROVIDER_ID
@@ -97,6 +132,10 @@ fn needs_dashscope_profile_persist(profile: &ProfileDef) -> bool {
                         Some("coding-global" | "coding-cn" | "standard-global" | "standard-cn")
                     )
                 })))
+}
+
+fn needs_kimi_profile_persist(profile: &ProfileDef) -> bool {
+    profile.provider == LEGACY_KIMI_PROVIDER_ID
 }
 
 #[cfg(test)]
@@ -160,5 +199,41 @@ mod tests {
 
         assert_eq!(profile.provider, "dashscope");
         assert_eq!(profile.label, "Work DashScope");
+    }
+
+    #[test]
+    fn normalizes_legacy_kimi_profile_to_moonshot_kimi_coding_endpoint() {
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "anthropic".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: None,
+                base_url: Some("https://api.kimi.com/coding/".to_string()),
+                model: Some("kimi-for-coding".to_string()),
+                reasoning_effort: None,
+                capabilities: None,
+            },
+        );
+        let profile = ProfileDef {
+            id: "kimi-old".to_string(),
+            label: "Kimi Coding".to_string(),
+            provider: "kimi".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["anthropic".to_string()],
+            credentials: BTreeMap::new(),
+            overrides,
+            provider_settings: ProviderSettings::default(),
+        };
+
+        let profile = normalize_legacy_profile(profile);
+
+        assert_eq!(profile.provider, "moonshot");
+        let overrides = profile
+            .overrides
+            .get("anthropic")
+            .expect("anthropic overrides");
+        assert_eq!(overrides.endpoint_id.as_deref(), Some("kimi-coding"));
+        assert_eq!(overrides.base_url, None);
+        assert_eq!(overrides.model.as_deref(), Some("kimi-for-coding"));
     }
 }

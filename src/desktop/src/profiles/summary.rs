@@ -65,6 +65,7 @@ pub(super) fn profile_summaries() -> Vec<ProfileSummary> {
 pub(super) fn catalog_entries() -> Vec<CatalogEntry> {
     catalog::all()
         .iter()
+        .filter(|c| !c.hidden_from_picker)
         .map(|c| CatalogEntry {
             id: c.id.clone(),
             label: c.label.clone(),
