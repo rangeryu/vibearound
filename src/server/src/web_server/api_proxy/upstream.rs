@@ -88,9 +88,15 @@ pub(super) fn upstream_endpoint(
     }
 
     let url = match protocol {
-        ProxyProtocol::OpenAiResponses => join_versioned_endpoint(base_url, "responses"),
-        ProxyProtocol::OpenAiChat => join_versioned_endpoint(base_url, "chat/completions"),
-        ProxyProtocol::AnthropicMessages => join_versioned_endpoint(base_url, "messages"),
+        ProxyProtocol::OpenAiResponses => {
+            join_protocol_endpoint(base_url, "responses", endpoint.append_v1_path)
+        }
+        ProxyProtocol::OpenAiChat => {
+            join_protocol_endpoint(base_url, "chat/completions", endpoint.append_v1_path)
+        }
+        ProxyProtocol::AnthropicMessages => {
+            join_protocol_endpoint(base_url, "messages", endpoint.append_v1_path)
+        }
     };
     Ok(UpstreamEndpoint {
         url,
@@ -101,8 +107,8 @@ pub(super) fn upstream_endpoint(
     })
 }
 
-fn join_versioned_endpoint(base_url: &str, endpoint: &str) -> String {
-    if base_url.ends_with("/v1") {
+fn join_protocol_endpoint(base_url: &str, endpoint: &str, append_v1_path: bool) -> String {
+    if !append_v1_path || base_url.ends_with("/v1") {
         format!("{base_url}/{endpoint}")
     } else {
         format!("{base_url}/v1/{endpoint}")
@@ -225,7 +231,27 @@ pub(super) fn redacted_url(url: &str) -> String {
 mod tests {
     use axum::http::{header, HeaderMap, HeaderValue};
 
-    use super::{apply_upstream_auth, ProxyProtocol};
+    use super::{apply_upstream_auth, join_protocol_endpoint, ProxyProtocol};
+
+    #[test]
+    fn joins_default_v1_for_host_root_endpoints() {
+        assert_eq!(
+            join_protocol_endpoint("https://api.example.com", "chat/completions", true),
+            "https://api.example.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn joins_provider_specific_api_roots_without_v1_append() {
+        assert_eq!(
+            join_protocol_endpoint(
+                "https://generativelanguage.googleapis.com/v1beta/openai",
+                "chat/completions",
+                false,
+            ),
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        );
+    }
 
     #[test]
     fn profile_key_overrides_openai_inbound_auth() {

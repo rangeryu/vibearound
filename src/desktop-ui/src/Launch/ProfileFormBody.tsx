@@ -114,6 +114,7 @@ export function FormBody({
               if (!ep) return null;
               const ov = overrides[apiType] ?? {};
               const endpointOptions = endpointsForApiType(provider, apiType);
+              const modelHint = apiKindHint(provider, apiType, ep);
               return (
                 <div
                   key={apiType}
@@ -172,13 +173,19 @@ export function FormBody({
                   )}
                   {shouldShowBaseUrl(provider, ep, ov) && (
                     <FieldRow
-                      label={provider.id === "azure" ? "Endpoint" : "Base URL"}
+                      label={
+                        provider.id === "azure" || provider.id === "gemini"
+                          ? "Endpoint"
+                          : "Base URL"
+                      }
                       required={ep.default_base_url === ""}
                       hint={
                         ep.default_base_url
                           ? t("Leave blank to use the catalog default.")
                           : provider.id === "custom"
                             ? t("Required for custom endpoints.")
+                            : provider.id === "gemini"
+                              ? t("Required for Vertex AI; use the endpoint root ending in /endpoints/openapi.")
                             : t("Endpoint URL from the provider dashboard.")
                       }
                     >
@@ -195,6 +202,8 @@ export function FormBody({
                           ep.default_base_url ||
                           (provider.id === "azure"
                             ? "https://your-resource.openai.azure.com/openai/v1"
+                            : provider.id === "gemini"
+                              ? "https://aiplatform.googleapis.com/v1/projects/PROJECT/locations/LOCATION/endpoints/openapi"
                             : "https://your-endpoint.example.com/v1")
                         }
                         className={MONO_INPUT_CLASS}
@@ -205,7 +214,7 @@ export function FormBody({
                     label={
                       provider.id === "azure" ? "Deployment name" : "Model"
                     }
-                    hint={apiKindHint(provider, apiType) ? t(apiKindHint(provider, apiType)!) : undefined}
+                    hint={modelHint ? t(modelHint) : undefined}
                   >
                     {ep.models.length > 0 ? (
                       <Select

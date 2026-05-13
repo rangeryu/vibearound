@@ -51,6 +51,11 @@ pub struct EndpointDef {
     pub label: Option<String>,
     pub api_type: String,
     pub default_base_url: String,
+    /// Most OpenAI-compatible providers expose an API root at either the host
+    /// root or `/v1`; when the root is provider-specific (for example
+    /// `/v1beta/openai`) the catalog can opt out of appending `/v1`.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub append_v1_path: bool,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -77,6 +82,14 @@ pub struct EndpointCapabilities {
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -305,6 +318,7 @@ pub fn custom() -> &'static ProviderCatalog {
                 label: None,
                 api_type: "anthropic".to_string(),
                 default_base_url: String::new(),
+                append_v1_path: true,
                 headers: BTreeMap::new(),
                 auth_header: false,
                 models: Vec::new(),
@@ -338,6 +352,7 @@ pub fn custom() -> &'static ProviderCatalog {
                 label: None,
                 api_type: "openai-responses".to_string(),
                 default_base_url: String::new(),
+                append_v1_path: true,
                 headers: BTreeMap::new(),
                 auth_header: false,
                 models: Vec::new(),
@@ -379,6 +394,7 @@ pub fn custom() -> &'static ProviderCatalog {
                 label: None,
                 api_type: "openai-chat".to_string(),
                 default_base_url: String::new(),
+                append_v1_path: true,
                 headers: BTreeMap::new(),
                 auth_header: false,
                 models: Vec::new(),
@@ -644,6 +660,21 @@ mod tests {
         assert_eq!(
             render.env.get("GOOGLE_GEMINI_BASE_URL").map(String::as_str),
             Some("{{base_url}}")
+        );
+        let openai_chat = find_endpoint(provider, "openai-chat", Some("openai-compatible"))
+            .expect("gemini openai-compatible endpoint");
+        assert!(!openai_chat.append_v1_path);
+        assert_eq!(
+            openai_chat.default_base_url,
+            "https://generativelanguage.googleapis.com/v1beta/openai"
+        );
+        let vertex_chat = find_endpoint(provider, "openai-chat", Some("vertex-openai-compatible"))
+            .expect("gemini vertex openai-compatible endpoint");
+        assert_eq!(vertex_chat.default_base_url, "");
+        assert!(!vertex_chat.append_v1_path);
+        assert_eq!(
+            vertex_chat.models.first().map(|model| model.id.as_str()),
+            Some("google/gemini-2.5-flash")
         );
     }
 }

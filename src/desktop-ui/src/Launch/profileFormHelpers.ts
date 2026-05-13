@@ -89,7 +89,7 @@ export function providerApiKindEndpoints(provider: CatalogEntry): CatalogEntry["
 }
 
 export function providerApiKindsEditable(provider: CatalogEntry): boolean {
-  return provider.id === "custom" || provider.id === "dashscope";
+  return provider.id === "custom" || provider.id === "dashscope" || provider.id === "gemini";
 }
 
 export function endpointsForApiType(
@@ -125,7 +125,14 @@ export function shouldShowBaseUrl(
 export function apiKindHint(
   provider: CatalogEntry,
   apiType: string,
+  endpoint?: CatalogEntry["endpoints"][number],
 ): string | undefined {
+  if (provider.id === "gemini" && apiType === "openai-chat") {
+    if (endpoint && endpointId(endpoint) === "vertex-openai-compatible") {
+      return "Uses a Google Cloud access token and a Vertex endpoint root ending in /endpoints/openapi.";
+    }
+    return "Uses a Gemini API key with Google AI Studio's OpenAI-compatible endpoint.";
+  }
   if (provider.id !== "azure") return undefined;
   if (apiType === "openai-responses") {
     return "Used by Codex and OpenCode for reasoning/tools. Must be an Azure deployment that supports the Responses API.";

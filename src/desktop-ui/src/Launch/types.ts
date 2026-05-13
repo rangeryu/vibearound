@@ -117,6 +117,7 @@ export interface EndpointDef {
   label?: string | null;
   api_type: string;
   default_base_url: string;
+  append_v1_path?: boolean | null;
   headers?: Record<string, string> | null;
   auth_header?: boolean | null;
   models: ModelDef[];
