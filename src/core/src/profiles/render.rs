@@ -329,17 +329,16 @@ fn build_context(
             .base_url
             .unwrap_or_else(|| endpoint.default_base_url.clone()),
     );
-    let model = overrides
+    let requested_model = overrides
         .model
         .filter(|model| !model.trim().is_empty())
         .or_else(|| endpoint.models.first().map(|model| model.id.clone()))
         .unwrap_or_default();
-    if let Some(context_window) = endpoint
-        .models
-        .iter()
-        .find(|model_def| model_def.id == model)
-        .and_then(|model_def| model_def.context_window)
-    {
+    let model_def = catalog::find_model(endpoint, &requested_model);
+    let model = model_def
+        .map(|model_def| model_def.id.clone())
+        .unwrap_or(requested_model);
+    if let Some(context_window) = model_def.and_then(|model_def| model_def.context_window) {
         ctx.insert(
             "model_context_window".to_string(),
             context_window.to_string(),

@@ -118,6 +118,8 @@ pub struct ModelDef {
     pub id: String,
     #[serde(default)]
     pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
     #[serde(default, skip_serializing_if = "ContentCapabilities::is_empty")]
@@ -287,6 +289,25 @@ pub fn find_endpoint<'a>(
                 .iter()
                 .find(|endpoint| endpoint.api_type == api_type)
         })
+}
+
+pub fn find_model<'a>(endpoint: &'a EndpointDef, model_id: &str) -> Option<&'a ModelDef> {
+    let model_id = model_id.trim();
+    if model_id.is_empty() {
+        return None;
+    }
+    endpoint
+        .models
+        .iter()
+        .find(|model| model_matches(model, model_id))
+}
+
+pub fn model_matches(model: &ModelDef, model_id: &str) -> bool {
+    let model_id = model_id.trim();
+    if model_id.is_empty() {
+        return false;
+    }
+    model.id == model_id || model.aliases.iter().any(|alias| alias.trim() == model_id)
 }
 
 // ---------------------------------------------------------------------------
@@ -680,6 +701,9 @@ mod tests {
             openai_chat.default_base_url,
             "https://generativelanguage.googleapis.com/v1beta/openai"
         );
+        let pro = find_model(openai_chat, "gemini-3.1-pro").expect("gemini pro alias");
+        assert_eq!(pro.id, "gemini-3.1-pro-preview");
+        assert_eq!(pro.context_window, Some(1_048_576));
         let vertex_chat = find_endpoint(provider, "openai-chat", Some("vertex-openai-compatible"))
             .expect("gemini vertex openai-compatible endpoint");
         assert_eq!(vertex_chat.default_base_url, "");

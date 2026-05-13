@@ -183,6 +183,7 @@ fn api_type_model_options(
                         catalog::ModelDef {
                             id: model.clone(),
                             label: None,
+                            aliases: Vec::new(),
                             context_window: None,
                             capabilities: Default::default(),
                         },
@@ -194,6 +195,7 @@ fn api_type_model_options(
                     models.push(catalog::ModelDef {
                         id: model.clone(),
                         label: None,
+                        aliases: Vec::new(),
                         context_window: None,
                         capabilities: Default::default(),
                     });

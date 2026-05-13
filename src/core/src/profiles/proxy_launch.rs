@@ -101,15 +101,12 @@ fn resolve_proxy_settings(
                 target_api_type
             )
         })?;
-    let upstream_model = upstream_model
+    let requested_upstream_model = upstream_model
         .map(str::trim)
         .filter(|model| !model.is_empty())
         .map(ToOwned::to_owned)
         .unwrap_or(profile_model);
-    let model_def = endpoint
-        .models
-        .iter()
-        .find(|model_def| model_def.id == upstream_model);
+    let model_def = catalog::find_model(endpoint, &requested_upstream_model);
     let model_context_window = model_def.and_then(|model_def| model_def.context_window);
     let model_capabilities = model_def
         .map(|model_def| endpoint.capabilities.content.merge(&model_def.capabilities))
@@ -118,7 +115,7 @@ fn resolve_proxy_settings(
         .map(str::trim)
         .filter(|model| !model.is_empty())
         .map(ToOwned::to_owned)
-        .unwrap_or_else(|| upstream_model.clone());
+        .unwrap_or_else(|| requested_upstream_model.clone());
     let reasoning_effort = profile
         .overrides
         .get(target_api_type)
@@ -488,6 +485,31 @@ mod tests {
         assert!(rendered.config_env.is_none());
     }
 
+    #[test]
+    fn codex_proxy_launch_keeps_gemini_alias_and_metadata() {
+        let profile = gemini_profile();
+
+        let rendered = render_proxy_launch(
+            &profile,
+            "codex",
+            "launch-test",
+            "openai-responses",
+            "openai-chat",
+            None,
+            None,
+        )
+        .expect("codex proxy launch renders");
+
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model='gemini-3.1-pro'"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model_context_window=1048576"));
+    }
+
     fn dashscope_profile() -> ProfileDef {
         let mut credentials = BTreeMap::new();
         credentials.insert("api_key".to_string(), "test-key".to_string());
@@ -508,6 +530,34 @@ mod tests {
             id: "dashscope-test".to_string(),
             label: "DashScope Test".to_string(),
             provider: "dashscope".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials,
+            overrides,
+            provider_settings: Default::default(),
+        }
+    }
+
+    fn gemini_profile() -> ProfileDef {
+        let mut credentials = BTreeMap::new();
+        credentials.insert("api_key".to_string(), "test-key".to_string());
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "openai-chat".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: Some("openai-compatible".to_string()),
+                base_url: None,
+                model: Some("gemini-3.1-pro".to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                capabilities: None,
+            },
+        );
+
+        ProfileDef {
+            id: "gemini-test".to_string(),
+            label: "Gemini Test".to_string(),
+            provider: "gemini".to_string(),
             auth_mode: AuthMode::ApiKey,
             api_types: vec!["openai-chat".to_string()],
             credentials,

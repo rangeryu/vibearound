@@ -90,6 +90,7 @@ export type ProfileDraft = Omit<ProfileDef, "id">;
 export interface ModelDef {
   id: string;
   label?: string | null;
+  aliases?: string[] | null;
   context_window?: number | null;
   capabilities?: ContentCapabilities | null;
 }
