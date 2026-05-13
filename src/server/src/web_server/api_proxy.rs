@@ -23,8 +23,9 @@ use normalization::normalize_target_request;
 use passthrough::{buffered_passthrough_response, passthrough_response};
 pub(super) use protocol::ProxyProtocol;
 pub use routes::{
-    legacy_chat_completions_handler, legacy_messages_handler, legacy_responses_handler,
-    local_chat_completions_handler, local_messages_handler, local_responses_handler,
+    legacy_chat_completions_handler, legacy_gemini_generate_content_handler,
+    legacy_messages_handler, legacy_responses_handler, local_chat_completions_handler,
+    local_gemini_generate_content_handler, local_messages_handler, local_responses_handler,
 };
 use stream::translated_stream_response;
 use upstream::{apply_upstream_auth, redacted_url, upstream_endpoint, upstream_error_response};

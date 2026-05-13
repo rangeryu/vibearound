@@ -1,7 +1,7 @@
 use serde_json::Value;
 use va_ai_api_proxy::{
-    AnthropicMessagesTranslator, DecodeState, EncodeState, OpenAiChatTranslator,
-    OpenAiResponsesTranslator, UniversalEvent, WireEvent, WireTranslator,
+    AnthropicMessagesTranslator, DecodeState, EncodeState, GeminiGenerateContentTranslator,
+    OpenAiChatTranslator, OpenAiResponsesTranslator, UniversalEvent, WireEvent, WireTranslator,
 };
 
 use crate::openai_proxy::providers::ProviderRequestSource;
@@ -11,6 +11,7 @@ pub(in crate::web_server) enum ProxyProtocol {
     OpenAiResponses,
     OpenAiChat,
     AnthropicMessages,
+    GeminiGenerateContent,
 }
 
 impl ProxyProtocol {
@@ -19,6 +20,7 @@ impl ProxyProtocol {
             "openai-responses" => Some(Self::OpenAiResponses),
             "openai-chat" => Some(Self::OpenAiChat),
             "anthropic" => Some(Self::AnthropicMessages),
+            "gemini" => Some(Self::GeminiGenerateContent),
             _ => None,
         }
     }
@@ -31,6 +33,7 @@ impl ProxyProtocol {
             Self::OpenAiResponses => OpenAiResponsesTranslator.decode_request(raw),
             Self::OpenAiChat => OpenAiChatTranslator.decode_request(raw),
             Self::AnthropicMessages => AnthropicMessagesTranslator.decode_request(raw),
+            Self::GeminiGenerateContent => GeminiGenerateContentTranslator.decode_request(raw),
         }
     }
 
@@ -42,6 +45,7 @@ impl ProxyProtocol {
             Self::OpenAiResponses => OpenAiResponsesTranslator.encode_request(request),
             Self::OpenAiChat => OpenAiChatTranslator.encode_request(request),
             Self::AnthropicMessages => AnthropicMessagesTranslator.encode_request(request),
+            Self::GeminiGenerateContent => GeminiGenerateContentTranslator.encode_request(request),
         }
     }
 
@@ -53,6 +57,7 @@ impl ProxyProtocol {
             Self::OpenAiResponses => OpenAiResponsesTranslator.decode_response(raw),
             Self::OpenAiChat => OpenAiChatTranslator.decode_response(raw),
             Self::AnthropicMessages => AnthropicMessagesTranslator.decode_response(raw),
+            Self::GeminiGenerateContent => GeminiGenerateContentTranslator.decode_response(raw),
         }
     }
 
@@ -65,6 +70,9 @@ impl ProxyProtocol {
             Self::OpenAiResponses => OpenAiResponsesTranslator.decode_stream_chunk(raw, state),
             Self::OpenAiChat => OpenAiChatTranslator.decode_stream_chunk(raw, state),
             Self::AnthropicMessages => AnthropicMessagesTranslator.decode_stream_chunk(raw, state),
+            Self::GeminiGenerateContent => {
+                GeminiGenerateContentTranslator.decode_stream_chunk(raw, state)
+            }
         }
     }
 
@@ -77,6 +85,9 @@ impl ProxyProtocol {
             Self::OpenAiResponses => OpenAiResponsesTranslator.encode_events(events, state),
             Self::OpenAiChat => OpenAiChatTranslator.encode_events(events, state),
             Self::AnthropicMessages => AnthropicMessagesTranslator.encode_events(events, state),
+            Self::GeminiGenerateContent => {
+                GeminiGenerateContentTranslator.encode_events(events, state)
+            }
         }
     }
 
@@ -89,6 +100,7 @@ impl ProxyProtocol {
             Self::OpenAiResponses => "openai-responses",
             Self::OpenAiChat => "openai-chat",
             Self::AnthropicMessages => "anthropic",
+            Self::GeminiGenerateContent => "gemini",
         }
     }
 
@@ -97,6 +109,7 @@ impl ProxyProtocol {
             Self::OpenAiResponses => ProviderRequestSource::OpenAiResponses,
             Self::OpenAiChat => ProviderRequestSource::OpenAiChat,
             Self::AnthropicMessages => ProviderRequestSource::AnthropicMessages,
+            Self::GeminiGenerateContent => ProviderRequestSource::GeminiGenerateContent,
         }
     }
 }

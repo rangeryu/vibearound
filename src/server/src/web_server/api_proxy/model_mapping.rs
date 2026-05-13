@@ -44,7 +44,7 @@ pub(super) fn proxy_model_mapping(
 }
 
 fn agent_id_from_scope(scope: &str, client_api_type: &str) -> Option<&'static str> {
-    for agent_id in ["claude", "codex", "opencode"] {
+    for agent_id in ["claude", "codex", "gemini", "opencode"] {
         let prefix = format!("{agent_id}-");
         if scope.strip_prefix(&prefix) == Some(client_api_type) {
             return Some(agent_id);

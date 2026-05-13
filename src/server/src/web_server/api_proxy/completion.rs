@@ -47,6 +47,9 @@ pub(super) async fn translated_completion_response(
         ProxyProtocol::OpenAiResponses => events_to_openai_response(&events),
         ProxyProtocol::OpenAiChat => events_to_openai_chat_response(&events),
         ProxyProtocol::AnthropicMessages => events_to_anthropic_response(&events),
+        ProxyProtocol::GeminiGenerateContent => {
+            va_ai_api_proxy::translator::gemini_generate_content::encode_response(&events)
+        }
     };
     Json(body).into_response()
 }

@@ -149,6 +149,9 @@ impl DeepSeekProxyAdapter {
                 ProviderRequestSource::AnthropicMessages => {
                     collect_reasoning_from_anthropic_input(&mut reasoning, original_request);
                 }
+                ProviderRequestSource::GeminiGenerateContent => {
+                    collect_reasoning_from_gemini_input(&mut reasoning, original_request);
+                }
                 ProviderRequestSource::OpenAiChat => {}
             }
             inject_reasoning_content(&reasoning, chat_request);
@@ -507,6 +510,86 @@ fn collect_reasoning_from_anthropic_input(
         }
         collect_reasoning_from_anthropic_assistant_message(reasoning, message);
     }
+}
+
+fn collect_reasoning_from_gemini_input(reasoning: &mut RequestReasoning, gemini_request: &Value) {
+    let Some(contents) = gemini_request.get("contents").and_then(Value::as_array) else {
+        return;
+    };
+
+    for content in contents {
+        let Some(content) = content.as_object() else {
+            continue;
+        };
+        if content.get("role").and_then(Value::as_str) != Some("model") {
+            continue;
+        }
+        collect_reasoning_from_gemini_model_content(reasoning, content);
+    }
+}
+
+fn collect_reasoning_from_gemini_model_content(
+    reasoning: &mut RequestReasoning,
+    content: &Map<String, Value>,
+) -> usize {
+    let Some(parts) = content.get("parts").and_then(Value::as_array) else {
+        return 0;
+    };
+
+    let mut active_reasoning: Option<String> = None;
+    let mut text_parts = Vec::new();
+    let mut stored_count = 0usize;
+
+    for part in parts {
+        let Some(part) = part.as_object() else {
+            continue;
+        };
+        if is_gemini_thought_part(part) {
+            if let Some(reasoning_text) = gemini_thought_text(part) {
+                active_reasoning = Some(reasoning_text);
+            }
+            continue;
+        }
+        if let Some(function_call) = part.get("functionCall").and_then(Value::as_object) {
+            if let (Some(reasoning_content), Some(call_id)) = (
+                active_reasoning.as_deref(),
+                function_call.get("name").and_then(Value::as_str),
+            ) {
+                store_reasoning(reasoning, call_id, reasoning_content);
+                stored_count += 1;
+            }
+            continue;
+        }
+        if let Some(text) = part.get("text").and_then(Value::as_str) {
+            text_parts.push(text);
+        }
+    }
+
+    if let Some(reasoning_content) = active_reasoning.as_deref() {
+        let text = text_parts.join("");
+        if !text.is_empty() {
+            let mut message = Map::new();
+            message.insert("content".to_string(), Value::String(text));
+            if store_reasoning_for_message_item(reasoning, reasoning_content, &message) {
+                stored_count += 1;
+            }
+        }
+    }
+
+    stored_count
+}
+
+fn is_gemini_thought_part(part: &Map<String, Value>) -> bool {
+    part.get("thought")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn gemini_thought_text(part: &Map<String, Value>) -> Option<String> {
+    part.get("text")
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
 }
 
 fn collect_reasoning_from_anthropic_assistant_message(
@@ -916,6 +999,94 @@ mod tests {
         assert!(chat_request["messages"][0]
             .get("reasoning_content")
             .is_none());
+    }
+
+    #[test]
+    fn replays_reasoning_content_from_gemini_thought_tool_call() {
+        let settings = thinking_settings();
+        let original_request = json!({
+            "contents": [{
+                "role": "model",
+                "parts": [
+                    { "thought": true, "text": "Call pwd, then answer." },
+                    {
+                        "functionCall": {
+                            "name": "exec_command",
+                            "args": { "cmd": "pwd" }
+                        }
+                    }
+                ]
+            }, {
+                "role": "user",
+                "parts": [{
+                    "functionResponse": {
+                        "name": "exec_command",
+                        "response": { "output": "/tmp/project" }
+                    }
+                }]
+            }]
+        });
+        let mut chat_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "exec_command",
+                    "type": "function",
+                    "function": { "name": "exec_command", "arguments": "{\"cmd\":\"pwd\"}" }
+                }]
+            }, {
+                "role": "tool",
+                "tool_call_id": "exec_command",
+                "content": "{\"output\":\"/tmp/project\"}"
+            }]
+        });
+        let mut adapter = new_adapter("deepseek-gemini-tool", settings);
+
+        adapter.prepare_chat_request(
+            ProviderRequestSource::GeminiGenerateContent,
+            &original_request,
+            &mut chat_request,
+        );
+
+        assert_eq!(
+            chat_request["messages"][0]["reasoning_content"],
+            "Call pwd, then answer."
+        );
+    }
+
+    #[test]
+    fn replays_reasoning_content_from_gemini_thought_text() {
+        let settings = thinking_settings();
+        let original_request = json!({
+            "contents": [{
+                "role": "model",
+                "parts": [
+                    { "thought": true, "text": "Explain briefly." },
+                    { "text": "The answer is 42." }
+                ]
+            }]
+        });
+        let mut chat_request = json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{
+                "role": "assistant",
+                "content": "The answer is 42."
+            }]
+        });
+        let mut adapter = new_adapter("deepseek-gemini-text", settings);
+
+        adapter.prepare_chat_request(
+            ProviderRequestSource::GeminiGenerateContent,
+            &original_request,
+            &mut chat_request,
+        );
+
+        assert_eq!(
+            chat_request["messages"][0]["reasoning_content"],
+            "Explain briefly."
+        );
     }
 
     #[test]

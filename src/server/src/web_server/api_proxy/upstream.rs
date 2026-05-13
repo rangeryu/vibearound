@@ -86,6 +86,16 @@ pub(super) fn upstream_endpoint(
             ),
         ));
     }
+    if protocol == ProxyProtocol::GeminiGenerateContent {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            concat!(
+                "Gemini GenerateContent is supported as a client protocol only; ",
+                "choose an OpenAI-compatible Gemini endpoint as the proxy target"
+            )
+            .to_string(),
+        ));
+    }
 
     let url = match protocol {
         ProxyProtocol::OpenAiResponses => {
@@ -97,6 +107,7 @@ pub(super) fn upstream_endpoint(
         ProxyProtocol::AnthropicMessages => {
             join_protocol_endpoint(base_url, "messages", endpoint.append_v1_path)
         }
+        ProxyProtocol::GeminiGenerateContent => unreachable!("Gemini target is rejected above"),
     };
     Ok(UpstreamEndpoint {
         url,
@@ -157,7 +168,11 @@ pub(super) fn apply_upstream_auth(
             "missing x-api-key or Authorization header",
         ));
     };
-    let mut request = request.header("x-api-key", api_key);
+    let mut request = if protocol == ProxyProtocol::GeminiGenerateContent {
+        request.header("x-goog-api-key", api_key)
+    } else {
+        request.header("x-api-key", api_key)
+    };
     if profile_api_key.is_none() {
         if let Some(auth) = authorization_header(headers) {
             request = request.header(reqwest::header::AUTHORIZATION, auth);
@@ -180,6 +195,7 @@ fn authorization_header(headers: &InboundHeaderMap) -> Option<String> {
 fn inbound_api_key(headers: &InboundHeaderMap) -> Option<String> {
     headers
         .get("x-api-key")
+        .or_else(|| headers.get("x-goog-api-key"))
         .and_then(|value| value.to_str().ok())
         .filter(|value| !value.trim().is_empty())
         .map(ToString::to_string)

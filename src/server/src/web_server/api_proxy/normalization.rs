@@ -10,6 +10,10 @@ pub(super) fn normalize_target_request(
         ProxyProtocol::AnthropicMessages => normalize_anthropic_messages_request(request),
         ProxyProtocol::OpenAiChat => normalize_openai_chat_request(request),
         ProxyProtocol::OpenAiResponses => Ok(()),
+        ProxyProtocol::GeminiGenerateContent => {
+            va_ai_api_proxy::translator::gemini_generate_content::strip_route_metadata(request);
+            Ok(())
+        }
     }
 }
 

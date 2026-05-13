@@ -104,6 +104,41 @@ pub async fn legacy_messages_handler(
     .await
 }
 
+pub async fn legacy_gemini_generate_content_handler(
+    State(state): State<AppState>,
+    Path((profile_id, target_api_type, _version, model_action)): Path<(
+        String,
+        String,
+        String,
+        String,
+    )>,
+    headers: HeaderMap,
+    Json(mut original_request): Json<Value>,
+) -> Response {
+    let Some((model, action)) = parse_gemini_model_action(&model_action) else {
+        return super::json_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Gemini route must end with {model}:generateContent or {model}:streamGenerateContent",
+        );
+    };
+    va_ai_api_proxy::translator::gemini_generate_content::attach_route_metadata(
+        &mut original_request,
+        model,
+        action == "streamGenerateContent",
+    );
+    proxy_handler(
+        state,
+        profile_id,
+        None,
+        None,
+        target_api_type,
+        ProxyProtocol::GeminiGenerateContent,
+        headers,
+        original_request,
+    )
+    .await
+}
+
 pub async fn local_messages_handler(
     State(state): State<AppState>,
     Path((profile_id, scope, target_api_type)): Path<(String, String, String)>,
@@ -122,4 +157,46 @@ pub async fn local_messages_handler(
         original_request,
     )
     .await
+}
+
+pub async fn local_gemini_generate_content_handler(
+    State(state): State<AppState>,
+    Path((profile_id, scope, target_api_type, _version, model_action)): Path<(
+        String,
+        String,
+        String,
+        String,
+        String,
+    )>,
+    headers: HeaderMap,
+    Json(mut original_request): Json<Value>,
+) -> Response {
+    let Some((model, action)) = parse_gemini_model_action(&model_action) else {
+        return super::json_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Gemini route must end with {model}:generateContent or {model}:streamGenerateContent",
+        );
+    };
+    va_ai_api_proxy::translator::gemini_generate_content::attach_route_metadata(
+        &mut original_request,
+        model,
+        action == "streamGenerateContent",
+    );
+    let route_scope = scope.clone();
+    proxy_handler(
+        state,
+        profile_id,
+        Some(route_scope),
+        Some(scope),
+        target_api_type,
+        ProxyProtocol::GeminiGenerateContent,
+        headers,
+        original_request,
+    )
+    .await
+}
+
+fn parse_gemini_model_action(model_action: &str) -> Option<(&str, &str)> {
+    let (model, action) = model_action.rsplit_once(':')?;
+    matches!(action, "generateContent" | "streamGenerateContent").then_some((model, action))
 }

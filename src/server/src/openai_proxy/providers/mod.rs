@@ -19,11 +19,15 @@ pub enum ProviderRequestSource {
     OpenAiResponses,
     OpenAiChat,
     AnthropicMessages,
+    GeminiGenerateContent,
 }
 
 impl ProviderRequestSource {
     pub(crate) fn supports_deepseek_reasoning_replay(self) -> bool {
-        matches!(self, Self::OpenAiResponses | Self::AnthropicMessages)
+        matches!(
+            self,
+            Self::OpenAiResponses | Self::AnthropicMessages | Self::GeminiGenerateContent
+        )
     }
 }
 
