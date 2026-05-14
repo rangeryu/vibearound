@@ -3,22 +3,42 @@ import { browserWsBaseUrl } from "@va/client";
 import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
+import type { AppPage, ChatRuntimeStatus } from "@/lib/dashboard-types";
 import type { ViewMode } from "@/lib/terminal-types";
+import { cn } from "@/lib/utils";
 
 interface AppFooterProps {
+  page: AppPage;
   viewMode: ViewMode;
   runningSessions: number;
   maximizedSession: string | null;
+  chatStatus: ChatRuntimeStatus;
   onExitMaximized: () => void;
 }
 
 export function AppFooter({
+  page,
   viewMode,
   runningSessions,
   maximizedSession,
+  chatStatus,
   onExitMaximized,
 }: AppFooterProps) {
   const { t } = useI18n();
+  const chatStatusLabel =
+    chatStatus === "working"
+      ? t("AI working")
+      : chatStatus === "attention"
+        ? t("Needs input")
+        : chatStatus === "connecting"
+          ? t("Chat connecting")
+          : t("Chat ready");
+  const chatStatusTone =
+    chatStatus === "working"
+      ? "text-primary"
+      : chatStatus === "attention"
+        ? "text-amber-400"
+        : "text-muted-foreground/40";
 
   return (
     <footer className="flex items-center justify-between px-3 py-1 shrink-0 bg-muted/60 dark:bg-muted/40 border-t border-border">
@@ -45,7 +65,12 @@ export function AppFooter({
             {t("Exit Maximized")}
           </Button>
         )}
-        <span className="text-[10px] text-muted-foreground/30 font-mono uppercase">{viewMode}</span>
+        <span className={cn("text-[10px] font-mono", chatStatusTone)}>
+          {chatStatusLabel}
+        </span>
+        <span className="text-[10px] text-muted-foreground/30 font-mono uppercase">
+          {page === "terminal" ? viewMode : page}
+        </span>
         <span className="text-[10px] text-muted-foreground/40 font-mono">
           {t("{{count}} proc", { count: runningSessions })}
         </span>

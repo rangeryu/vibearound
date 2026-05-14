@@ -9,6 +9,7 @@ import {
 
 interface TerminalGridViewProps {
   groups: TerminalGroup[];
+  isActive: boolean;
   viewMode: ViewMode;
   onToggleMaximize: (id: string) => void;
   onSessionState: (sessionId: string, tool: ToolType, status: TerminalStatus) => void;
@@ -17,6 +18,7 @@ interface TerminalGridViewProps {
 
 export function TerminalGridView({
   groups,
+  isActive,
   viewMode,
   onToggleMaximize,
   onSessionState,
@@ -54,7 +56,7 @@ export function TerminalGridView({
                   <div key={session.id} className="h-[480px] lg:h-[520px]">
                     <TerminalPanel
                       session={session}
-                      isActive
+                      isActive={isActive}
                       viewMode={viewMode}
                       onToggleMaximize={() => onToggleMaximize(session.id)}
                       onClose={() => onCloseSession(session.id)}

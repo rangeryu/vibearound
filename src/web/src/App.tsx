@@ -1,24 +1,29 @@
 import { useState } from "react";
-import { useI18n } from "@va/i18n";
 
 import { AppFooter } from "@/components/AppFooter";
 import { AppHeader } from "@/components/AppHeader";
 import { ChatView } from "@/components/chat";
-import { EmptyTerminalState } from "@/components/EmptyTerminalState";
 import { TabBar } from "@/components/TabBar";
-import { TerminalGridView } from "@/components/TerminalGridView";
-import { TerminalPanel } from "@/components/TerminalPanel";
+import { TerminalWorkspace } from "@/components/TerminalWorkspace";
 import { usePing } from "@/hooks/usePing";
 import { useSessions } from "@/hooks/useSessions";
 import { useTmux } from "@/hooks/useTmux";
-import type { AppPage } from "@/lib/session-mappers";
+import type { AppPage, ChatRuntimeStatus } from "@/lib/dashboard-types";
 import type { ViewMode } from "@/lib/terminal-types";
+import { cn } from "@/lib/utils";
 import { ThemeContext, getResolvedTheme, toggleTheme as applyThemeToggle, type Theme } from "@/lib/theme";
 
+function workspacePaneClass(active: boolean) {
+  return cn(
+    "absolute inset-0 min-h-0 transition-opacity duration-150",
+    active ? "z-10 opacity-100 pointer-events-auto" : "z-0 opacity-0 pointer-events-none",
+  );
+}
+
 function App() {
-  const { t } = useI18n();
-  const [page, setPage] = useState<AppPage>("terminal");
+  const [page, setPage] = useState<AppPage>("chat");
   const [viewMode, setViewMode] = useState<ViewMode>("tabs");
+  const [chatStatus, setChatStatus] = useState<ChatRuntimeStatus>("connecting");
   const [theme, setTheme] = useState<Theme>(() => getResolvedTheme());
 
   const pingMs = usePing();
@@ -37,15 +42,10 @@ function App() {
     toggleMaximize,
     clearMaximized,
   } = useSessions({
-    active: page === "terminal",
     theme,
     onTmuxAttached: tmux.refresh,
   });
 
-  const activeSession = groups.flatMap((g) => g.sessions).find((s) => s.id === activeTabId);
-  const maximizedSessionData = maximizedSession
-    ? groups.flatMap((g) => g.sessions).find((s) => s.id === maximizedSession)
-    : null;
   const totalSessions = groups.reduce((sum, g) => sum + g.sessions.length, 0);
   const runningSessions = groups.reduce(
     (sum, g) => sum + g.sessions.filter((s) => s.status === "running").length,
@@ -70,6 +70,7 @@ function App() {
           totalSessions={totalSessions}
           runningSessions={runningSessions}
           pingMs={pingMs}
+          chatStatus={chatStatus}
         />
 
         {page === "terminal" && viewMode === "tabs" && (
@@ -87,64 +88,45 @@ function App() {
           />
         )}
 
-        <main className="flex-1 min-h-0 overflow-hidden">
-          {page === "chat" ? (
-            <ChatView />
-          ) : maximizedSessionData ? (
-            <div className="h-full p-2">
-              <TerminalPanel
-                session={maximizedSessionData}
-                isActive
-                isMaximized
-                viewMode={viewMode}
-                onToggleMaximize={() => toggleMaximize(maximizedSessionData.id)}
-                onClose={() => closeSession(maximizedSessionData.id)}
-                onSessionState={(tool, status) =>
-                  setSessionState(maximizedSessionData.id, tool, status)
-                }
-              />
-            </div>
-          ) : viewMode === "tabs" ? (
-            <div className="h-full p-2">
-              {activeSession ? (
-                <TerminalPanel
-                  session={activeSession}
-                  isActive
-                  viewMode={viewMode}
-                  onToggleMaximize={() => toggleMaximize(activeSession.id)}
-                  onClose={() => closeSession(activeSession.id)}
-                  onSessionState={(tool, status) => setSessionState(activeSession.id, tool, status)}
-                />
-              ) : sessionsLoading ? (
-                <div className="flex h-full items-center justify-center">
-                  <p className="text-sm text-muted-foreground/40 font-mono">{t("Loading sessions…")}</p>
-                </div>
-              ) : (
-                <EmptyTerminalState
-                  tmuxAvailable={tmux.available}
-                  tmuxSessions={tmux.sessions}
-                  onAddCli={addCli}
-                  onAddProfileCli={addProfileCli}
-                  onAttachTmux={attachTmux}
-                  onRefreshTmux={tmux.refresh}
-                />
-              )}
-            </div>
-          ) : (
-            <TerminalGridView
+        <main className="relative flex-1 min-h-0 overflow-hidden">
+          <section
+            className={workspacePaneClass(page === "chat")}
+            aria-hidden={page !== "chat"}
+            inert={page !== "chat"}
+          >
+            <ChatView onStatusChange={setChatStatus} />
+          </section>
+          <section
+            className={workspacePaneClass(page === "terminal")}
+            aria-hidden={page !== "terminal"}
+            inert={page !== "terminal"}
+          >
+            <TerminalWorkspace
+              isActive={page === "terminal"}
               groups={groups}
+              activeTabId={activeTabId}
+              maximizedSession={maximizedSession}
+              sessionsLoading={sessionsLoading}
               viewMode={viewMode}
+              tmuxAvailable={tmux.available}
+              tmuxSessions={tmux.sessions}
+              onAddCli={addCli}
+              onAddProfileCli={addProfileCli}
+              onAttachTmux={attachTmux}
+              onRefreshTmux={tmux.refresh}
               onToggleMaximize={toggleMaximize}
-              onSessionState={setSessionState}
               onCloseSession={closeSession}
+              onSessionState={setSessionState}
             />
-          )}
+          </section>
         </main>
 
         <AppFooter
+          page={page}
           viewMode={viewMode}
           runningSessions={runningSessions}
           maximizedSession={maximizedSession}
+          chatStatus={chatStatus}
           onExitMaximized={clearMaximized}
         />
       </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getLaunchSessions, getProfiles } from "@/api/sessions";
 import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
+import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
 import type { LaunchSessionInfo, ProfileLaunchOption } from "@va/client";
 import { useI18n } from "@va/i18n";
 import { ChatInput } from "./ChatInput";
@@ -11,7 +12,11 @@ import { PendingPermissions } from "./PendingPermissions";
 import type { ChatSessionSelection } from "./chatTypes";
 import { useWebChatConnection } from "./useWebChatConnection";
 
-export function ChatView() {
+interface ChatViewProps {
+  onStatusChange?: (status: ChatRuntimeStatus) => void;
+}
+
+export function ChatView({ onStatusChange }: ChatViewProps) {
   const { t } = useI18n();
   const [input, setInput] = useState("");
   const [selectedAgent, setSelectedAgent] = useState<string>("claude");
@@ -51,6 +56,18 @@ export function ChatView() {
     sessionSelection.kind === "resume"
       ? launchSessions.find((session) => session.session_id === sessionSelection.sessionId)
       : undefined;
+  const chatStatus: ChatRuntimeStatus =
+    pendingPermissions.length > 0
+      ? "attention"
+      : streaming
+        ? "working"
+        : connected
+          ? "ready"
+          : "connecting";
+
+  useEffect(() => {
+    onStatusChange?.(chatStatus);
+  }, [chatStatus, onStatusChange]);
 
   useEffect(() => {
     let cancelled = false;
