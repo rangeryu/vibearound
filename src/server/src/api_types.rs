@@ -183,6 +183,18 @@ pub struct CreateSessionResponse {
     pub launch_target: Option<String>,
 }
 
+/// One resumable coding-agent session discovered from a CLI-owned session store.
+#[derive(Debug, Clone, Serialize)]
+pub struct LaunchSessionInfo {
+    pub agent_id: String,
+    pub session_id: String,
+    pub title: String,
+    pub workspace: String,
+    pub updated_at: u64,
+    pub short_id: String,
+    pub archived: bool,
+}
+
 /// `GET /api/tmux/sessions` response.
 #[derive(Debug, Clone, Serialize)]
 pub struct TmuxSessionsResponse {

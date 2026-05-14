@@ -108,20 +108,7 @@ pub(super) fn reorder_profiles(profile_ids: Vec<String>) -> Result<(), String> {
 }
 
 pub(crate) fn ordered_profiles() -> Vec<schema::ProfileDef> {
-    let mut remaining: Vec<_> = schema::list()
-        .into_iter()
-        .map(normalize_legacy_profile_and_persist)
-        .collect();
-    let mut out = Vec::new();
-
-    for id in read_profile_order() {
-        if let Some(index) = remaining.iter().position(|profile| profile.id == id) {
-            out.push(remaining.remove(index));
-        }
-    }
-
-    out.extend(remaining);
-    out
+    common::profiles::ordered_profiles()
 }
 
 fn clear_default_profile_references(profile_id: &str) -> Result<(), String> {

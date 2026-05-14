@@ -5,17 +5,25 @@
 import {
   browserBaseUrl,
   CreateSessionResponseSchema,
+  LaunchSessionListSchema,
   ProfileLaunchOptionsSchema,
   SessionListSchema,
   TmuxSessionsResponseSchema,
   type CreateSessionResponse,
+  type LaunchSessionInfo,
   type ProfileLaunchOption,
   type PtyTool,
   type SessionListItem,
   type TmuxSessionsResponse,
 } from "@va/client";
 
-export type { CreateSessionResponse, ProfileLaunchOption, SessionListItem, TmuxSessionsResponse };
+export type {
+  CreateSessionResponse,
+  LaunchSessionInfo,
+  ProfileLaunchOption,
+  SessionListItem,
+  TmuxSessionsResponse,
+};
 
 export interface CreateSessionBody {
   tool?: PtyTool;
@@ -41,6 +49,19 @@ export async function getProfiles(): Promise<ProfileLaunchOption[]> {
   const res = await fetch(`${browserBaseUrl()}/api/profiles`);
   if (!res.ok) throw new Error(`GET /api/profiles: ${res.status}`);
   return ProfileLaunchOptionsSchema.parse(await res.json());
+}
+
+export async function getLaunchSessions(
+  agentId: string,
+  includeArchived = false,
+): Promise<LaunchSessionInfo[]> {
+  const params = new URLSearchParams();
+  if (includeArchived) params.set("include_archived", "true");
+  const query = params.toString();
+  const path = `/api/agents/${encodeURIComponent(agentId)}/launch-sessions${query ? `?${query}` : ""}`;
+  const res = await fetch(`${browserBaseUrl()}${path}`);
+  if (!res.ok) throw new Error(`GET ${path}: ${res.status}`);
+  return LaunchSessionListSchema.parse(await res.json());
 }
 
 export async function createSession(body: CreateSessionBody): Promise<CreateSessionResponse> {

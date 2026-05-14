@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -57,6 +57,46 @@ pub async fn list_sessions_handler(
         })
         .collect();
     Json(items)
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct LaunchSessionsQuery {
+    workspace_path: Option<String>,
+    include_archived: Option<bool>,
+    limit: Option<usize>,
+}
+
+/// GET /api/agents/:agent_id/launch-sessions -- list CLI sessions this agent can resume.
+pub async fn list_launch_sessions_handler(
+    Path(agent_id): Path<String>,
+    Query(query): Query<LaunchSessionsQuery>,
+) -> Result<Json<Vec<crate::api_types::LaunchSessionInfo>>, (StatusCode, String)> {
+    let agent_id = common::resources::resolve_agent_id(&agent_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    let workspace = query
+        .workspace_path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| common::config::ensure_loaded().resolve_workspace(&agent_id));
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let sessions = common::launch_sessions::list_for_agent_workspace_with_archived(
+        &agent_id,
+        &workspace,
+        limit,
+        query.include_archived.unwrap_or(false),
+    )
+    .into_iter()
+    .map(|session| crate::api_types::LaunchSessionInfo {
+        short_id: common::launch_sessions::short_id(&session.session_id),
+        agent_id: session.agent_id,
+        session_id: session.session_id,
+        title: session.title,
+        workspace: session.workspace,
+        updated_at: session.updated_at,
+        archived: session.archived,
+    })
+    .collect();
+
+    Ok(Json(sessions))
 }
 
 /// POST /api/sessions -- create a new PTY session.

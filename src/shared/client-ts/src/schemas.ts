@@ -127,6 +127,18 @@ export const CreateSessionResponseSchema = z.object({
 });
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>;
 
+export const LaunchSessionInfoSchema = z.object({
+  agent_id: z.string(),
+  session_id: z.string(),
+  title: z.string(),
+  workspace: z.string(),
+  updated_at: z.number(),
+  short_id: z.string(),
+  archived: z.boolean(),
+});
+export type LaunchSessionInfo = z.infer<typeof LaunchSessionInfoSchema>;
+export const LaunchSessionListSchema = z.array(LaunchSessionInfoSchema);
+
 export const TmuxSessionsResponseSchema = z.object({
   available: z.boolean(),
   sessions: z.array(z.string()),

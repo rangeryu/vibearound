@@ -124,6 +124,17 @@ impl ConversationManager {
         conv.switch_profile(profile).await;
     }
 
+    /// Select the next web-chat launch route (agent plus optional explicit profile).
+    pub async fn select_launch_route(
+        &self,
+        route: &RouteKey,
+        agent_kind: String,
+        profile: Option<String>,
+    ) -> anyhow::Result<String> {
+        let conv = self.get_or_create(route.clone());
+        conv.select_launch_route(agent_kind, profile).await
+    }
+
     /// Reset session on a route (new conversation thread, same agent).
     pub async fn reset_session(&self, route: &RouteKey) {
         if let Some(conv) = self.get(route) {
@@ -174,9 +185,11 @@ impl ConversationManager {
         cli_kind: String,
         resume_session_id: String,
         cwd: Option<String>,
+        profile: Option<String>,
     ) -> anyhow::Result<()> {
         let conv = self.get_or_create(route);
-        conv.set_handover(cli_kind, resume_session_id, cwd).await
+        conv.set_handover(cli_kind, resume_session_id, cwd, profile)
+            .await
     }
 
     // -----------------------------------------------------------------------

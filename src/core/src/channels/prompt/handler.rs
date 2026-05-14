@@ -138,6 +138,7 @@ pub(crate) async fn handle_prompt(
                                 agent_kind.clone(),
                                 session_id.clone(),
                                 Some(cwd),
+                                None,
                             )
                             .await
                         {
@@ -179,6 +180,7 @@ pub(crate) async fn handle_prompt(
                         agent_kind.clone(),
                         session_id.clone(),
                         cwd.clone(),
+                        None,
                     )
                     .await
                 {

@@ -9,11 +9,17 @@ import {
 } from "./Conversation";
 import { Message, MessageContent } from "./Message";
 import { MessageResponse } from "./MessageResponse";
-import { ChatInput } from "./ChatInput";
+import { ChatInput, type ChatSessionSelection } from "./ChatInput";
 
+import { getLaunchSessions, getProfiles } from "@/api/sessions";
 import { getWebSocketUrl } from "@/lib/ws-url";
 import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
-import { ChatEventSchema, type AgentInfo } from "@va/client";
+import {
+  ChatEventSchema,
+  type AgentInfo,
+  type LaunchSessionInfo,
+  type ProfileLaunchOption,
+} from "@va/client";
 import type { SessionNotification } from "@agentclientprotocol/sdk";
 import { useI18n } from "@va/i18n";
 
@@ -154,6 +160,15 @@ export function ChatView() {
 
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("claude");
+  const [profiles, setProfiles] = useState<ProfileLaunchOption[]>([]);
+  const [profileSelections, setProfileSelections] = useState<Record<string, string | undefined>>(
+    {},
+  );
+  const [launchSessions, setLaunchSessions] = useState<LaunchSessionInfo[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionSelections, setSessionSelections] = useState<Record<string, ChatSessionSelection>>(
+    {},
+  );
   const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const promptInFlightRef = useRef(false);
@@ -161,6 +176,70 @@ export function ChatView() {
   const toolType = agentIdToToolType(selectedAgent);
   const selectedAgentInfo = agents.find((agent) => agent.id === selectedAgent);
   const agentLabel = selectedAgentInfo?.name ?? getAgentDisplayName(selectedAgent);
+  const selectedProfileId = profileSelections[selectedAgent];
+  const sessionSelection = sessionSelections[selectedAgent] ?? { kind: "current" };
+  const selectedLaunchSession =
+    sessionSelection.kind === "resume"
+      ? launchSessions.find((session) => session.session_id === sessionSelection.sessionId)
+      : undefined;
+
+  useEffect(() => {
+    let cancelled = false;
+    void getProfiles()
+      .then((items) => {
+        if (!cancelled) setProfiles(items);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn("[ChatView] failed to load profiles:", error);
+          setProfiles([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAgent) {
+      setLaunchSessions([]);
+      setSessionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSessionsLoading(true);
+    setLaunchSessions([]);
+    void getLaunchSessions(selectedAgent)
+      .then((items) => {
+        if (cancelled) return;
+        setLaunchSessions(items);
+        setSessionSelections((prev) => {
+          const current = prev[selectedAgent];
+          if (
+            current?.kind === "resume" &&
+            !items.some((item) => item.session_id === current.sessionId)
+          ) {
+            return { ...prev, [selectedAgent]: { kind: "current" } };
+          }
+          return prev;
+        });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn("[ChatView] failed to load launch sessions:", error);
+          setLaunchSessions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSessionsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAgent]);
 
   useEffect(() => {
     const ws = new WebSocket(getWebSocketUrl("/ws/chat"));
@@ -496,9 +575,26 @@ export function ChatView() {
     setStreaming(true);
 
     try {
-      wsRef.current.send(
-        JSON.stringify({ type: "message", messageId, text, agent: selectedAgent }),
-      );
+      const payload: Record<string, unknown> = {
+        type: "message",
+        messageId,
+        text,
+        agent: selectedAgent,
+      };
+      if (selectedProfileId !== undefined) {
+        payload.profileId = selectedProfileId;
+      }
+      if (sessionSelection.kind === "new") {
+        payload.sessionAction = "new";
+      } else if (selectedLaunchSession) {
+        payload.sessionAction = "resume";
+        payload.sessionId = selectedLaunchSession.session_id;
+        payload.sessionWorkspace = selectedLaunchSession.workspace;
+      }
+      wsRef.current.send(JSON.stringify(payload));
+      if (sessionSelection.kind === "new") {
+        setSessionSelections((prev) => ({ ...prev, [selectedAgent]: { kind: "current" } }));
+      }
     } catch (error) {
       console.warn("[ChatView] failed to send chat message:", error);
       promptInFlightRef.current = false;
@@ -506,11 +602,31 @@ export function ChatView() {
       setInput(text);
       setMessages((prev) => prev.slice(0, -2));
     }
-  }, [input, selectedAgent]);
+  }, [input, selectedAgent, selectedLaunchSession, selectedProfileId, sessionSelection]);
 
   const handleAgentChange = useCallback((agentId: string) => {
     setSelectedAgent(agentId);
   }, []);
+
+  const handleLaunchChange = useCallback((agentId: string, profileId?: string) => {
+    setSelectedAgent(agentId);
+    setProfileSelections((prev) => {
+      const next = { ...prev };
+      if (profileId === undefined) {
+        delete next[agentId];
+      } else {
+        next[agentId] = profileId;
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSessionChange = useCallback(
+    (selection: ChatSessionSelection) => {
+      setSessionSelections((prev) => ({ ...prev, [selectedAgent]: selection }));
+    },
+    [selectedAgent],
+  );
 
   const stopStreaming = useCallback(() => {
     const ws = wsRef.current;
@@ -692,8 +808,17 @@ export function ChatView() {
         placeholder={connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")}
         targetLabel={agentLabel}
         targetTool={toolType}
+        selectedAgentId={selectedAgent}
         agents={agents}
+        profiles={profiles}
+        selectedProfileId={selectedProfileId}
         onAgentChange={handleAgentChange}
+        onLaunchChange={handleLaunchChange}
+        sessions={launchSessions}
+        sessionsLoading={sessionsLoading}
+        sessionSelection={sessionSelection}
+        activeSessionId={meta.sessionId}
+        onSessionChange={handleSessionChange}
       />
     </div>
   );

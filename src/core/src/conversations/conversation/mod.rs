@@ -109,11 +109,12 @@ impl Conversation {
         cli_kind: String,
         resume_session_id: String,
         cwd: Option<String>,
+        profile: Option<String>,
     ) -> anyhow::Result<()> {
         let cli_kind = crate::resources::resolve_agent_id(&cli_kind).map_err(anyhow::Error::msg)?;
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(cli_kind);
-        *self.profile.lock().await = None;
+        *self.profile.lock().await = profile;
         *self.handover_resume_session_id.lock().await = Some(resume_session_id);
         *self.handover_cwd.lock().await = cwd;
         Ok(())
@@ -287,6 +288,9 @@ impl Conversation {
 
     /// Switch profile — kill current agent, next prompt spawns a new one.
     pub async fn switch_profile(&self, profile: String) {
+        if self.profile.lock().await.as_deref() == Some(profile.as_str()) {
+            return;
+        }
         tracing::info!(
             "[Conversation] switch_profile route={} new_profile={}",
             self.route,
@@ -295,6 +299,44 @@ impl Conversation {
         self.full_reset().await;
         *self.profile.lock().await = Some(profile);
         let _ = self.change_tx.send(());
+    }
+
+    /// Select an agent/profile launch route as one coherent web-chat choice.
+    ///
+    /// This differs from `switch_agent` followed by `switch_profile`: changing
+    /// the agent resets the old process once, then stores both selections
+    /// before the next prompt spawns the new agent.
+    pub async fn select_launch_route(
+        &self,
+        agent_kind: String,
+        profile: Option<String>,
+    ) -> anyhow::Result<String> {
+        let agent_kind =
+            crate::resources::resolve_agent_id(&agent_kind).map_err(anyhow::Error::msg)?;
+        let current_agent = self.cli_kind.lock().await.clone();
+        let current_profile = self.profile.lock().await.clone();
+        let profile_changed = match profile.as_deref() {
+            Some(profile) => current_profile.as_deref() != Some(profile),
+            None => false,
+        };
+        let agent_changed = current_agent.as_deref() != Some(agent_kind.as_str());
+
+        if agent_changed || profile_changed {
+            tracing::info!(
+                "[Conversation] select_launch_route route={} agent={} profile={:?}",
+                self.route,
+                agent_kind,
+                profile
+            );
+            self.full_reset().await;
+            *self.cli_kind.lock().await = Some(agent_kind.clone());
+            if let Some(profile) = profile {
+                *self.profile.lock().await = Some(profile);
+            }
+            let _ = self.change_tx.send(());
+        }
+
+        Ok(agent_kind)
     }
 
     /// Reset session — kill session but keep agent (start a fresh thread).

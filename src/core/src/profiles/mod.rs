@@ -17,6 +17,8 @@ pub mod schema;
 
 pub use schema::{AuthMode, ProfileDef};
 
+use crate::config;
+
 const DASHSCOPE_PROVIDER_ID: &str = "dashscope";
 const DASHSCOPE_LABEL: &str = "Alibaba DashScope";
 const LEGACY_QWEN_PROVIDER_ID: &str = "qwen";
@@ -64,6 +66,49 @@ pub fn normalize_legacy_profile_and_persist(profile: ProfileDef) -> ProfileDef {
     }
 
     profile
+}
+
+/// List saved profiles using the user's Launch/Tray ordering.
+///
+/// `schema::list()` intentionally has a stable fallback sort by label for
+/// raw storage reads. Product surfaces should call this helper instead so
+/// the `settings.json.profile_order` preference is respected consistently.
+pub fn ordered_profiles() -> Vec<ProfileDef> {
+    let mut remaining: Vec<_> = schema::list()
+        .into_iter()
+        .map(normalize_legacy_profile_and_persist)
+        .collect();
+    let mut out = Vec::new();
+
+    for id in read_profile_order() {
+        if let Some(index) = remaining.iter().position(|profile| profile.id == id) {
+            out.push(remaining.remove(index));
+        }
+    }
+
+    out.extend(remaining);
+    out
+}
+
+fn read_profile_order() -> Vec<String> {
+    let path = config::data_dir().join("settings.json");
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|data| serde_json::from_str::<serde_json::Value>(&data).ok())
+        .and_then(|root| {
+            root.get("profile_order")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str())
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect()
+                })
+        })
+        .unwrap_or_default()
 }
 
 fn normalize_legacy_dashscope_profile(profile: &mut ProfileDef) {
