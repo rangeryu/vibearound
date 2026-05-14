@@ -1,164 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Conversation,
-  ConversationContent,
-  ConversationEmptyState,
-  ConversationScrollButton,
-} from "./Conversation";
-import { Message, MessageContent } from "./Message";
-import { MessageResponse } from "./MessageResponse";
-import { ChatInput, type ChatSessionSelection } from "./ChatInput";
-
+import { useCallback, useEffect, useState } from "react";
 import { getLaunchSessions, getProfiles } from "@/api/sessions";
-import { getWebSocketUrl } from "@/lib/ws-url";
 import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
-import {
-  ChatEventSchema,
-  type AgentInfo,
-  type LaunchSessionInfo,
-  type ProfileLaunchOption,
-} from "@va/client";
-import type { SessionNotification } from "@agentclientprotocol/sdk";
+import type { LaunchSessionInfo, ProfileLaunchOption } from "@va/client";
 import { useI18n } from "@va/i18n";
-
-export type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-  progress?: string;
-  activities?: ChatActivity[];
-  mode?: "standalone" | "stream";
-};
-
-type ChatActivity = {
-  id: string;
-  kind: "thinking" | "tool";
-  label: string;
-  detail?: string;
-  status?: string;
-  active?: boolean;
-};
-
-type ChatMeta = {
-  channelId?: string;
-  sessionId?: string;
-  agentTitle?: string;
-  agentVersion?: string;
-  agentName?: string;
-};
-
-type PendingPermission = {
-  requestId: string;
-  request: unknown;
-};
-
-type PermissionOptionView = {
-  optionId: string;
-  name: string;
-  kind?: string;
-};
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function stringField(record: Record<string, unknown> | null | undefined, key: string) {
-  const value = record?.[key];
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function permissionTitle(request: unknown) {
-  const root = asRecord(request);
-  const toolCall = asRecord(root?.toolCall);
-  return (
-    stringField(toolCall, "title") ??
-    stringField(toolCall, "kind") ??
-    "Permission requested"
-  );
-}
-
-function permissionOptions(request: unknown): PermissionOptionView[] {
-  const root = asRecord(request);
-  const options = root && Array.isArray(root.options) ? root.options : [];
-  return options.flatMap((option) => {
-    const record = asRecord(option);
-    const optionId = stringField(record, "optionId");
-    return optionId
-      ? [
-          {
-            optionId,
-            name: stringField(record, "name") ?? optionId,
-            kind: stringField(record, "kind"),
-          },
-        ]
-      : [];
-  });
-}
-
-function permissionButtonClass(kind?: string) {
-  if (kind?.startsWith("reject")) {
-    return "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15";
-  }
-  return "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15";
-}
-
-function switchedAgentId(text: string) {
-  const match = /^Switched to ([A-Za-z0-9_-]+)\.$/.exec(text.trim());
-  return match?.[1];
-}
-
-function lastActivity(activities: ChatActivity[] | undefined) {
-  return activities?.[activities.length - 1];
-}
-
-function toolActivityId(update: unknown) {
-  const record = asRecord(update);
-  return (
-    stringField(record, "toolCallId") ??
-    stringField(record, "tool_call_id") ??
-    stringField(record, "id")
-  );
-}
-
-function toolActivityLabel(update: unknown) {
-  const record = asRecord(update);
-  const toolCall = asRecord(record?.toolCall);
-  return (
-    stringField(record, "title") ??
-    stringField(toolCall, "title") ??
-    stringField(record, "kind") ??
-    stringField(toolCall, "kind") ??
-    "tool"
-  );
-}
-
-function toolActivityStatus(update: unknown) {
-  const record = asRecord(update);
-  return stringField(record, "status");
-}
-
-function findLastMatchingActivity(
-  activities: ChatActivity[],
-  predicate: (activity: ChatActivity) => boolean,
-) {
-  for (let index = activities.length - 1; index >= 0; index -= 1) {
-    if (predicate(activities[index])) return index;
-  }
-  return -1;
-}
+import { ChatInput } from "./ChatInput";
+import { ChatMessageList } from "./ChatMessageList";
+import { PendingPermissions } from "./PendingPermissions";
+import type { ChatSessionSelection } from "./chatTypes";
+import { useWebChatConnection } from "./useWebChatConnection";
 
 export function ChatView() {
   const { t } = useI18n();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [connected, setConnected] = useState(false);
-  const [streaming, setStreaming] = useState(false);
-  const [meta, setMeta] = useState<ChatMeta>({});
-
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("claude");
   const [profiles, setProfiles] = useState<ProfileLaunchOption[]>([]);
   const [profileSelections, setProfileSelections] = useState<Record<string, string | undefined>>(
@@ -169,9 +24,23 @@ export function ChatView() {
   const [sessionSelections, setSessionSelections] = useState<Record<string, ChatSessionSelection>>(
     {},
   );
-  const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
-  const promptInFlightRef = useRef(false);
+
+  const handleSocketAgentSelected = useCallback((agentId: string) => {
+    setSelectedAgent(agentId);
+  }, []);
+
+  const {
+    messages,
+    connected,
+    streaming,
+    meta,
+    agents,
+    pendingPermissions,
+    sendMessage,
+    stopStreaming,
+    sendPermissionResponse,
+    cancelPermissionRequest,
+  } = useWebChatConnection({ onAgentSelected: handleSocketAgentSelected });
 
   const toolType = agentIdToToolType(selectedAgent);
   const selectedAgentInfo = agents.find((agent) => agent.id === selectedAgent);
@@ -241,373 +110,6 @@ export function ChatView() {
     };
   }, [selectedAgent]);
 
-  useEffect(() => {
-    const ws = new WebSocket(getWebSocketUrl("/ws/chat"));
-    wsRef.current = ws;
-
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => {
-      setConnected(false);
-      setStreaming(false);
-      promptInFlightRef.current = false;
-      setPendingPermissions([]);
-    };
-    ws.onerror = () => {
-      setConnected(false);
-      setStreaming(false);
-      promptInFlightRef.current = false;
-    };
-
-    ws.onmessage = (event) => {
-      if (typeof event.data !== "string") return;
-
-      let parsed;
-      try {
-        parsed = ChatEventSchema.parse(JSON.parse(event.data));
-      } catch (e) {
-        console.warn("[ChatView] bad chat frame, dropping:", e);
-        return;
-      }
-
-      switch (parsed.kind) {
-        case "config": {
-          setAgents(parsed.agents);
-          setMeta((prev) => ({ ...prev, channelId: parsed.channel_id }));
-          setSelectedAgent(parsed.default_agent);
-          break;
-        }
-        case "agent_ready": {
-          setMeta((prev) => ({
-            ...prev,
-            agentName: parsed.agent,
-            agentVersion: parsed.version,
-          }));
-          break;
-        }
-        case "session_ready": {
-          setMeta((prev) => ({ ...prev, sessionId: parsed.session_id }));
-          break;
-        }
-        case "system_text": {
-          appendStandaloneAssistant(parsed.text);
-          const agentId = switchedAgentId(parsed.text);
-          if (agentId) {
-            setSelectedAgent(agentId);
-            setMeta((prev) => ({
-              ...prev,
-              agentName: undefined,
-              agentTitle: undefined,
-              agentVersion: undefined,
-              sessionId: undefined,
-            }));
-          }
-          break;
-        }
-        case "error": {
-          appendErrorToStream(parsed.error);
-          setStreaming(false);
-          promptInFlightRef.current = false;
-          break;
-        }
-        case "prompt_done": {
-          clearStreamProgress();
-          setStreaming(false);
-          promptInFlightRef.current = false;
-          break;
-        }
-        case "acp_notification": {
-          handleAcpNotification(parsed.payload as SessionNotification);
-          break;
-        }
-        case "command_menu":
-          break;
-        case "permission_request": {
-          setPendingPermissions((prev) => [
-            ...prev.filter((permission) => permission.requestId !== parsed.request_id),
-            { requestId: parsed.request_id, request: parsed.request },
-          ]);
-          break;
-        }
-      }
-    };
-
-    function handleAcpNotification(notif: SessionNotification) {
-      const update = notif.update;
-      switch (update.sessionUpdate) {
-        case "agent_message_chunk": {
-          if (update.content.type === "text") {
-            appendToStreamAssistant(update.content.text);
-          }
-          break;
-        }
-        case "agent_thought_chunk": {
-          if (update.content.type === "text") {
-            appendThinkingActivity(update.content.text);
-          }
-          break;
-        }
-        case "tool_call":
-        case "tool_call_update": {
-          const title = toolActivityLabel(update);
-          const status = toolActivityStatus(update);
-          appendToolActivity(update);
-          if (status === "completed" || status === "failed") {
-            clearStreamProgress();
-          } else {
-            setStreamProgress(t("Using tool: {{tool}}…", { tool: title }));
-          }
-          break;
-        }
-        // Other ACP update variants (plan, available_commands_update, etc.)
-        // are not yet surfaced in the web chat UI. Ignored rather than
-        // erroring so future SDK additions don't crash the handler.
-        default:
-          break;
-      }
-    }
-
-    function appendStandaloneAssistant(text: string) {
-      if (!text) return;
-      setMessages((prev) => {
-        const next = [...prev];
-        const last = next[next.length - 1];
-        if (
-          last?.role === "assistant" &&
-          last.mode === "stream" &&
-          last.content === "" &&
-          !last.progress &&
-          !last.activities?.length
-        ) {
-          next.pop();
-        }
-        next.push({ role: "assistant", content: text, mode: "standalone" });
-        return next;
-      });
-    }
-
-    function appendToStreamAssistant(text: string) {
-      if (!text) return;
-      setMessages((prev) => {
-        if (prev.length === 0) return [{ role: "assistant", content: text, mode: "stream" }];
-        const last = prev[prev.length - 1];
-        if (last.role !== "assistant" || last.mode !== "stream") {
-          return [...prev, { role: "assistant", content: text, mode: "stream" }];
-        }
-        const next = [...prev];
-        next[next.length - 1] = { ...last, content: last.content + text, progress: undefined, mode: "stream" };
-        return next;
-      });
-    }
-
-    function updateStreamAssistant(
-      updater: (message: ChatMessage) => ChatMessage,
-      fallback: ChatMessage,
-    ) {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== "assistant" || last.mode !== "stream") {
-          return [...prev, fallback];
-        }
-        const next = [...prev];
-        next[next.length - 1] = updater(last);
-        return next;
-      });
-    }
-
-    function appendThinkingActivity(text: string) {
-      if (!text) return;
-      updateStreamAssistant(
-        (message) => {
-          const activities = [...(message.activities ?? [])];
-          const last = lastActivity(activities);
-          if (last?.kind === "thinking" && last.active !== false) {
-            activities[activities.length - 1] = {
-              ...last,
-              detail: `${last.detail ?? ""}${text}`,
-              active: true,
-            };
-          } else {
-            activities.push({
-              id: `thinking-${Date.now()}-${activities.length}`,
-              kind: "thinking",
-              label: t("Thinking"),
-              detail: text,
-              active: true,
-            });
-          }
-          return { ...message, activities, progress: text, mode: "stream" };
-        },
-        {
-          role: "assistant",
-          content: "",
-          progress: text,
-          activities: [
-            {
-              id: `thinking-${Date.now()}-0`,
-              kind: "thinking",
-              label: t("Thinking"),
-              detail: text,
-              active: true,
-            },
-          ],
-          mode: "stream",
-        },
-      );
-    }
-
-    function appendToolActivity(update: unknown) {
-      const label = toolActivityLabel(update);
-      const status = toolActivityStatus(update);
-      const id = toolActivityId(update);
-      const active = status !== "completed" && status !== "failed";
-      updateStreamAssistant(
-        (message) => {
-          const activities = [...(message.activities ?? [])];
-          const existingIndex =
-            id !== undefined
-              ? activities.findIndex((activity) => activity.id === id)
-              : findLastMatchingActivity(
-                  activities,
-                  (activity) =>
-                    activity.kind === "tool" &&
-                    activity.label === label &&
-                    activity.active !== false,
-                );
-          const activity: ChatActivity = {
-            id: id ?? `tool-${Date.now()}-${activities.length}`,
-            kind: "tool",
-            label,
-            status,
-            active,
-          };
-          if (existingIndex >= 0) {
-            activities[existingIndex] = {
-              ...activities[existingIndex],
-              ...activity,
-              id: activities[existingIndex].id,
-            };
-          } else {
-            activities.push(activity);
-          }
-          return { ...message, activities, mode: "stream" };
-        },
-        {
-          role: "assistant",
-          content: "",
-          activities: [
-            {
-              id: id ?? `tool-${Date.now()}-0`,
-              kind: "tool",
-              label,
-              status,
-              active,
-            },
-          ],
-          mode: "stream",
-        },
-      );
-    }
-
-    function setStreamProgress(progress: string) {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== "assistant" || last.mode !== "stream") {
-          return [...prev, { role: "assistant", content: "", progress, mode: "stream" }];
-        }
-        const next = [...prev];
-        next[next.length - 1] = { ...last, progress, mode: "stream" };
-        return next;
-      });
-    }
-
-    function clearStreamProgress() {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== "assistant" || last.mode !== "stream" || !last.progress) {
-          return prev;
-        }
-        const next = [...prev];
-        next[next.length - 1] = { ...last, progress: undefined, mode: "stream" };
-        return next;
-      });
-    }
-
-    function appendErrorToStream(error: string) {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== "assistant" || last.mode !== "stream") {
-          return [...prev, { role: "assistant", content: t("Error: {{error}}", { error }), mode: "stream" }];
-        }
-        const next = [...prev];
-        next[next.length - 1] = {
-          ...last,
-          content: last.content + (last.content ? "\n\n" : "") + t("Error: {{error}}", { error }),
-          progress: undefined,
-          mode: "stream",
-        };
-        return next;
-      });
-    }
-
-    return () => {
-      ws.close();
-      wsRef.current = null;
-    };
-  }, [t]);
-
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    if (promptInFlightRef.current) return;
-
-    const messageId =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-    promptInFlightRef.current = true;
-    setInput("");
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: text },
-      { role: "assistant", content: "", mode: "stream" },
-    ]);
-    setStreaming(true);
-
-    try {
-      const payload: Record<string, unknown> = {
-        type: "message",
-        messageId,
-        text,
-        agent: selectedAgent,
-      };
-      if (selectedProfileId !== undefined) {
-        payload.profileId = selectedProfileId;
-      }
-      if (sessionSelection.kind === "new") {
-        payload.sessionAction = "new";
-      } else if (selectedLaunchSession) {
-        payload.sessionAction = "resume";
-        payload.sessionId = selectedLaunchSession.session_id;
-        payload.sessionWorkspace = selectedLaunchSession.workspace;
-      }
-      wsRef.current.send(JSON.stringify(payload));
-      if (sessionSelection.kind === "new") {
-        setSessionSelections((prev) => ({ ...prev, [selectedAgent]: { kind: "current" } }));
-      }
-    } catch (error) {
-      console.warn("[ChatView] failed to send chat message:", error);
-      promptInFlightRef.current = false;
-      setStreaming(false);
-      setInput(text);
-      setMessages((prev) => prev.slice(0, -2));
-    }
-  }, [input, selectedAgent, selectedLaunchSession, selectedProfileId, sessionSelection]);
-
-  const handleAgentChange = useCallback((agentId: string) => {
-    setSelectedAgent(agentId);
-  }, []);
-
   const handleLaunchChange = useCallback((agentId: string, profileId?: string) => {
     setSelectedAgent(agentId);
     setProfileSelections((prev) => {
@@ -628,39 +130,30 @@ export function ChatView() {
     [selectedAgent],
   );
 
-  const stopStreaming = useCallback(() => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify({ type: "stop" }));
-      } catch (error) {
-        console.warn("[ChatView] failed to stop chat message:", error);
-      }
+  const handleSubmit = useCallback(() => {
+    const text = input.trim();
+    if (!text) return;
+    const sent = sendMessage({
+      text,
+      agentId: selectedAgent,
+      profileId: selectedProfileId,
+      sessionSelection,
+      launchSession: selectedLaunchSession,
+    });
+    if (!sent) return;
+
+    setInput("");
+    if (sessionSelection.kind === "new") {
+      setSessionSelections((prev) => ({ ...prev, [selectedAgent]: { kind: "current" } }));
     }
-    promptInFlightRef.current = false;
-    setStreaming(false);
-  }, []);
-
-  const sendPermissionResponse = useCallback(
-    (requestId: string, optionId: string) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-      wsRef.current.send(JSON.stringify({ type: "permission_response", requestId, optionId }));
-      setPendingPermissions((prev) =>
-        prev.filter((permission) => permission.requestId !== requestId),
-      );
-    },
-    [],
-  );
-
-  const cancelPermissionRequest = useCallback((requestId: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(
-      JSON.stringify({ type: "permission_response", requestId, outcome: "cancelled" }),
-    );
-    setPendingPermissions((prev) =>
-      prev.filter((permission) => permission.requestId !== requestId),
-    );
-  }, []);
+  }, [
+    input,
+    selectedAgent,
+    selectedLaunchSession,
+    selectedProfileId,
+    sendMessage,
+    sessionSelection,
+  ]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
@@ -673,134 +166,19 @@ export function ChatView() {
           <span>{t("sessionId: {{value}}", { value: meta.sessionId ?? "-" })}</span>
         </div>
       </div>
-      <Conversation className="flex-1">
-        <ConversationContent>
-          {messages.length === 0 ? (
-            <ConversationEmptyState
-              title={t("Chat with {{agent}}", { agent: agentLabel })}
-              description={t("Send a message to start.")}
-            />
-          ) : (
-            messages.map((msg, i) => (
-              <Message key={i} from={msg.role}>
-                <MessageContent
-                  className={
-                    msg.role === "user"
-                      ? "rounded-lg bg-primary/15 px-4 py-3 text-foreground"
-                      : msg.mode === "standalone"
-                        ? "rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-muted-foreground"
-                        : "rounded-lg bg-muted/50 px-4 py-3 text-foreground"
-                  }
-                >
-                  {msg.role === "user" ? (
-                    <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                  ) : msg.mode === "standalone" ? (
-                    <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
-                  ) : (
-                    <>
-                      {msg.activities?.length ? (
-                        <div
-                          className={`space-y-2 text-xs text-muted-foreground ${msg.content ? "mb-3 border-b border-border/50 pb-3" : ""}`}
-                        >
-                          {msg.activities.map((activity) => (
-                            <div key={activity.id} className="min-w-0">
-                              <div className="flex min-w-0 items-center gap-2 font-mono">
-                                <span className="shrink-0 uppercase text-muted-foreground/70">
-                                  {activity.kind === "thinking" ? t("Thinking") : t("Tool")}
-                                </span>
-                                <span className="truncate text-foreground/75">
-                                  {activity.label}
-                                </span>
-                                {activity.status && (
-                                  <span className="shrink-0 text-muted-foreground/60">
-                                    {activity.status}
-                                  </span>
-                                )}
-                              </div>
-                              {activity.detail && (
-                                <p className="mt-1 whitespace-pre-wrap break-words leading-5 text-muted-foreground/80">
-                                  {activity.detail}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {msg.content && (
-                        <MessageResponse
-                          content={msg.content}
-                          isStreaming={streaming && i === messages.length - 1}
-                        />
-                      )}
-                      {msg.progress && (
-                        <span className="text-xs text-muted-foreground/60 font-mono animate-pulse">
-                          {msg.progress}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </MessageContent>
-              </Message>
-            ))
-          )}
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
 
-      {pendingPermissions.length > 0 && (
-        <div className="border-t border-border/60 bg-background px-4 py-3">
-          <div className="mx-auto flex max-w-3xl flex-col gap-2">
-            {pendingPermissions.map((permission) => {
-              const options = permissionOptions(permission.request);
-              return (
-                <div
-                  key={permission.requestId}
-                  className="rounded-md border border-border/70 bg-muted/25 px-3 py-3"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-xs font-medium uppercase text-muted-foreground">
-                        {t("Permission request")}
-                      </div>
-                      <div className="truncate text-sm font-medium text-foreground">
-                        {permissionTitle(permission.request)}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {options.map((option) => (
-                        <button
-                          key={option.optionId}
-                          type="button"
-                          onClick={() =>
-                            sendPermissionResponse(permission.requestId, option.optionId)
-                          }
-                          className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${permissionButtonClass(option.kind)}`}
-                        >
-                          {option.name}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => cancelPermissionRequest(permission.requestId)}
-                        className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
-                      >
-                        {t("Cancel")}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <ChatMessageList messages={messages} streaming={streaming} agentLabel={agentLabel} />
+
+      <PendingPermissions
+        permissions={pendingPermissions}
+        onRespond={sendPermissionResponse}
+        onCancel={cancelPermissionRequest}
+      />
 
       <ChatInput
         value={input}
         onChange={setInput}
-        onSubmit={() => {
-          void sendMessage();
-        }}
+        onSubmit={handleSubmit}
         onStop={stopStreaming}
         disabled={!connected}
         submitDisabled={streaming}
@@ -812,7 +190,6 @@ export function ChatView() {
         agents={agents}
         profiles={profiles}
         selectedProfileId={selectedProfileId}
-        onAgentChange={handleAgentChange}
         onLaunchChange={handleLaunchChange}
         sessions={launchSessions}
         sessionsLoading={sessionsLoading}
