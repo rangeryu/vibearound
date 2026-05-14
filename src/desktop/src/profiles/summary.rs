@@ -65,6 +65,7 @@ pub(super) fn profile_summaries() -> Vec<ProfileSummary> {
 pub(super) fn catalog_entries() -> Vec<CatalogEntry> {
     catalog::all()
         .iter()
+        .filter(|c| !c.hidden_from_picker)
         .map(|c| CatalogEntry {
             id: c.id.clone(),
             label: c.label.clone(),
@@ -182,6 +183,9 @@ fn api_type_model_options(
                         catalog::ModelDef {
                             id: model.clone(),
                             label: None,
+                            aliases: Vec::new(),
+                            context_window: None,
+                            capabilities: Default::default(),
                         },
                     );
                 }
@@ -191,6 +195,9 @@ fn api_type_model_options(
                     models.push(catalog::ModelDef {
                         id: model.clone(),
                         label: None,
+                        aliases: Vec::new(),
+                        context_window: None,
+                        capabilities: Default::default(),
                     });
                 }
             }

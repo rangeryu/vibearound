@@ -234,6 +234,9 @@ fn command_args_for(launch_target: &str, ctx: &BTreeMap<String, String>) -> Vec<
     if let Some(reasoning_effort) = ctx.get("reasoning_effort").filter(|v| !v.is_empty()) {
         push_config("model_reasoning_effort", toml_string(reasoning_effort));
     }
+    if let Some(context_window) = ctx.get("model_context_window").filter(|v| !v.is_empty()) {
+        push_config("model_context_window", context_window.clone());
+    }
 
     let Some(provider_id) = ctx.get("provider_id").filter(|v| !v.is_empty()) else {
         return args;
@@ -326,7 +329,22 @@ fn build_context(
             .base_url
             .unwrap_or_else(|| endpoint.default_base_url.clone()),
     );
-    ctx.insert("model".to_string(), overrides.model.unwrap_or_default());
+    let requested_model = overrides
+        .model
+        .filter(|model| !model.trim().is_empty())
+        .or_else(|| endpoint.models.first().map(|model| model.id.clone()))
+        .unwrap_or_default();
+    let model_def = catalog::find_model(endpoint, &requested_model);
+    let model = model_def
+        .map(|model_def| model_def.id.clone())
+        .unwrap_or(requested_model);
+    if let Some(context_window) = model_def.and_then(|model_def| model_def.context_window) {
+        ctx.insert(
+            "model_context_window".to_string(),
+            context_window.to_string(),
+        );
+    }
+    ctx.insert("model".to_string(), model);
     ctx.insert(
         "reasoning_effort".to_string(),
         overrides

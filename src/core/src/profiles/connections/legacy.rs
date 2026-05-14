@@ -69,6 +69,7 @@ fn default_client_api_type(agent_id: &str) -> Option<&'static str> {
     match agent_id {
         "claude" => Some("anthropic"),
         "codex" => Some("openai-responses"),
+        "gemini" => Some("gemini"),
         "opencode" => Some("openai-responses"),
         _ => None,
     }

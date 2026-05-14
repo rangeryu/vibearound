@@ -19,11 +19,15 @@ pub enum ProviderRequestSource {
     OpenAiResponses,
     OpenAiChat,
     AnthropicMessages,
+    GeminiGenerateContent,
 }
 
 impl ProviderRequestSource {
     pub(crate) fn supports_deepseek_reasoning_replay(self) -> bool {
-        matches!(self, Self::OpenAiResponses | Self::AnthropicMessages)
+        matches!(
+            self,
+            Self::OpenAiResponses | Self::AnthropicMessages | Self::GeminiGenerateContent
+        )
     }
 }
 
@@ -38,12 +42,15 @@ pub enum ProviderProxyAdapter {
 }
 
 impl ProviderProxyAdapter {
-    pub fn for_profile(profile: &ProfileDef) -> Self {
+    pub fn for_profile(profile: &ProfileDef, target_api_type: &str) -> Self {
         match profile.provider.as_str() {
             "deepseek" => Self::DeepSeek(DeepSeekProxyAdapter::new(
                 profile.provider_settings.deepseek.clone(),
             )),
             "kimi" => Self::Kimi(KimiProxyAdapter::default()),
+            "moonshot" if is_moonshot_kimi_coding(profile, target_api_type) => {
+                Self::Kimi(KimiProxyAdapter::default())
+            }
             "minimax" => Self::MiniMax(MiniMaxProxyAdapter::default()),
             "dashscope" | "qwen" => Self::DashScope(DashScopeProxyAdapter::new(profile)),
             "zai" => Self::Zai(ZaiProxyAdapter::new(profile)),
@@ -92,4 +99,13 @@ impl ProviderProxyAdapter {
             Self::Zai(_) => {}
         }
     }
+}
+
+fn is_moonshot_kimi_coding(profile: &ProfileDef, target_api_type: &str) -> bool {
+    target_api_type == "anthropic"
+        && profile
+            .overrides
+            .get("anthropic")
+            .and_then(|overrides| overrides.endpoint_id.as_deref())
+            == Some("kimi-coding")
 }

@@ -42,7 +42,7 @@ export function manualProxyConfig(
     encodeURIComponent(`${agentId}-${clientApiType}`),
     encodeURIComponent(targetApiType),
   ].join("/");
-  const versionSuffix = clientApiType === "anthropic" ? "" : "/v1";
+  const versionSuffix = ["anthropic", "gemini"].includes(clientApiType) ? "" : "/v1";
   return {
     baseUrl: `${API_BASE}/${path}${versionSuffix}`,
     model: model ?? "",
@@ -122,6 +122,32 @@ export function buildManualSetting(
     };
   }
 
+  if (agentId === "gemini") {
+    return {
+      agentId,
+      agentLabel,
+      copyKey: `${manualConfig.copyKey}:gemini-env`,
+      filePath: "~/.gemini/settings.json + ~/.gemini/.env",
+      snippet: [
+        `// ~/.gemini/settings.json`,
+        `{`,
+        `  "security": {`,
+        `    "auth": {`,
+        `      "selectedType": "gemini-api-key"`,
+        `    }`,
+        `  }`,
+        `}`,
+        ``,
+        `# ~/.gemini/.env`,
+        `GEMINI_API_KEY=${PLACEHOLDER_API_KEY}`,
+        `GOOGLE_API_KEY=${PLACEHOLDER_API_KEY}`,
+        `GEMINI_DEFAULT_AUTH_TYPE=gemini-api-key`,
+        `GOOGLE_GEMINI_BASE_URL=${manualConfig.baseUrl}`,
+        `GEMINI_MODEL=${model}`,
+      ].join("\n"),
+    };
+  }
+
   const claudeEnv: Record<string, string> = {
     ANTHROPIC_BASE_URL: manualConfig.baseUrl,
     ANTHROPIC_API_KEY: PLACEHOLDER_API_KEY,
@@ -159,6 +185,7 @@ export function ManualSettingDialog({
   const { t } = useI18n();
   const isCodex = setting.agentId === "codex";
   const isOpenCode = setting.agentId === "opencode";
+  const isGemini = setting.agentId === "gemini";
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -168,7 +195,9 @@ export function ManualSettingDialog({
             {t("{{agent}} manual setting", { agent: setting.agentLabel })}
           </DialogTitle>
           <DialogDescription>
-            {t("Copy this snippet into the CLI config file yourself. VibeAround does not edit the file automatically.")}
+            {isGemini
+              ? t("Copy the matching parts into the Gemini CLI settings and env files yourself. VibeAround does not edit them automatically.")
+              : t("Copy this snippet into the CLI config file yourself. VibeAround does not edit the file automatically.")}
           </DialogDescription>
         </DialogHeader>
 
@@ -184,16 +213,25 @@ export function ManualSettingDialog({
                 <>
                   <li>{t("Open the Codex config file, then add this snippet or update the existing VibeAround profile block.")}</li>
                   <li>{t("The top-level profile line makes plain codex use this VibeAround profile by default.")}</li>
+                  <li>{t("If Codex keeps using account login instead of this profile, run codex logout first.")}</li>
                 </>
               ) : isOpenCode ? (
                 <>
                   <li>{t("Open the OpenCode config file, then add or merge this provider block.")}</li>
                   <li>{t("Use any non-empty API key value when the local proxy is already running with a saved profile key.")}</li>
                 </>
+              ) : isGemini ? (
+                <>
+                  <li>{t("Open the Gemini CLI settings file and make sure selectedType is gemini-api-key.")}</li>
+                  <li>{t("Open the Gemini CLI env file, then add or update these variables.")}</li>
+                  <li>{t("If Gemini keeps using OAuth, run /auth in Gemini CLI and choose Gemini API key.")}</li>
+                  <li>{t("Use any non-empty API key value when the local proxy is already running with a saved profile key.")}</li>
+                </>
               ) : (
                 <>
                   <li>{t("Paste this property inside the root JSON object of Claude settings.")}</li>
                   <li>{t("If env already exists, merge these keys into the existing env object instead of creating another env block.")}</li>
+                  <li>{t("If Claude keeps using account login instead of this env block, run claude auth logout first.")}</li>
                 </>
               )}
             </ol>
@@ -205,6 +243,8 @@ export function ManualSettingDialog({
                 ? t("Codex config snippet")
                 : isOpenCode
                   ? t("OpenCode config snippet")
+                  : isGemini
+                    ? t("Gemini config snippet")
                   : t("Config snippet")
             }
             snippet={setting.snippet}

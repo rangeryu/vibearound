@@ -1,6 +1,6 @@
 {
   "id": "gemini",
-  "label": "Google Gemini",
+  "label": "Google Gemini / Vertex AI",
   "icon": "✨",
   "homepage": "https://ai.google.dev/gemini-api",
   "endpoints": [
@@ -8,12 +8,19 @@
       "api_type": "gemini",
       "default_base_url": "https://generativelanguage.googleapis.com",
       "models": [
-        { "id": "gemini-3-pro-preview", "label": "Gemini 3 Pro Preview" },
-        { "id": "gemini-3-flash-preview", "label": "Gemini 3 Flash Preview" },
-        { "id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro" },
-        { "id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash" },
-        { "id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite" }
+        { "id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "context_window": 1048576 },
+        { "id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite", "context_window": 1048576 },
+        { "id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite", "context_window": 1048576 },
+        { "id": "gemini-3-flash-preview", "label": "Gemini 3 Flash", "aliases": ["gemini-3-flash"], "context_window": 1048576 },
+        { "id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context_window": 1048576 },
+        { "id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "aliases": ["gemini-3.1-pro"], "context_window": 1048576 }
       ],
+      "capabilities": {
+        "content": {
+          "image_input": true,
+          "file_input": true
+        }
+      },
       "auth_modes": [
         {
           "mode": "api_key",
@@ -30,10 +37,116 @@
           "render": {
             "env": {
               "GOOGLE_GEMINI_BASE_URL": "{{base_url}}",
+              "GOOGLE_API_KEY": "{{api_key}}",
               "GEMINI_API_KEY": "{{api_key}}",
+              "GEMINI_DEFAULT_AUTH_TYPE": "gemini-api-key",
               "GEMINI_MODEL": "{{model}}"
             },
             "settings_files": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "openai-compatible",
+      "label": "Gemini API (OpenAI-compatible)",
+      "api_type": "openai-chat",
+      "default_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "append_v1_path": false,
+      "models": [
+        { "id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "context_window": 1048576 },
+        { "id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite", "context_window": 1048576 },
+        { "id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite", "context_window": 1048576 },
+        { "id": "gemini-3-flash-preview", "label": "Gemini 3 Flash", "aliases": ["gemini-3-flash"], "context_window": 1048576 },
+        { "id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context_window": 1048576 },
+        { "id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "aliases": ["gemini-3.1-pro"], "context_window": 1048576 }
+      ],
+      "capabilities": {
+        "reasoning_effort": true,
+        "content": {
+          "image_input": true,
+          "file_input": true
+        }
+      },
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use Gemini API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "Gemini API key",
+              "secret": true,
+              "required": true,
+              "placeholder": "AIza..."
+            }
+          ],
+          "render": {
+            "env": {
+              "OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": [
+              {
+                "rel_path": "config.toml",
+                "template": "model = \"{{model}}\"\nmodel_provider = \"gemini\"\nmodel_reasoning_effort = \"{{reasoning_effort}}\"\ndisable_response_storage = true\n\n[model_providers.gemini]\nname = \"Google Gemini / Vertex AI\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nrequires_openai_auth = true\n"
+              },
+              {
+                "rel_path": "auth.json",
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "vertex-openai-compatible",
+      "label": "Vertex AI (OpenAI-compatible)",
+      "api_type": "openai-chat",
+      "default_base_url": "",
+      "append_v1_path": false,
+      "models": [
+        { "id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash", "context_window": 1048576 },
+        { "id": "google/gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite", "context_window": 1048576 },
+        { "id": "google/gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite", "context_window": 1048576 },
+        { "id": "google/gemini-3-flash-preview", "label": "Gemini 3 Flash", "aliases": ["google/gemini-3-flash"], "context_window": 1048576 },
+        { "id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context_window": 1048576 },
+        { "id": "google/gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "aliases": ["google/gemini-3.1-pro"], "context_window": 1048576 }
+      ],
+      "capabilities": {
+        "reasoning_effort": true,
+        "content": {
+          "image_input": true,
+          "file_input": true
+        }
+      },
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use Google Cloud access token",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "Google Cloud access token",
+              "secret": true,
+              "required": true,
+              "placeholder": "ya29..."
+            }
+          ],
+          "render": {
+            "env": {
+              "OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": [
+              {
+                "rel_path": "config.toml",
+                "template": "model = \"{{model}}\"\nmodel_provider = \"gemini\"\nmodel_reasoning_effort = \"{{reasoning_effort}}\"\ndisable_response_storage = true\n\n[model_providers.gemini]\nname = \"Google Gemini / Vertex AI\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nrequires_openai_auth = true\n"
+              },
+              {
+                "rel_path": "auth.json",
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
+              }
+            ]
           }
         }
       ]

@@ -7,6 +7,7 @@
 //! - `AgentReady`         → `ext_notification("va/agent_ready", ...)`
 //! - `SessionReady`       → `ext_notification("va/session_ready", ...)`
 //! - `CommandMenu`        → `ext_notification("va/command_menu", ...)`
+//! - `PromptDone`         → no-op for stdio plugins (their `prompt()` call already resolves)
 //! - `PermissionRequest`  → real `request_permission` call; response is
 //!   routed back through `PluginHost::pending_permissions`.
 
@@ -110,6 +111,7 @@ pub(super) async fn forward_output_to_plugin(
             )
             .await;
         }
+        ChannelOutput::PromptDone { .. } => {}
         ChannelOutput::PermissionRequest {
             route,
             request_id,

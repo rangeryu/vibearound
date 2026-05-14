@@ -52,13 +52,13 @@ VibeAround 把你的电脑变成本地优先的 AI 编程控制中心。Claude C
 
 ## 下载 VibeAround
 
-最新版本是 [VibeAround v0.5.14](https://github.com/jazzenchen/VibeAround/releases/tag/v0.5.14)。
+最新版本是 [VibeAround v0.5.16](https://github.com/jazzenchen/VibeAround/releases/tag/v0.5.16)。
 
 | 平台 | 推荐下载 |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.5.14_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.14/VibeAround_0.5.14_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.14/VibeAround_0.5.14_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.14/VibeAround_0.5.14_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.14/VibeAround-win-0.5.14-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.14/VibeAround_0.5.14_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.14/VibeAround_0.5.14_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.5.16_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.16/VibeAround_0.5.16_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.16/VibeAround_0.5.16_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.16/VibeAround_0.5.16_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.16/VibeAround-win-0.5.16-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.16/VibeAround_0.5.16_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.5.16/VibeAround_0.5.16_amd64.deb) |
 
 macOS 当前发布 Apple Silicon 版本。Windows 和 Linux 桌面包由 GitHub Actions 构建；macOS DMG 已签名并完成 notarization。
 

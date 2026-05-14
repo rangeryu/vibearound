@@ -14,6 +14,7 @@ use anyhow::{anyhow, bail, Context};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 
+use super::catalog::ContentCapabilities;
 use crate::{auth, config};
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,8 @@ pub struct ApiTypeOverrides {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<ContentCapabilities>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]

@@ -15,7 +15,7 @@ import {
 } from "./connections";
 import type { ConnectionAgentId, ProfileSummary } from "./types";
 
-const PROXY_AGENTS = new Set<string>(["claude", "codex", "opencode"]);
+const PROXY_AGENTS = new Set<string>(["claude", "codex", "gemini", "opencode"]);
 const SESSION_RESUME_AGENTS = new Set<string>([
   "claude",
   "codex",

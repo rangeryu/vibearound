@@ -7,7 +7,7 @@
 
 export type AuthMode = "api_key" | "oauth_via_cli";
 export type CompatibilityProxyMode = "auto" | "on" | "off";
-export type ConnectionAgentId = "claude" | "codex" | "opencode";
+export type ConnectionAgentId = "claude" | "codex" | "gemini" | "opencode";
 
 export interface ProfileSummary {
   id: string;
@@ -57,6 +57,7 @@ export interface ApiTypeOverrides {
   base_url?: string | null;
   model?: string | null;
   reasoning_effort?: string | null;
+  capabilities?: ContentCapabilities | null;
 }
 
 export interface ProviderSettings {
@@ -89,6 +90,9 @@ export type ProfileDraft = Omit<ProfileDef, "id">;
 export interface ModelDef {
   id: string;
   label?: string | null;
+  aliases?: string[] | null;
+  context_window?: number | null;
+  capabilities?: ContentCapabilities | null;
 }
 
 export interface FieldDef {
@@ -114,6 +118,7 @@ export interface EndpointDef {
   label?: string | null;
   api_type: string;
   default_base_url: string;
+  append_v1_path?: boolean | null;
   headers?: Record<string, string> | null;
   auth_header?: boolean | null;
   models: ModelDef[];
@@ -124,6 +129,12 @@ export interface EndpointDef {
 
 export interface EndpointCapabilities {
   reasoning_effort?: boolean | null;
+  content?: ContentCapabilities | null;
+}
+
+export interface ContentCapabilities {
+  image_input?: boolean | null;
+  file_input?: boolean | null;
 }
 
 export interface CatalogEntry {

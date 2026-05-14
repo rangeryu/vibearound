@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FileText, Info, Plug, ShieldCheck } from "lucide-react";
+import { AlertTriangle, FileText, Info, Plug, ShieldCheck } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
@@ -206,6 +206,7 @@ export function ProfileConnectionDialog({
                 },
               }));
             };
+            const authNotice = agentAuthNotice(agent.id);
 
             return (
               <div
@@ -232,6 +233,12 @@ export function ProfileConnectionDialog({
                       >
                         {statusLabel}
                       </Badge>
+                      {authNotice && connection.status !== "unsupported" && (
+                        <span className="inline-flex max-w-full items-center gap-1 rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                          <AlertTriangle className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{t(authNotice)}</span>
+                        </span>
+                      )}
                     </div>
                     <div className="mt-0.5 text-[11px] text-muted-foreground">
                       {t("Client API: {{protocol}}", {
@@ -594,6 +601,19 @@ function apiTypeProtocolDisplayLabel(apiType: string): string {
 
 function apiTypeRouteDisplayLabel(apiType: string): string {
   return apiTypeRouteLabel(apiType);
+}
+
+function agentAuthNotice(agentId: ConnectionAgentId): string | null {
+  switch (agentId) {
+    case "claude":
+      return "If Claude login overrides this profile, run claude auth logout first.";
+    case "codex":
+      return "If Codex login overrides this profile, run codex logout first.";
+    case "gemini":
+      return "If Gemini uses OAuth, run /auth and choose Gemini API key first.";
+    default:
+      return null;
+  }
 }
 
 function cleanModelId(value: string | null | undefined): string {

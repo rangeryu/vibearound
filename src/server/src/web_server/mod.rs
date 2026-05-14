@@ -256,6 +256,10 @@ pub async fn run_web_server(
             "/proxy/{profile_id}/{target_api_type}/v1/messages",
             post(api_proxy::legacy_messages_handler),
         )
+        .route(
+            "/proxy/{profile_id}/{target_api_type}/{version}/models/{model_action}",
+            post(api_proxy::legacy_gemini_generate_content_handler),
+        )
         // Stable local API base for configured clients. `scope` selects the
         // route/profile preference; it is not a proxy session identifier.
         .route(
@@ -269,6 +273,10 @@ pub async fn run_web_server(
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/v1/messages",
             post(api_proxy::local_messages_handler),
+        )
+        .route(
+            "/local-api/{profile_id}/{scope}/{target_api_type}/{version}/models/{model_action}",
+            post(api_proxy::local_gemini_generate_content_handler),
         )
         .layer(DefaultBodyLimit::max(LOCAL_PROXY_BODY_LIMIT_BYTES));
 

@@ -33,6 +33,7 @@ impl KimiProxyAdapter {
         let Some(object) = request.as_object_mut() else {
             return;
         };
+        normalize_kimi_coding_model(object);
         object.insert("thinking".to_string(), json!({ "type": "disabled" }));
     }
 
@@ -165,6 +166,18 @@ impl KimiProxyAdapter {
     }
 }
 
+fn normalize_kimi_coding_model(object: &mut serde_json::Map<String, Value>) {
+    let Some(model) = object.get("model").and_then(Value::as_str) else {
+        return;
+    };
+    if matches!(model, "kimi-code" | "k2p5") {
+        object.insert(
+            "model".to_string(),
+            Value::String("kimi-for-coding".to_string()),
+        );
+    }
+}
+
 fn parse_kimi_tagged_tool_calls(text: &str) -> Option<Vec<KimiTaggedToolCall>> {
     let trimmed = text.trim();
     if !trimmed.starts_with(TOOL_CALLS_SECTION_BEGIN) || !trimmed.ends_with(TOOL_CALLS_SECTION_END)
@@ -252,11 +265,23 @@ mod tests {
     #[test]
     fn disables_kimi_thinking_for_anthropic_requests() {
         let mut adapter = KimiProxyAdapter::default();
-        let mut request = json!({ "model": "kimi-code", "messages": [] });
+        let mut request = json!({ "model": "kimi-for-coding", "messages": [] });
 
         adapter.prepare_anthropic_request(&mut request);
 
         assert_eq!(request["thinking"], json!({ "type": "disabled" }));
+    }
+
+    #[test]
+    fn normalizes_legacy_kimi_coding_model_aliases() {
+        for model in ["kimi-code", "k2p5"] {
+            let mut adapter = KimiProxyAdapter::default();
+            let mut request = json!({ "model": model, "messages": [] });
+
+            adapter.prepare_anthropic_request(&mut request);
+
+            assert_eq!(request["model"], "kimi-for-coding");
+        }
     }
 
     #[test]

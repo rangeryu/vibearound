@@ -22,6 +22,7 @@ export interface ChatInputProps {
   onChange: (value: string) => void;
   onSubmit: () => void;
   disabled?: boolean;
+  submitDisabled?: boolean;
   isStreaming?: boolean;
   onStop?: () => void;
   placeholder?: string;
@@ -41,6 +42,7 @@ export function ChatInput({
   onChange,
   onSubmit,
   disabled = false,
+  submitDisabled = false,
   isStreaming = false,
   onStop,
   placeholder = "Message Claude…",
@@ -52,6 +54,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isComposingRef = useRef(false);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -61,13 +64,16 @@ export function ChatInput({
   }, [value]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const isComposing =
+      isComposingRef.current || e.nativeEvent.isComposing || e.keyCode === 229;
     if (e.key === "Enter" && !e.shiftKey) {
+      if (isComposing) return;
       e.preventDefault();
-      if (!disabled && value.trim()) onSubmit();
+      if (!disabled && !submitDisabled && value.trim()) onSubmit();
     }
   };
 
-  const canSend = !disabled && !!value.trim();
+  const canSend = !disabled && !submitDisabled && !!value.trim();
   const showStop = isStreaming && onStop;
   const appTheme = useTheme();
   const accentColor = getToolTheme(targetTool, appTheme).accent;
@@ -88,6 +94,12 @@ export function ChatInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => {
+            isComposingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            isComposingRef.current = false;
+          }}
           placeholder={placeholder}
           disabled={disabled}
           rows={1}

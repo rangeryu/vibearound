@@ -87,6 +87,9 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                         WebChatInput::Message(input) => {
                             state.channel_hub.handle_input(input);
                         }
+                        WebChatInput::Stop(input) => {
+                            state.channel_hub.handle_input(input);
+                        }
                         WebChatInput::PermissionResponse {
                             request_id,
                             response,
@@ -136,6 +139,7 @@ where
 
 enum WebChatInput {
     Message(ChannelInput),
+    Stop(ChannelInput),
     PermissionResponse {
         request_id: String,
         response: acp::RequestPermissionResponse,
@@ -177,6 +181,9 @@ fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
                         },
                     }))
                 }
+                "stop" => Some(WebChatInput::Stop(ChannelInput::Stop {
+                    route: RouteKey::new("web", chat_id),
+                })),
                 "permission_response" => {
                     let request_id = v.get("requestId").and_then(|x| x.as_str())?.to_string();
                     let outcome = match v.get("outcome").and_then(|x| x.as_str()) {
@@ -250,6 +257,7 @@ fn output_to_chat_event(
             request_id,
             request: payload,
         }),
+        ChannelOutput::PromptDone { message_id, .. } => Some(ChatEvent::PromptDone { message_id }),
     }
 }
 
@@ -323,5 +331,16 @@ mod tests {
             response.outcome,
             acp::RequestPermissionOutcome::Cancelled
         ));
+    }
+
+    #[test]
+    fn parses_stop_message() {
+        let input = parse_web_chat_input("chat-1", r#"{"type":"stop"}"#).expect("stop input");
+
+        let WebChatInput::Stop(ChannelInput::Stop { route }) = input else {
+            panic!("expected stop input");
+        };
+
+        assert_eq!(route, RouteKey::new("web", "chat-1"));
     }
 }

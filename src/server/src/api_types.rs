@@ -241,6 +241,7 @@ pub struct PreviewsResponse {
 /// { "kind": "acp_notification", "payload": { /* acp::SessionNotification */ } }
 /// { "kind": "permission_request", "request_id": "pr-1", "request": { ... } }
 /// { "kind": "command_menu", "system_commands": [...], "agent_commands": [...] }
+/// { "kind": "prompt_done", "message_id": "01HX..." }
 /// { "kind": "error", "error": "spawn failed: ..." }
 /// ```
 #[derive(Debug, Clone, Serialize)]
@@ -265,6 +266,10 @@ pub enum ChatEvent {
     PermissionRequest {
         request_id: String,
         request: serde_json::Value,
+    },
+    PromptDone {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message_id: Option<String>,
     },
     SystemText {
         text: String,

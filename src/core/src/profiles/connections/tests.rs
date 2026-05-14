@@ -116,3 +116,33 @@ fn gemini_profile_has_native_launch_target() {
     assert_eq!(targets[0].api_type, "gemini");
     assert_eq!(targets[0].proxy_target_api_type, None);
 }
+
+#[test]
+fn gemini_cli_can_launch_openai_chat_profile_via_proxy() {
+    let profile = profile(&["openai-chat"]);
+    let prefs = connections(
+        &profile.id,
+        "gemini",
+        agent_state::ProfileConnectionPreference {
+            selected_api_type: Some("gemini".to_string()),
+            proxy: [(
+                "gemini".to_string(),
+                agent_state::ProfileProxyPreference {
+                    enabled: true,
+                    target_api_type: Some("openai-chat".to_string()),
+                    upstream_model: Some("gpt-test".to_string()),
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        },
+    );
+
+    let route = resolve_profile_agent_route_with_connections(&profile, "gemini", &prefs)
+        .expect("gemini proxy route");
+
+    assert_eq!(route.client_api_type, "gemini");
+    assert_eq!(route.proxy_target_api_type.as_deref(), Some("openai-chat"));
+    assert_eq!(route.proxy_upstream_model.as_deref(), Some("gpt-test"));
+}

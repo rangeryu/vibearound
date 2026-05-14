@@ -49,6 +49,12 @@ export const CONNECTION_AGENTS: ConnectionAgentDef[] = [
     defaultApiType: "openai-responses",
   },
   {
+    id: "gemini",
+    label: "Gemini CLI",
+    supportedApiTypes: ["gemini"],
+    defaultApiType: "gemini",
+  },
+  {
     id: "opencode",
     label: "OpenCode",
     supportedApiTypes: ["openai-responses", "openai-chat", "anthropic"],
@@ -135,10 +141,12 @@ export function recommendedProxyTarget(
   clientApiType: string,
 ): string | null {
   const order =
-    (agentId === "claude" && clientApiType === "anthropic") ||
-    (agentId === "opencode" && clientApiType === "anthropic")
-      ? ["openai-responses", "openai-chat", "anthropic"]
-      : ["anthropic", "openai-chat", "openai-responses"];
+    agentId === "gemini" && clientApiType === "gemini"
+      ? ["openai-chat", "openai-responses", "anthropic"]
+      : (agentId === "claude" && clientApiType === "anthropic") ||
+          (agentId === "opencode" && clientApiType === "anthropic")
+        ? ["openai-responses", "openai-chat", "anthropic"]
+        : ["anthropic", "openai-chat", "openai-responses"];
   return order.find((apiType) => profile.apiTypes.includes(apiType)) ?? null;
 }
 
@@ -150,6 +158,8 @@ export function apiTypeProtocolLabel(apiType: string): string {
       return "OpenAI Responses";
     case "openai-chat":
       return "OpenAI Chat Completions";
+    case "gemini":
+      return "Gemini GenerateContent";
     default:
       return apiType;
   }

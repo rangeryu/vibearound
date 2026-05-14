@@ -9,15 +9,26 @@
       "label": "Coding Plan",
       "api_type": "anthropic",
       "default_base_url": "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic",
+      "headers": {
+        "User-Agent": "claude-code/0.1.0"
+      },
       "auth_header": true,
       "models": [
         {
           "id": "qwen3.6-plus",
-          "label": "qwen3.6-plus"
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "kimi-k2.5",
-          "label": "kimi-k2.5"
+          "label": "kimi-k2.5",
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5",
@@ -29,7 +40,11 @@
         },
         {
           "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus"
+          "label": "qwen3.5-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-max-2026-01-23",
@@ -76,15 +91,26 @@
       "label": "Coding Plan CN",
       "api_type": "anthropic",
       "default_base_url": "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+      "headers": {
+        "User-Agent": "claude-code/0.1.0"
+      },
       "auth_header": true,
       "models": [
         {
           "id": "qwen3.6-plus",
-          "label": "qwen3.6-plus"
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "kimi-k2.5",
-          "label": "kimi-k2.5"
+          "label": "kimi-k2.5",
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5",
@@ -96,7 +122,11 @@
         },
         {
           "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus"
+          "label": "qwen3.5-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-max-2026-01-23",
@@ -152,11 +182,19 @@
       "models": [
         {
           "id": "qwen3.6-plus",
-          "label": "qwen3.6-plus"
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "kimi-k2.5",
-          "label": "kimi-k2.5"
+          "label": "kimi-k2.5",
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5",
@@ -168,7 +206,11 @@
         },
         {
           "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus"
+          "label": "qwen3.5-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-max-2026-01-23",
@@ -231,11 +273,19 @@
       "models": [
         {
           "id": "qwen3.6-plus",
-          "label": "qwen3.6-plus"
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "kimi-k2.5",
-          "label": "kimi-k2.5"
+          "label": "kimi-k2.5",
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5",
@@ -247,7 +297,11 @@
         },
         {
           "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus"
+          "label": "qwen3.5-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-max-2026-01-23",
@@ -301,14 +355,28 @@
       "label": "Token Plan",
       "api_type": "openai-chat",
       "default_base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "headers": {
+        "User-Agent": "codex-cli/0.80.0 (external, cli)",
+        "X-DashScope-AuthType": "openai",
+        "X-DashScope-CacheControl": "enable",
+        "X-DashScope-UserAgent": "codex-cli/0.80.0 (external, cli)"
+      },
       "models": [
         {
           "id": "qwen3.6-plus",
-          "label": "qwen3.6-plus"
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus"
+          "label": "qwen3.5-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-max-2026-01-23",
@@ -336,7 +404,8 @@
         },
         {
           "id": "kimi-k2.5",
-          "label": "kimi-k2.5"
+          "label": "kimi-k2.5",
+          "context_window": 256000
         },
         {
           "id": "deepseek-v3.2",
@@ -378,14 +447,28 @@
       "label": "Token Plan CN",
       "api_type": "openai-chat",
       "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "headers": {
+        "User-Agent": "codex-cli/0.80.0 (external, cli)",
+        "X-DashScope-AuthType": "openai",
+        "X-DashScope-CacheControl": "enable",
+        "X-DashScope-UserAgent": "codex-cli/0.80.0 (external, cli)"
+      },
       "models": [
         {
           "id": "qwen3.6-plus",
-          "label": "qwen3.6-plus"
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus"
+          "label": "qwen3.5-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-max-2026-01-23",
@@ -413,7 +496,8 @@
         },
         {
           "id": "kimi-k2.5",
-          "label": "kimi-k2.5"
+          "label": "kimi-k2.5",
+          "context_window": 256000
         },
         {
           "id": "deepseek-v3.2",

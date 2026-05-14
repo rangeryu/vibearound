@@ -89,6 +89,11 @@ pub enum ChannelOutput {
         system_commands: serde_json::Value,
         agent_commands: serde_json::Value,
     },
+    PromptDone {
+        route: RouteKey,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message_id: Option<MessageId>,
+    },
     /// Forward a `requestPermission` ACP call from the upstream agent down to
     /// the plugin. The plugin answers via its `client.requestPermission`
     /// handler (standard ACP), and the forwarder task sends the response back
@@ -111,6 +116,7 @@ impl ChannelOutput {
             | Self::AgentReady { route, .. }
             | Self::SessionReady { route, .. }
             | Self::CommandMenu { route, .. }
+            | Self::PromptDone { route, .. }
             | Self::PermissionRequest { route, .. } => route,
         }
     }

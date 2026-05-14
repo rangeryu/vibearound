@@ -10,11 +10,19 @@
       "models": [
         {
           "id": "anthropic/claude-sonnet-4.5",
-          "label": "Claude Sonnet 4.5 (via OpenRouter)"
+          "label": "Claude Sonnet 4.5 (via OpenRouter)",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "openai/gpt-4o",
-          "label": "GPT-4o (via OpenRouter)"
+          "label": "GPT-4o (via OpenRouter)",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "deepseek/deepseek-chat",
@@ -22,7 +30,11 @@
         },
         {
           "id": "google/gemini-2.5-pro",
-          "label": "Gemini 2.5 Pro (via OpenRouter)"
+          "label": "Gemini 2.5 Pro (via OpenRouter)",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         }
       ],
       "auth_modes": [

@@ -3,6 +3,7 @@
   "label": "Kimi Coding",
   "icon": "K",
   "homepage": "https://www.kimi.com/code",
+  "hidden_from_picker": true,
   "endpoints": [
     {
       "api_type": "anthropic",
@@ -12,12 +13,19 @@
       },
       "models": [
         {
+          "id": "kimi-for-coding",
+          "label": "Kimi Code",
+          "context_window": 256000
+        },
+        {
           "id": "kimi-code",
-          "label": "Kimi Code"
+          "label": "Kimi Code (legacy alias)",
+          "context_window": 256000
         },
         {
           "id": "k2p5",
-          "label": "Kimi Code (legacy)"
+          "label": "Kimi Code (legacy)",
+          "context_window": 256000
         }
       ],
       "auth_modes": [

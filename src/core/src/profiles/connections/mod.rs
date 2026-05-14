@@ -272,6 +272,7 @@ fn recommended_proxy_target(
         ("codex", "openai-responses")
         | ("opencode", "openai-responses")
         | ("opencode", "openai-chat") => &["anthropic", "openai-chat", "openai-responses"],
+        ("gemini", "gemini") => &["openai-chat", "openai-responses", "anthropic"],
         _ => &[],
     };
     order

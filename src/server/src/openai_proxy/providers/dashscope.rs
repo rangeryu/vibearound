@@ -1,6 +1,8 @@
 use common::profiles::schema::ProfileDef;
 use serde_json::Value;
 
+mod content;
+
 #[derive(Debug, Clone)]
 pub struct DashScopeProxyAdapter {
     thinking_enabled: bool,
@@ -18,6 +20,8 @@ impl DashScopeProxyAdapter {
     }
 
     pub fn prepare_chat_request(&mut self, original_request: &Value, chat_request: &mut Value) {
+        content::convert_text_file_parts_to_text(chat_request);
+
         let Some(object) = chat_request.as_object_mut() else {
             return;
         };
@@ -79,9 +83,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn maps_reasoning_effort_to_dashscope_enable_thinking_for_reasoning_models() {
-        let profile = ProfileDef {
+    fn profile() -> ProfileDef {
+        ProfileDef {
             id: "qwen-test".to_string(),
             label: "Alibaba DashScope".to_string(),
             provider: "dashscope".to_string(),
@@ -90,7 +93,12 @@ mod tests {
             credentials: Default::default(),
             overrides: Default::default(),
             provider_settings: Default::default(),
-        };
+        }
+    }
+
+    #[test]
+    fn maps_reasoning_effort_to_dashscope_enable_thinking_for_reasoning_models() {
+        let profile = profile();
         let mut adapter = DashScopeProxyAdapter::new(&profile);
         let mut chat_request = json!({ "model": "qwen3.5-plus", "messages": [] });
 
@@ -104,16 +112,7 @@ mod tests {
 
     #[test]
     fn leaves_non_reasoning_qwen_models_without_enable_thinking() {
-        let profile = ProfileDef {
-            id: "qwen-test".to_string(),
-            label: "Alibaba DashScope".to_string(),
-            provider: "dashscope".to_string(),
-            auth_mode: AuthMode::ApiKey,
-            api_types: vec!["openai-chat".to_string()],
-            credentials: Default::default(),
-            overrides: Default::default(),
-            provider_settings: Default::default(),
-        };
+        let profile = profile();
         let mut adapter = DashScopeProxyAdapter::new(&profile);
         let mut chat_request = json!({ "model": "qwen3-coder-plus", "messages": [] });
 
@@ -127,16 +126,7 @@ mod tests {
 
     #[test]
     fn maps_reasoning_effort_to_dashscope_partner_reasoning_models() {
-        let profile = ProfileDef {
-            id: "qwen-test".to_string(),
-            label: "Alibaba DashScope".to_string(),
-            provider: "dashscope".to_string(),
-            auth_mode: AuthMode::ApiKey,
-            api_types: vec!["openai-chat".to_string()],
-            credentials: Default::default(),
-            overrides: Default::default(),
-            provider_settings: Default::default(),
-        };
+        let profile = profile();
         let mut adapter = DashScopeProxyAdapter::new(&profile);
         let mut chat_request = json!({ "model": "glm-5", "messages": [] });
 

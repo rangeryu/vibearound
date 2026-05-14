@@ -1,6 +1,6 @@
 [package]
 name = "server"
-version = "0.5.14"
+version = "0.5.16"
 description = "VibeAround HTTP/WebSocket server: SPA, /ws, /ws/chat, /mcp"
 edition = "2021"
 rust-version = "1.82"
@@ -27,3 +27,4 @@ agent-client-protocol = { version = "=0.9.4", features = ["unstable_session_usag
 async-trait = "0.1"
 anyhow = "1"
 tracing = "0.1"
+base64 = "0.22"

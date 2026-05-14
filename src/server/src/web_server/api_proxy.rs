@@ -5,7 +5,9 @@ use common::profiles::headers::merged_upstream_headers;
 use serde_json::{json, Value};
 
 mod completion;
+mod content_policy;
 mod model_mapping;
+mod normalization;
 mod passthrough;
 mod protocol;
 mod routes;
@@ -15,18 +17,18 @@ mod upstream;
 use crate::openai_proxy::providers::ProviderProxyAdapter;
 
 use completion::translated_completion_response;
+use content_policy::validate_request_content;
 use model_mapping::{proxy_model_mapping, proxy_route_preference};
+use normalization::normalize_target_request;
 use passthrough::{buffered_passthrough_response, passthrough_response};
 pub(super) use protocol::ProxyProtocol;
 pub use routes::{
-    legacy_chat_completions_handler, legacy_messages_handler, legacy_responses_handler,
-    local_chat_completions_handler, local_messages_handler, local_responses_handler,
+    legacy_chat_completions_handler, legacy_gemini_generate_content_handler,
+    legacy_messages_handler, legacy_responses_handler, local_chat_completions_handler,
+    local_gemini_generate_content_handler, local_messages_handler, local_responses_handler,
 };
 use stream::translated_stream_response;
-use upstream::{
-    apply_upstream_auth, normalize_target_request, redacted_url, upstream_endpoint,
-    upstream_error_response,
-};
+use upstream::{apply_upstream_auth, redacted_url, upstream_endpoint, upstream_error_response};
 
 use super::AppState;
 
@@ -60,14 +62,44 @@ pub(super) async fn proxy_handler(
             return response;
         }
     }
-    let mut provider_adapter = ProviderProxyAdapter::for_profile(&upstream.profile);
+    let mut provider_adapter =
+        ProviderProxyAdapter::for_profile(&upstream.profile, &target_api_type);
     let manual_profile_api_key = manual_scope
         .as_ref()
         .and_then(|_| upstream.profile.credentials.get("api_key").cloned());
 
-    let agent_request = original_request;
+    let mut agent_request = original_request;
 
     if client_protocol == upstream.protocol {
+        let original_agent_request = agent_request.clone();
+        if let Some(mapping) = &model_mapping {
+            apply_wire_model(&mut agent_request, &mapping.upstream_model);
+        }
+        if let Err(message) = normalize_target_request(&mut agent_request, upstream.protocol) {
+            return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
+        }
+        if upstream.protocol == ProxyProtocol::OpenAiChat {
+            provider_adapter.prepare_chat_request(
+                client_protocol.provider_request_source(),
+                &original_agent_request,
+                &mut agent_request,
+            );
+        } else if upstream.protocol == ProxyProtocol::AnthropicMessages {
+            provider_adapter.prepare_anthropic_request(&mut agent_request);
+        }
+        if let Ok(mut validation_request) = upstream
+            .protocol
+            .decode_agent_request(agent_request.clone())
+        {
+            if let Some(mapping) = &model_mapping {
+                validation_request.model = Some(mapping.upstream_model.clone());
+            }
+            if let Err(message) =
+                validate_request_content(&upstream.profile, &target_api_type, &validation_request)
+            {
+                return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
+            }
+        }
         let stream = agent_request
             .get("stream")
             .and_then(Value::as_bool)
@@ -147,7 +179,9 @@ pub(super) async fn proxy_handler(
         Ok(request) => request,
         Err(error) => return json_error(StatusCode::UNPROCESSABLE_ENTITY, &error.to_string()),
     };
-    normalize_target_request(&mut upstream_request, upstream.protocol);
+    if let Err(message) = normalize_target_request(&mut upstream_request, upstream.protocol) {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
+    }
     if upstream.protocol == ProxyProtocol::OpenAiChat {
         provider_adapter.prepare_chat_request(
             client_protocol.provider_request_source(),
@@ -156,6 +190,16 @@ pub(super) async fn proxy_handler(
         );
     } else if upstream.protocol == ProxyProtocol::AnthropicMessages {
         provider_adapter.prepare_anthropic_request(&mut upstream_request);
+    }
+    if let Ok(validation_request) = upstream
+        .protocol
+        .decode_agent_request(upstream_request.clone())
+    {
+        if let Err(message) =
+            validate_request_content(&upstream.profile, &target_api_type, &validation_request)
+        {
+            return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
+        }
     }
     let stream = upstream_request
         .get("stream")
@@ -259,6 +303,12 @@ fn validate_manual_scope(scope: &str) -> Result<(), Response> {
         ));
     }
     Ok(())
+}
+
+fn apply_wire_model(request: &mut Value, model: &str) {
+    if let Some(object) = request.as_object_mut() {
+        object.insert("model".to_string(), Value::String(model.to_string()));
+    }
 }
 
 fn is_manual_scope_char(ch: char) -> bool {

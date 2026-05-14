@@ -46,6 +46,11 @@ pub async fn handle_channel_input(
             let route = envelope.route.clone();
             let cli_kind = envelope.cli_kind.clone();
             let text = envelope.text.clone();
+            let message_id = if envelope.message_id.is_empty() {
+                None
+            } else {
+                Some(envelope.message_id.clone())
+            };
             tracing::debug!(
                 route = %route,
                 cli_kind = ?cli_kind,
@@ -77,6 +82,7 @@ pub async fn handle_channel_input(
                     send_system_text(plugin_host, &route, &format!("❌ {}", e)).await;
                 }
             }
+            send_prompt_done(plugin_host, &route, message_id).await;
         }
         ChannelInput::Stop { route } => {
             let _ = conversation_manager.cancel(&route).await;
@@ -108,6 +114,19 @@ pub(super) async fn send_system_text(plugin_host: &Arc<PluginHost>, route: &Rout
             route: route.clone(),
             text: text.to_string(),
             reply_to: None,
+        })
+        .await;
+}
+
+async fn send_prompt_done(
+    plugin_host: &Arc<PluginHost>,
+    route: &RouteKey,
+    message_id: Option<String>,
+) {
+    plugin_host
+        .send_output(ChannelOutput::PromptDone {
+            route: route.clone(),
+            message_id,
         })
         .await;
 }

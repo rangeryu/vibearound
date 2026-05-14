@@ -271,10 +271,7 @@ pub fn launcher_set_profile_connection(
     agent_id: String,
     preference: agent_state::ProfileConnectionPreference,
 ) -> Result<(), String> {
-    let agent_id = match agent_id.as_str() {
-        "claude" | "codex" | "opencode" => agent_id,
-        other => return Err(format!("unsupported connection target: '{other}'")),
-    };
+    let agent_id = validate_connection_agent_id(agent_id)?;
     let profile = schema::load(&profile_id)
         .map(normalize_legacy_profile_and_persist)
         .ok_or_else(|| format!("profile '{profile_id}' not found"))?;
@@ -286,10 +283,30 @@ pub fn launcher_set_profile_connection(
     Ok(())
 }
 
+fn validate_connection_agent_id(agent_id: String) -> Result<String, String> {
+    match agent_id.as_str() {
+        "claude" | "codex" | "gemini" | "opencode" => Ok(agent_id),
+        other => Err(format!("unsupported connection target: '{other}'")),
+    }
+}
+
 pub(super) fn resolve_launch_workspace(agent_id: &str) -> anyhow::Result<PathBuf> {
     workspace::resolve_launch_workspace(agent_id)
 }
 
 fn emit_launch_config_changed(app: &tauri::AppHandle) {
     let _ = app.emit(crate::tray::LAUNCH_CONFIG_CHANGED_EVENT, ());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_connection_agent_id;
+
+    #[test]
+    fn accepts_gemini_profile_connection_target() {
+        assert_eq!(
+            validate_connection_agent_id("gemini".to_string()).unwrap(),
+            "gemini"
+        );
+    }
 }
