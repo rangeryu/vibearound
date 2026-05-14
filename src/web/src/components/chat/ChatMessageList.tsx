@@ -75,6 +75,15 @@ export function ChatMessageList({ messages, streaming, agentLabel }: ChatMessage
                   <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
                 ) : (
                   <>
+                    {streaming &&
+                      i === messages.length - 1 &&
+                      !msg.content &&
+                      !msg.progress &&
+                      !msg.activities?.length && (
+                        <span className="text-xs text-primary/80 font-mono animate-pulse">
+                          {t("AI is working…")}
+                        </span>
+                      )}
                     {msg.activities?.length ? (
                       <ChatActivityList
                         activities={msg.activities}
