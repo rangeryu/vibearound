@@ -2,7 +2,7 @@
 
 # VibeAround
 
-**Your local coding agents, everywhere you work.**
+**Keep your vibe coding agents around.**
 
 [Download](https://github.com/jazzenchen/VibeAround/releases/latest) | [Demo](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [简体中文](README_CN.md)
 
@@ -16,9 +16,9 @@
 
 </div>
 
-VibeAround turns your own machine into a local-first command center for AI coding work. Keep Claude Code, Codex CLI, Gemini CLI, Cursor CLI, Kiro CLI, Qwen Code, and OpenCode running where your repo and tools already live, then reach them from the desktop app, a browser terminal, or the IM app on your phone.
+From desktop to mobile, from browser to messaging, VibeAround keeps your local coding agents connected, reachable, and ready to work.
 
-It is built for the messy, everyday loop of agentic coding: start the right agent in the right workspace, switch providers without rewriting config files, bridge incompatible AI API formats, hand a live session to your phone, open a preview link, and keep moving.
+Run Claude Code, Codex CLI, Gemini CLI, and more side by side with different provider profiles, all routed through one universal proxy.
 
 ## Screenshots
 
@@ -30,25 +30,37 @@ It is built for the messy, everyday loop of agentic coding: start the right agen
 
 ### Launch local coding agents
 
-Start Claude Code, Codex CLI, Gemini CLI, OpenCode, and other agents in the right workspace with the right provider profile.
+Start Claude Code, Codex CLI, Gemini CLI, OpenCode, and other agents in parallel with different provider profiles.
 
-### Bridge AI API formats
+### Message your local agents
 
-Use providers such as DeepSeek, Alibaba DashScope, Kimi, MiniMax, and Z.AI/GLM from the local coding agent you like, even when their API formats do not match.
+Chat with the same local coding agents from Telegram, Feishu/Lark, Discord, Slack, WeChat, DingTalk, WeCom, QQ Bot, or the built-in web chat.
 
-### Chat from desktop, browser, or IM
+### Use a web terminal
 
-Reach the same local agent from the desktop app, browser terminal, Telegram, Feishu/Lark, Discord, Slack, WeChat, DingTalk, WeCom, or QQ Bot.
+Open a full browser terminal for your workspace, with mobile-friendly keys and optional tmux-backed persistence.
 
-### Handover sessions and previews
+### Keep agent configs clean
 
-Use `/handover` and `/pickup` to move a live session between laptop and phone, and share local dev servers, Markdown, or HTML previews through short-lived authenticated links.
+Switch providers through saved profiles and the universal proxy, without rewriting each CLI's config files.
+
+### Route through a universal proxy
+
+Translate OpenAI Responses, Chat Completions, Anthropic Messages, and Gemini Generate Content across providers such as DeepSeek, Alibaba DashScope, Kimi, MiniMax, Z.AI/GLM, OpenRouter, Azure OpenAI, and custom endpoints.
+
+### Handover live sessions
+
+Use `/handover` and `/pickup` to move a running agent session between terminal, web, and messaging without starting over.
+
+### Share remote previews
+
+Expose local dev servers, Markdown, and HTML previews through short-lived authenticated links.
 
 ## Demo
 
-[![VibeAround demo - session handover, agent switching, multi-channel concurrency](https://img.youtube.com/vi/6kxNKTMz-AM/maxresdefault.jpg)](https://youtu.be/6kxNKTMz-AM)
+[![VibeAround demo - local coding agents across desktop, browser, and messaging](https://img.youtube.com/vi/6kxNKTMz-AM/maxresdefault.jpg)](https://youtu.be/6kxNKTMz-AM)
 
-*Reach your local agent from IM, move a session between terminal and phone, and switch agents mid-conversation.*
+*Remotely control local agents from messaging apps, and hand over sessions between terminal and phone.*
 
 ## Download VibeAround
 
@@ -68,15 +80,15 @@ macOS is currently published for Apple Silicon. Windows and Linux desktop packag
 
 Agents communicate over stdio through [ACP (Agent Client Protocol)](https://agentclientprotocol.com/). VibeAround can install npm-distributed bridges when they are needed.
 
-| Agent | IM chat | Session handover | Launch profiles |
-|---|---|---|---|
-| Claude Code | ✅ | ✅ | ✅ |
-| Codex CLI | ✅ | ✅ | ✅ |
-| Gemini CLI | ✅ | ✅ | Direct launch |
-| Cursor CLI | ✅ | ✅ | Direct launch |
-| Kiro CLI | ✅ | ✅ | Direct launch |
-| Qwen Code | ✅ | ✅ | Direct launch |
-| OpenCode | ✅ | ❌ | Direct launch |
+| Agent | IM chat | Session handover | Profile launch | Manual proxy config |
+|---|---|---|---|---|
+| Claude Code | ✅ | ✅ | ✅ | ✅ |
+| Codex CLI | ✅ | ✅ | ✅ | ✅ |
+| Gemini CLI | ✅ | ✅ | ✅ | ✅ |
+| Cursor CLI | ✅ | ✅ | Direct launch | ❌ |
+| Kiro CLI | ✅ | ✅ | Direct launch | ❌ |
+| Qwen Code | ✅ | ✅ | Direct launch | ❌ |
+| OpenCode | ✅ | ❌ | ✅ | ✅ |
 
 ### Model providers and proxy routes
 
@@ -94,13 +106,14 @@ Provider profiles let you launch local agents against first-party APIs, OpenAI-c
 | Azure OpenAI | Built-in Azure profile |
 | Custom endpoint | Bring your own compatible base URL |
 
-VibeAround's local API proxy is powered by [va-ai-api-proxy](https://github.com/jazzenchen/va-ai-api-proxy). It translates between the three common agent API shapes:
+VibeAround's local API proxy is powered by [va-ai-api-proxy](https://github.com/jazzenchen/va-ai-api-proxy). It translates between the common agent API shapes:
 
 | API shape | Common endpoint |
 |---|---|
 | OpenAI Responses | `/v1/responses` |
 | OpenAI Chat Completions | `/v1/chat/completions` |
 | Anthropic Messages | `/v1/messages` |
+| Gemini Generate Content | `/v1beta/models/{model}:generateContent` |
 
 ### Channel plugins
 
@@ -164,6 +177,7 @@ In Slack, the `/` prefix is reserved by the client, so use `/va` or `/vibearound
 Ask questions, share ideas, and talk about how you use VibeAround.
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20VibeAround-5865F2?logo=discord&logoColor=white)](https://discord.gg/KsJWkY64GN)
+[![Product Hunt](https://img.shields.io/badge/Product%20Hunt-Follow%20VibeAround-DA552F?logo=producthunt&logoColor=white)](https://www.producthunt.com/products/vibearound)
 
 ## License
 
