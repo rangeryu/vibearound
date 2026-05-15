@@ -215,7 +215,6 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
           sessions={launchSessions}
           sessionsLoading={sessionsLoading}
           sessionSelection={sessionSelection}
-          activeSessionId={meta.sessionId}
           onSessionChange={handleSessionChange}
         />
       )}
