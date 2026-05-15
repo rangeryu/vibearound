@@ -52,6 +52,27 @@ export function TerminalWorkspace({
     ? sessions.find((s) => s.id === maximizedSession)
     : null;
 
+  if (sessions.length === 0) {
+    return (
+      <div className="h-full p-2">
+        {sessionsLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-muted-foreground/40 font-mono">{t("Loading sessions…")}</p>
+          </div>
+        ) : (
+          <EmptyTerminalState
+            tmuxAvailable={tmuxAvailable}
+            tmuxSessions={tmuxSessions}
+            onAddCli={onAddCli}
+            onAddProfileCli={onAddProfileCli}
+            onAttachTmux={onAttachTmux}
+            onRefreshTmux={onRefreshTmux}
+          />
+        )}
+      </div>
+    );
+  }
+
   if (maximizedSessionData) {
     return (
       <div className="h-full p-2">
@@ -94,10 +115,6 @@ export function TerminalWorkspace({
           onClose={() => onCloseSession(activeSession.id)}
           onSessionState={(tool, status) => onSessionState(activeSession.id, tool, status)}
         />
-      ) : sessionsLoading ? (
-        <div className="flex h-full items-center justify-center">
-          <p className="text-sm text-muted-foreground/40 font-mono">{t("Loading sessions…")}</p>
-        </div>
       ) : (
         <EmptyTerminalState
           tmuxAvailable={tmuxAvailable}

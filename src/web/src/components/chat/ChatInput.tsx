@@ -96,11 +96,11 @@ export function ChatInput({
   return (
     <div
       data-slot="chat-input"
-      className={cn("bg-background p-4 border-t border-border", className)}
+      className={cn("border-t border-border bg-background p-4", className)}
     >
       <div
         role="group"
-        className="flex min-h-[2.5rem] flex-col rounded-lg border border-border bg-muted/30 transition-[box-shadow,border-color] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/30"
+        className="mx-auto flex min-h-[2.5rem] max-w-4xl flex-col rounded-lg border border-border bg-muted/30 transition-[box-shadow,border-color] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/30"
       >
         <textarea
           ref={textareaRef}

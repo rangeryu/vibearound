@@ -58,7 +58,7 @@ function App() {
 
   return (
     <ThemeContext.Provider value={theme}>
-      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+      <div className="flex h-full min-h-0 overflow-hidden bg-background">
         <AppHeader
           page={page}
           onPageChange={setPage}
@@ -72,54 +72,55 @@ function App() {
           chatStatus={chatStatus}
         />
 
-        {page === "terminal" && viewMode === "tabs" && (
-          <TabBar
-            groups={groups}
-            activeTabId={activeTabId}
-            onActivate={handleActivateTab}
-            onClose={closeSession}
-            tmuxAvailable={tmux.available}
-            tmuxSessions={tmux.sessions}
-            onAddCli={addCli}
-            onAddProfileCli={addProfileCli}
-            onAttachTmux={attachTmux}
-            onRefreshTmux={tmux.refresh}
-          />
-        )}
-
-        <main className="relative flex-1 min-h-0 overflow-hidden">
-          <section
-            className={workspacePaneClass(page === "chat")}
-            aria-hidden={page !== "chat"}
-            inert={page !== "chat"}
-          >
-            <ChatView onStatusChange={setChatStatus} />
-          </section>
-          <section
-            className={workspacePaneClass(page === "terminal")}
-            aria-hidden={page !== "terminal"}
-            inert={page !== "terminal"}
-          >
-            <TerminalWorkspace
-              isActive={page === "terminal"}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {page === "terminal" && viewMode === "tabs" && (
+            <TabBar
               groups={groups}
               activeTabId={activeTabId}
-              maximizedSession={maximizedSession}
-              sessionsLoading={sessionsLoading}
-              viewMode={viewMode}
+              onActivate={handleActivateTab}
+              onClose={closeSession}
               tmuxAvailable={tmux.available}
               tmuxSessions={tmux.sessions}
               onAddCli={addCli}
               onAddProfileCli={addProfileCli}
               onAttachTmux={attachTmux}
               onRefreshTmux={tmux.refresh}
-              onToggleMaximize={toggleMaximize}
-              onCloseSession={closeSession}
-              onSessionState={setSessionState}
             />
-          </section>
-        </main>
+          )}
 
+          <main className="relative min-h-0 flex-1 overflow-hidden">
+            <section
+              className={workspacePaneClass(page === "chat")}
+              aria-hidden={page !== "chat"}
+              inert={page !== "chat"}
+            >
+              <ChatView onStatusChange={setChatStatus} />
+            </section>
+            <section
+              className={workspacePaneClass(page === "terminal")}
+              aria-hidden={page !== "terminal"}
+              inert={page !== "terminal"}
+            >
+              <TerminalWorkspace
+                isActive={page === "terminal"}
+                groups={groups}
+                activeTabId={activeTabId}
+                maximizedSession={maximizedSession}
+                sessionsLoading={sessionsLoading}
+                viewMode={viewMode}
+                tmuxAvailable={tmux.available}
+                tmuxSessions={tmux.sessions}
+                onAddCli={addCli}
+                onAddProfileCli={addProfileCli}
+                onAttachTmux={attachTmux}
+                onRefreshTmux={tmux.refresh}
+                onToggleMaximize={toggleMaximize}
+                onCloseSession={closeSession}
+                onSessionState={setSessionState}
+              />
+            </section>
+          </main>
+        </div>
       </div>
     </ThemeContext.Provider>
   );

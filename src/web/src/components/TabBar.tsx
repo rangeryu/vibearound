@@ -33,8 +33,8 @@ export function TabBar({
   const { t } = useI18n();
 
   return (
-    <nav className="flex items-stretch overflow-x-auto scrollbar-none shrink-0 bg-muted/40 dark:bg-muted/60">
-      <div className="flex items-stretch min-w-0">
+    <nav className="flex shrink-0 items-stretch overflow-x-auto border-b border-border bg-muted/30 scrollbar-none dark:bg-muted/50">
+      <div className="flex min-w-0 flex-1 items-stretch">
         {groups.map((group) => {
           const gc = getGroupColor(group.color);
           return (
@@ -71,7 +71,7 @@ export function TabBar({
                           ? "text-foreground"
                           : "text-muted-foreground/50 hover:text-muted-foreground/80"
                       }`}
-                      style={{ backgroundColor: isActive ? `${gc.bg}15` : "transparent" }}
+                      style={{ backgroundColor: isActive ? "var(--background)" : "transparent" }}
                     >
                       <span
                         className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${
@@ -102,14 +102,11 @@ export function TabBar({
                   </div>
                 );
               })}
-              <div
-                className="flex items-center shrink-0 px-1"
-                style={{ borderLeft: "1px solid oklch(0.25 0.01 260)" }}
-              />
+              <div className="flex shrink-0 items-center border-l border-border/50 px-1" />
             </div>
           );
         })}
-        <div className="relative flex items-center shrink-0 pl-1 overflow-visible">
+        <div className="relative ml-auto flex shrink-0 items-center overflow-visible border-l border-border/50 px-1">
           <AddCliDropdown
             variant="top"
             tmuxAvailable={tmuxAvailable}

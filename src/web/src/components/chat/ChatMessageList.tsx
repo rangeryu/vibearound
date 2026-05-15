@@ -1,5 +1,6 @@
 "use client";
 
+import { Bot } from "lucide-react";
 import { useI18n } from "@va/i18n";
 import {
   Conversation,
@@ -51,11 +52,16 @@ export function ChatMessageList({ messages, streaming, agentLabel }: ChatMessage
 
   return (
     <Conversation className="flex-1">
-      <ConversationContent>
+      <ConversationContent className="mx-auto w-full max-w-4xl gap-4 px-4 py-5">
         {messages.length === 0 ? (
           <ConversationEmptyState
             title={t("Chat with {{agent}}", { agent: agentLabel })}
             description={t("Send a message to start.")}
+            icon={
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                <Bot className="h-7 w-7 text-muted-foreground" />
+              </div>
+            }
           />
         ) : (
           messages.map((msg, i) => (
