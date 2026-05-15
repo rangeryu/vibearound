@@ -36,6 +36,7 @@ export interface ChatInputProps {
   /** Called when user picks a different agent from the dropdown. */
   onAgentChange?: (agentId: string) => void;
   onLaunchChange?: (agentId: string, profileId?: string) => void;
+  showLaunchSelector?: boolean;
   variant?: "dock" | "hero";
   className?: string;
 }
@@ -57,6 +58,7 @@ export function ChatInput({
   selectedProfileId,
   onAgentChange,
   onLaunchChange,
+  showLaunchSelector = true,
   variant = "dock",
   className,
 }: ChatInputProps) {
@@ -135,16 +137,22 @@ export function ChatInput({
           )}
         >
           <div className="flex min-w-0 items-center gap-1.5">
-            <ChatLaunchSelector
-              targetLabel={targetLabel}
-              targetTool={targetTool}
-              selectedAgentId={selectedAgentId}
-              agents={agents}
-              profiles={profiles}
-              selectedProfileId={selectedProfileId}
-              onAgentChange={onAgentChange}
-              onLaunchChange={onLaunchChange}
-            />
+            {showLaunchSelector ? (
+              <ChatLaunchSelector
+                targetLabel={targetLabel}
+                targetTool={targetTool}
+                selectedAgentId={selectedAgentId}
+                agents={agents}
+                profiles={profiles}
+                selectedProfileId={selectedProfileId}
+                onAgentChange={onAgentChange}
+                onLaunchChange={onLaunchChange}
+              />
+            ) : (
+              <span className="min-w-0 truncate px-1 text-xs font-medium text-muted-foreground">
+                {targetLabel}
+              </span>
+            )}
           </div>
           <Button
             type="button"

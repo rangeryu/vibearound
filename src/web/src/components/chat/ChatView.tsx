@@ -15,6 +15,7 @@ import {
   type ChatSessionWorkspaceGroup,
 } from "./ChatSessionSidebar";
 import { ChatMessageList } from "./ChatMessageList";
+import { NewChatAgentPicker } from "./NewChatAgentPicker";
 import { NewChatHome } from "./NewChatHome";
 import { NewChatWorkspacePicker } from "./NewChatWorkspacePicker";
 import { PendingPermissions } from "./PendingPermissions";
@@ -379,6 +380,14 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
         {showNewChatHome ? (
           <NewChatHome>
             <div className="space-y-4">
+              <NewChatAgentPicker
+                agents={agents}
+                profiles={profiles}
+                selectedAgentId={selectedAgent}
+                selectedProfileId={selectedProfileId}
+                fallbackAgentLabel={agentLabel}
+                onLaunchChange={handleLaunchChange}
+              />
               <NewChatWorkspacePicker
                 workspaces={workspaces}
                 selectedWorkspacePath={selectedWorkspace?.path}
@@ -403,6 +412,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
                 profiles={profiles}
                 selectedProfileId={selectedProfileId}
                 onLaunchChange={handleLaunchChange}
+                showLaunchSelector={false}
                 variant="hero"
               />
             </div>
