@@ -14,6 +14,7 @@ use axum::extract::{
 };
 use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
+use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use agent_client_protocol::schema as acp;
@@ -79,6 +80,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
     });
 
     // Inbound: ws messages → channel-input thread / permission bridge.
+    let mut direct_resume_task: Option<JoinHandle<()>> = None;
     while let Some(Ok(msg)) = ws_rx.next().await {
         match msg {
             Message::Text(text) => {
@@ -89,6 +91,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             profile,
                             session_intent,
                         } => {
+                            abort_direct_resume_task(&mut direct_resume_task, &state, &route).await;
                             if let Some(route) = input_route(&input) {
                                 match session_intent {
                                     Some(WebChatSessionIntent::Resume {
@@ -123,6 +126,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             state.channel_hub.handle_input(input);
                         }
                         WebChatInput::Stop(input) => {
+                            abort_direct_resume_task(&mut direct_resume_task, &state, &route).await;
                             state.channel_hub.handle_input(input);
                         }
                         WebChatInput::PermissionResponse {
@@ -147,10 +151,20 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             session_id,
                             cwd,
                         } => {
-                            apply_web_session_resume_now(
-                                &state, &route, agent, profile, session_id, cwd,
-                            )
-                            .await;
+                            abort_direct_resume_task(&mut direct_resume_task, &state, &route).await;
+                            let task_state = state.clone();
+                            let task_route = route.clone();
+                            direct_resume_task = Some(tokio::spawn(async move {
+                                apply_web_session_resume_now(
+                                    &task_state,
+                                    &task_route,
+                                    agent,
+                                    profile,
+                                    session_id,
+                                    cwd,
+                                )
+                                .await;
+                            }));
                         }
                     }
                 }
@@ -160,12 +174,36 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
         }
     }
 
+    if let Some(task) = direct_resume_task.take() {
+        task.abort();
+    }
     outbound_task.abort();
     state.web_channel.unregister_connection(&chat_id);
     state
         .channel_hub
         .conversation_manager()
         .close(&route, None)
+        .await;
+}
+
+async fn abort_direct_resume_task(
+    task: &mut Option<JoinHandle<()>>,
+    state: &AppState,
+    route: &RouteKey,
+) {
+    let Some(handle) = task.take() else {
+        return;
+    };
+    if handle.is_finished() {
+        let _ = handle.await;
+        return;
+    }
+
+    handle.abort();
+    state
+        .channel_hub
+        .conversation_manager()
+        .close(route, Some("web resume aborted".to_string()))
         .await;
 }
 
