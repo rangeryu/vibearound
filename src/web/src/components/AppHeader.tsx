@@ -1,6 +1,4 @@
 import {
-  Activity,
-  Bot,
   LayoutGrid,
   MessageSquare,
   Moon,
@@ -29,7 +27,6 @@ interface AppHeaderProps {
   onThemeToggle: () => void;
   totalSessions: number;
   runningSessions: number;
-  pingMs: number | null;
   chatStatus: ChatRuntimeStatus;
 }
 
@@ -44,38 +41,33 @@ export function AppHeader({
   onThemeToggle,
   totalSessions,
   runningSessions,
-  pingMs,
   chatStatus,
 }: AppHeaderProps) {
   const { t } = useI18n();
   const chatStatusMeta = {
     connecting: {
       label: t("Connecting to local agent"),
-      tone: "text-muted-foreground/60",
       dot: "bg-muted-foreground/50",
       pulse: true,
     },
     ready: {
       label: t("Local agent ready"),
-      tone: "text-muted-foreground/60",
       dot: "bg-emerald-400",
       pulse: false,
     },
     working: {
       label: t("Agent working"),
-      tone: "text-primary",
       dot: "bg-primary",
       pulse: true,
     },
     attention: {
       label: t("Agent needs input"),
-      tone: "text-amber-400",
       dot: "bg-amber-400",
       pulse: true,
     },
   } satisfies Record<
     ChatRuntimeStatus,
-    { label: string; tone: string; dot: string; pulse: boolean }
+    { label: string; dot: string; pulse: boolean }
   >;
   const chatMeta = chatStatusMeta[chatStatus];
   const terminalTitle =
@@ -85,8 +77,6 @@ export function AppHeader({
           total: totalSessions,
         })
       : t("CLI");
-  const localTitle =
-    pingMs !== null ? t("local · {{ping}} ms", { ping: pingMs }) : t("local · — ms");
   const selectPage = (nextPage: AppPage) => {
     onPageChange(nextPage);
     onMobileOpenChange?.(false);
@@ -169,23 +159,6 @@ export function AppHeader({
         </nav>
 
         <div className="flex flex-col items-center gap-2">
-          <div
-            className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-md",
-              chatMeta.tone,
-            )}
-            title={chatMeta.label}
-            aria-label={chatMeta.label}
-          >
-            <Bot className="h-3.5 w-3.5" />
-          </div>
-          <div
-            className="flex h-7 w-7 items-center justify-center rounded-md text-emerald-400/80"
-            title={localTitle}
-            aria-label={localTitle}
-          >
-            <Activity className="h-3.5 w-3.5" />
-          </div>
           <Button
             type="button"
             variant="ghost"
@@ -218,9 +191,6 @@ export function AppHeader({
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-foreground">
                     VibeAround
-                  </div>
-                  <div className="truncate font-mono text-[11px] text-muted-foreground/60">
-                    {localTitle}
                   </div>
                 </div>
               </div>
@@ -315,30 +285,20 @@ export function AppHeader({
               )}
             </nav>
 
-            <div className="space-y-2 border-t border-border/70 p-3">
-              <div className={cn("flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2", chatMeta.tone)}>
-                <Bot className="h-3.5 w-3.5" />
-                <span className="min-w-0 truncate text-xs">{chatMeta.label}</span>
-              </div>
-              <div className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2 text-emerald-400/80">
-                <Activity className="h-3.5 w-3.5" />
-                <span className="min-w-0 truncate font-mono text-xs">{localTitle}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onThemeToggle}
-                  className="justify-start gap-2 text-muted-foreground hover:text-foreground"
-                  aria-label={theme === "dark" ? t("Switch to light theme") : t("Switch to dark theme")}
-                  title={theme === "dark" ? t("Switch to light theme") : t("Switch to dark theme")}
-                >
-                  {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                  <span>{theme === "dark" ? t("Light") : t("Dark")}</span>
-                </Button>
-                <LanguageMenu />
-              </div>
+            <div className="flex items-center justify-between gap-2 border-t border-border/70 p-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onThemeToggle}
+                className="justify-start gap-2 text-muted-foreground hover:text-foreground"
+                aria-label={theme === "dark" ? t("Switch to light theme") : t("Switch to dark theme")}
+                title={theme === "dark" ? t("Switch to light theme") : t("Switch to dark theme")}
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                <span>{theme === "dark" ? t("Light") : t("Dark")}</span>
+              </Button>
+              <LanguageMenu />
             </div>
           </aside>
         </div>

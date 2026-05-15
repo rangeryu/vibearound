@@ -7,7 +7,6 @@ import { ChatView } from "@/components/chat";
 import { TabBar } from "@/components/TabBar";
 import { TerminalWorkspace } from "@/components/TerminalWorkspace";
 import { Button } from "@/components/ui/button";
-import { usePing } from "@/hooks/usePing";
 import { useSessions } from "@/hooks/useSessions";
 import { useTmux } from "@/hooks/useTmux";
 import type { AppPage, ChatRuntimeStatus } from "@/lib/dashboard-types";
@@ -30,7 +29,6 @@ function App() {
   const [theme, setTheme] = useState<Theme>(() => getResolvedTheme());
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  const pingMs = usePing();
   const tmux = useTmux();
   const {
     groups,
@@ -75,7 +73,6 @@ function App() {
           onThemeToggle={() => setTheme(applyThemeToggle(theme))}
           totalSessions={totalSessions}
           runningSessions={runningSessions}
-          pingMs={pingMs}
           chatStatus={chatStatus}
         />
 
