@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { ChatInput } from "./ChatInput";
 import { ChatSessionSidebar } from "./ChatSessionSidebar";
 import { ChatMessageList } from "./ChatMessageList";
+import { NewChatHome } from "./NewChatHome";
 import { PendingPermissions } from "./PendingPermissions";
 import type { ChatSessionSelection } from "./chatTypes";
 import { useWebChatConnection } from "./useWebChatConnection";
@@ -100,6 +101,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
           profile: selectedProfile.label,
         })
       : agentLabel;
+  const showNewChatHome = messages.length === 0 && sessionSelection.kind !== "resume";
 
   useEffect(() => {
     onStatusChange?.(chatStatus);
@@ -272,31 +274,60 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
           </div>
         </header>
 
-        <ChatMessageList messages={messages} streaming={streaming} agentLabel={agentLabel} />
+        {showNewChatHome ? (
+          <NewChatHome>
+            <ChatInput
+              value={input}
+              onChange={setInput}
+              onSubmit={handleSubmit}
+              onStop={stopStreaming}
+              disabled={!connected}
+              submitDisabled={streaming}
+              isStreaming={streaming}
+              placeholder={
+                connected ? t("Ask {{agent}} anything…", { agent: agentLabel }) : t("Connecting…")
+              }
+              targetLabel={agentLabel}
+              targetTool={toolType}
+              selectedAgentId={selectedAgent}
+              agents={agents}
+              profiles={profiles}
+              selectedProfileId={selectedProfileId}
+              onLaunchChange={handleLaunchChange}
+              variant="hero"
+            />
+          </NewChatHome>
+        ) : (
+          <>
+            <ChatMessageList messages={messages} streaming={streaming} agentLabel={agentLabel} />
 
-        <PendingPermissions
-          permissions={pendingPermissions}
-          onRespond={sendPermissionResponse}
-          onCancel={cancelPermissionRequest}
-        />
+            <PendingPermissions
+              permissions={pendingPermissions}
+              onRespond={sendPermissionResponse}
+              onCancel={cancelPermissionRequest}
+            />
 
-        <ChatInput
-          value={input}
-          onChange={setInput}
-          onSubmit={handleSubmit}
-          onStop={stopStreaming}
-          disabled={!connected}
-          submitDisabled={streaming}
-          isStreaming={streaming}
-          placeholder={connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")}
-          targetLabel={agentLabel}
-          targetTool={toolType}
-          selectedAgentId={selectedAgent}
-          agents={agents}
-          profiles={profiles}
-          selectedProfileId={selectedProfileId}
-          onLaunchChange={handleLaunchChange}
-        />
+            <ChatInput
+              value={input}
+              onChange={setInput}
+              onSubmit={handleSubmit}
+              onStop={stopStreaming}
+              disabled={!connected}
+              submitDisabled={streaming}
+              isStreaming={streaming}
+              placeholder={
+                connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")
+              }
+              targetLabel={agentLabel}
+              targetTool={toolType}
+              selectedAgentId={selectedAgent}
+              agents={agents}
+              profiles={profiles}
+              selectedProfileId={selectedProfileId}
+              onLaunchChange={handleLaunchChange}
+            />
+          </>
+        )}
       </div>
     </div>
   );
