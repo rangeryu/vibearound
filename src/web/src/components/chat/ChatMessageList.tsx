@@ -22,12 +22,20 @@ interface ChatMessageListProps {
 
 function ChatActivityList({ activities, hasContent }: { activities: ChatActivity[]; hasContent: boolean }) {
   const { t } = useI18n();
+  const visibleActivities =
+    activities.length > 8 ? activities.slice(Math.max(activities.length - 6, 0)) : activities;
+  const hiddenCount = activities.length - visibleActivities.length;
 
   return (
     <div
       className={`space-y-2 text-xs text-muted-foreground ${hasContent ? "mb-3 border-b border-border/50 pb-3" : ""}`}
     >
-      {activities.map((activity) => (
+      {hiddenCount > 0 && (
+        <div className="font-mono text-[11px] text-muted-foreground/50">
+          {t("{{count}} earlier activity events", { count: hiddenCount })}
+        </div>
+      )}
+      {visibleActivities.map((activity) => (
         <div key={activity.id} className="min-w-0">
           <div className="flex min-w-0 items-center gap-2 font-mono">
             <span className="shrink-0 uppercase text-muted-foreground/70">

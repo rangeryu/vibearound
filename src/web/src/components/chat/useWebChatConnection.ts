@@ -80,11 +80,40 @@ export function useWebChatConnection({
   const promptInFlightRef = useRef(false);
   const resumeReplayRef = useRef<ResumeReplayState | null>(null);
   const ignoredReplaySessionsRef = useRef<Set<string>>(new Set());
+  const resumeReplayDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const updateResumeReplay = useCallback((next: ResumeReplayState | null) => {
     resumeReplayRef.current = next;
     setResumeReplay(next);
   }, []);
+
+  const clearResumeReplayDoneTimer = useCallback(() => {
+    if (!resumeReplayDoneTimerRef.current) return;
+    clearTimeout(resumeReplayDoneTimerRef.current);
+    resumeReplayDoneTimerRef.current = null;
+  }, []);
+
+  const finishResumeReplay = useCallback(
+    (sessionId?: string) => {
+      const current = resumeReplayRef.current;
+      if (sessionId && current?.sessionId !== sessionId) return;
+      clearResumeReplayDoneTimer();
+      updateResumeReplay(null);
+    },
+    [clearResumeReplayDoneTimer, updateResumeReplay],
+  );
+
+  const scheduleResumeReplayDone = useCallback(
+    (sessionId: string) => {
+      clearResumeReplayDoneTimer();
+      resumeReplayDoneTimerRef.current = setTimeout(() => {
+        finishResumeReplay(sessionId);
+      }, 700);
+    },
+    [clearResumeReplayDoneTimer, finishResumeReplay],
+  );
 
   useEffect(() => {
     const ws = new WebSocket(getWebSocketUrl("/ws/chat"));
@@ -96,13 +125,13 @@ export function useWebChatConnection({
       setStreaming(false);
       promptInFlightRef.current = false;
       setPendingPermissions([]);
-      updateResumeReplay(null);
+      finishResumeReplay();
     };
     ws.onerror = () => {
       setConnected(false);
       setStreaming(false);
       promptInFlightRef.current = false;
-      updateResumeReplay(null);
+      finishResumeReplay();
     };
 
     ws.onmessage = (event) => {
@@ -141,13 +170,13 @@ export function useWebChatConnection({
           }
           setMeta((prev) => ({ ...prev, sessionId: parsed.session_id }));
           if (pendingResume?.sessionId === parsed.session_id) {
-            updateResumeReplay(null);
+            scheduleResumeReplayDone(parsed.session_id);
           }
           break;
         }
         case "system_text": {
           appendStandaloneAssistant(parsed.text);
-          updateResumeReplay(null);
+          finishResumeReplay();
           const agentId = switchedAgentId(parsed.text);
           if (agentId) {
             onAgentSelected?.(agentId, "system");
@@ -165,7 +194,7 @@ export function useWebChatConnection({
           appendErrorToStream(parsed.error);
           setStreaming(false);
           promptInFlightRef.current = false;
-          updateResumeReplay(null);
+          finishResumeReplay();
           break;
         }
         case "prompt_done": {
@@ -198,23 +227,34 @@ export function useWebChatConnection({
       if (pendingResume && notif.sessionId !== pendingResume.sessionId) {
         return;
       }
+      const replaying = pendingResume?.sessionId === notif.sessionId;
 
       const update = notif.update;
       switch (update.sessionUpdate) {
         case "user_message_chunk": {
           appendUserMessage(contentText(update), update.messageId);
+          if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
         }
         case "agent_message_chunk": {
           appendToStreamAssistant(contentText(update), update.messageId);
+          if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
         }
         case "agent_thought_chunk": {
+          if (replaying) {
+            scheduleResumeReplayDone(notif.sessionId);
+            break;
+          }
           appendThinkingActivity(contentText(update));
           break;
         }
         case "tool_call":
         case "tool_call_update": {
+          if (replaying) {
+            scheduleResumeReplayDone(notif.sessionId);
+            break;
+          }
           const title = toolActivityLabel(update);
           const status = toolActivityStatus(update);
           appendToolActivity(update);
@@ -229,6 +269,7 @@ export function useWebChatConnection({
         // are not yet surfaced in the web chat UI. Ignored so future SDK
         // additions don't crash the handler.
         default:
+          if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
       }
     }
@@ -270,8 +311,15 @@ export function useWebChatConnection({
     return () => {
       ws.close();
       wsRef.current = null;
+      clearResumeReplayDoneTimer();
     };
-  }, [onAgentSelected, t, updateResumeReplay]);
+  }, [
+    clearResumeReplayDoneTimer,
+    finishResumeReplay,
+    onAgentSelected,
+    scheduleResumeReplayDone,
+    t,
+  ]);
 
   const sendMessage = useCallback(
     ({
@@ -345,6 +393,7 @@ export function useWebChatConnection({
     if (options?.abortReplay && abortedSessionId) {
       ignoredReplaySessionsRef.current.add(abortedSessionId);
     }
+    clearResumeReplayDoneTimer();
     promptInFlightRef.current = false;
     setStreaming(false);
     setPendingPermissions([]);
@@ -357,14 +406,14 @@ export function useWebChatConnection({
       agentTitle: undefined,
       agentVersion: undefined,
     }));
-  }, [updateResumeReplay]);
+  }, [clearResumeReplayDoneTimer, updateResumeReplay]);
 
   const resumeSession = useCallback(
     ({ agentId, profileId, launchSession }: ResumeChatSessionRequest) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return false;
 
-      clearConversationView();
+      clearConversationView({ abortReplay: true });
       ignoredReplaySessionsRef.current.delete(launchSession.session_id);
       updateResumeReplay({
         sessionId: launchSession.session_id,
