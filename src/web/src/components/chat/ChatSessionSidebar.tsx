@@ -1,14 +1,19 @@
 "use client";
 
-import { Check, Loader2, MessageSquare, PlusCircle } from "lucide-react";
+import { Check, Folder, Loader2, MessageSquare, PlusCircle } from "lucide-react";
 import type { LaunchSessionInfo } from "@va/client";
 import { useI18n } from "@va/i18n";
 
 import { cn } from "@/lib/utils";
 import type { ChatSessionSelection } from "./chatTypes";
 
-interface ChatSessionSidebarProps {
+export interface ChatSessionWorkspaceGroup {
+  workspace: string;
   sessions: LaunchSessionInfo[];
+}
+
+interface ChatSessionSidebarProps {
+  workspaceGroups: ChatSessionWorkspaceGroup[];
   sessionsLoading?: boolean;
   sessionSelection: ChatSessionSelection;
   onSessionChange: (selection: ChatSessionSelection) => void;
@@ -25,27 +30,6 @@ function workspaceLabel(workspace: string) {
   return parts[parts.length - 1] ?? workspace;
 }
 
-function groupSessionsByWorkspace(sessions: LaunchSessionInfo[]) {
-  const groups: Array<{ workspace: string; label: string; sessions: LaunchSessionInfo[] }> = [];
-  const byWorkspace = new Map<string, (typeof groups)[number]>();
-
-  for (const session of sessions) {
-    let group = byWorkspace.get(session.workspace);
-    if (!group) {
-      group = {
-        workspace: session.workspace,
-        label: workspaceLabel(session.workspace),
-        sessions: [],
-      };
-      byWorkspace.set(session.workspace, group);
-      groups.push(group);
-    }
-    group.sessions.push(session);
-  }
-
-  return groups;
-}
-
 function sessionButtonClass(active: boolean) {
   return cn(
     "group flex w-full items-start gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors",
@@ -56,14 +40,13 @@ function sessionButtonClass(active: boolean) {
 }
 
 export function ChatSessionSidebar({
-  sessions,
+  workspaceGroups,
   sessionsLoading = false,
   sessionSelection,
   onSessionChange,
 }: ChatSessionSidebarProps) {
   const { t } = useI18n();
   const newIsActive = sessionSelection.kind === "new" || sessionSelection.kind === "current";
-  const sessionGroups = groupSessionsByWorkspace(sessions);
 
   return (
     <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-border bg-muted/20 md:flex">
@@ -99,48 +82,61 @@ export function ChatSessionSidebar({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               {t("Loading sessions...")}
             </div>
-          ) : sessions.length === 0 ? (
+          ) : workspaceGroups.length === 0 ? (
             <div className="px-2 py-4 text-xs text-muted-foreground/60">
-              {t("No saved sessions")}
+              {t("No projects")}
             </div>
           ) : (
-            <div className="space-y-4">
-              {sessionGroups.map((group) => (
+            <div className="space-y-5">
+              <div className="px-2 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
+                {t("Projects")}
+              </div>
+              {workspaceGroups.map((group) => (
                 <section key={group.workspace}>
                   <div
-                    className="mb-1.5 truncate px-2 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60"
+                    className="mb-1.5 flex min-w-0 items-center gap-2 px-2 text-xs font-medium text-foreground/75"
                     title={group.workspace}
                   >
-                    {group.label}
+                    <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{workspaceLabel(group.workspace)}</span>
                   </div>
-                  <div className="space-y-1">
-                    {group.sessions.map((session) => {
-                      const active =
-                        sessionSelection.kind === "resume" &&
-                        sessionSelection.sessionId === session.session_id;
-                      return (
-                        <button
-                          key={session.session_id}
-                          type="button"
-                          className={sessionButtonClass(active)}
-                          onClick={() =>
-                            onSessionChange({ kind: "resume", sessionId: session.session_id })
-                          }
-                        >
-                          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-foreground/90">
-                              {session.title}
+                  {group.sessions.length === 0 ? (
+                    <div className="px-7 py-1 text-xs text-muted-foreground/45">
+                      {t("No chats")}
+                    </div>
+                  ) : (
+                    <div className="space-y-1 pl-5">
+                      {group.sessions.map((session) => {
+                        const active =
+                          sessionSelection.kind === "resume" &&
+                          sessionSelection.sessionId === session.session_id;
+                        return (
+                          <button
+                            key={session.session_id}
+                            type="button"
+                            className={sessionButtonClass(active)}
+                            onClick={() =>
+                              onSessionChange({
+                                kind: "resume",
+                                sessionId: session.session_id,
+                              })
+                            }
+                          >
+                            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-foreground/90">
+                                {session.title}
+                              </span>
+                              <span className="block truncate text-[11px] leading-4 text-muted-foreground">
+                                {session.short_id} - {formatSessionUpdatedAt(session.updated_at)}
+                              </span>
                             </span>
-                            <span className="block truncate text-[11px] leading-4 text-muted-foreground">
-                              {session.short_id} - {formatSessionUpdatedAt(session.updated_at)}
-                            </span>
-                          </span>
-                          {active && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
+                            {active && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </section>
               ))}
             </div>

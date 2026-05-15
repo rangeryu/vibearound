@@ -1,16 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, Loader2, PanelLeftClose, PanelLeftOpen, Wifi, WifiOff } from "lucide-react";
 import { getLaunchSessions, getProfiles, getWorkspaces } from "@/api/sessions";
 import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
 import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
-import type { LaunchSessionInfo, ProfileLaunchOption } from "@va/client";
+import type { ProfileLaunchOption } from "@va/client";
 import { useI18n } from "@va/i18n";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "./ChatInput";
-import { ChatSessionSidebar } from "./ChatSessionSidebar";
+import {
+  ChatSessionSidebar,
+  type ChatSessionWorkspaceGroup,
+} from "./ChatSessionSidebar";
 import { ChatMessageList } from "./ChatMessageList";
 import { NewChatHome } from "./NewChatHome";
 import { PendingPermissions } from "./PendingPermissions";
@@ -29,7 +32,9 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   const [profileSelections, setProfileSelections] = useState<Record<string, string | undefined>>(
     {},
   );
-  const [launchSessions, setLaunchSessions] = useState<LaunchSessionInfo[]>([]);
+  const [launchSessionGroups, setLaunchSessionGroups] = useState<ChatSessionWorkspaceGroup[]>(
+    [],
+  );
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionSelections, setSessionSelections] = useState<Record<string, ChatSessionSelection>>(
     {},
@@ -56,6 +61,10 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   } = useWebChatConnection({ onAgentSelected: handleSocketAgentSelected });
 
   const toolType = agentIdToToolType(selectedAgent);
+  const launchSessions = useMemo(
+    () => launchSessionGroups.flatMap((group) => group.sessions),
+    [launchSessionGroups],
+  );
   const selectedAgentInfo = agents.find((agent) => agent.id === selectedAgent);
   const agentLabel = selectedAgentInfo?.name ?? getAgentDisplayName(selectedAgent);
   const selectedProfileId = profileSelections[selectedAgent];
@@ -129,24 +138,27 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
 
   useEffect(() => {
     if (!selectedAgent) {
-      setLaunchSessions([]);
+      setLaunchSessionGroups([]);
       setSessionsLoading(false);
       return;
     }
 
     let cancelled = false;
     setSessionsLoading(true);
-    setLaunchSessions([]);
+    setLaunchSessionGroups([]);
     void (async () => {
       const { workspaces } = await getWorkspaces();
-      const sessionGroups = await Promise.all(
-        workspaces.map((workspace) => getLaunchSessions(selectedAgent, false, workspace.path)),
+      return Promise.all(
+        workspaces.map(async (workspace) => ({
+          workspace: workspace.path,
+          sessions: await getLaunchSessions(selectedAgent, false, workspace.path),
+        })),
       );
-      return sessionGroups.flat();
     })()
-      .then((items) => {
+      .then((groups) => {
         if (cancelled) return;
-        setLaunchSessions(items);
+        const items = groups.flatMap((group) => group.sessions);
+        setLaunchSessionGroups(groups);
         setSessionSelections((prev) => {
           const current = prev[selectedAgent];
           if (
@@ -161,7 +173,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
       .catch((error) => {
         if (!cancelled) {
           console.warn("[ChatView] failed to load launch sessions:", error);
-          setLaunchSessions([]);
+          setLaunchSessionGroups([]);
         }
       })
       .finally(() => {
@@ -243,7 +255,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
     <div className="flex h-full overflow-hidden bg-background">
       {showSessionSidebar && (
         <ChatSessionSidebar
-          sessions={launchSessions}
+          workspaceGroups={launchSessionGroups}
           sessionsLoading={sessionsLoading}
           sessionSelection={sessionSelection}
           onSessionChange={handleSessionChange}
