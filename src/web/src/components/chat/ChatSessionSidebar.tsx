@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -239,9 +238,6 @@ export function ChatSessionSidebar({
                                       {formatSessionUpdatedAt(session.updated_at)}
                                     </span>
                                   </span>
-                                  {active && (
-                                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                  )}
                                 </button>
                               );
                             })}
