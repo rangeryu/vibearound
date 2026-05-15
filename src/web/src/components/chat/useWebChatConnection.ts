@@ -237,9 +237,7 @@ export function useWebChatConnection({
           break;
         }
         case "agent_message_chunk": {
-          appendToStreamAssistant(update.content, update.messageId, {
-            forceNewMessage: replaying && !update.messageId,
-          });
+          appendToStreamAssistant(update.content, update.messageId);
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
         }

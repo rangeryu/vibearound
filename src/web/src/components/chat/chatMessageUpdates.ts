@@ -41,6 +41,20 @@ function appendTextToBlock(block: ContentBlock, text: string): ContentBlock {
   return { ...block, text: `${block.text}${text}` };
 }
 
+function appendContentBlock(
+  blocks: ContentBlock[] | undefined,
+  block: ContentBlock,
+): ContentBlock[] {
+  const next = [...(blocks ?? [])];
+  const last = next[next.length - 1];
+  if (block.type === "text" && last?.type === "text") {
+    next[next.length - 1] = appendTextToBlock(last, block.text);
+    return next;
+  }
+  next.push(block);
+  return next;
+}
+
 function appendContentPart(
   parts: ChatMessagePart[] | undefined,
   block: ContentBlock,
@@ -269,7 +283,7 @@ export function appendThinkingActivityMessage(
       if (lastPart?.kind === "thought" && lastPart.active !== false) {
         parts[parts.length - 1] = {
           ...lastPart,
-          blocks: [...lastPart.blocks, block],
+          blocks: appendContentBlock(lastPart.blocks, block),
           active: true,
         };
       } else {
