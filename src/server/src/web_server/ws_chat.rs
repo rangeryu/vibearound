@@ -101,9 +101,11 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                         )
                                         .await;
                                     }
-                                    Some(WebChatSessionIntent::New) => {
-                                        apply_web_launch_selection(&state, &route, &input, profile)
-                                            .await;
+                                    Some(WebChatSessionIntent::New { cwd }) => {
+                                        apply_web_launch_selection(
+                                            &state, &route, &input, profile, cwd,
+                                        )
+                                        .await;
                                         state
                                             .channel_hub
                                             .conversation_manager()
@@ -111,8 +113,10 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                             .await;
                                     }
                                     None => {
-                                        apply_web_launch_selection(&state, &route, &input, profile)
-                                            .await;
+                                        apply_web_launch_selection(
+                                            &state, &route, &input, profile, None,
+                                        )
+                                        .await;
                                     }
                                 }
                             }
@@ -194,17 +198,18 @@ async fn apply_web_launch_selection(
     route: &RouteKey,
     input: &ChannelInput,
     profile: Option<String>,
+    workspace: Option<String>,
 ) {
-    let Some(profile) = profile else {
-        return;
-    };
     let Some(agent) = input_agent(input) else {
         return;
     };
+    if profile.is_none() && workspace.is_none() {
+        return;
+    }
     if let Err(error) = state
         .channel_hub
         .conversation_manager()
-        .select_launch_route(route, agent, Some(profile))
+        .select_launch_route(route, agent, profile, workspace)
         .await
     {
         send_web_system_text(state, route, &format!("❌ {}", error)).await;
@@ -389,7 +394,7 @@ enum WebChatSessionIntent {
         session_id: String,
         cwd: Option<String>,
     },
-    New,
+    New { cwd: Option<String> },
 }
 
 fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
@@ -523,7 +528,11 @@ fn parse_web_session_intent(
     agent: Option<String>,
 ) -> Option<WebChatSessionIntent> {
     match value.get("sessionAction").and_then(|x| x.as_str()) {
-        Some("new") => return Some(WebChatSessionIntent::New),
+        Some("new") => {
+            return Some(WebChatSessionIntent::New {
+                cwd: parse_web_session_workspace(value),
+            });
+        }
         Some("resume") | None => {}
         Some(_) => return None,
     }
@@ -533,18 +542,22 @@ fn parse_web_session_intent(
         .and_then(|x| x.as_str())
         .map(str::trim)
         .filter(|x| !x.is_empty())?;
-    let cwd = value
-        .get("sessionWorkspace")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|x| !x.is_empty())
-        .map(ToOwned::to_owned);
+    let cwd = parse_web_session_workspace(value);
 
     Some(WebChatSessionIntent::Resume {
         agent,
         session_id: session_id.to_string(),
         cwd,
     })
+}
+
+fn parse_web_session_workspace(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("sessionWorkspace")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 /// Translate a `ChannelOutput` into a wire `ChatEvent`. Returns `None`
@@ -734,12 +747,31 @@ mod tests {
         .expect("message input");
 
         let WebChatInput::Message {
-            session_intent: Some(WebChatSessionIntent::New),
+            session_intent: Some(WebChatSessionIntent::New { cwd: None }),
             ..
         } = input
         else {
             panic!("expected new-session message");
         };
+    }
+
+    #[test]
+    fn parses_new_session_workspace() {
+        let input = parse_web_chat_input(
+            "chat-1",
+            r#"{"type":"message","text":"start here","sessionAction":"new","sessionWorkspace":"/tmp/new-project"}"#,
+        )
+        .expect("message input");
+
+        let WebChatInput::Message {
+            session_intent: Some(WebChatSessionIntent::New { cwd: Some(cwd) }),
+            ..
+        } = input
+        else {
+            panic!("expected new-session message with workspace");
+        };
+
+        assert_eq!(cwd, "/tmp/new-project");
     }
 
     #[test]

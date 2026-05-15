@@ -6,7 +6,7 @@
 //! together and this file owns all the "spawn an agent, keep it alive,
 //! wire notifications" plumbing.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -111,7 +111,13 @@ impl Conversation {
                      Please re-run the handover to get an updated /pickup command that includes the cwd."
                 ));
             }
-            None => config::ensure_loaded().resolve_workspace(&cli_kind),
+            None => self
+                .workspace
+                .lock()
+                .await
+                .clone()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| config::ensure_loaded().resolve_workspace(&cli_kind)),
         };
 
         // Track workspace for snapshot (used by /handover Direction 2).
@@ -239,7 +245,13 @@ impl Conversation {
             .await
             .clone()
             .unwrap_or_else(|| "claude".to_string());
-        let workspace = config::ensure_loaded().resolve_workspace(&agent_kind);
+        let workspace = self
+            .workspace
+            .lock()
+            .await
+            .clone()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| config::ensure_loaded().resolve_workspace(&agent_kind));
         let response = agent
             .new_session(acp::NewSessionRequest::new(workspace))
             .await?;
@@ -274,6 +286,7 @@ impl Conversation {
         *self.initialize.lock().await = None;
         *self.failed.lock().await = None;
         *self.busy.lock().await = false;
+        *self.workspace.lock().await = None;
         *self.logged_session_id.lock().await = None;
         *self.handover_resume_session_id.lock().await = None;
         *self.handover_cwd.lock().await = None;

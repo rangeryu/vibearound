@@ -124,15 +124,16 @@ impl ConversationManager {
         conv.switch_profile(profile).await;
     }
 
-    /// Select the next web-chat launch route (agent plus optional explicit profile).
+    /// Select the next web-chat launch route.
     pub async fn select_launch_route(
         &self,
         route: &RouteKey,
         agent_kind: String,
         profile: Option<String>,
+        workspace: Option<String>,
     ) -> anyhow::Result<String> {
         let conv = self.get_or_create(route.clone());
-        conv.select_launch_route(agent_kind, profile).await
+        conv.select_launch_route(agent_kind, profile, workspace).await
     }
 
     /// Reset session on a route (new conversation thread, same agent).

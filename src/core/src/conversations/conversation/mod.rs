@@ -49,7 +49,7 @@ pub struct Conversation {
     session_id: Mutex<Option<String>>,
     cli_kind: Mutex<Option<String>>,
     profile: Mutex<Option<String>>,
-    /// Resolved workspace path, set when agent is spawned.
+    /// Selected or resolved workspace path for this route.
     workspace: Mutex<Option<String>>,
     initialize: Mutex<Option<acp::InitializeResponse>>,
     busy: Mutex<bool>,
@@ -352,28 +352,38 @@ impl Conversation {
         &self,
         agent_kind: String,
         profile: Option<String>,
+        workspace: Option<String>,
     ) -> anyhow::Result<String> {
         let agent_kind =
             crate::resources::resolve_agent_id(&agent_kind).map_err(anyhow::Error::msg)?;
         let current_agent = self.cli_kind.lock().await.clone();
         let current_profile = self.profile.lock().await.clone();
+        let current_workspace = self.workspace.lock().await.clone();
         let profile_changed = match profile.as_deref() {
             Some(profile) => current_profile.as_deref() != Some(profile),
             None => false,
         };
+        let workspace_changed = match workspace.as_deref() {
+            Some(workspace) => current_workspace.as_deref() != Some(workspace),
+            None => false,
+        };
         let agent_changed = current_agent.as_deref() != Some(agent_kind.as_str());
 
-        if agent_changed || profile_changed {
+        if agent_changed || profile_changed || workspace_changed {
             tracing::info!(
-                "[Conversation] select_launch_route route={} agent={} profile={:?}",
+                "[Conversation] select_launch_route route={} agent={} profile={:?} workspace={:?}",
                 self.route,
                 agent_kind,
-                profile
+                profile,
+                workspace
             );
             self.full_reset().await;
             *self.cli_kind.lock().await = Some(agent_kind.clone());
             if let Some(profile) = profile {
                 *self.profile.lock().await = Some(profile);
+            }
+            if let Some(workspace) = workspace {
+                *self.workspace.lock().await = Some(workspace);
             }
             let _ = self.change_tx.send(());
         }
