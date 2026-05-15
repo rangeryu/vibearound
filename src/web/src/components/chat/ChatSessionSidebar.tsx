@@ -10,9 +10,10 @@ import {
   MessageSquare,
   PlusCircle,
 } from "lucide-react";
-import type { LaunchSessionInfo, WorkspaceItem } from "@va/client";
+import type { AgentInfo, LaunchSessionInfo, WorkspaceItem } from "@va/client";
 import { useI18n } from "@va/i18n";
 
+import { BrandIcon } from "@/components/brand-icon";
 import { cn } from "@/lib/utils";
 import type { ChatSessionSelection } from "./chatTypes";
 
@@ -25,8 +26,11 @@ export interface ChatSessionWorkspaceGroup {
 
 interface ChatSessionSidebarProps {
   workspaceGroups: ChatSessionWorkspaceGroup[];
+  agents: AgentInfo[];
+  selectedAgentFilter: string;
   sessionsLoading?: boolean;
   sessionSelection: ChatSessionSelection;
+  onAgentFilterChange: (agentId: string) => void;
   onSessionChange: (selection: ChatSessionSelection) => void;
 }
 
@@ -60,8 +64,11 @@ function sessionButtonClass(active: boolean) {
 
 export function ChatSessionSidebar({
   workspaceGroups,
+  agents,
+  selectedAgentFilter,
   sessionsLoading = false,
   sessionSelection,
+  onAgentFilterChange,
   onSessionChange,
 }: ChatSessionSidebarProps) {
   const { t } = useI18n();
@@ -112,6 +119,41 @@ export function ChatSessionSidebar({
         </div>
 
         <div className="mt-4 border-t border-border/50 pt-3">
+          {agents.length > 0 && (
+            <div className="mb-3">
+              <div className="mb-2 px-2 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
+                {t("Agent")}
+              </div>
+              <div className="flex flex-wrap gap-1.5 px-2">
+                {agents.map((agent) => {
+                  const selected = agent.id === selectedAgentFilter;
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      className={cn(
+                        "flex h-7 w-7 items-center justify-center rounded-md border transition-colors",
+                        selected
+                          ? "border-primary/50 bg-primary/10 text-primary"
+                          : "border-border/70 bg-background/70 text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                      )}
+                      title={agent.name}
+                      aria-label={agent.name}
+                      aria-pressed={selected}
+                      onClick={() => onAgentFilterChange(agent.id)}
+                    >
+                      <BrandIcon
+                        kind="cli"
+                        id={agent.id}
+                        label={agent.name}
+                        className="h-4 w-4"
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {sessionsLoading ? (
             <div className="flex items-center gap-2 px-2 py-4 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

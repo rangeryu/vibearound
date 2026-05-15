@@ -30,6 +30,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   const { t } = useI18n();
   const [input, setInput] = useState("");
   const [selectedAgent, setSelectedAgent] = useState<string>("claude");
+  const [sidebarAgentFilter, setSidebarAgentFilter] = useState<string | undefined>();
   const [profiles, setProfiles] = useState<ProfileLaunchOption[]>([]);
   const [profileSelections, setProfileSelections] = useState<Record<string, string | undefined>>(
     {},
@@ -68,6 +69,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   } = useWebChatConnection({ onAgentSelected: handleSocketAgentSelected });
 
   const toolType = agentIdToToolType(selectedAgent);
+  const sidebarAgentId = sidebarAgentFilter ?? selectedAgent;
   const launchSessions = useMemo(
     () => launchSessionGroups.flatMap((group) => group.sessions),
     [launchSessionGroups],
@@ -80,6 +82,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
     (workspace) => workspace.path === selectedWorkspacePath,
   );
   const sessionSelection = sessionSelections[selectedAgent] ?? { kind: "current" };
+  const sidebarSessionSelection = sessionSelections[sidebarAgentId] ?? { kind: "current" };
   const selectedLaunchSession =
     sessionSelection.kind === "resume"
       ? launchSessions.find((session) => session.session_id === sessionSelection.sessionId)
@@ -161,6 +164,19 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   }, [workspaces]);
 
   useEffect(() => {
+    if (agents.length === 0) return;
+    setSidebarAgentFilter((current) => {
+      if (current && agents.some((agent) => agent.id === current)) {
+        return current;
+      }
+      if (agents.some((agent) => agent.id === selectedAgent)) {
+        return selectedAgent;
+      }
+      return agents[0]?.id ?? current;
+    });
+  }, [agents, selectedAgent]);
+
+  useEffect(() => {
     let cancelled = false;
     void getProfiles()
       .then((items) => {
@@ -179,7 +195,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   }, []);
 
   useEffect(() => {
-    if (!selectedAgent) {
+    if (!sidebarAgentId) {
       setLaunchSessionGroups([]);
       setSessionsLoading(false);
       return;
@@ -204,7 +220,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
           try {
             return {
               workspace,
-              sessions: await getLaunchSessions(selectedAgent, false, workspace.path),
+              sessions: await getLaunchSessions(sidebarAgentId, false, workspace.path),
             };
           } catch (error) {
             console.warn(
@@ -222,12 +238,12 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
         const items = groups.flatMap((group) => group.sessions);
         setLaunchSessionGroups(groups);
         setSessionSelections((prev) => {
-          const current = prev[selectedAgent];
+          const current = prev[sidebarAgentId];
           if (
             current?.kind === "resume" &&
             !items.some((item) => item.session_id === current.sessionId)
           ) {
-            return { ...prev, [selectedAgent]: { kind: "current" } };
+            return { ...prev, [sidebarAgentId]: { kind: "current" } };
           }
           return prev;
         });
@@ -245,7 +261,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [selectedAgent, workspaces, workspacesLoading]);
+  }, [sidebarAgentId, workspaces, workspacesLoading]);
 
   const handleLaunchChange = useCallback((agentId: string, profileId?: string) => {
     setSelectedAgent(agentId);
@@ -258,6 +274,10 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
       }
       return next;
     });
+  }, []);
+
+  const handleSidebarAgentFilterChange = useCallback((agentId: string) => {
+    setSidebarAgentFilter(agentId);
   }, []);
 
   const handleCreateWorkspace = useCallback(async (name: string) => {
@@ -277,7 +297,8 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
 
   const handleSessionChange = useCallback(
     (selection: ChatSessionSelection) => {
-      setSessionSelections((prev) => ({ ...prev, [selectedAgent]: selection }));
+      setSessionSelections((prev) => ({ ...prev, [sidebarAgentId]: selection }));
+      setSelectedAgent(sidebarAgentId);
       if (selection.kind === "new") {
         clearConversationView();
         return;
@@ -289,17 +310,17 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
       );
       if (!launchSession) return;
       resumeSession({
-        agentId: selectedAgent,
-        profileId: selectedProfileId,
+        agentId: sidebarAgentId,
+        profileId: profileSelections[sidebarAgentId],
         launchSession,
       });
     },
     [
       clearConversationView,
       launchSessions,
+      profileSelections,
       resumeSession,
-      selectedAgent,
-      selectedProfileId,
+      sidebarAgentId,
     ],
   );
 
@@ -335,8 +356,11 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
       {showSessionSidebar && (
         <ChatSessionSidebar
           workspaceGroups={launchSessionGroups}
+          agents={agents}
+          selectedAgentFilter={sidebarAgentId}
           sessionsLoading={sidebarSessionsLoading}
-          sessionSelection={sessionSelection}
+          sessionSelection={sidebarSessionSelection}
+          onAgentFilterChange={handleSidebarAgentFilterChange}
           onSessionChange={handleSessionChange}
         />
       )}
