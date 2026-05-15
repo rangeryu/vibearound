@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Check, Folder, Loader2, Plus } from "lucide-react";
+import { Folder, Loader2, Plus } from "lucide-react";
 import type { WorkspaceItem } from "@va/client";
 import { useI18n } from "@va/i18n";
 
@@ -126,7 +126,6 @@ export function NewChatWorkspacePicker({
                     {workspace.path}
                   </span>
                 </span>
-                {selected && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
               </button>
             );
           })}

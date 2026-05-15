@@ -1,6 +1,5 @@
 "use client";
 
-import { Check } from "lucide-react";
 import type { AgentInfo, ProfileLaunchOption } from "@va/client";
 import { useI18n } from "@va/i18n";
 
@@ -94,9 +93,6 @@ export function NewChatAgentPicker({
                       onClick={() => chooseAgent(agent)}
                     >
                       <BrandIcon kind="cli" id={agent.id} label={agent.name} className="h-5 w-5" />
-                      {selected && (
-                        <Check className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-background text-primary" />
-                      )}
                     </button>
                   );
                 })}
@@ -132,9 +128,6 @@ export function NewChatAgentPicker({
                   className="h-4 w-4"
                 />
                 <span className="min-w-0 flex-1 truncate">{t("Default")}</span>
-                {selectedProfileId === undefined && (
-                  <Check className="h-4 w-4 shrink-0 text-primary" />
-                )}
               </button>
               <button
                 type="button"
@@ -154,9 +147,6 @@ export function NewChatAgentPicker({
                   className="h-4 w-4"
                 />
                 <span className="min-w-0 flex-1 truncate">{t("Direct")}</span>
-                {selectedProfileId === DIRECT_PROFILE_ID && (
-                  <Check className="h-4 w-4 shrink-0 text-primary" />
-                )}
               </button>
               {selectedAgentProfiles.map(({ profile, usesProxy }) => (
                 <button
@@ -184,9 +174,6 @@ export function NewChatAgentPicker({
                       ? t("{{profile}} (proxy)", { profile: profile.label })
                       : profile.label}
                   </span>
-                  {selectedProfileId === profile.id && (
-                    <Check className="h-4 w-4 shrink-0 text-primary" />
-                  )}
                 </button>
               ))}
             </div>
