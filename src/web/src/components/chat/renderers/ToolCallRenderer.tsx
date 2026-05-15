@@ -24,19 +24,66 @@ function displayTitle(part: ChatToolCallPart) {
   return part.title === "tool" && part.toolKind ? part.toolKind : part.title;
 }
 
-export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
+function ToolDetails({ part }: { part: ChatToolCallPart }) {
   const { t } = useI18n();
+
+  return (
+    <div className="space-y-3">
+      {part.locations?.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {part.locations.map((location, index) => (
+            <span
+              key={`${location.path}-${location.line ?? "file"}-${index}`}
+              className="max-w-full truncate rounded bg-background/70 px-2 py-1 font-mono text-[11px] text-muted-foreground"
+            >
+              {location.path}
+              {location.line !== null && location.line !== undefined
+                ? `:${location.line}`
+                : ""}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {part.content?.map((item, index) => (
+        <ToolContentRenderer key={`${item.type}-${index}`} item={item} />
+      ))}
+      {part.rawInput !== undefined && (
+        <details>
+          <summary className="cursor-pointer font-mono text-xs text-muted-foreground">
+            {t("Input")}
+          </summary>
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-background/70 p-3 text-xs leading-5 text-muted-foreground">
+            {formatJson(part.rawInput)}
+          </pre>
+        </details>
+      )}
+      {part.rawOutput !== undefined && (
+        <details>
+          <summary className="cursor-pointer font-mono text-xs text-muted-foreground">
+            {t("Output")}
+          </summary>
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-background/70 p-3 text-xs leading-5 text-muted-foreground">
+            {formatJson(part.rawOutput)}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
   const active = part.active ?? (part.status !== "completed" && part.status !== "failed");
   const title = displayTitle(part);
+  const hasRichContent = Boolean(part.content?.length);
   const hasDetails =
     Boolean(part.locations?.length) ||
-    Boolean(part.content?.length) ||
+    hasRichContent ||
     part.rawInput !== undefined ||
     part.rawOutput !== undefined;
 
-  if (!hasDetails && part.status === "completed") {
-    return (
-      <div className="flex min-w-0 items-center gap-2 px-1 py-1 text-xs text-muted-foreground/65">
+  if (part.status === "completed" && !hasRichContent) {
+    const summary = (
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-1 py-1 text-xs text-muted-foreground/65">
         {statusIcon(part.status, active)}
         <span className="min-w-0 truncate">{title}</span>
         {part.toolKind && part.title !== part.toolKind && (
@@ -44,7 +91,30 @@ export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
             {part.toolKind}
           </span>
         )}
-      </div>
+        {hasDetails && (
+          <span className="ml-auto shrink-0 font-mono text-[10px] uppercase text-muted-foreground/40">
+            details
+          </span>
+        )}
+      </summary>
+    );
+
+    if (!hasDetails) {
+      return (
+        <div className="flex min-w-0 items-center gap-2 px-1 py-1 text-xs text-muted-foreground/65">
+          {statusIcon(part.status, active)}
+          <span className="min-w-0 truncate">{title}</span>
+        </div>
+      );
+    }
+
+    return (
+      <details className="rounded-md px-1 py-0.5">
+        {summary}
+        <div className="ml-5 mt-2 border-l border-border/50 pl-3">
+          <ToolDetails part={part} />
+        </div>
+      </details>
     );
   }
 
@@ -68,45 +138,8 @@ export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
         )}
       </summary>
       {hasDetails && (
-        <div className="mt-3 space-y-3">
-          {part.locations?.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {part.locations.map((location, index) => (
-                <span
-                  key={`${location.path}-${location.line ?? "file"}-${index}`}
-                  className="max-w-full truncate rounded bg-background/70 px-2 py-1 font-mono text-[11px] text-muted-foreground"
-                >
-                  {location.path}
-                  {location.line !== null && location.line !== undefined
-                    ? `:${location.line}`
-                    : ""}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {part.content?.map((item, index) => (
-            <ToolContentRenderer key={`${item.type}-${index}`} item={item} />
-          ))}
-          {part.rawInput !== undefined && (
-            <details>
-              <summary className="cursor-pointer font-mono text-xs text-muted-foreground">
-                {t("Input")}
-              </summary>
-              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-background/70 p-3 text-xs leading-5 text-muted-foreground">
-                {formatJson(part.rawInput)}
-              </pre>
-            </details>
-          )}
-          {part.rawOutput !== undefined && (
-            <details>
-              <summary className="cursor-pointer font-mono text-xs text-muted-foreground">
-                {t("Output")}
-              </summary>
-              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-background/70 p-3 text-xs leading-5 text-muted-foreground">
-                {formatJson(part.rawOutput)}
-              </pre>
-            </details>
-          )}
+        <div className="mt-3">
+          <ToolDetails part={part} />
         </div>
       )}
     </details>
