@@ -104,9 +104,9 @@ export function ChatMessageList({
                   }
                 >
                   {msg.role === "user" ? (
-                    <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
+                    <p className="whitespace-pre-wrap text-sm leading-6">{msg.content}</p>
                   ) : msg.mode === "standalone" ? (
-                    <p className="whitespace-pre-wrap text-sm leading-8">{msg.content}</p>
+                    <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
                   ) : (
                     <>
                       {streaming &&

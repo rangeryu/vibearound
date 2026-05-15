@@ -146,9 +146,7 @@ export function MessageResponseStreamdown({
           <Streamdown
             key={`markdown-${index}`}
             className={[
-              "prose prose-sm dark:prose-invert max-w-none text-sm leading-8",
-              "prose-p:my-3 prose-p:leading-8 prose-li:my-1 prose-li:leading-8",
-              "prose-ul:my-3 prose-ol:my-3",
+              "prose prose-sm dark:prose-invert max-w-none text-sm",
               "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
               className ?? "",
             ]
