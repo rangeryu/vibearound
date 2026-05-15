@@ -145,6 +145,7 @@ impl Conversation {
                 Some(resume_session_id),
                 cwd,
                 downstream_handler,
+                false,
             )
             .await
             .map(|_| ())
@@ -195,7 +196,7 @@ impl Conversation {
             let resume_cwd = self.handover_cwd.lock().await.take();
 
             let agent = self
-                .ensure_agent(cli_kind, resume_sid, resume_cwd, downstream_handler)
+                .ensure_agent(cli_kind, resume_sid, resume_cwd, downstream_handler, true)
                 .await
                 .map_err(|error| {
                     let message = format!("{:#}", error);

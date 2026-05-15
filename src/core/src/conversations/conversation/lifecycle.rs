@@ -36,6 +36,7 @@ impl Conversation {
         resume_session_id: Option<String>,
         resume_cwd: Option<String>,
         downstream_handler: Arc<dyn AgentClientHandler>,
+        suppress_resume_replay: bool,
     ) -> anyhow::Result<Arc<Agent>> {
         let requested_cli_kind = cli_kind
             .as_deref()
@@ -101,15 +102,12 @@ impl Conversation {
             .or_else(|| agent_state::resolve_default_profile(&agent_prefs, &cfg, &cli_kind))
             .unwrap_or_else(|| "default".to_string());
 
-        // Resolve workspace — handover must include cwd, normal prompt uses default.
-        let is_handover = resume_session_id.is_some();
+        // Resolve workspace — resumed sessions must include cwd, normal prompt uses default.
+        let is_resume = resume_session_id.is_some();
         let workspace = match resume_cwd {
             Some(cwd) => std::path::PathBuf::from(cwd),
-            None if is_handover => {
-                return Err(anyhow!(
-                    "Session pickup is missing the working directory. \
-                     Please re-run the handover to get an updated /pickup command that includes the cwd."
-                ));
+            None if is_resume => {
+                return Err(anyhow!("Session resume is missing the working directory."));
             }
             None => self
                 .workspace
@@ -123,8 +121,11 @@ impl Conversation {
         // Track workspace for snapshot (used by /handover Direction 2).
         *self.workspace.lock().await = Some(workspace.to_string_lossy().to_string());
 
-        // Wrap downstream handler — suppress replay during handover load_session.
-        let suppress_replay = Arc::new(AtomicBool::new(is_handover));
+        // Wrap downstream handler. Handover pickups suppress history replay so
+        // IM channels do not get flooded; direct web resumes intentionally let
+        // replay through so the browser can sync the selected session.
+        let should_suppress_replay = is_resume && suppress_resume_replay;
+        let suppress_replay = Arc::new(AtomicBool::new(should_suppress_replay));
         let handler: Arc<dyn AgentClientHandler> = Arc::new(HandoverHandler {
             downstream: downstream_handler,
             suppress_replay: Arc::clone(&suppress_replay),
@@ -192,7 +193,7 @@ impl Conversation {
 
         // Store suppress_replay — released before the first prompt, not here,
         // because some agents (Gemini) continue replaying after load_session.
-        if is_handover {
+        if should_suppress_replay {
             *self.suppress_replay.lock().await = Some(suppress_replay);
         }
 
@@ -210,7 +211,7 @@ impl Conversation {
 
         if let Some(session_id) = resume_session_id.or(ready.startup_session_id) {
             *self.session_id.lock().await = Some(session_id.clone());
-            let source = if is_handover {
+            let source = if is_resume {
                 SessionStartSource::Pickup
             } else {
                 SessionStartSource::StartupSession
