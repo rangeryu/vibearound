@@ -174,14 +174,14 @@ export function ChatView({ onStatusChange, onOpenAppSidebar }: ChatViewProps) {
   ) : (
     <Wifi className="h-3.5 w-3.5" />
   );
-  const sessionLabel =
+  const headerSessionLabel =
     sessionSelection.kind === "new"
-      ? t("New chat")
+      ? null
       : selectedLaunchSession
         ? selectedLaunchSession.title
         : meta.sessionId
           ? t("Current session")
-          : t("New chat");
+          : null;
   const routeLabel =
     selectedProfileId && selectedProfile
       ? t("{{agent}} / {{profile}}", {
@@ -534,14 +534,18 @@ export function ChatView({ onStatusChange, onOpenAppSidebar }: ChatViewProps) {
               <div className="truncate text-sm font-medium text-foreground">
                 {routeLabel}
               </div>
-              <div className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground/60">
-                <span className="truncate">{sessionLabel}</span>
-                {meta.sessionId && (
-                  <span className="truncate text-muted-foreground/40">
-                    {meta.sessionId.slice(0, 8)}
-                  </span>
-                )}
-              </div>
+              {(headerSessionLabel || meta.sessionId) && (
+                <div className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground/60">
+                  {headerSessionLabel && (
+                    <span className="truncate">{headerSessionLabel}</span>
+                  )}
+                  {meta.sessionId && (
+                    <span className="truncate text-muted-foreground/40">
+                      {meta.sessionId.slice(0, 8)}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
