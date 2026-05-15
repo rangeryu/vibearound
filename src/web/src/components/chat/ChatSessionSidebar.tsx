@@ -1,6 +1,15 @@
 "use client";
 
-import { Check, Folder, Loader2, MessageSquare, PlusCircle } from "lucide-react";
+import { useState } from "react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  Loader2,
+  MessageSquare,
+  PlusCircle,
+} from "lucide-react";
 import type { LaunchSessionInfo } from "@va/client";
 import { useI18n } from "@va/i18n";
 
@@ -46,7 +55,15 @@ export function ChatSessionSidebar({
   onSessionChange,
 }: ChatSessionSidebarProps) {
   const { t } = useI18n();
+  const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Record<string, boolean>>({});
   const newIsActive = sessionSelection.kind === "new" || sessionSelection.kind === "current";
+
+  const toggleWorkspace = (workspace: string) => {
+    setCollapsedWorkspaces((prev) => ({
+      ...prev,
+      [workspace]: !prev[workspace],
+    }));
+  };
 
   return (
     <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-border bg-muted/20 md:flex">
@@ -91,54 +108,82 @@ export function ChatSessionSidebar({
               <div className="px-2 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
                 {t("Projects")}
               </div>
-              {workspaceGroups.map((group) => (
-                <section key={group.workspace}>
-                  <div
-                    className="mb-1.5 flex min-w-0 items-center gap-2 px-2 text-xs font-medium text-foreground/75"
-                    title={group.workspace}
-                  >
-                    <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{workspaceLabel(group.workspace)}</span>
-                  </div>
-                  {group.sessions.length === 0 ? (
-                    <div className="px-7 py-1 text-xs text-muted-foreground/45">
-                      {t("No chats")}
-                    </div>
-                  ) : (
-                    <div className="space-y-1 pl-5">
-                      {group.sessions.map((session) => {
-                        const active =
-                          sessionSelection.kind === "resume" &&
-                          sessionSelection.sessionId === session.session_id;
-                        return (
-                          <button
-                            key={session.session_id}
-                            type="button"
-                            className={sessionButtonClass(active)}
-                            onClick={() =>
-                              onSessionChange({
-                                kind: "resume",
-                                sessionId: session.session_id,
-                              })
-                            }
-                          >
-                            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-foreground/90">
-                                {session.title}
-                              </span>
-                              <span className="block truncate text-[11px] leading-4 text-muted-foreground">
-                                {session.short_id} - {formatSessionUpdatedAt(session.updated_at)}
-                              </span>
-                            </span>
-                            {active && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              ))}
+              {workspaceGroups.map((group) => {
+                const collapsed = collapsedWorkspaces[group.workspace] ?? false;
+                const workspaceName = workspaceLabel(group.workspace);
+                return (
+                  <section key={group.workspace}>
+                    <button
+                      type="button"
+                      className="mb-1.5 flex w-full min-w-0 items-start gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
+                      title={group.workspace}
+                      aria-expanded={!collapsed}
+                      aria-label={
+                        collapsed
+                          ? t("Expand workspace {{workspace}}", { workspace: workspaceName })
+                          : t("Collapse workspace {{workspace}}", { workspace: workspaceName })
+                      }
+                      onClick={() => toggleWorkspace(group.workspace)}
+                    >
+                      {collapsed ? (
+                        <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                      ) : (
+                        <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                      )}
+                      <Folder className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-medium text-foreground/75">
+                          {workspaceName}
+                        </span>
+                        <span className="block truncate text-[10px] leading-4 text-muted-foreground/45">
+                          {group.workspace}
+                        </span>
+                      </span>
+                    </button>
+                    {!collapsed &&
+                      (group.sessions.length === 0 ? (
+                        <div className="px-7 py-1 text-xs text-muted-foreground/45">
+                          {t("No chats")}
+                        </div>
+                      ) : (
+                        <div className="space-y-1 pl-5">
+                          {group.sessions.map((session) => {
+                            const active =
+                              sessionSelection.kind === "resume" &&
+                              sessionSelection.sessionId === session.session_id;
+                            return (
+                              <button
+                                key={session.session_id}
+                                type="button"
+                                className={sessionButtonClass(active)}
+                                onClick={() =>
+                                  onSessionChange({
+                                    kind: "resume",
+                                    sessionId: session.session_id,
+                                  })
+                                }
+                              >
+                                <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-foreground/90">
+                                    {session.title}
+                                  </span>
+                                  <span className="block truncate text-[11px] leading-4 text-muted-foreground">
+                                    {session.short_id} -{" "}
+                                    {formatSessionUpdatedAt(session.updated_at)}
+                                  </span>
+                                </span>
+                                {active && (
+                                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                  </section>
+                );
+              })}
             </div>
           )}
         </div>
