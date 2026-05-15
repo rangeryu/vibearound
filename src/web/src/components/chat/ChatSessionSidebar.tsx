@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Folder,
   Loader2,
-  MessageSquare,
   PlusCircle,
 } from "lucide-react";
 import type { AgentInfo, LaunchSessionInfo, WorkspaceItem } from "@va/client";
@@ -225,7 +224,6 @@ export function ChatSessionSidebar({
                                     )
                                   }
                                 >
-                                  <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                                   <span className="min-w-0 flex-1">
                                     <span className="block truncate text-foreground/90">
                                       {session.title}

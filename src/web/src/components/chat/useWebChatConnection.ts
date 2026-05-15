@@ -32,7 +32,7 @@ import {
 } from "./chatMessageUpdates";
 
 interface UseWebChatConnectionOptions {
-  onAgentSelected?: (agentId: string) => void;
+  onAgentSelected?: (agentId: string, source: "config" | "system") => void;
 }
 
 interface SendChatMessageRequest {
@@ -95,7 +95,7 @@ export function useWebChatConnection({
         case "config": {
           setAgents(parsed.agents);
           setMeta((prev) => ({ ...prev, channelId: parsed.channel_id }));
-          onAgentSelected?.(parsed.default_agent);
+          onAgentSelected?.(parsed.default_agent, "config");
           break;
         }
         case "agent_ready": {
@@ -114,7 +114,7 @@ export function useWebChatConnection({
           appendStandaloneAssistant(parsed.text);
           const agentId = switchedAgentId(parsed.text);
           if (agentId) {
-            onAgentSelected?.(agentId);
+            onAgentSelected?.(agentId, "system");
             setMeta((prev) => ({
               ...prev,
               agentName: undefined,

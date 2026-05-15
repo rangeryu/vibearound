@@ -26,14 +26,58 @@ interface ChatViewProps {
   onStatusChange?: (status: ChatRuntimeStatus) => void;
 }
 
+const DIRECT_PROFILE_ID = "direct";
+const LAUNCH_SELECTION_STORAGE_KEY = "vibearound.webChat.launchSelection";
+
+interface StoredLaunchSelection {
+  agentId?: string;
+  profileId?: string;
+}
+
+function readStoredLaunchSelection(): StoredLaunchSelection {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LAUNCH_SELECTION_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as StoredLaunchSelection;
+    return {
+      agentId: typeof parsed.agentId === "string" ? parsed.agentId : undefined,
+      profileId: typeof parsed.profileId === "string" ? parsed.profileId : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredLaunchSelection(selection: Required<StoredLaunchSelection>) {
+  try {
+    window.localStorage.setItem(LAUNCH_SELECTION_STORAGE_KEY, JSON.stringify(selection));
+  } catch {
+    // Ignore storage failures; the picker still works for this session.
+  }
+}
+
+function profileTargetsAgent(profile: ProfileLaunchOption, agentId: string) {
+  return profile.launch_targets.some((target) => target.id === agentId);
+}
+
 export function ChatView({ onStatusChange }: ChatViewProps) {
   const { t } = useI18n();
+  const [storedLaunchSelection] = useState(readStoredLaunchSelection);
   const [input, setInput] = useState("");
-  const [selectedAgent, setSelectedAgent] = useState<string>("claude");
+  const [selectedAgent, setSelectedAgent] = useState<string>(
+    storedLaunchSelection.agentId ?? "claude",
+  );
   const [sidebarAgentFilter, setSidebarAgentFilter] = useState<string | undefined>();
   const [profiles, setProfiles] = useState<ProfileLaunchOption[]>([]);
   const [profileSelections, setProfileSelections] = useState<Record<string, string | undefined>>(
-    {},
+    () =>
+      storedLaunchSelection.agentId
+        ? {
+            [storedLaunchSelection.agentId]:
+              storedLaunchSelection.profileId ?? DIRECT_PROFILE_ID,
+          }
+        : {},
   );
   const [launchSessionGroups, setLaunchSessionGroups] = useState<ChatSessionWorkspaceGroup[]>(
     [],
@@ -52,9 +96,13 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   >({});
   const [showSessionSidebar, setShowSessionSidebar] = useState(true);
 
-  const handleSocketAgentSelected = useCallback((agentId: string) => {
-    setSelectedAgent(agentId);
-  }, []);
+  const handleSocketAgentSelected = useCallback(
+    (agentId: string, source: "config" | "system") => {
+      if (source === "config" && storedLaunchSelection.agentId) return;
+      setSelectedAgent(agentId);
+    },
+    [storedLaunchSelection.agentId],
+  );
 
   const {
     messages,
@@ -79,7 +127,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   );
   const selectedAgentInfo = agents.find((agent) => agent.id === selectedAgent);
   const agentLabel = selectedAgentInfo?.name ?? getAgentDisplayName(selectedAgent);
-  const selectedProfileId = profileSelections[selectedAgent];
+  const selectedProfileId = profileSelections[selectedAgent] ?? DIRECT_PROFILE_ID;
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
   const selectedWorkspace = workspaces.find(
     (workspace) => workspace.path === selectedWorkspacePath,
@@ -137,6 +185,38 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   useEffect(() => {
     onStatusChange?.(chatStatus);
   }, [chatStatus, onStatusChange]);
+
+  useEffect(() => {
+    if (!selectedAgent) return;
+    setProfileSelections((prev) =>
+      prev[selectedAgent] === undefined
+        ? { ...prev, [selectedAgent]: DIRECT_PROFILE_ID }
+        : prev,
+    );
+  }, [selectedAgent]);
+
+  useEffect(() => {
+    if (!selectedAgent || profiles.length === 0) return;
+    const profileId = profileSelections[selectedAgent] ?? DIRECT_PROFILE_ID;
+    if (profileId === DIRECT_PROFILE_ID) return;
+    const profile = profiles.find((item) => item.id === profileId);
+    if (profile && profileTargetsAgent(profile, selectedAgent)) return;
+    setProfileSelections((prev) => ({ ...prev, [selectedAgent]: DIRECT_PROFILE_ID }));
+  }, [profiles, profileSelections, selectedAgent]);
+
+  useEffect(() => {
+    if (!selectedAgent) return;
+    writeStoredLaunchSelection({
+      agentId: selectedAgent,
+      profileId: profileSelections[selectedAgent] ?? DIRECT_PROFILE_ID,
+    });
+  }, [profileSelections, selectedAgent]);
+
+  useEffect(() => {
+    if (agents.length === 0) return;
+    if (agents.some((agent) => agent.id === selectedAgent)) return;
+    setSelectedAgent(agents[0]?.id ?? selectedAgent);
+  }, [agents, selectedAgent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -272,13 +352,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   const handleLaunchChange = useCallback((agentId: string, profileId?: string) => {
     setSelectedAgent(agentId);
     setProfileSelections((prev) => {
-      const next = { ...prev };
-      if (profileId === undefined) {
-        delete next[agentId];
-      } else {
-        next[agentId] = profileId;
-      }
-      return next;
+      return { ...prev, [agentId]: profileId ?? DIRECT_PROFILE_ID };
     });
   }, []);
 
@@ -330,7 +404,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
       setSelectedWorkspacePath(launchSession.workspace);
       resumeSession({
         agentId: sidebarAgentId,
-        profileId: profileSelections[sidebarAgentId],
+        profileId: profileSelections[sidebarAgentId] ?? DIRECT_PROFILE_ID,
         launchSession,
       });
     },

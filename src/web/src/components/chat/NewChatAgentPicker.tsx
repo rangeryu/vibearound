@@ -45,7 +45,7 @@ export function NewChatAgentPicker({
       selectedProfileId === DIRECT_PROFILE_ID ||
       nextAgentProfiles.some(({ profile }) => profile.id === selectedProfileId)
         ? selectedProfileId
-        : undefined;
+        : DIRECT_PROFILE_ID;
     onLaunchChange(agent.id, nextProfileId);
   };
 
@@ -109,32 +109,6 @@ export function NewChatAgentPicker({
                 {selectedAgentName}
               </div>
             </div>
-            <button
-              type="button"
-              className={cn(
-                "mb-3 flex w-full min-w-0 items-center gap-2 rounded-md border px-3 py-2.5 text-left transition-colors",
-                selectedProfileId === undefined
-                  ? "border-primary/50 bg-primary/5 text-foreground"
-                  : "border-border bg-background/70 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-              )}
-              aria-pressed={selectedProfileId === undefined}
-              onClick={() => onLaunchChange(selectedAgentId, undefined)}
-            >
-              <BrandIcon
-                kind="cli"
-                id={selectedAgentId}
-                label={selectedAgentName}
-                className="h-4 w-4"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-medium">
-                  {t("Use default")}
-                </span>
-                <span className="block truncate text-[11px] leading-4 text-muted-foreground/70">
-                  {t("Agent default route")}
-                </span>
-              </span>
-            </button>
             <div className="mb-2 px-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/50">
               {t("Profiles")}
             </div>

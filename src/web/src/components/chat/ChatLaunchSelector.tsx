@@ -53,8 +53,9 @@ export function ChatLaunchSelector({
   const accentColor = getToolTheme(targetTool, appTheme).accent;
   const currentAgentId = selectedAgentId ?? targetTool;
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
+  const activeProfileId = selectedProfileId ?? DIRECT_PROFILE_ID;
   const selectedRouteLabel =
-    selectedProfileId === DIRECT_PROFILE_ID
+    activeProfileId === DIRECT_PROFILE_ID
       ? t("{{agent}} / Direct", { agent: targetLabel })
       : selectedProfile
         ? t("{{agent}} / {{profile}}", { agent: targetLabel, profile: selectedProfile.label })
@@ -109,23 +110,6 @@ export function ChatLaunchSelector({
         align="start"
         className="max-h-[18rem] min-w-[210px] max-w-[min(22rem,calc(100vw-1rem))] overflow-y-auto p-0.5 text-xs"
       >
-        <DropdownMenuItem
-          className={COMPACT_MENU_ITEM}
-          onClick={() => chooseLaunch(currentAgentId, undefined)}
-        >
-          <div className="min-w-0">
-            <div className="truncate text-xs">{t("Use configured default")}</div>
-            <div className="truncate text-[11px] leading-4 text-muted-foreground">
-              {targetLabel}
-            </div>
-          </div>
-          {!selectedProfileId && (
-            <span className="ml-auto text-[11px] text-muted-foreground">
-              {t("current")}
-            </span>
-          )}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator className={COMPACT_SEPARATOR} />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className={COMPACT_SUB_TRIGGER}>
             {t("Launch without profile")}
@@ -138,7 +122,7 @@ export function ChatLaunchSelector({
                 className={`flex items-center justify-between ${COMPACT_MENU_ITEM}`}
               >
                 <span className="truncate">{agent.name}</span>
-                {currentAgentId === agent.id && selectedProfileId === DIRECT_PROFILE_ID && (
+                {currentAgentId === agent.id && activeProfileId === DIRECT_PROFILE_ID && (
                   <span className="text-[11px] text-muted-foreground">{t("current")}</span>
                 )}
               </DropdownMenuItem>
@@ -167,7 +151,7 @@ export function ChatLaunchSelector({
                         ? t("{{profile}} (proxy)", { profile: profile.label })
                         : profile.label}
                     </span>
-                    {currentAgentId === agent.id && selectedProfileId === profile.id && (
+                    {currentAgentId === agent.id && activeProfileId === profile.id && (
                       <span className="text-[11px] text-muted-foreground">{t("current")}</span>
                     )}
                   </DropdownMenuItem>
@@ -180,7 +164,7 @@ export function ChatLaunchSelector({
           agents.map((agent) => (
             <DropdownMenuItem
               key={agent.id}
-              onClick={() => chooseLaunch(agent.id, undefined)}
+              onClick={() => chooseLaunch(agent.id, DIRECT_PROFILE_ID)}
               className={`flex items-center justify-between ${COMPACT_MENU_ITEM}`}
             >
               <span className="truncate">{agent.name}</span>
