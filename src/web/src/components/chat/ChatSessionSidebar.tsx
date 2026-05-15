@@ -92,12 +92,6 @@ export function ChatSessionSidebar({
 
   return (
     <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-border bg-muted/20 md:flex">
-      <div className="border-b border-border/60 px-3 py-2.5">
-        <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
-          {t("Chats")}
-        </div>
-      </div>
-
       <div className="min-h-0 flex-1 overflow-y-auto p-2 scrollbar-thin">
         <div className="space-y-1">
           <button
