@@ -52,67 +52,70 @@ export function ChatMessageList({ messages, streaming, agentLabel }: ChatMessage
 
   return (
     <Conversation className="flex-1">
-      <ConversationContent className="mx-auto w-full max-w-4xl gap-4 px-4 py-5">
-        {messages.length === 0 ? (
-          <ConversationEmptyState
-            title={t("Chat with {{agent}}", { agent: agentLabel })}
-            description={t("Send a message to start.")}
-            icon={
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-                <Bot className="h-7 w-7 text-muted-foreground" />
-              </div>
-            }
-          />
-        ) : (
-          messages.map((msg, i) => (
-            <Message key={i} from={msg.role}>
-              <MessageContent
-                className={
-                  msg.role === "user"
-                    ? "rounded-lg bg-primary/15 px-4 py-3 text-foreground"
-                    : msg.mode === "standalone"
-                      ? "rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-muted-foreground"
-                      : "rounded-lg bg-muted/50 px-4 py-3 text-foreground"
-                }
-              >
-                {msg.role === "user" ? (
-                  <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                ) : msg.mode === "standalone" ? (
-                  <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
-                ) : (
-                  <>
-                    {streaming &&
-                      i === messages.length - 1 &&
-                      !msg.content &&
-                      !msg.progress &&
-                      !msg.activities?.length && (
-                        <span className="text-xs text-primary/80 font-mono animate-pulse">
-                          {t("AI is working…")}
+      <ConversationContent className="px-4 py-5">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+          {messages.length === 0 ? (
+            <ConversationEmptyState
+              title={t("Chat with {{agent}}", { agent: agentLabel })}
+              description={t("Send a message to start.")}
+              className="min-h-[50vh]"
+              icon={
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <Bot className="h-7 w-7 text-muted-foreground" />
+                </div>
+              }
+            />
+          ) : (
+            messages.map((msg, i) => (
+              <Message key={i} from={msg.role}>
+                <MessageContent
+                  className={
+                    msg.role === "user"
+                      ? "max-w-[85%] rounded-lg bg-muted px-4 py-3 text-foreground sm:max-w-[34rem]"
+                      : msg.mode === "standalone"
+                        ? "w-full px-0 py-1 text-muted-foreground"
+                        : "w-full px-0 py-1 text-foreground"
+                  }
+                >
+                  {msg.role === "user" ? (
+                    <p className="whitespace-pre-wrap text-sm leading-6">{msg.content}</p>
+                  ) : msg.mode === "standalone" ? (
+                    <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
+                  ) : (
+                    <>
+                      {streaming &&
+                        i === messages.length - 1 &&
+                        !msg.content &&
+                        !msg.progress &&
+                        !msg.activities?.length && (
+                          <span className="font-mono text-xs text-primary/80 animate-pulse">
+                            {t("AI is working…")}
+                          </span>
+                        )}
+                      {msg.activities?.length ? (
+                        <ChatActivityList
+                          activities={msg.activities}
+                          hasContent={Boolean(msg.content)}
+                        />
+                      ) : null}
+                      {msg.content && (
+                        <MessageResponse
+                          content={msg.content}
+                          isStreaming={streaming && i === messages.length - 1}
+                        />
+                      )}
+                      {msg.progress && (
+                        <span className="font-mono text-xs text-muted-foreground/60 animate-pulse">
+                          {msg.progress}
                         </span>
                       )}
-                    {msg.activities?.length ? (
-                      <ChatActivityList
-                        activities={msg.activities}
-                        hasContent={Boolean(msg.content)}
-                      />
-                    ) : null}
-                    {msg.content && (
-                      <MessageResponse
-                        content={msg.content}
-                        isStreaming={streaming && i === messages.length - 1}
-                      />
-                    )}
-                    {msg.progress && (
-                      <span className="text-xs text-muted-foreground/60 font-mono animate-pulse">
-                        {msg.progress}
-                      </span>
-                    )}
-                  </>
-                )}
-              </MessageContent>
-            </Message>
-          ))
-        )}
+                    </>
+                  )}
+                </MessageContent>
+              </Message>
+            ))
+          )}
+        </div>
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>

@@ -95,7 +95,7 @@ export function ChatInput({
     <div
       data-slot="chat-input"
       className={cn(
-        variant === "hero" ? "bg-transparent p-0" : "border-t border-border bg-background p-4",
+        variant === "hero" ? "bg-transparent p-0" : "bg-background px-4 pb-4 pt-2",
         className,
       )}
     >
