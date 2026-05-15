@@ -16,7 +16,7 @@ const LazyMessageResponse = React.lazy(() =>
 
 function PlainTextFallback({ content, className }: MessageResponseProps) {
   return (
-    <p className={`whitespace-pre-wrap text-sm leading-7 ${className ?? ""}`}>
+    <p className={`whitespace-pre-wrap text-sm leading-8 ${className ?? ""}`}>
       {content}
     </p>
   );
