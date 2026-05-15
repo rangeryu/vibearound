@@ -10,14 +10,14 @@ import {
   MessageSquare,
   PlusCircle,
 } from "lucide-react";
-import type { LaunchSessionInfo } from "@va/client";
+import type { LaunchSessionInfo, WorkspaceItem } from "@va/client";
 import { useI18n } from "@va/i18n";
 
 import { cn } from "@/lib/utils";
 import type { ChatSessionSelection } from "./chatTypes";
 
 export interface ChatSessionWorkspaceGroup {
-  workspace: string;
+  workspace: WorkspaceItem;
   sessions: LaunchSessionInfo[];
 }
 
@@ -109,21 +109,22 @@ export function ChatSessionSidebar({
                 {t("Projects")}
               </div>
               {workspaceGroups.map((group) => {
-                const collapsed = collapsedWorkspaces[group.workspace] ?? false;
-                const workspaceName = workspaceLabel(group.workspace);
+                const workspacePath = group.workspace.path;
+                const collapsed = collapsedWorkspaces[workspacePath] ?? false;
+                const workspaceName = workspaceLabel(workspacePath);
                 return (
-                  <section key={group.workspace}>
+                  <section key={workspacePath}>
                     <button
                       type="button"
                       className="mb-1.5 flex w-full min-w-0 items-start gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
-                      title={group.workspace}
+                      title={workspacePath}
                       aria-expanded={!collapsed}
                       aria-label={
                         collapsed
                           ? t("Expand workspace {{workspace}}", { workspace: workspaceName })
                           : t("Collapse workspace {{workspace}}", { workspace: workspaceName })
                       }
-                      onClick={() => toggleWorkspace(group.workspace)}
+                      onClick={() => toggleWorkspace(workspacePath)}
                     >
                       {collapsed ? (
                         <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
@@ -136,7 +137,7 @@ export function ChatSessionSidebar({
                           {workspaceName}
                         </span>
                         <span className="block truncate text-[10px] leading-4 text-muted-foreground/45">
-                          {group.workspace}
+                          {workspacePath}
                         </span>
                       </span>
                     </button>

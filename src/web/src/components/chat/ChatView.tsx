@@ -5,7 +5,7 @@ import { Bot, Loader2, PanelLeftClose, PanelLeftOpen, Wifi, WifiOff } from "luci
 import { getLaunchSessions, getProfiles, getWorkspaces } from "@/api/sessions";
 import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
 import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
-import type { ProfileLaunchOption } from "@va/client";
+import type { ProfileLaunchOption, WorkspaceItem } from "@va/client";
 import { useI18n } from "@va/i18n";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,8 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   const [launchSessionGroups, setLaunchSessionGroups] = useState<ChatSessionWorkspaceGroup[]>(
     [],
   );
+  const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
+  const [workspacesLoading, setWorkspacesLoading] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionSelections, setSessionSelections] = useState<Record<string, ChatSessionSelection>>(
     {},
@@ -113,10 +115,33 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
         })
       : agentLabel;
   const showNewChatHome = messages.length === 0 && sessionSelection.kind !== "resume";
+  const sidebarSessionsLoading = workspacesLoading || sessionsLoading;
 
   useEffect(() => {
     onStatusChange?.(chatStatus);
   }, [chatStatus, onStatusChange]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWorkspacesLoading(true);
+    void getWorkspaces()
+      .then(({ workspaces }) => {
+        if (!cancelled) setWorkspaces(workspaces);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn("[ChatView] failed to load workspaces:", error);
+          setWorkspaces([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setWorkspacesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -142,17 +167,37 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
       setSessionsLoading(false);
       return;
     }
+    if (workspacesLoading) {
+      setLaunchSessionGroups([]);
+      setSessionsLoading(false);
+      return;
+    }
+    if (workspaces.length === 0) {
+      setLaunchSessionGroups([]);
+      setSessionsLoading(false);
+      return;
+    }
 
     let cancelled = false;
     setSessionsLoading(true);
     setLaunchSessionGroups([]);
     void (async () => {
-      const { workspaces } = await getWorkspaces();
       return Promise.all(
-        workspaces.map(async (workspace) => ({
-          workspace: workspace.path,
-          sessions: await getLaunchSessions(selectedAgent, false, workspace.path),
-        })),
+        workspaces.map(async (workspace) => {
+          try {
+            return {
+              workspace,
+              sessions: await getLaunchSessions(selectedAgent, false, workspace.path),
+            };
+          } catch (error) {
+            console.warn(
+              "[ChatView] failed to load launch sessions for workspace:",
+              workspace.path,
+              error,
+            );
+            return { workspace, sessions: [] };
+          }
+        }),
       );
     })()
       .then((groups) => {
@@ -183,7 +228,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [selectedAgent]);
+  }, [selectedAgent, workspaces, workspacesLoading]);
 
   const handleLaunchChange = useCallback((agentId: string, profileId?: string) => {
     setSelectedAgent(agentId);
@@ -256,7 +301,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
       {showSessionSidebar && (
         <ChatSessionSidebar
           workspaceGroups={launchSessionGroups}
-          sessionsLoading={sessionsLoading}
+          sessionsLoading={sidebarSessionsLoading}
           sessionSelection={sessionSelection}
           onSessionChange={handleSessionChange}
         />
