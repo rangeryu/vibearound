@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, Loader2, PanelLeftClose, PanelLeftOpen, Wifi, WifiOff } from "lucide-react";
-import { getLaunchSessions, getProfiles, getWorkspaces } from "@/api/sessions";
+import { createWorkspace, getLaunchSessions, getProfiles, getWorkspaces } from "@/api/sessions";
 import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
 import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
 import type { ProfileLaunchOption, WorkspaceItem } from "@va/client";
@@ -40,6 +40,8 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | undefined>();
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
+  const [workspaceCreating, setWorkspaceCreating] = useState(false);
+  const [workspaceCreateError, setWorkspaceCreateError] = useState<string | undefined>();
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionSelections, setSessionSelections] = useState<Record<string, ChatSessionSelection>>(
     {},
@@ -258,6 +260,21 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
     });
   }, []);
 
+  const handleCreateWorkspace = useCallback(async (name: string) => {
+    setWorkspaceCreating(true);
+    setWorkspaceCreateError(undefined);
+    try {
+      const response = await createWorkspace(name);
+      setWorkspaces(response.workspaces);
+      setSelectedWorkspacePath(response.workspace.path);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWorkspaceCreateError(message);
+    } finally {
+      setWorkspaceCreating(false);
+    }
+  }, []);
+
   const handleSessionChange = useCallback(
     (selection: ChatSessionSelection) => {
       setSessionSelections((prev) => ({ ...prev, [selectedAgent]: selection }));
@@ -392,7 +409,10 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
                 workspaces={workspaces}
                 selectedWorkspacePath={selectedWorkspace?.path}
                 loading={workspacesLoading}
+                creating={workspaceCreating}
+                createError={workspaceCreateError}
                 onWorkspaceChange={setSelectedWorkspacePath}
+                onCreateWorkspace={handleCreateWorkspace}
               />
               <ChatInput
                 value={input}

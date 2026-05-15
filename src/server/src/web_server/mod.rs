@@ -230,6 +230,10 @@ pub async fn run_web_server(
             get(api::list_workspaces_handler).post(api::add_workspace_handler),
         )
         .route(
+            "/api/workspaces/create",
+            post(api::create_workspace_handler),
+        )
+        .route(
             "/api/workspaces/remove",
             post(api::remove_workspace_handler),
         )

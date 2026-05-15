@@ -9,6 +9,7 @@ import {
   ProfileLaunchOptionsSchema,
   SessionListSchema,
   TmuxSessionsResponseSchema,
+  WorkspaceItemSchema,
   WorkspacesResponseSchema,
   type CreateSessionResponse,
   type LaunchSessionInfo,
@@ -44,6 +45,14 @@ export interface CreateSessionBody {
   rows?: number;
 }
 
+const CreateWorkspaceResponseSchema = WorkspacesResponseSchema.extend({
+  workspace: WorkspaceItemSchema,
+});
+
+export type CreateWorkspaceResponse = WorkspacesResponse & {
+  workspace: WorkspaceItem;
+};
+
 export async function getSessions(): Promise<SessionListItem[]> {
   const res = await fetch(`${browserBaseUrl()}/api/sessions`);
   if (!res.ok) throw new Error(`GET /api/sessions: ${res.status}`);
@@ -60,6 +69,19 @@ export async function getWorkspaces(): Promise<WorkspacesResponse> {
   const res = await fetch(`${browserBaseUrl()}/api/workspaces`);
   if (!res.ok) throw new Error(`GET /api/workspaces: ${res.status}`);
   return WorkspacesResponseSchema.parse(await res.json());
+}
+
+export async function createWorkspace(name: string): Promise<CreateWorkspaceResponse> {
+  const res = await fetch(`${browserBaseUrl()}/api/workspaces/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`POST /api/workspaces/create: ${res.status} ${text}`);
+  }
+  return CreateWorkspaceResponseSchema.parse(await res.json());
 }
 
 export async function getLaunchSessions(

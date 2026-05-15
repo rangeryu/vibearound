@@ -394,7 +394,9 @@ enum WebChatSessionIntent {
         session_id: String,
         cwd: Option<String>,
     },
-    New { cwd: Option<String> },
+    New {
+        cwd: Option<String>,
+    },
 }
 
 fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {

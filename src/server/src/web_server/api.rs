@@ -21,4 +21,7 @@ pub use sessions::{
     create_session_handler, delete_session_handler, list_launch_sessions_handler,
     list_sessions_handler, list_tmux_sessions_handler,
 };
-pub use workspaces::{add_workspace_handler, list_workspaces_handler, remove_workspace_handler};
+pub use workspaces::{
+    add_workspace_handler, create_workspace_handler, list_workspaces_handler,
+    remove_workspace_handler,
+};

@@ -133,7 +133,8 @@ impl ConversationManager {
         workspace: Option<String>,
     ) -> anyhow::Result<String> {
         let conv = self.get_or_create(route.clone());
-        conv.select_launch_route(agent_kind, profile, workspace).await
+        conv.select_launch_route(agent_kind, profile, workspace)
+            .await
     }
 
     /// Reset session on a route (new conversation thread, same agent).

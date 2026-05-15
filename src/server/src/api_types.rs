@@ -220,6 +220,14 @@ pub struct WorkspacesResponse {
     pub default_workspace: String,
 }
 
+/// `POST /api/workspaces/create` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateWorkspaceResponse {
+    pub workspace: WorkspaceItem,
+    pub workspaces: Vec<WorkspaceItem>,
+    pub default_workspace: String,
+}
+
 /// `GET /api/previews` response.
 #[derive(Debug, Clone, Serialize)]
 pub struct PreviewsResponse {
