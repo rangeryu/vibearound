@@ -88,12 +88,12 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   );
   const sessionLabel =
     sessionSelection.kind === "new"
-      ? t("New session")
+      ? t("New chat")
       : selectedLaunchSession
         ? selectedLaunchSession.title
         : meta.sessionId
           ? t("Current session")
-          : t("New session");
+          : t("New chat");
   const routeLabel =
     selectedProfileId && selectedProfile
       ? t("{{agent}} / {{profile}}", {
