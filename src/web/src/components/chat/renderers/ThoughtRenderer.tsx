@@ -1,22 +1,34 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import { useI18n } from "@va/i18n";
+import { ContentBlockRenderer } from "./ContentBlockRenderer";
 import type { ChatThoughtPart } from "../chatTypes";
 
 export function ThoughtRenderer({ part }: { part: ChatThoughtPart }) {
   const { t } = useI18n();
-  const text = part.blocks
-    .map((block) => (block.type === "text" ? block.text : ""))
-    .join("");
+  const hasContent = part.blocks.some(
+    (block) => block.type !== "text" || block.text.trim(),
+  );
 
-  if (!text.trim()) return null;
+  if (!hasContent) return null;
 
   return (
     <details className="rounded-md border border-border/60 bg-muted/15 px-3 py-2 text-muted-foreground">
-      <summary className="cursor-pointer font-mono text-xs uppercase">
+      <summary className="flex cursor-pointer items-center gap-2 font-mono text-xs uppercase">
+        {part.active && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
         {t("Thinking")}
       </summary>
-      <p className="mt-2 whitespace-pre-wrap text-xs leading-5">{text}</p>
+      <div className="mt-2 space-y-2">
+        {part.blocks.map((block, index) => (
+          <ContentBlockRenderer
+            key={`${block.type}-${index}`}
+            block={block}
+            role="assistant"
+            isStreaming={part.active && index === part.blocks.length - 1}
+          />
+        ))}
+      </div>
     </details>
   );
 }
