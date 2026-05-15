@@ -16,6 +16,8 @@ import { useI18n } from "@va/i18n";
 import { cn } from "@/lib/utils";
 import type { ChatSessionSelection } from "./chatTypes";
 
+const SESSION_PREVIEW_LIMIT = 5;
+
 export interface ChatSessionWorkspaceGroup {
   workspace: WorkspaceItem;
   sessions: LaunchSessionInfo[];
@@ -39,6 +41,14 @@ function workspaceLabel(workspace: string) {
   return parts[parts.length - 1] ?? workspace;
 }
 
+function sortSessionsByUpdatedAt(sessions: LaunchSessionInfo[]) {
+  return [...sessions].sort((a, b) => {
+    const updatedDiff = b.updated_at - a.updated_at;
+    if (updatedDiff !== 0) return updatedDiff;
+    return b.session_id.localeCompare(a.session_id);
+  });
+}
+
 function sessionButtonClass(active: boolean) {
   return cn(
     "group flex w-full items-start gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors",
@@ -56,10 +66,18 @@ export function ChatSessionSidebar({
 }: ChatSessionSidebarProps) {
   const { t } = useI18n();
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Record<string, boolean>>({});
+  const [expandedSessionLists, setExpandedSessionLists] = useState<Record<string, boolean>>({});
   const newIsActive = sessionSelection.kind === "new" || sessionSelection.kind === "current";
 
   const toggleWorkspace = (workspace: string) => {
     setCollapsedWorkspaces((prev) => ({
+      ...prev,
+      [workspace]: !prev[workspace],
+    }));
+  };
+
+  const toggleSessionList = (workspace: string) => {
+    setExpandedSessionLists((prev) => ({
       ...prev,
       [workspace]: !prev[workspace],
     }));
@@ -111,6 +129,15 @@ export function ChatSessionSidebar({
               {workspaceGroups.map((group) => {
                 const workspacePath = group.workspace.path;
                 const collapsed = collapsedWorkspaces[workspacePath] ?? false;
+                const sessionsExpanded = expandedSessionLists[workspacePath] ?? false;
+                const sortedSessions = sortSessionsByUpdatedAt(group.sessions);
+                const visibleSessions = sessionsExpanded
+                  ? sortedSessions
+                  : sortedSessions.slice(0, SESSION_PREVIEW_LIMIT);
+                const hiddenSessionCount = Math.max(
+                  sortedSessions.length - SESSION_PREVIEW_LIMIT,
+                  0,
+                );
                 const workspaceName = workspaceLabel(workspacePath);
                 return (
                   <section key={workspacePath}>
@@ -142,13 +169,9 @@ export function ChatSessionSidebar({
                       </span>
                     </button>
                     {!collapsed &&
-                      (group.sessions.length === 0 ? (
-                        <div className="px-7 py-1 text-xs text-muted-foreground/45">
-                          {t("No chats")}
-                        </div>
-                      ) : (
+                      sortedSessions.length > 0 && (
                         <div className="space-y-1 pl-5">
-                          {group.sessions.map((session) => {
+                          {visibleSessions.map((session) => {
                             const active =
                               sessionSelection.kind === "resume" &&
                               sessionSelection.sessionId === session.session_id;
@@ -180,8 +203,19 @@ export function ChatSessionSidebar({
                               </button>
                             );
                           })}
+                          {hiddenSessionCount > 0 && (
+                            <button
+                              type="button"
+                              className="w-full rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground/50 transition-colors hover:bg-muted/40 hover:text-muted-foreground"
+                              onClick={() => toggleSessionList(workspacePath)}
+                            >
+                              {sessionsExpanded
+                                ? t("Show less")
+                                : t("Show more {{count}}", { count: hiddenSessionCount })}
+                            </button>
+                          )}
                         </div>
-                      ))}
+                      )}
                   </section>
                 );
               })}
