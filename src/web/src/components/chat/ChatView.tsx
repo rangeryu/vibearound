@@ -5,7 +5,7 @@ import { Bot, Loader2, PanelLeftClose, PanelLeftOpen, Wifi, WifiOff } from "luci
 import { createWorkspace, getLaunchSessions, getProfiles, getWorkspaces } from "@/api/sessions";
 import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
 import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
-import type { ProfileLaunchOption, WorkspaceItem } from "@va/client";
+import type { LaunchSessionInfo, ProfileLaunchOption, WorkspaceItem } from "@va/client";
 import { useI18n } from "@va/i18n";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -47,6 +47,9 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   const [sessionSelections, setSessionSelections] = useState<Record<string, ChatSessionSelection>>(
     {},
   );
+  const [selectedLaunchSessions, setSelectedLaunchSessions] = useState<
+    Record<string, LaunchSessionInfo | undefined>
+  >({});
   const [showSessionSidebar, setShowSessionSidebar] = useState(true);
 
   const handleSocketAgentSelected = useCallback((agentId: string) => {
@@ -84,9 +87,12 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   const sessionSelection = sessionSelections[selectedAgent] ?? { kind: "current" };
   const sidebarSessionSelection = sessionSelections[sidebarAgentId] ?? { kind: "current" };
   const selectedLaunchSession =
-    sessionSelection.kind === "resume"
-      ? launchSessions.find((session) => session.session_id === sessionSelection.sessionId)
-      : undefined;
+    sessionSelection.kind === "resume" &&
+    selectedLaunchSessions[selectedAgent]?.session_id === sessionSelection.sessionId
+      ? selectedLaunchSessions[selectedAgent]
+      : sessionSelection.kind === "resume"
+        ? launchSessions.find((session) => session.session_id === sessionSelection.sessionId)
+        : undefined;
   const chatStatus: ChatRuntimeStatus =
     pendingPermissions.length > 0
       ? "attention"
@@ -296,19 +302,32 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   }, []);
 
   const handleSessionChange = useCallback(
-    (selection: ChatSessionSelection) => {
-      setSessionSelections((prev) => ({ ...prev, [sidebarAgentId]: selection }));
-      setSelectedAgent(sidebarAgentId);
+    (selection: ChatSessionSelection, session?: LaunchSessionInfo) => {
       if (selection.kind === "new") {
+        setSessionSelections((prev) => ({ ...prev, [sidebarAgentId]: selection }));
+        setSelectedLaunchSessions((prev) => {
+          const next = { ...prev };
+          delete next[sidebarAgentId];
+          return next;
+        });
+        setSelectedAgent(sidebarAgentId);
         clearConversationView();
         return;
       }
       if (selection.kind !== "resume") return;
 
-      const launchSession = launchSessions.find(
-        (session) => session.session_id === selection.sessionId,
+      const launchSession = session ?? launchSessions.find(
+        (item) => item.session_id === selection.sessionId,
       );
       if (!launchSession) return;
+
+      setSessionSelections((prev) => ({ ...prev, [sidebarAgentId]: selection }));
+      setSelectedLaunchSessions((prev) => ({
+        ...prev,
+        [sidebarAgentId]: launchSession,
+      }));
+      setSelectedAgent(sidebarAgentId);
+      setSelectedWorkspacePath(launchSession.workspace);
       resumeSession({
         agentId: sidebarAgentId,
         profileId: profileSelections[sidebarAgentId],

@@ -31,7 +31,7 @@ interface ChatSessionSidebarProps {
   sessionsLoading?: boolean;
   sessionSelection: ChatSessionSelection;
   onAgentFilterChange: (agentId: string) => void;
-  onSessionChange: (selection: ChatSessionSelection) => void;
+  onSessionChange: (selection: ChatSessionSelection, session?: LaunchSessionInfo) => void;
 }
 
 function formatSessionUpdatedAt(updatedAt: number) {
@@ -74,7 +74,6 @@ export function ChatSessionSidebar({
   const { t } = useI18n();
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Record<string, boolean>>({});
   const [expandedSessionLists, setExpandedSessionLists] = useState<Record<string, boolean>>({});
-  const newIsActive = sessionSelection.kind === "new" || sessionSelection.kind === "current";
 
   const toggleWorkspace = (workspace: string) => {
     setCollapsedWorkspaces((prev) => ({
@@ -96,7 +95,7 @@ export function ChatSessionSidebar({
         <div className="space-y-1">
           <button
             type="button"
-            className={sessionButtonClass(newIsActive)}
+            className={sessionButtonClass(false)}
             onClick={() => onSessionChange({ kind: "new" })}
           >
             <PlusCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -108,7 +107,6 @@ export function ChatSessionSidebar({
                 {t("Use the next message as a fresh chat")}
               </span>
             </span>
-            {newIsActive && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
           </button>
         </div>
 
@@ -222,10 +220,13 @@ export function ChatSessionSidebar({
                                   type="button"
                                   className={sessionButtonClass(active)}
                                   onClick={() =>
-                                    onSessionChange({
-                                      kind: "resume",
-                                      sessionId: session.session_id,
-                                    })
+                                    onSessionChange(
+                                      {
+                                        kind: "resume",
+                                        sessionId: session.session_id,
+                                      },
+                                      session,
+                                    )
                                   }
                                 >
                                   <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
