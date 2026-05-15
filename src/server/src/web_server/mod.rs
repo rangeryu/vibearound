@@ -159,6 +159,7 @@ pub async fn run_web_server(
     );
 
     let assets_dir = web_dist.join("assets");
+    let brand_dir = web_dist.join("brand");
     let preview_client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -306,6 +307,7 @@ pub async fn run_web_server(
         // Legacy markdown route (kept for backward compatibility).
         .route("/md-preview/{slug}", get(preview::md_preview_handler))
         .nest_service("/assets", ServeDir::new(assets_dir))
+        .nest_service("/brand", ServeDir::new(brand_dir))
         .fallback(any(spa_fallback_handler));
 
     // ALL VibeAround routes live under `/va/` — the root `/` namespace is
