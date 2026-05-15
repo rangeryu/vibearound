@@ -16,6 +16,7 @@ import {
 } from "./ChatSessionSidebar";
 import { ChatMessageList } from "./ChatMessageList";
 import { NewChatHome } from "./NewChatHome";
+import { NewChatWorkspacePicker } from "./NewChatWorkspacePicker";
 import { PendingPermissions } from "./PendingPermissions";
 import type { ChatSessionSelection } from "./chatTypes";
 import { useWebChatConnection } from "./useWebChatConnection";
@@ -36,6 +37,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
     [],
   );
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
+  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | undefined>();
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionSelections, setSessionSelections] = useState<Record<string, ChatSessionSelection>>(
@@ -71,6 +73,9 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
   const agentLabel = selectedAgentInfo?.name ?? getAgentDisplayName(selectedAgent);
   const selectedProfileId = profileSelections[selectedAgent];
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
+  const selectedWorkspace = workspaces.find(
+    (workspace) => workspace.path === selectedWorkspacePath,
+  );
   const sessionSelection = sessionSelections[selectedAgent] ?? { kind: "current" };
   const selectedLaunchSession =
     sessionSelection.kind === "resume"
@@ -142,6 +147,15 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    setSelectedWorkspacePath((current) => {
+      if (current && workspaces.some((workspace) => workspace.path === current)) {
+        return current;
+      }
+      return workspaces[0]?.path;
+    });
+  }, [workspaces]);
 
   useEffect(() => {
     let cancelled = false;
@@ -278,6 +292,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
       text,
       agentId: selectedAgent,
       profileId: selectedProfileId,
+      workspacePath: selectedWorkspace?.path,
       sessionSelection,
       launchSession: selectedLaunchSession,
     });
@@ -292,6 +307,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
     selectedAgent,
     selectedLaunchSession,
     selectedProfileId,
+    selectedWorkspace?.path,
     sendMessage,
     sessionSelection,
   ]);
@@ -362,26 +378,34 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
 
         {showNewChatHome ? (
           <NewChatHome>
-            <ChatInput
-              value={input}
-              onChange={setInput}
-              onSubmit={handleSubmit}
-              onStop={stopStreaming}
-              disabled={!connected}
-              submitDisabled={streaming}
-              isStreaming={streaming}
-              placeholder={
-                connected ? t("Ask {{agent}} anything…", { agent: agentLabel }) : t("Connecting…")
-              }
-              targetLabel={agentLabel}
-              targetTool={toolType}
-              selectedAgentId={selectedAgent}
-              agents={agents}
-              profiles={profiles}
-              selectedProfileId={selectedProfileId}
-              onLaunchChange={handleLaunchChange}
-              variant="hero"
-            />
+            <div className="space-y-4">
+              <NewChatWorkspacePicker
+                workspaces={workspaces}
+                selectedWorkspacePath={selectedWorkspace?.path}
+                loading={workspacesLoading}
+                onWorkspaceChange={setSelectedWorkspacePath}
+              />
+              <ChatInput
+                value={input}
+                onChange={setInput}
+                onSubmit={handleSubmit}
+                onStop={stopStreaming}
+                disabled={!connected}
+                submitDisabled={streaming}
+                isStreaming={streaming}
+                placeholder={
+                  connected ? t("Ask {{agent}} anything…", { agent: agentLabel }) : t("Connecting…")
+                }
+                targetLabel={agentLabel}
+                targetTool={toolType}
+                selectedAgentId={selectedAgent}
+                agents={agents}
+                profiles={profiles}
+                selectedProfileId={selectedProfileId}
+                onLaunchChange={handleLaunchChange}
+                variant="hero"
+              />
+            </div>
           </NewChatHome>
         ) : (
           <>

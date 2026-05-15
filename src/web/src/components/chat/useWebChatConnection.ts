@@ -39,6 +39,7 @@ interface SendChatMessageRequest {
   text: string;
   agentId: string;
   profileId?: string;
+  workspacePath?: string;
   sessionSelection: ChatSessionSelection;
   launchSession?: LaunchSessionInfo;
 }
@@ -224,7 +225,14 @@ export function useWebChatConnection({
   }, [onAgentSelected, t]);
 
   const sendMessage = useCallback(
-    ({ text, agentId, profileId, sessionSelection, launchSession }: SendChatMessageRequest) => {
+    ({
+      text,
+      agentId,
+      profileId,
+      workspacePath,
+      sessionSelection,
+      launchSession,
+    }: SendChatMessageRequest) => {
       const trimmed = text.trim();
       const ws = wsRef.current;
       if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN) return false;
@@ -250,6 +258,9 @@ export function useWebChatConnection({
         }
         if (sessionSelection.kind === "new") {
           payload.sessionAction = "new";
+          if (workspacePath) {
+            payload.sessionWorkspace = workspacePath;
+          }
         } else if (launchSession) {
           payload.sessionAction = "resume";
           payload.sessionId = launchSession.session_id;
