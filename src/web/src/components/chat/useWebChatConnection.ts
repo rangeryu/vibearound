@@ -271,9 +271,10 @@ export function useWebChatConnection({
           appendPlan(update);
           break;
         }
-        // Other ACP update variants (plan, available_commands_update, etc.)
-        // are not yet surfaced in the web chat UI. Ignored so future SDK
-        // additions don't crash the handler.
+        // Other ACP update variants (available_commands_update, mode/config,
+        // session metadata, usage, etc.) update surrounding UI rather than the
+        // visible transcript. Ignored here so future SDK additions don't crash
+        // the handler.
         default:
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;

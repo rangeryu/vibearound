@@ -9,7 +9,7 @@ import {
   ConversationScrollButton,
 } from "./Conversation";
 import { Message, MessageContent } from "./Message";
-import { MessageResponse } from "./MessageResponse";
+import { ChatMessageParts } from "./ChatMessageParts";
 import type { ChatActivity, ChatMessage } from "./chatTypes";
 
 interface ChatMessageListProps {
@@ -92,54 +92,51 @@ export function ChatMessageList({
               }
             />
           ) : (
-            messages.map((msg, i) => (
-              <Message key={i} from={msg.role}>
-                <MessageContent
-                  className={
-                    msg.role === "user"
-                      ? "max-w-[85%] rounded-lg bg-muted px-4 py-3 text-foreground sm:max-w-[34rem]"
-                      : msg.mode === "standalone"
-                        ? "w-full px-0 py-1 text-muted-foreground"
-                        : "w-full px-0 py-1 text-foreground"
-                  }
-                >
-                  {msg.role === "user" ? (
-                    <p className="whitespace-pre-wrap text-sm leading-6">{msg.content}</p>
-                  ) : msg.mode === "standalone" ? (
-                    <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
-                  ) : (
-                    <>
-                      {streaming &&
-                        i === messages.length - 1 &&
-                        !msg.content &&
-                        !msg.progress &&
-                        !msg.activities?.length && (
-                          <span className="font-mono text-xs text-primary/80 animate-pulse">
-                            {t("AI is working…")}
-                          </span>
-                        )}
-                      {msg.activities?.length ? (
-                        <ChatActivityList
-                          activities={msg.activities}
-                          hasContent={Boolean(msg.content)}
-                        />
-                      ) : null}
-                      {msg.content && (
-                        <MessageResponse
-                          content={msg.content}
-                          isStreaming={streaming && i === messages.length - 1}
-                        />
-                      )}
-                      {msg.progress && (
-                        <span className="font-mono text-xs text-muted-foreground/60 animate-pulse">
-                          {msg.progress}
+            messages.map((msg, i) => {
+              const hasStructuredParts = Boolean(msg.parts?.length);
+              const isLastStreamingMessage = streaming && i === messages.length - 1;
+              return (
+                <Message key={i} from={msg.role}>
+                  <MessageContent
+                    className={
+                      msg.role === "user"
+                        ? "max-w-[85%] rounded-lg bg-muted px-4 py-3 text-foreground sm:max-w-[34rem]"
+                        : msg.mode === "standalone"
+                          ? "w-full px-0 py-1 text-muted-foreground"
+                          : "w-full px-0 py-1 text-foreground"
+                    }
+                  >
+                    {msg.role === "assistant" &&
+                      isLastStreamingMessage &&
+                      !msg.content &&
+                      !msg.progress &&
+                      !msg.activities?.length &&
+                      !msg.parts?.length && (
+                        <span className="font-mono text-xs text-primary/80 animate-pulse">
+                          {t("AI is working…")}
                         </span>
                       )}
-                    </>
-                  )}
-                </MessageContent>
-              </Message>
-            ))
+                    {msg.role === "assistant" &&
+                    !hasStructuredParts &&
+                    msg.activities?.length ? (
+                      <ChatActivityList
+                        activities={msg.activities}
+                        hasContent={Boolean(msg.content)}
+                      />
+                    ) : null}
+                    <ChatMessageParts
+                      message={msg}
+                      isStreaming={isLastStreamingMessage}
+                    />
+                    {msg.progress && (
+                      <span className="font-mono text-xs text-muted-foreground/60 animate-pulse">
+                        {msg.progress}
+                      </span>
+                    )}
+                  </MessageContent>
+                </Message>
+              );
+            })
           )}
         </div>
       </ConversationContent>
