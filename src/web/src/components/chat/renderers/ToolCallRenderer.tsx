@@ -20,14 +20,33 @@ function statusIcon(status: ChatToolCallPart["status"], active?: boolean) {
   return <Circle className="h-3.5 w-3.5 fill-primary/20 text-primary/70" />;
 }
 
+function displayTitle(part: ChatToolCallPart) {
+  return part.title === "tool" && part.toolKind ? part.toolKind : part.title;
+}
+
 export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
   const { t } = useI18n();
   const active = part.active ?? (part.status !== "completed" && part.status !== "failed");
+  const title = displayTitle(part);
   const hasDetails =
     Boolean(part.locations?.length) ||
     Boolean(part.content?.length) ||
     part.rawInput !== undefined ||
     part.rawOutput !== undefined;
+
+  if (!hasDetails && part.status === "completed") {
+    return (
+      <div className="flex min-w-0 items-center gap-2 px-1 py-1 text-xs text-muted-foreground/65">
+        {statusIcon(part.status, active)}
+        <span className="min-w-0 truncate">{title}</span>
+        {part.toolKind && part.title !== part.toolKind && (
+          <span className="shrink-0 font-mono text-[10px] uppercase text-muted-foreground/45">
+            {part.toolKind}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <details
@@ -36,7 +55,7 @@ export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 text-sm">
         {statusIcon(part.status, active)}
-        <span className="min-w-0 truncate font-medium text-foreground">{part.title}</span>
+        <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
         {part.toolKind && (
           <span className="ml-auto shrink-0 rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
             {part.toolKind}
