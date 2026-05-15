@@ -70,14 +70,20 @@ export function NewChatAgentPicker({
       </div>
 
       <div className="rounded-lg border border-border bg-muted/10 p-2.5">
-        <div className="grid gap-3 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)]">
           <div className="min-w-0">
             {agents.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground">
-                {selectedAgentName}
+              <div className="flex flex-wrap gap-2 md:w-10 md:flex-col">
+                <div
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-background/70 text-muted-foreground"
+                  title={selectedAgentName}
+                  aria-label={selectedAgentName}
+                >
+                  <Bot className={cn("h-4 w-4", agentAccentClass(selectedAgentId))} />
+                </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-2">
+              <div className="flex flex-wrap gap-2 md:w-10 md:flex-col">
                 {agents.map((agent) => {
                   const selected = agent.id === selectedAgentId;
                   return (
@@ -85,19 +91,20 @@ export function NewChatAgentPicker({
                       key={agent.id}
                       type="button"
                       className={cn(
-                        "flex min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors",
+                        "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md border transition-colors",
                         selected
                           ? "border-primary/50 bg-primary/5 text-foreground"
                           : "border-border bg-background/70 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                       )}
                       aria-pressed={selected}
+                      aria-label={agent.name}
+                      title={agent.name}
                       onClick={() => chooseAgent(agent)}
                     >
-                      <Bot className={cn("h-4 w-4 shrink-0", agentAccentClass(agent.id))} />
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium">
-                        {agent.name}
-                      </span>
-                      {selected && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                      <Bot className={cn("h-4 w-4", agentAccentClass(agent.id))} />
+                      {selected && (
+                        <Check className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-background text-primary" />
+                      )}
                     </button>
                   );
                 })}

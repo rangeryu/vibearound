@@ -418,7 +418,7 @@ export function ChatView({ onStatusChange }: ChatViewProps) {
                 showLaunchSelector={false}
                 variant="hero"
               />
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+              <div className="grid gap-4 lg:grid-cols-2">
                 <NewChatAgentPicker
                   agents={agents}
                   profiles={profiles}
