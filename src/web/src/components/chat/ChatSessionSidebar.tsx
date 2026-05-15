@@ -168,54 +168,61 @@ export function ChatSessionSidebar({
                         </span>
                       </span>
                     </button>
-                    {!collapsed &&
-                      sortedSessions.length > 0 && (
-                        <div className="space-y-1 pl-5">
-                          {visibleSessions.map((session) => {
-                            const active =
-                              sessionSelection.kind === "resume" &&
-                              sessionSelection.sessionId === session.session_id;
-                            return (
+                    {!collapsed && (
+                      <div className="space-y-1 pl-5">
+                        {sortedSessions.length === 0 ? (
+                          <div className="px-2 py-1 text-xs text-muted-foreground/45">
+                            {t("No chats")}
+                          </div>
+                        ) : (
+                          <>
+                            {visibleSessions.map((session) => {
+                              const active =
+                                sessionSelection.kind === "resume" &&
+                                sessionSelection.sessionId === session.session_id;
+                              return (
+                                <button
+                                  key={session.session_id}
+                                  type="button"
+                                  className={sessionButtonClass(active)}
+                                  onClick={() =>
+                                    onSessionChange({
+                                      kind: "resume",
+                                      sessionId: session.session_id,
+                                    })
+                                  }
+                                >
+                                  <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-foreground/90">
+                                      {session.title}
+                                    </span>
+                                    <span className="block truncate text-[11px] leading-4 text-muted-foreground">
+                                      {session.short_id} -{" "}
+                                      {formatSessionUpdatedAt(session.updated_at)}
+                                    </span>
+                                  </span>
+                                  {active && (
+                                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                  )}
+                                </button>
+                              );
+                            })}
+                            {hiddenSessionCount > 0 && (
                               <button
-                                key={session.session_id}
                                 type="button"
-                                className={sessionButtonClass(active)}
-                                onClick={() =>
-                                  onSessionChange({
-                                    kind: "resume",
-                                    sessionId: session.session_id,
-                                  })
-                                }
+                                className="w-full rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground/50 transition-colors hover:bg-muted/40 hover:text-muted-foreground"
+                                onClick={() => toggleSessionList(workspacePath)}
                               >
-                                <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-foreground/90">
-                                    {session.title}
-                                  </span>
-                                  <span className="block truncate text-[11px] leading-4 text-muted-foreground">
-                                    {session.short_id} -{" "}
-                                    {formatSessionUpdatedAt(session.updated_at)}
-                                  </span>
-                                </span>
-                                {active && (
-                                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                )}
+                                {sessionsExpanded
+                                  ? t("Show less")
+                                  : t("Show more {{count}}", { count: hiddenSessionCount })}
                               </button>
-                            );
-                          })}
-                          {hiddenSessionCount > 0 && (
-                            <button
-                              type="button"
-                              className="w-full rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground/50 transition-colors hover:bg-muted/40 hover:text-muted-foreground"
-                              onClick={() => toggleSessionList(workspacePath)}
-                            >
-                              {sessionsExpanded
-                                ? t("Show less")
-                                : t("Show more {{count}}", { count: hiddenSessionCount })}
-                            </button>
-                          )}
-                        </div>
-                      )}
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </section>
                 );
               })}
