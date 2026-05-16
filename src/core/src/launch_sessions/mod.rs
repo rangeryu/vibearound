@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use serde_json::Value;
 
+mod archive;
 mod claude;
 mod codex;
 mod cursor;
@@ -52,9 +53,28 @@ pub fn list_for_agent_workspace_with_archived(
         "qwen-code" => qwen::sessions(workspace),
         _ => Vec::new(),
     };
+    let archived_session_ids = archive::archived_session_keys(agent_id, workspace);
+    if !archived_session_ids.is_empty() {
+        for session in &mut sessions {
+            if archived_session_ids.contains(&session.session_id) {
+                session.archived = true;
+            }
+        }
+        if !include_archived {
+            sessions.retain(|session| !session.archived);
+        }
+    }
     sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     sessions.truncate(limit);
     sessions
+}
+
+pub fn archive_session(agent_id: &str, workspace: &Path, session_id: &str) -> Result<(), String> {
+    archive::archive_session(agent_id, workspace, session_id)
+}
+
+pub fn unarchive_session(agent_id: &str, workspace: &Path, session_id: &str) -> Result<(), String> {
+    archive::unarchive_session(agent_id, workspace, session_id)
 }
 
 pub fn latest_for_agent_workspace(agent_id: &str, workspace: &Path) -> Option<LaunchSession> {

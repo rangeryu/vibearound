@@ -198,6 +198,10 @@ pub async fn run_web_server(
             "/api/agents/{agent_id}/launch-sessions",
             get(api::list_launch_sessions_handler),
         )
+        .route(
+            "/api/agents/{agent_id}/launch-sessions/{session_id}/archive",
+            post(api::archive_launch_session_handler).delete(api::unarchive_launch_session_handler),
+        )
         .route("/api/tmux/sessions", get(api::list_tmux_sessions_handler))
         .route("/api/agents", get(api::list_agents_handler))
         .route("/api/profiles", get(api::list_profiles_handler))

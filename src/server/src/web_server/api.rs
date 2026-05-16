@@ -18,8 +18,9 @@ pub use runtime::{
     restart_channel_handler, start_channel_handler, stop_channel_handler,
 };
 pub use sessions::{
-    create_session_handler, delete_session_handler, list_launch_sessions_handler,
-    list_sessions_handler, list_tmux_sessions_handler,
+    archive_launch_session_handler, create_session_handler, delete_session_handler,
+    list_launch_sessions_handler, list_sessions_handler, list_tmux_sessions_handler,
+    unarchive_launch_session_handler,
 };
 pub use workspaces::{
     add_workspace_handler, create_workspace_handler, list_workspaces_handler,
