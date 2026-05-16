@@ -376,7 +376,7 @@ export function useWebChatConnection({
     }
 
     function setStreamProgress(progress: string) {
-      setMessages((prev) => setStreamProgressMessage(prev, progress));
+      setMessages((prev) => setStreamProgressMessage(prev, progress, "tool"));
     }
 
     function clearStreamProgress() {

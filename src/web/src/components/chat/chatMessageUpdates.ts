@@ -232,6 +232,7 @@ export function appendStreamAssistantMessage(
     ...withContentBlock(last, block),
     messageId: last.messageId ?? messageId,
     progress: undefined,
+    progressKind: undefined,
     mode: "stream",
   };
   return next;
@@ -294,12 +295,20 @@ export function appendThinkingActivityMessage(
           active: true,
         });
       }
-      return { ...message, activities, parts, progress: text, mode: "stream" };
+      return {
+        ...message,
+        activities,
+        parts,
+        progress: text,
+        progressKind: "thinking",
+        mode: "stream",
+      };
     },
     {
       role: "assistant",
       content: "",
       progress: text,
+      progressKind: "thinking",
       parts: [{ id: partId("thought"), kind: "thought", blocks: [block], active: true }],
       activities: [
         {
@@ -481,13 +490,17 @@ function findLastMatchingActivityIndex<T>(
 export function setStreamProgressMessage(
   prev: ChatMessage[],
   progress: string,
+  progressKind: NonNullable<ChatMessage["progressKind"]> = "tool",
 ): ChatMessage[] {
   const last = prev[prev.length - 1];
   if (!last || last.role !== "assistant" || last.mode !== "stream") {
-    return [...prev, { role: "assistant", content: "", progress, mode: "stream" }];
+    return [
+      ...prev,
+      { role: "assistant", content: "", progress, progressKind, mode: "stream" },
+    ];
   }
   const next = [...prev];
-  next[next.length - 1] = { ...last, progress, mode: "stream" };
+  next[next.length - 1] = { ...last, progress, progressKind, mode: "stream" };
   return next;
 }
 
@@ -497,7 +510,12 @@ export function clearStreamProgressMessage(prev: ChatMessage[]): ChatMessage[] {
     return prev;
   }
   const next = [...prev];
-  next[next.length - 1] = { ...last, progress: undefined, mode: "stream" };
+  next[next.length - 1] = {
+    ...last,
+    progress: undefined,
+    progressKind: undefined,
+    mode: "stream",
+  };
   return next;
 }
 
@@ -527,6 +545,7 @@ export function appendErrorToStreamMessage(
   next[next.length - 1] = {
     ...withTextPart(last, `${last.content ? "\n\n" : ""}${errorMessage}`),
     progress: undefined,
+    progressKind: undefined,
     mode: "stream",
   };
   return next;

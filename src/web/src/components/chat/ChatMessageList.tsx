@@ -100,7 +100,13 @@ function messageVisible(message: ChatMessage, settings: ChatDisplaySettings) {
   if (message.activities?.some((activity) => activityVisible(activity, settings))) {
     return true;
   }
-  return Boolean(message.progress && settings.showTools);
+  return progressVisible(message, settings);
+}
+
+function progressVisible(message: ChatMessage, settings: ChatDisplaySettings) {
+  if (!message.progress) return false;
+  if (message.progressKind === "thinking") return settings.showThinking;
+  return settings.showTools;
 }
 
 export function ChatMessageList({
@@ -182,7 +188,7 @@ export function ChatMessageList({
                       isStreaming={isLastStreamingMessage}
                       displaySettings={displaySettings}
                     />
-                    {msg.progress && displaySettings.showTools && (
+                    {progressVisible(msg, displaySettings) && (
                       <span className="font-mono text-xs text-muted-foreground/60 animate-pulse">
                         {msg.progress}
                       </span>

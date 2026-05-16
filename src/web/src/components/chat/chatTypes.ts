@@ -61,6 +61,7 @@ export type ChatMessage = {
   content: string;
   messageId?: string | null;
   progress?: string;
+  progressKind?: "thinking" | "tool";
   activities?: ChatActivity[];
   mode?: "standalone" | "stream";
 };
