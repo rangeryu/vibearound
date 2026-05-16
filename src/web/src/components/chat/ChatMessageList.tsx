@@ -120,7 +120,11 @@ export function ChatMessageList({
   const { t } = useI18n();
 
   return (
-    <Conversation className="flex-1">
+    <Conversation
+      className="flex-1"
+      initial={streaming ? "smooth" : "instant"}
+      resize={streaming ? "smooth" : "instant"}
+    >
       <ConversationContent className="px-4 py-5">
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
           {replayLoading && (
