@@ -25,9 +25,14 @@ pub(super) async fn install_npm_agent<R: Runtime>(
     let Some(npm_pkg) = &agent_def.acp.npm_package else {
         return;
     };
-    let bin_name = agent_def.acp.bin_name.as_deref().unwrap_or(npm_pkg);
+    let default_bin_name = common::agent::npm_package_bin_name(npm_pkg);
+    let bin_name = agent_def
+        .acp
+        .bin_name
+        .as_deref()
+        .unwrap_or(&default_bin_name);
 
-    if common::process::env::resolve_acp_agent_bin(bin_name).is_ok() {
+    if common::agent::npm_package_installed(npm_pkg, bin_name) {
         emit_progress(
             app,
             &InstallProgressEvent {
