@@ -3,6 +3,7 @@ import type { ChatMessage } from "./chatTypes";
 const DB_NAME = "vibearound-web-chat";
 const DB_VERSION = 1;
 const STORE_NAME = "session-transcripts";
+const CACHE_SCHEMA_VERSION = 2;
 const MAX_CACHED_SESSIONS = 5;
 const KEY_SEPARATOR = "\u001f";
 
@@ -22,6 +23,7 @@ interface CacheWriteRequest extends CacheReadRequest {
 
 interface CachedSessionTranscript {
   key: string;
+  schemaVersion?: number;
   agentId: string;
   workspace: string;
   sessionId: string;
@@ -107,7 +109,13 @@ export async function readCachedChatSession({
   const key = cacheKey({ agentId, workspace, sessionId });
   return withStore("readwrite", async (store) => {
     const entry = await requestResult<CachedSessionTranscript | undefined>(store.get(key));
-    if (!entry || entry.updatedAt !== updatedAt) return null;
+    if (
+      !entry ||
+      entry.schemaVersion !== CACHE_SCHEMA_VERSION ||
+      entry.updatedAt !== updatedAt
+    ) {
+      return null;
+    }
     store.put({ ...entry, cachedAt: Date.now() });
     return entry.messages;
   });
@@ -124,6 +132,7 @@ export async function writeCachedChatSession({
   await withStore("readwrite", async (store) => {
     store.put({
       key,
+      schemaVersion: CACHE_SCHEMA_VERSION,
       agentId,
       workspace,
       sessionId,

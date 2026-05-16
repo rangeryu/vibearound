@@ -90,6 +90,10 @@ export function useWebChatConnection({
   const resumeReplayDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const replayCacheContextRef = useRef<ResumeReplayState | null>(null);
+  const replayCacheWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const updateResumeReplay = useCallback((next: ResumeReplayState | null) => {
     resumeReplayRef.current = next;
@@ -102,12 +106,20 @@ export function useWebChatConnection({
     resumeReplayDoneTimerRef.current = null;
   }, []);
 
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+  const clearReplayCacheWriteTimer = useCallback(() => {
+    if (!replayCacheWriteTimerRef.current) return;
+    clearTimeout(replayCacheWriteTimerRef.current);
+    replayCacheWriteTimerRef.current = null;
+  }, []);
+
+  const clearReplayCacheContext = useCallback(() => {
+    replayCacheContextRef.current = null;
+    clearReplayCacheWriteTimer();
+  }, [clearReplayCacheWriteTimer]);
 
   const cacheResumeReplay = useCallback((replay: ResumeReplayState) => {
     if (!replay.agentId || !replay.workspace || replay.updatedAt === undefined) return;
+    if (messagesRef.current.length === 0) return;
     void writeCachedChatSession({
       agentId: replay.agentId,
       workspace: replay.workspace,
@@ -119,17 +131,43 @@ export function useWebChatConnection({
     });
   }, []);
 
+  const scheduleReplayCacheWrite = useCallback(
+    (replay = replayCacheContextRef.current) => {
+      if (!replay?.agentId || !replay.workspace || replay.updatedAt === undefined) {
+        return;
+      }
+      if (messagesRef.current.length === 0) return;
+      clearReplayCacheWriteTimer();
+      replayCacheWriteTimerRef.current = setTimeout(() => {
+        cacheResumeReplay(replay);
+      }, 350);
+    },
+    [cacheResumeReplay, clearReplayCacheWriteTimer],
+  );
+
+  useEffect(() => {
+    messagesRef.current = messages;
+    scheduleReplayCacheWrite();
+  }, [messages, scheduleReplayCacheWrite]);
+
   const finishResumeReplay = useCallback(
     (sessionId?: string, options?: { cache?: boolean }) => {
       const current = resumeReplayRef.current;
       if (sessionId && current?.sessionId !== sessionId) return;
       if (current && options?.cache) {
-        cacheResumeReplay(current);
+        scheduleReplayCacheWrite(current);
+      } else if (!options?.cache) {
+        clearReplayCacheContext();
       }
       clearResumeReplayDoneTimer();
       updateResumeReplay(null);
     },
-    [cacheResumeReplay, clearResumeReplayDoneTimer, updateResumeReplay],
+    [
+      clearReplayCacheContext,
+      clearResumeReplayDoneTimer,
+      scheduleReplayCacheWrite,
+      updateResumeReplay,
+    ],
   );
 
   const scheduleResumeReplayDone = useCallback(
@@ -355,8 +393,10 @@ export function useWebChatConnection({
       ws.close();
       wsRef.current = null;
       clearResumeReplayDoneTimer();
+      clearReplayCacheWriteTimer();
     };
   }, [
+    clearReplayCacheWriteTimer,
     clearResumeReplayDoneTimer,
     finishResumeReplay,
     onAgentSelected,
@@ -378,6 +418,7 @@ export function useWebChatConnection({
       if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN) return false;
       if (promptInFlightRef.current) return false;
 
+      clearReplayCacheContext();
       promptInFlightRef.current = true;
       setMessages((prev) => [
         ...prev,
@@ -416,18 +457,19 @@ export function useWebChatConnection({
         return false;
       }
     },
-    [],
+    [clearReplayCacheContext],
   );
 
   const clearConversationView = useCallback((options?: { abortReplay?: boolean }) => {
     const ws = wsRef.current;
-    const abortedSessionId = resumeReplayRef.current?.sessionId;
+    const replayContext = resumeReplayRef.current ?? replayCacheContextRef.current;
+    const abortedSessionId = replayContext?.sessionId;
     if (options?.abortReplay) {
       resumeRequestIdRef.current += 1;
     }
     if (
       options?.abortReplay &&
-      resumeReplayRef.current &&
+      replayContext &&
       ws?.readyState === WebSocket.OPEN
     ) {
       try {
@@ -440,6 +482,7 @@ export function useWebChatConnection({
       ignoredReplaySessionsRef.current.add(abortedSessionId);
     }
     clearResumeReplayDoneTimer();
+    clearReplayCacheContext();
     promptInFlightRef.current = false;
     setStreaming(false);
     setPendingPermissions([]);
@@ -452,7 +495,7 @@ export function useWebChatConnection({
       agentTitle: undefined,
       agentVersion: undefined,
     }));
-  }, [clearResumeReplayDoneTimer, updateResumeReplay]);
+  }, [clearReplayCacheContext, clearResumeReplayDoneTimer, updateResumeReplay]);
 
   const resumeSession = useCallback(
     ({ agentId, profileId, launchSession }: ResumeChatSessionRequest) => {
@@ -462,13 +505,15 @@ export function useWebChatConnection({
       const requestId = resumeRequestIdRef.current + 1;
       resumeRequestIdRef.current = requestId;
       ignoredReplaySessionsRef.current.delete(launchSession.session_id);
-      updateResumeReplay({
+      const replay: ResumeReplayState = {
         sessionId: launchSession.session_id,
         title: launchSession.title,
         agentId,
         workspace: launchSession.workspace,
         updatedAt: launchSession.updated_at,
-      });
+      };
+      replayCacheContextRef.current = replay;
+      updateResumeReplay(replay);
       setMeta((prev) => ({ ...prev, sessionId: launchSession.session_id }));
 
       void (async () => {
@@ -481,6 +526,7 @@ export function useWebChatConnection({
           });
           if (resumeRequestIdRef.current !== requestId) return;
           if (cachedMessages) {
+            clearReplayCacheContext();
             setMessages(cachedMessages);
             updateResumeReplay(null);
             return;
@@ -492,6 +538,7 @@ export function useWebChatConnection({
         if (resumeRequestIdRef.current !== requestId) return;
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
+          clearReplayCacheContext();
           updateResumeReplay(null);
           return;
         }
@@ -509,18 +556,20 @@ export function useWebChatConnection({
           ws.send(JSON.stringify(payload));
         } catch (error) {
           console.warn("[ChatView] failed to resume chat session:", error);
+          clearReplayCacheContext();
           updateResumeReplay(null);
         }
       })();
 
       return true;
     },
-    [clearConversationView, updateResumeReplay],
+    [clearConversationView, clearReplayCacheContext, updateResumeReplay],
   );
 
   const stopStreaming = useCallback(() => {
     const ws = wsRef.current;
-    const abortedSessionId = resumeReplayRef.current?.sessionId;
+    const replayContext = resumeReplayRef.current ?? replayCacheContextRef.current;
+    const abortedSessionId = replayContext?.sessionId;
     if (ws?.readyState === WebSocket.OPEN) {
       try {
         ws.send(JSON.stringify({ type: "stop" }));
@@ -533,8 +582,9 @@ export function useWebChatConnection({
     }
     promptInFlightRef.current = false;
     setStreaming(false);
+    clearReplayCacheContext();
     updateResumeReplay(null);
-  }, [updateResumeReplay]);
+  }, [clearReplayCacheContext, updateResumeReplay]);
 
   const sendPermissionResponse = useCallback((requestId: string, optionId: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;

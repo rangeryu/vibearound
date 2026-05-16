@@ -42,19 +42,11 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 
-    // Load config + verbose flags once — verbose filter drops
-    // thinking/tool_call frames on the server side when disabled rather
-    // than forcing every client to filter.
+    // Load config for initial agent metadata. Web chat always receives the
+    // complete ACP transcript; the browser applies its own visibility filter
+    // so replay cache stays independent from the current UI settings.
     let cfg = config::ensure_loaded();
     let agent_prefs = agent_state::read_prefs();
-    let verbose = {
-        let v = cfg.channel_verbose("ws");
-        if !v.show_thinking && !v.show_tool_use {
-            cfg.channel_verbose("web")
-        } else {
-            v
-        }
-    };
 
     // Send initial config event.
     let config_event = ChatEvent::Config {
@@ -70,9 +62,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
     // Outbound: drain ChannelOutput → ChatEvent → websocket.
     let outbound_task = tokio::spawn(async move {
         while let Some(output) = rx.recv().await {
-            let Some(event) = output_to_chat_event(output, &verbose) else {
-                continue;
-            };
+            let event = output_to_chat_event(output);
             if send_event(&mut ws_tx, &event).await.is_err() {
                 break;
             }
@@ -600,59 +590,38 @@ fn parse_web_session_workspace(value: &serde_json::Value) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-/// Translate a `ChannelOutput` into a wire `ChatEvent`. Returns `None`
-/// when the event should be dropped per the caller's verbose filter
-/// (thinking / tool-use chunks when the user has opted out).
-fn output_to_chat_event(
-    output: ChannelOutput,
-    verbose: &common::config::ImVerboseConfig,
-) -> Option<ChatEvent> {
+/// Translate a `ChannelOutput` into a wire `ChatEvent`.
+fn output_to_chat_event(output: ChannelOutput) -> ChatEvent {
     match output {
-        ChannelOutput::RawAcp { payload, .. } => acp_passthrough(payload, verbose),
-        ChannelOutput::SystemText { text, .. } => Some(ChatEvent::SystemText { text }),
+        ChannelOutput::RawAcp { payload, .. } => acp_passthrough(payload),
+        ChannelOutput::SystemText { text, .. } => ChatEvent::SystemText { text },
         ChannelOutput::AgentReady { agent, version, .. } => {
-            Some(ChatEvent::AgentReady { agent, version })
+            ChatEvent::AgentReady { agent, version }
         }
-        ChannelOutput::SessionReady { session_id, .. } => {
-            Some(ChatEvent::SessionReady { session_id })
-        }
+        ChannelOutput::SessionReady { session_id, .. } => ChatEvent::SessionReady { session_id },
         ChannelOutput::CommandMenu {
             system_commands,
             agent_commands,
             ..
-        } => Some(ChatEvent::CommandMenu {
+        } => ChatEvent::CommandMenu {
             system_commands,
             agent_commands,
-        }),
+        },
         ChannelOutput::PermissionRequest {
             request_id,
             payload,
             ..
-        } => Some(ChatEvent::PermissionRequest {
+        } => ChatEvent::PermissionRequest {
             request_id,
             request: payload,
-        }),
-        ChannelOutput::PromptDone { message_id, .. } => Some(ChatEvent::PromptDone { message_id }),
+        },
+        ChannelOutput::PromptDone { message_id, .. } => ChatEvent::PromptDone { message_id },
     }
 }
 
-/// Pass ACP session notifications through as `AcpNotification`. The
-/// only server-side policy applied is the verbose filter: drop
-/// thinking/tool_call frames when the user has opted out so clients
-/// don't have to re-implement the same filter.
-fn acp_passthrough(
-    payload: serde_json::Value,
-    verbose: &common::config::ImVerboseConfig,
-) -> Option<ChatEvent> {
-    let variant = payload
-        .pointer("/update/sessionUpdate")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    match variant {
-        "agent_thought_chunk" if !verbose.show_thinking => None,
-        "tool_call" | "tool_call_update" if !verbose.show_tool_use => None,
-        _ => Some(ChatEvent::AcpNotification { payload }),
-    }
+/// Pass ACP session notifications through as `AcpNotification`.
+fn acp_passthrough(payload: serde_json::Value) -> ChatEvent {
+    ChatEvent::AcpNotification { payload }
 }
 
 #[cfg(test)]
