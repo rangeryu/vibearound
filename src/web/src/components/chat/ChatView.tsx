@@ -24,6 +24,7 @@ import { useI18n } from "@va/i18n";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "./ChatInput";
+import { deleteCachedChatSession } from "./chatSessionCache";
 import {
   ChatSessionSidebar,
   type ChatSessionWorkspaceGroup,
@@ -456,6 +457,13 @@ export function ChatView({ onStatusChange, onOpenAppSidebar }: ChatViewProps) {
       setArchivingSessionId(session.session_id);
       try {
         await archiveLaunchSession(session.agent_id, session.session_id, session.workspace);
+        void deleteCachedChatSession({
+          agentId: session.agent_id,
+          workspace: session.workspace,
+          sessionId: session.session_id,
+        }).catch((error) => {
+          console.warn("[ChatView] failed to delete archived session cache:", error);
+        });
         setLaunchSessionGroups((prev) =>
           prev.map((group) =>
             group.workspace.path === session.workspace

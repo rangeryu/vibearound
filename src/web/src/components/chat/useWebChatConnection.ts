@@ -38,6 +38,10 @@ import {
   clearStreamProgressMessage,
   setStreamProgressMessage,
 } from "./chatMessageUpdates";
+import {
+  readCachedChatSession,
+  writeCachedChatSession,
+} from "./chatSessionCache";
 
 interface UseWebChatConnectionOptions {
   onAgentSelected?: (agentId: string, source: "config" | "system") => void;
@@ -61,6 +65,9 @@ interface ResumeChatSessionRequest {
 export interface ResumeReplayState {
   sessionId: string;
   title?: string;
+  agentId?: string;
+  workspace?: string;
+  updatedAt?: number;
 }
 
 export function useWebChatConnection({
@@ -77,6 +84,8 @@ export function useWebChatConnection({
   const wsRef = useRef<WebSocket | null>(null);
   const promptInFlightRef = useRef(false);
   const resumeReplayRef = useRef<ResumeReplayState | null>(null);
+  const resumeRequestIdRef = useRef(0);
+  const messagesRef = useRef<ChatMessage[]>([]);
   const ignoredReplaySessionsRef = useRef<Set<string>>(new Set());
   const resumeReplayDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -93,21 +102,41 @@ export function useWebChatConnection({
     resumeReplayDoneTimerRef.current = null;
   }, []);
 
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const cacheResumeReplay = useCallback((replay: ResumeReplayState) => {
+    if (!replay.agentId || !replay.workspace || replay.updatedAt === undefined) return;
+    void writeCachedChatSession({
+      agentId: replay.agentId,
+      workspace: replay.workspace,
+      sessionId: replay.sessionId,
+      updatedAt: replay.updatedAt,
+      messages: messagesRef.current,
+    }).catch((error) => {
+      console.warn("[ChatView] failed to cache replayed session:", error);
+    });
+  }, []);
+
   const finishResumeReplay = useCallback(
-    (sessionId?: string) => {
+    (sessionId?: string, options?: { cache?: boolean }) => {
       const current = resumeReplayRef.current;
       if (sessionId && current?.sessionId !== sessionId) return;
+      if (current && options?.cache) {
+        cacheResumeReplay(current);
+      }
       clearResumeReplayDoneTimer();
       updateResumeReplay(null);
     },
-    [clearResumeReplayDoneTimer, updateResumeReplay],
+    [cacheResumeReplay, clearResumeReplayDoneTimer, updateResumeReplay],
   );
 
   const scheduleResumeReplayDone = useCallback(
     (sessionId: string) => {
       clearResumeReplayDoneTimer();
       resumeReplayDoneTimerRef.current = setTimeout(() => {
-        finishResumeReplay(sessionId);
+        finishResumeReplay(sessionId, { cache: true });
       }, 700);
     },
     [clearResumeReplayDoneTimer, finishResumeReplay],
@@ -393,6 +422,9 @@ export function useWebChatConnection({
   const clearConversationView = useCallback((options?: { abortReplay?: boolean }) => {
     const ws = wsRef.current;
     const abortedSessionId = resumeReplayRef.current?.sessionId;
+    if (options?.abortReplay) {
+      resumeRequestIdRef.current += 1;
+    }
     if (
       options?.abortReplay &&
       resumeReplayRef.current &&
@@ -424,34 +456,64 @@ export function useWebChatConnection({
 
   const resumeSession = useCallback(
     ({ agentId, profileId, launchSession }: ResumeChatSessionRequest) => {
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false;
 
       clearConversationView({ abortReplay: true });
+      const requestId = resumeRequestIdRef.current + 1;
+      resumeRequestIdRef.current = requestId;
       ignoredReplaySessionsRef.current.delete(launchSession.session_id);
       updateResumeReplay({
         sessionId: launchSession.session_id,
         title: launchSession.title,
+        agentId,
+        workspace: launchSession.workspace,
+        updatedAt: launchSession.updated_at,
       });
       setMeta((prev) => ({ ...prev, sessionId: launchSession.session_id }));
 
-      try {
-        const payload: Record<string, unknown> = {
-          type: "resume_session",
-          agent: agentId,
-          sessionId: launchSession.session_id,
-          sessionWorkspace: launchSession.workspace,
-        };
-        if (profileId !== undefined) {
-          payload.profileId = profileId;
+      void (async () => {
+        try {
+          const cachedMessages = await readCachedChatSession({
+            agentId,
+            workspace: launchSession.workspace,
+            sessionId: launchSession.session_id,
+            updatedAt: launchSession.updated_at,
+          });
+          if (resumeRequestIdRef.current !== requestId) return;
+          if (cachedMessages) {
+            setMessages(cachedMessages);
+            updateResumeReplay(null);
+            return;
+          }
+        } catch (error) {
+          console.warn("[ChatView] failed to read cached session:", error);
         }
-        ws.send(JSON.stringify(payload));
-        return true;
-      } catch (error) {
-        console.warn("[ChatView] failed to resume chat session:", error);
-        updateResumeReplay(null);
-        return false;
-      }
+
+        if (resumeRequestIdRef.current !== requestId) return;
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          updateResumeReplay(null);
+          return;
+        }
+
+        try {
+          const payload: Record<string, unknown> = {
+            type: "resume_session",
+            agent: agentId,
+            sessionId: launchSession.session_id,
+            sessionWorkspace: launchSession.workspace,
+          };
+          if (profileId !== undefined) {
+            payload.profileId = profileId;
+          }
+          ws.send(JSON.stringify(payload));
+        } catch (error) {
+          console.warn("[ChatView] failed to resume chat session:", error);
+          updateResumeReplay(null);
+        }
+      })();
+
+      return true;
     },
     [clearConversationView, updateResumeReplay],
   );
