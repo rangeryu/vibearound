@@ -220,14 +220,6 @@ pub struct WorkspacesResponse {
     pub default_workspace: String,
 }
 
-/// Web transcript visibility settings, backed by
-/// `settings.json.channels.web.verbose`.
-#[derive(Debug, Clone, Serialize)]
-pub struct WebVerboseSettings {
-    pub show_thinking: bool,
-    pub show_tool_use: bool,
-}
-
 /// One file uploaded from the web chat composer and staged for the next prompt.
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatUploadResponse {

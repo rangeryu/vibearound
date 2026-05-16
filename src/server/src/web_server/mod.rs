@@ -208,10 +208,6 @@ pub async fn run_web_server(
             post(api::unarchive_launch_session_handler),
         )
         .route(
-            "/api/settings/web",
-            get(api::get_web_settings_handler).patch(api::update_web_settings_handler),
-        )
-        .route(
             "/api/chat/uploads",
             post(api::upload_chat_file_handler)
                 .layer(DefaultBodyLimit::max(LOCAL_PROXY_BODY_LIMIT_BYTES)),

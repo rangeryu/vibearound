@@ -31,7 +31,6 @@ interface AppHeaderProps {
   runningSessions: number;
   chatStatus: ChatRuntimeStatus;
   webSettings: WebVerboseSettings;
-  webSettingsSaving?: boolean;
   onWebSettingsChange: (patch: Partial<WebVerboseSettings>) => void;
 }
 
@@ -48,7 +47,6 @@ export function AppHeader({
   runningSessions,
   chatStatus,
   webSettings,
-  webSettingsSaving = false,
   onWebSettingsChange,
 }: AppHeaderProps) {
   const { t } = useI18n();
@@ -149,11 +147,6 @@ export function AppHeader({
         </nav>
 
         <div className="flex flex-col items-center gap-2">
-          <ChatSettingsMenu
-            settings={webSettings}
-            saving={webSettingsSaving}
-            onChange={onWebSettingsChange}
-          />
           <Button
             type="button"
             variant="ghost"
@@ -166,6 +159,7 @@ export function AppHeader({
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
           <LanguageMenu />
+          <ChatSettingsMenu settings={webSettings} onChange={onWebSettingsChange} />
         </div>
       </aside>
 
@@ -274,11 +268,6 @@ export function AppHeader({
             </nav>
 
             <div className="flex items-center justify-between gap-2 border-t border-border/70 p-3">
-              <ChatSettingsMenu
-                settings={webSettings}
-                saving={webSettingsSaving}
-                onChange={onWebSettingsChange}
-              />
               <Button
                 type="button"
                 variant="ghost"
@@ -292,6 +281,7 @@ export function AppHeader({
                 <span>{theme === "dark" ? t("Light") : t("Dark")}</span>
               </Button>
               <LanguageMenu />
+              <ChatSettingsMenu settings={webSettings} onChange={onWebSettingsChange} />
             </div>
           </aside>
         </div>
