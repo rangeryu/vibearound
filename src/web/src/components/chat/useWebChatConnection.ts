@@ -16,6 +16,7 @@ import {
 import { useI18n } from "@va/i18n";
 import { getWebSocketUrl } from "@/lib/ws-url";
 import type {
+  ChatAttachment,
   ChatMessage,
   ChatMeta,
   ChatSessionSelection,
@@ -49,6 +50,7 @@ interface UseWebChatConnectionOptions {
 
 interface SendChatMessageRequest {
   text: string;
+  attachments?: ChatAttachment[];
   agentId: string;
   profileId?: string;
   workspacePath?: string;
@@ -407,6 +409,7 @@ export function useWebChatConnection({
   const sendMessage = useCallback(
     ({
       text,
+      attachments = [],
       agentId,
       profileId,
       workspacePath,
@@ -415,25 +418,42 @@ export function useWebChatConnection({
     }: SendChatMessageRequest) => {
       const trimmed = text.trim();
       const ws = wsRef.current;
-      if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN) return false;
+      if ((!trimmed && attachments.length === 0) || !ws || ws.readyState !== WebSocket.OPEN) {
+        return false;
+      }
       if (promptInFlightRef.current) return false;
 
       clearReplayCacheContext();
       promptInFlightRef.current = true;
+      const contentParts = messageContentBlocks(trimmed, attachments).map((block, index) => ({
+        id: `user-content-${Date.now()}-${index}`,
+        kind: "content" as const,
+        block,
+      }));
       setMessages((prev) => [
         ...prev,
-        { role: "user", content: trimmed },
+        { role: "user", content: trimmed, parts: contentParts },
         { role: "assistant", content: "", mode: "stream" },
       ]);
       setStreaming(true);
 
       try {
+        const messageId = createMessageId();
         const payload: Record<string, unknown> = {
           type: "message",
-          messageId: createMessageId(),
+          messageId,
           text: trimmed,
           agent: agentId,
         };
+        if (attachments.length > 0) {
+          payload.attachments = attachments.map((attachment) => ({
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            size: attachment.size,
+            uri: attachment.uri,
+          }));
+        }
         if (profileId !== undefined) {
           payload.profileId = profileId;
         }
@@ -619,4 +639,23 @@ export function useWebChatConnection({
     sendPermissionResponse,
     cancelPermissionRequest,
   };
+}
+
+function messageContentBlocks(
+  text: string,
+  attachments: ChatAttachment[],
+): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  if (text) blocks.push({ type: "text", text });
+  blocks.push(
+    ...attachments.map((attachment) => ({
+      type: "resource_link" as const,
+      name: attachment.name,
+      title: attachment.name,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      uri: attachment.uri,
+    })),
+  );
+  return blocks;
 }

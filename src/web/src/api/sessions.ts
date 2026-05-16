@@ -4,6 +4,7 @@
 
 import {
   browserBaseUrl,
+  ChatUploadResponseSchema,
   CreateSessionResponseSchema,
   LaunchSessionListSchema,
   ProfileLaunchOptionsSchema,
@@ -12,6 +13,7 @@ import {
   WebVerboseSettingsSchema,
   WorkspaceItemSchema,
   WorkspacesResponseSchema,
+  type ChatUploadResponse,
   type CreateSessionResponse,
   type LaunchSessionInfo,
   type ProfileLaunchOption,
@@ -24,6 +26,7 @@ import {
 } from "@va/client";
 
 export type {
+  ChatUploadResponse,
   CreateSessionResponse,
   LaunchSessionInfo,
   ProfileLaunchOption,
@@ -177,4 +180,20 @@ export async function updateWebSettings(
     throw new Error(`PATCH /api/settings/web: ${res.status} ${text}`);
   }
   return WebVerboseSettingsSchema.parse(await res.json());
+}
+
+export async function uploadChatFile(file: File): Promise<ChatUploadResponse> {
+  const params = new URLSearchParams();
+  params.set("filename", file.name || "attachment");
+  if (file.type) params.set("mime_type", file.type);
+  const res = await fetch(`${browserBaseUrl()}/api/chat/uploads?${params.toString()}`, {
+    method: "POST",
+    headers: file.type ? { "Content-Type": file.type } : undefined,
+    body: file,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`POST /api/chat/uploads: ${res.status} ${text}`);
+  }
+  return ChatUploadResponseSchema.parse(await res.json());
 }

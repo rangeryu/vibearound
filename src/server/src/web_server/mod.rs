@@ -211,6 +211,11 @@ pub async fn run_web_server(
             "/api/settings/web",
             get(api::get_web_settings_handler).patch(api::update_web_settings_handler),
         )
+        .route(
+            "/api/chat/uploads",
+            post(api::upload_chat_file_handler)
+                .layer(DefaultBodyLimit::max(LOCAL_PROXY_BODY_LIMIT_BYTES)),
+        )
         .route("/api/tmux/sessions", get(api::list_tmux_sessions_handler))
         .route("/api/agents", get(api::list_agents_handler))
         .route("/api/profiles", get(api::list_profiles_handler))

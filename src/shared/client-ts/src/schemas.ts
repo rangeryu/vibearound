@@ -164,6 +164,15 @@ export const WebVerboseSettingsSchema = z.object({
 });
 export type WebVerboseSettings = z.infer<typeof WebVerboseSettingsSchema>;
 
+export const ChatUploadResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  mime_type: z.string(),
+  size: z.number(),
+  uri: z.string(),
+});
+export type ChatUploadResponse = z.infer<typeof ChatUploadResponseSchema>;
+
 export const PreviewSnapshotSchema = z.object({
   slug: z.string(),
   id: z.string(),

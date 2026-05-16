@@ -4,6 +4,7 @@
 //! declarations in `web_server::mod` stable while the implementation stays
 //! grouped by feature area.
 
+mod files;
 mod previews;
 mod profiles;
 mod runtime;
@@ -11,6 +12,7 @@ mod sessions;
 mod settings;
 mod workspaces;
 
+pub use files::upload_chat_file_handler;
 pub use previews::{delete_preview_handler, list_previews_handler};
 pub use profiles::list_profiles_handler;
 pub use runtime::{

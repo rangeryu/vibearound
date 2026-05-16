@@ -228,6 +228,16 @@ pub struct WebVerboseSettings {
     pub show_tool_use: bool,
 }
 
+/// One file uploaded from the web chat composer and staged for the next prompt.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatUploadResponse {
+    pub id: String,
+    pub name: String,
+    pub mime_type: String,
+    pub size: u64,
+    pub uri: String,
+}
+
 /// `POST /api/workspaces/create` response.
 #[derive(Debug, Clone, Serialize)]
 pub struct CreateWorkspaceResponse {
