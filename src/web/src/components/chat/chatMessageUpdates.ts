@@ -84,6 +84,30 @@ function withTextPart(message: ChatMessage, text: string): ChatMessage {
   return withContentBlock(message, textContentBlock(text));
 }
 
+function settleActiveThinking(message: ChatMessage): ChatMessage {
+  const activities = message.activities?.map((activity) =>
+    activity.kind === "thinking" && activity.active !== false
+      ? { ...activity, active: false }
+      : activity,
+  );
+  const parts = message.parts?.map((part) =>
+    part.kind === "thought" && part.active !== false
+      ? { ...part, active: false }
+      : part,
+  );
+
+  if (activities === undefined && parts === undefined) return message;
+  return {
+    ...message,
+    activities,
+    parts,
+    progress:
+      message.progressKind === "thinking" ? undefined : message.progress,
+    progressKind:
+      message.progressKind === "thinking" ? undefined : message.progressKind,
+  };
+}
+
 export function appendStandaloneAssistantMessage(
   prev: ChatMessage[],
   text: string,
@@ -228,9 +252,10 @@ export function appendStreamAssistantMessage(
     ];
   }
   const next = [...prev];
+  const settledLast = settleActiveThinking(last);
   next[next.length - 1] = {
-    ...withContentBlock(last, block),
-    messageId: last.messageId ?? messageId,
+    ...withContentBlock(settledLast, block),
+    messageId: settledLast.messageId ?? messageId,
     progress: undefined,
     progressKind: undefined,
     mode: "stream",
@@ -397,7 +422,8 @@ export function appendToolActivityMessage(
   return updateStreamAssistantMessage(
     prev,
     (message) => {
-      const activities = [...(message.activities ?? [])];
+      const settledMessage = settleActiveThinking(message);
+      const activities = [...(settledMessage.activities ?? [])];
       const existingIndex =
         id !== undefined
           ? activities.findIndex((activity) => activity.id === id)
@@ -425,9 +451,9 @@ export function appendToolActivityMessage(
         activities.push(activity);
       }
       return {
-        ...message,
+        ...settledMessage,
         activities,
-        parts: upsertToolCallPart(message.parts, update),
+        parts: upsertToolCallPart(settledMessage.parts, update),
         mode: "stream",
       };
     },
@@ -453,7 +479,8 @@ export function appendPlanMessage(prev: ChatMessage[], plan: Plan): ChatMessage[
   return updateStreamAssistantMessage(
     prev,
     (message) => {
-      const parts = [...(message.parts ?? [])];
+      const settledMessage = settleActiveThinking(message);
+      const parts = [...(settledMessage.parts ?? [])];
       const lastPlanIndex = findLastMatchingActivityIndex(
         parts,
         (part) => part.kind === "plan",
@@ -466,7 +493,7 @@ export function appendPlanMessage(prev: ChatMessage[], plan: Plan): ChatMessage[
       } else {
         parts.push({ id: partId("plan"), kind: "plan", plan });
       }
-      return { ...message, parts, mode: "stream" };
+      return { ...settledMessage, parts, mode: "stream" };
     },
     {
       role: "assistant",
@@ -506,12 +533,13 @@ export function setStreamProgressMessage(
 
 export function clearStreamProgressMessage(prev: ChatMessage[]): ChatMessage[] {
   const last = prev[prev.length - 1];
-  if (!last || last.role !== "assistant" || last.mode !== "stream" || !last.progress) {
+  if (!last || last.role !== "assistant" || last.mode !== "stream") {
     return prev;
   }
   const next = [...prev];
+  const settledLast = settleActiveThinking(last);
   next[next.length - 1] = {
-    ...last,
+    ...settledLast,
     progress: undefined,
     progressKind: undefined,
     mode: "stream",
@@ -542,8 +570,9 @@ export function appendErrorToStreamMessage(
     ];
   }
   const next = [...prev];
+  const settledLast = settleActiveThinking(last);
   next[next.length - 1] = {
-    ...withTextPart(last, `${last.content ? "\n\n" : ""}${errorMessage}`),
+    ...withTextPart(settledLast, `${settledLast.content ? "\n\n" : ""}${errorMessage}`),
     progress: undefined,
     progressKind: undefined,
     mode: "stream",
