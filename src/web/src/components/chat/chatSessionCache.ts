@@ -4,7 +4,8 @@ const DB_NAME = "vibearound-web-chat";
 const DB_VERSION = 1;
 const STORE_NAME = "session-transcripts";
 const CACHE_SCHEMA_VERSION = 2;
-const MAX_CACHED_SESSIONS = 5;
+const MAX_CACHED_SESSIONS = 20;
+const MAX_CACHED_BYTES = 256 * 1024 * 1024;
 const KEY_SEPARATOR = "\u001f";
 
 interface CacheKeyParts {
@@ -29,11 +30,25 @@ interface CachedSessionTranscript {
   sessionId: string;
   updatedAt: number;
   cachedAt: number;
+  payloadBytes?: number;
   messages: ChatMessage[];
 }
 
 function cacheKey({ agentId, workspace, sessionId }: CacheKeyParts) {
   return [agentId, workspace, sessionId].join(KEY_SEPARATOR);
+}
+
+function estimatePayloadBytes(value: unknown) {
+  const json = JSON.stringify(value);
+  if (!json) return 0;
+  if (typeof Blob !== "undefined") {
+    return new Blob([json]).size;
+  }
+  return json.length;
+}
+
+function entryPayloadBytes(entry: CachedSessionTranscript) {
+  return entry.payloadBytes ?? estimatePayloadBytes(entry);
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
@@ -88,13 +103,32 @@ async function withStore<T>(
   }
 }
 
-async function pruneCachedSessions(store: IDBObjectStore) {
+async function pruneCachedSessions(store: IDBObjectStore, protectedKey?: string) {
   const entries = await requestResult<CachedSessionTranscript[]>(store.getAll());
-  if (entries.length <= MAX_CACHED_SESSIONS) return;
+  const totalBytes = entries.reduce((sum, entry) => sum + entryPayloadBytes(entry), 0);
+  if (entries.length <= MAX_CACHED_SESSIONS && totalBytes <= MAX_CACHED_BYTES) return;
+
+  const keptKeys = new Set<string>();
+  let keptBytes = 0;
+  const sortedEntries = [...entries].sort((a, b) => {
+    if (a.key === protectedKey) return -1;
+    if (b.key === protectedKey) return 1;
+    return b.cachedAt - a.cachedAt;
+  });
+
+  sortedEntries.forEach((entry) => {
+    const bytes = entryPayloadBytes(entry);
+    const keepProtected = entry.key === protectedKey;
+    const keepWithinBudget =
+      keptKeys.size < MAX_CACHED_SESSIONS && keptBytes + bytes <= MAX_CACHED_BYTES;
+    if (keepProtected || keepWithinBudget) {
+      keptKeys.add(entry.key);
+      keptBytes += bytes;
+    }
+  });
 
   entries
-    .sort((a, b) => b.cachedAt - a.cachedAt)
-    .slice(MAX_CACHED_SESSIONS)
+    .filter((entry) => !keptKeys.has(entry.key))
     .forEach((entry) => {
       store.delete(entry.key);
     });
@@ -130,7 +164,7 @@ export async function writeCachedChatSession({
 }: CacheWriteRequest): Promise<void> {
   const key = cacheKey({ agentId, workspace, sessionId });
   await withStore("readwrite", async (store) => {
-    store.put({
+    const entry = {
       key,
       schemaVersion: CACHE_SCHEMA_VERSION,
       agentId,
@@ -139,8 +173,12 @@ export async function writeCachedChatSession({
       updatedAt,
       cachedAt: Date.now(),
       messages,
+    } satisfies CachedSessionTranscript;
+    store.put({
+      ...entry,
+      payloadBytes: estimatePayloadBytes(entry),
     } satisfies CachedSessionTranscript);
-    await pruneCachedSessions(store);
+    await pruneCachedSessions(store, key);
   });
 }
 

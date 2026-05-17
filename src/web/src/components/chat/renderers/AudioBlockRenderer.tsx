@@ -8,7 +8,7 @@ type AudioBlock = Extract<ContentBlock, { type: "audio" }>;
 
 export function AudioBlockRenderer({ block }: { block: AudioBlock }) {
   return (
-    <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-3">
+    <div className="py-3">
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
         <FileAudio className="h-3.5 w-3.5" />
         <span>{block.mimeType}</span>

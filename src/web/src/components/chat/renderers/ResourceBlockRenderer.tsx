@@ -3,7 +3,7 @@
 import { FileText } from "lucide-react";
 import { useI18n } from "@va/i18n";
 import { MessageResponse } from "../MessageResponse";
-import { fileNameFromUri } from "./contentUtils";
+import { fileNameFromUri, proxiedFileUrl } from "./contentUtils";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 
 type ResourceBlock = Extract<ContentBlock, { type: "resource" }>;
@@ -25,7 +25,7 @@ export function ResourceBlockRenderer({ block }: { block: ResourceBlock }) {
 
   if ("text" in resource) {
     return (
-      <details className="rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+      <details className="py-2">
         <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
           <FileText className="h-4 w-4 text-muted-foreground" />
           <span className="min-w-0 truncate">{label}</span>
@@ -49,7 +49,15 @@ export function ResourceBlockRenderer({ block }: { block: ResourceBlock }) {
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-sm">
+    <a
+      href={proxiedFileUrl(resource.uri, {
+        name: label,
+        mimeType: resource.mimeType,
+      })}
+      target="_blank"
+      rel="noreferrer"
+      className="flex min-w-0 items-center gap-3 py-2 text-sm hover:text-foreground"
+    >
       <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0">
         <div className="truncate font-medium text-foreground">{label}</div>
@@ -57,6 +65,6 @@ export function ResourceBlockRenderer({ block }: { block: ResourceBlock }) {
           {resource.mimeType ?? t("Binary resource")}
         </div>
       </div>
-    </div>
+    </a>
   );
 }

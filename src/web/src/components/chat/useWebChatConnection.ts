@@ -16,6 +16,7 @@ import {
 import { useI18n } from "@va/i18n";
 import { getWebSocketUrl } from "@/lib/ws-url";
 import type {
+  ChatAttachment,
   ChatMessage,
   ChatMeta,
   ChatSessionSelection,
@@ -37,6 +38,7 @@ import {
   appendUserMessageChunk,
   clearStreamProgressMessage,
   setStreamProgressMessage,
+  settleStreamActivitiesMessage,
 } from "./chatMessageUpdates";
 import {
   readCachedChatSession,
@@ -49,6 +51,7 @@ interface UseWebChatConnectionOptions {
 
 interface SendChatMessageRequest {
   text: string;
+  attachments?: ChatAttachment[];
   agentId: string;
   profileId?: string;
   workspacePath?: string;
@@ -61,6 +64,8 @@ interface ResumeChatSessionRequest {
   profileId?: string;
   launchSession: LaunchSessionInfo;
 }
+
+type MessageUpdate = (prev: ChatMessage[]) => ChatMessage[];
 
 export interface ResumeReplayState {
   sessionId: string;
@@ -86,6 +91,10 @@ export function useWebChatConnection({
   const resumeReplayRef = useRef<ResumeReplayState | null>(null);
   const resumeRequestIdRef = useRef(0);
   const messagesRef = useRef<ChatMessage[]>([]);
+  const replayMessageBufferRef = useRef<{
+    sessionId: string;
+    messages: ChatMessage[];
+  } | null>(null);
   const ignoredReplaySessionsRef = useRef<Set<string>>(new Set());
   const resumeReplayDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -117,15 +126,18 @@ export function useWebChatConnection({
     clearReplayCacheWriteTimer();
   }, [clearReplayCacheWriteTimer]);
 
-  const cacheResumeReplay = useCallback((replay: ResumeReplayState) => {
+  const cacheResumeReplay = useCallback((
+    replay: ResumeReplayState,
+    messagesToCache = messagesRef.current,
+  ) => {
     if (!replay.agentId || !replay.workspace || replay.updatedAt === undefined) return;
-    if (messagesRef.current.length === 0) return;
+    if (messagesToCache.length === 0) return;
     void writeCachedChatSession({
       agentId: replay.agentId,
       workspace: replay.workspace,
       sessionId: replay.sessionId,
       updatedAt: replay.updatedAt,
-      messages: messagesRef.current,
+      messages: messagesToCache,
     }).catch((error) => {
       console.warn("[ChatView] failed to cache replayed session:", error);
     });
@@ -145,6 +157,18 @@ export function useWebChatConnection({
     [cacheResumeReplay, clearReplayCacheWriteTimer],
   );
 
+  const applyMessageUpdate = useCallback((
+    updater: MessageUpdate,
+    replaySessionId?: string,
+  ) => {
+    const replayBuffer = replaySessionId ? replayMessageBufferRef.current : null;
+    if (replayBuffer && replayBuffer.sessionId === replaySessionId) {
+      replayBuffer.messages = updater(replayBuffer.messages);
+      return;
+    }
+    setMessages(updater);
+  }, []);
+
   useEffect(() => {
     messagesRef.current = messages;
     scheduleReplayCacheWrite();
@@ -155,14 +179,30 @@ export function useWebChatConnection({
       const current = resumeReplayRef.current;
       if (sessionId && current?.sessionId !== sessionId) return;
       if (current && options?.cache) {
-        scheduleReplayCacheWrite(current);
+        const replayBuffer = replayMessageBufferRef.current;
+        if (replayBuffer?.sessionId === current.sessionId) {
+          const replayedMessages = settleStreamActivitiesMessage(
+            replayBuffer.messages,
+          );
+          replayMessageBufferRef.current = null;
+          if (replayedMessages.length > 0) {
+            messagesRef.current = replayedMessages;
+            setMessages(replayedMessages);
+            cacheResumeReplay(current, replayedMessages);
+          }
+          clearReplayCacheContext();
+        } else {
+          scheduleReplayCacheWrite(current);
+        }
       } else if (!options?.cache) {
+        replayMessageBufferRef.current = null;
         clearReplayCacheContext();
       }
       clearResumeReplayDoneTimer();
       updateResumeReplay(null);
     },
     [
+      cacheResumeReplay,
       clearReplayCacheContext,
       clearResumeReplayDoneTimer,
       scheduleReplayCacheWrite,
@@ -188,6 +228,7 @@ export function useWebChatConnection({
     ws.onclose = () => {
       setConnected(false);
       setStreaming(false);
+      setMessages((prev) => settleStreamActivitiesMessage(prev));
       promptInFlightRef.current = false;
       setPendingPermissions([]);
       finishResumeReplay();
@@ -195,6 +236,7 @@ export function useWebChatConnection({
     ws.onerror = () => {
       setConnected(false);
       setStreaming(false);
+      setMessages((prev) => settleStreamActivitiesMessage(prev));
       promptInFlightRef.current = false;
       finishResumeReplay();
     };
@@ -263,7 +305,7 @@ export function useWebChatConnection({
           break;
         }
         case "prompt_done": {
-          clearStreamProgress();
+          settleStreamActivities();
           setStreaming(false);
           promptInFlightRef.current = false;
           break;
@@ -293,23 +335,24 @@ export function useWebChatConnection({
         return;
       }
       const replaying = pendingResume?.sessionId === notif.sessionId;
+      const replaySessionId = replaying ? notif.sessionId : undefined;
 
       const update = notif.update;
       switch (update.sessionUpdate) {
         case "user_message_chunk": {
           appendUserMessage(update.content, update.messageId, {
             forceNewMessage: replaying && !update.messageId,
-          });
+          }, replaySessionId);
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
         }
         case "agent_message_chunk": {
-          appendToStreamAssistant(update.content, update.messageId);
+          appendToStreamAssistant(update.content, update.messageId, replaySessionId);
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
         }
         case "agent_thought_chunk": {
-          appendThinkingActivity(update.content);
+          appendThinkingActivity(update.content, replaySessionId);
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
         }
@@ -317,17 +360,20 @@ export function useWebChatConnection({
         case "tool_call_update": {
           const title = toolActivityLabel(update);
           const status = toolActivityStatus(update);
-          appendToolActivity(update);
+          appendToolActivity(update, replaySessionId);
           if (status === "completed" || status === "failed") {
-            clearStreamProgress();
+            clearStreamProgress(replaySessionId);
           } else {
-            setStreamProgress(t("Using tool: {{tool}}…", { tool: title }));
+            setStreamProgress(
+              t("Using tool: {{tool}}…", { tool: title }),
+              replaySessionId,
+            );
           }
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
         }
         case "plan": {
-          appendPlan(update);
+          appendPlan(update, replaySessionId);
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
         }
@@ -341,51 +387,76 @@ export function useWebChatConnection({
       }
     }
 
-    function appendStandaloneAssistant(text: string) {
-      setMessages((prev) => appendStandaloneAssistantMessage(prev, text));
+    function appendStandaloneAssistant(text: string, replaySessionId?: string) {
+      applyMessageUpdate(
+        (prev) => appendStandaloneAssistantMessage(prev, text),
+        replaySessionId,
+      );
     }
 
     function appendUserMessage(
       content: ContentBlock,
       messageId?: string | null,
       options?: { forceNewMessage?: boolean },
+      replaySessionId?: string,
     ) {
-      setMessages((prev) => appendUserMessageChunk(prev, content, messageId, options));
+      applyMessageUpdate(
+        (prev) => appendUserMessageChunk(prev, content, messageId, options),
+        replaySessionId,
+      );
     }
 
     function appendToStreamAssistant(
       content: ContentBlock,
       messageId?: string | null,
+      replaySessionId?: string,
       options?: { forceNewMessage?: boolean },
     ) {
-      setMessages((prev) =>
-        appendStreamAssistantMessage(prev, content, messageId, options),
+      applyMessageUpdate(
+        (prev) => appendStreamAssistantMessage(prev, content, messageId, options),
+        replaySessionId,
       );
     }
 
-    function appendThinkingActivity(content: ContentBlock) {
-      setMessages((prev) => appendThinkingActivityMessage(prev, content, t("Thinking")));
+    function appendThinkingActivity(content: ContentBlock, replaySessionId?: string) {
+      applyMessageUpdate(
+        (prev) => appendThinkingActivityMessage(prev, content, t("Thinking")),
+        replaySessionId,
+      );
     }
 
-    function appendToolActivity(update: ToolCall | ToolCallUpdate) {
-      setMessages((prev) => appendToolActivityMessage(prev, update));
+    function appendToolActivity(
+      update: ToolCall | ToolCallUpdate,
+      replaySessionId?: string,
+    ) {
+      applyMessageUpdate(
+        (prev) => appendToolActivityMessage(prev, update),
+        replaySessionId,
+      );
     }
 
-    function appendPlan(plan: Plan) {
-      setMessages((prev) => appendPlanMessage(prev, plan));
+    function appendPlan(plan: Plan, replaySessionId?: string) {
+      applyMessageUpdate((prev) => appendPlanMessage(prev, plan), replaySessionId);
     }
 
-    function setStreamProgress(progress: string) {
-      setMessages((prev) => setStreamProgressMessage(prev, progress, "tool"));
+    function setStreamProgress(progress: string, replaySessionId?: string) {
+      applyMessageUpdate(
+        (prev) => setStreamProgressMessage(prev, progress, "tool"),
+        replaySessionId,
+      );
     }
 
-    function clearStreamProgress() {
-      setMessages((prev) => clearStreamProgressMessage(prev));
+    function clearStreamProgress(replaySessionId?: string) {
+      applyMessageUpdate((prev) => clearStreamProgressMessage(prev), replaySessionId);
+    }
+
+    function settleStreamActivities(replaySessionId?: string) {
+      applyMessageUpdate((prev) => settleStreamActivitiesMessage(prev), replaySessionId);
     }
 
     function appendErrorToStream(error: string) {
-      setMessages((prev) =>
-        appendErrorToStreamMessage(prev, t("Error: {{error}}", { error })),
+      applyMessageUpdate(
+        (prev) => appendErrorToStreamMessage(prev, t("Error: {{error}}", { error })),
       );
     }
 
@@ -396,6 +467,7 @@ export function useWebChatConnection({
       clearReplayCacheWriteTimer();
     };
   }, [
+    applyMessageUpdate,
     clearReplayCacheWriteTimer,
     clearResumeReplayDoneTimer,
     finishResumeReplay,
@@ -407,6 +479,7 @@ export function useWebChatConnection({
   const sendMessage = useCallback(
     ({
       text,
+      attachments = [],
       agentId,
       profileId,
       workspacePath,
@@ -415,25 +488,42 @@ export function useWebChatConnection({
     }: SendChatMessageRequest) => {
       const trimmed = text.trim();
       const ws = wsRef.current;
-      if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN) return false;
+      if ((!trimmed && attachments.length === 0) || !ws || ws.readyState !== WebSocket.OPEN) {
+        return false;
+      }
       if (promptInFlightRef.current) return false;
 
       clearReplayCacheContext();
       promptInFlightRef.current = true;
+      const contentParts = messageContentBlocks(trimmed, attachments).map((block, index) => ({
+        id: `user-content-${Date.now()}-${index}`,
+        kind: "content" as const,
+        block,
+      }));
       setMessages((prev) => [
         ...prev,
-        { role: "user", content: trimmed },
+        { role: "user", content: trimmed, parts: contentParts },
         { role: "assistant", content: "", mode: "stream" },
       ]);
       setStreaming(true);
 
       try {
+        const messageId = createMessageId();
         const payload: Record<string, unknown> = {
           type: "message",
-          messageId: createMessageId(),
+          messageId,
           text: trimmed,
           agent: agentId,
         };
+        if (attachments.length > 0) {
+          payload.attachments = attachments.map((attachment) => ({
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            size: attachment.size,
+            uri: attachment.uri,
+          }));
+        }
         if (profileId !== undefined) {
           payload.profileId = profileId;
         }
@@ -483,6 +573,7 @@ export function useWebChatConnection({
     }
     clearResumeReplayDoneTimer();
     clearReplayCacheContext();
+    replayMessageBufferRef.current = null;
     promptInFlightRef.current = false;
     setStreaming(false);
     setPendingPermissions([]);
@@ -512,6 +603,10 @@ export function useWebChatConnection({
         workspace: launchSession.workspace,
         updatedAt: launchSession.updated_at,
       };
+      replayMessageBufferRef.current = {
+        sessionId: launchSession.session_id,
+        messages: [],
+      };
       replayCacheContextRef.current = replay;
       updateResumeReplay(replay);
       setMeta((prev) => ({ ...prev, sessionId: launchSession.session_id }));
@@ -526,8 +621,10 @@ export function useWebChatConnection({
           });
           if (resumeRequestIdRef.current !== requestId) return;
           if (cachedMessages) {
+            const settledCachedMessages = settleStreamActivitiesMessage(cachedMessages);
+            replayMessageBufferRef.current = null;
             clearReplayCacheContext();
-            setMessages(cachedMessages);
+            setMessages(settledCachedMessages);
             updateResumeReplay(null);
             return;
           }
@@ -538,6 +635,7 @@ export function useWebChatConnection({
         if (resumeRequestIdRef.current !== requestId) return;
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
+          replayMessageBufferRef.current = null;
           clearReplayCacheContext();
           updateResumeReplay(null);
           return;
@@ -556,6 +654,7 @@ export function useWebChatConnection({
           ws.send(JSON.stringify(payload));
         } catch (error) {
           console.warn("[ChatView] failed to resume chat session:", error);
+          replayMessageBufferRef.current = null;
           clearReplayCacheContext();
           updateResumeReplay(null);
         }
@@ -582,6 +681,8 @@ export function useWebChatConnection({
     }
     promptInFlightRef.current = false;
     setStreaming(false);
+    setMessages((prev) => settleStreamActivitiesMessage(prev));
+    replayMessageBufferRef.current = null;
     clearReplayCacheContext();
     updateResumeReplay(null);
   }, [clearReplayCacheContext, updateResumeReplay]);
@@ -619,4 +720,23 @@ export function useWebChatConnection({
     sendPermissionResponse,
     cancelPermissionRequest,
   };
+}
+
+function messageContentBlocks(
+  text: string,
+  attachments: ChatAttachment[],
+): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  if (text) blocks.push({ type: "text", text });
+  blocks.push(
+    ...attachments.map((attachment) => ({
+      type: "resource_link" as const,
+      name: attachment.name,
+      title: attachment.name,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      uri: attachment.uri,
+    })),
+  );
+  return blocks;
 }

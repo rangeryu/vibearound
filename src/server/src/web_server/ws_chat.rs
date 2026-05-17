@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use agent_client_protocol::schema as acp;
 use common::channels::{ChannelEnvelope, ChannelInput, ChannelOutput};
-use common::routing::RouteKey;
+use common::routing::{Attachment, RouteKey};
 use common::{agent_state, config};
 
 use crate::api_types::{AgentInfo, ChatEvent};
@@ -436,14 +436,15 @@ fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
             match ty {
                 "message" => {
                     let text = v.get("text").and_then(|x| x.as_str()).unwrap_or("").trim();
-                    if text.is_empty() {
-                        return None;
-                    }
                     let message_id = v
                         .get("messageId")
                         .and_then(|x| x.as_str())
                         .map(ToOwned::to_owned)
                         .unwrap_or_else(|| Uuid::new_v4().to_string());
+                    let attachments = parse_web_attachments(&v, &message_id);
+                    if text.is_empty() && attachments.is_empty() {
+                        return None;
+                    }
                     let agent = parse_web_agent(&v);
                     let session_intent = parse_web_session_intent(&v, agent.clone());
                     let profile = parse_web_profile(&v);
@@ -455,7 +456,7 @@ fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
                                 turn_id: None,
                                 text: text.to_string(),
                                 sender_id: "web-user".to_string(),
-                                attachments: vec![],
+                                attachments,
                                 parent_id: None,
                                 cli_kind: agent,
                             },
@@ -533,6 +534,58 @@ fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
             }
         }
     }
+}
+
+fn parse_web_attachments(value: &serde_json::Value, message_id: &str) -> Vec<Attachment> {
+    value
+        .get("attachments")
+        .and_then(|items| items.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| parse_web_attachment(item, message_id))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_web_attachment(value: &serde_json::Value, message_id: &str) -> Option<Attachment> {
+    let file_key = string_field(value, &["fileKey", "file_key", "uri", "url"])?;
+    let file_name = string_field(value, &["fileName", "file_name", "name"]).unwrap_or_else(|| {
+        file_key
+            .rsplit('/')
+            .next()
+            .unwrap_or("attachment")
+            .to_string()
+    });
+    let resource_type = string_field(
+        value,
+        &["resourceType", "resource_type", "mimeType", "mime_type"],
+    )
+    .unwrap_or_else(|| "application/octet-stream".to_string());
+    let size = value
+        .get("size")
+        .and_then(|size| {
+            size.as_i64()
+                .or_else(|| size.as_u64().map(|size| size as i64))
+        })
+        .filter(|size| *size >= 0);
+
+    Some(Attachment {
+        message_id: message_id.to_string(),
+        file_key,
+        file_name,
+        resource_type,
+        size,
+    })
+}
+
+fn string_field(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(|item| item.as_str()))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn parse_web_agent(value: &serde_json::Value) -> Option<String> {
@@ -800,5 +853,38 @@ mod tests {
         };
 
         assert_eq!(profile, "deepseek");
+    }
+
+    #[test]
+    fn parses_message_attachments() {
+        let input = parse_web_chat_input(
+            "chat-1",
+            r#"{"type":"message","messageId":"msg-1","agent":"codex","attachments":[{"uri":"file:///tmp/report.md","name":"report.md","mimeType":"text/markdown","size":42}]}"#,
+        )
+        .expect("message input");
+
+        let WebChatInput::Message {
+            input:
+                ChannelInput::Message {
+                    envelope:
+                        ChannelEnvelope {
+                            message_id,
+                            attachments,
+                            ..
+                        },
+                },
+            ..
+        } = input
+        else {
+            panic!("expected attachment message");
+        };
+
+        assert_eq!(message_id, "msg-1");
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].message_id, "msg-1");
+        assert_eq!(attachments[0].file_key, "file:///tmp/report.md");
+        assert_eq!(attachments[0].file_name, "report.md");
+        assert_eq!(attachments[0].resource_type, "text/markdown");
+        assert_eq!(attachments[0].size, Some(42));
     }
 }

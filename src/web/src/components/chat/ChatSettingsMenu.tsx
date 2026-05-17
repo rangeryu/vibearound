@@ -14,15 +14,10 @@ import {
 
 interface ChatSettingsMenuProps {
   settings: WebVerboseSettings;
-  saving?: boolean;
   onChange: (patch: Partial<WebVerboseSettings>) => void;
 }
 
-export function ChatSettingsMenu({
-  settings,
-  saving = false,
-  onChange,
-}: ChatSettingsMenuProps) {
+export function ChatSettingsMenu({ settings, onChange }: ChatSettingsMenuProps) {
   const { t } = useI18n();
 
   return (
@@ -44,7 +39,6 @@ export function ChatSettingsMenu({
         <DropdownMenuSeparator />
         <DropdownMenuCheckboxItem
           checked={settings.show_thinking}
-          disabled={saving}
           onCheckedChange={(checked) =>
             onChange({ show_thinking: checked === true })
           }
@@ -53,7 +47,6 @@ export function ChatSettingsMenu({
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
           checked={settings.show_tool_use}
-          disabled={saving}
           onCheckedChange={(checked) =>
             onChange({ show_tool_use: checked === true })
           }

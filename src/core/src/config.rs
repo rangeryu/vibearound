@@ -73,13 +73,6 @@ fn ensure_rustls_provider() {
     });
 }
 
-/// Per-channel verbose/output settings for IM.
-#[derive(Debug, Clone, Default)]
-pub struct ImVerboseConfig {
-    pub show_thinking: bool,
-    pub show_tool_use: bool,
-}
-
 /// Cached config from settings.json.
 #[derive(Clone)]
 pub struct Config {
@@ -122,10 +115,6 @@ impl Config {
         self.raw_channels.get(name).cloned()
     }
 
-    /// Get verbose config for a specific channel.
-    pub fn channel_verbose(&self, name: &str) -> ImVerboseConfig {
-        parse_verbose_config(self.raw_channels.get(name))
-    }
 
     /// Resolve the workspace directory for an agent session.
     /// The default workspace is fixed to ~/.vibearound/workspaces.
@@ -355,21 +344,6 @@ pub fn preview_base_url() -> Option<String> {
                 .as_ref()
                 .map(|d| format!("https://{}", d.trim()))
         })
-}
-
-/// Parse verbose config from a channel JSON object.
-fn parse_verbose_config(channel_obj: Option<&serde_json::Value>) -> ImVerboseConfig {
-    let verbose = channel_obj.and_then(|c| c.get("verbose"));
-    ImVerboseConfig {
-        show_thinking: verbose
-            .and_then(|v| v.get("show_thinking"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-        show_tool_use: verbose
-            .and_then(|v| v.get("show_tool_use"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-    }
 }
 
 /// Expand ~ to home directory in a path string.

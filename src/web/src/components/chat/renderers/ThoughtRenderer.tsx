@@ -14,7 +14,7 @@ export function ThoughtRenderer({ part }: { part: ChatThoughtPart }) {
   if (!hasContent) return null;
 
   return (
-    <details className="rounded-md border border-border/60 bg-muted/15 px-3 py-2 text-muted-foreground">
+    <details className="py-2 text-muted-foreground">
       <summary className="flex cursor-pointer items-center gap-2 font-mono text-xs uppercase">
         {part.active && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
         {t("Thinking")}

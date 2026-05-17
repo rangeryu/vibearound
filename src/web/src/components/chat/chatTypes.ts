@@ -66,6 +66,19 @@ export type ChatMessage = {
   mode?: "standalone" | "stream";
 };
 
+export type ChatDisplaySettings = {
+  showThinking: boolean;
+  showTools: boolean;
+};
+
+export type ChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  uri: string;
+};
+
 export type ChatMeta = {
   channelId?: string;
   sessionId?: string;

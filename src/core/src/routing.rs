@@ -93,4 +93,6 @@ pub struct Attachment {
     pub file_key: String,
     pub file_name: String,
     pub resource_type: String,
+    #[serde(default)]
+    pub size: Option<i64>,
 }

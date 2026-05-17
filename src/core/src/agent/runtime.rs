@@ -273,8 +273,13 @@ async fn resolve_agent_program(agent_id: &str) -> anyhow::Result<(String, Vec<St
     // 2. binary-download agents → install via install_cmd, run from PATH
     // 3. native agents → program + args from PATH
     if let Some(npm_pkg) = &agent_def.acp.npm_package {
-        let bin_name = agent_def.acp.bin_name.as_deref().unwrap_or(npm_pkg);
-        if crate::process::env::resolve_acp_agent_bin(bin_name).is_err() {
+        let default_bin_name = super::install::npm_package_bin_name(npm_pkg);
+        let bin_name = agent_def
+            .acp
+            .bin_name
+            .as_deref()
+            .unwrap_or(&default_bin_name);
+        if !super::install::npm_package_installed(npm_pkg, bin_name) {
             tracing::info!("[{}-agent] auto-installing {} ...", agent_id, npm_pkg);
             super::install::auto_install_npm_agent(npm_pkg).await?;
         }

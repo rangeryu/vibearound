@@ -14,7 +14,7 @@ export function TerminalReferenceRenderer({
   const { t } = useI18n();
 
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border/70 bg-background/60 px-3 py-2 font-mono text-xs text-muted-foreground">
+    <div className="flex items-center gap-2 py-2 font-mono text-xs text-muted-foreground">
       <Terminal className="h-3.5 w-3.5" />
       <span>{t("Terminal")}</span>
       <span className="truncate">{terminal.terminalId}</span>

@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Menu } from "lucide-react";
 import type { WebVerboseSettings } from "@va/client";
 import { useI18n } from "@va/i18n";
 
-import { getWebSettings, updateWebSettings } from "@/api/sessions";
 import { AppHeader } from "@/components/AppHeader";
 import { ChatView } from "@/components/chat";
 import { TabBar } from "@/components/TabBar";
@@ -23,10 +22,33 @@ function workspacePaneClass(active: boolean) {
   );
 }
 
+const WEB_SETTINGS_STORAGE_KEY = "vibearound.web.transcriptSettings";
+
 const DEFAULT_WEB_SETTINGS: WebVerboseSettings = {
-  show_thinking: false,
-  show_tool_use: false,
+  show_thinking: true,
+  show_tool_use: true,
 };
+
+function readStoredWebSettings(): WebVerboseSettings {
+  if (typeof window === "undefined") return DEFAULT_WEB_SETTINGS;
+  try {
+    const raw = window.localStorage.getItem(WEB_SETTINGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_WEB_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<WebVerboseSettings>;
+    return {
+      show_thinking:
+        typeof parsed.show_thinking === "boolean"
+          ? parsed.show_thinking
+          : DEFAULT_WEB_SETTINGS.show_thinking,
+      show_tool_use:
+        typeof parsed.show_tool_use === "boolean"
+          ? parsed.show_tool_use
+          : DEFAULT_WEB_SETTINGS.show_tool_use,
+    };
+  } catch {
+    return DEFAULT_WEB_SETTINGS;
+  }
+}
 
 function App() {
   const { t } = useI18n();
@@ -34,9 +56,7 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("tabs");
   const [chatStatus, setChatStatus] = useState<ChatRuntimeStatus>("connecting");
   const [theme, setTheme] = useState<Theme>(() => getResolvedTheme());
-  const [webSettings, setWebSettings] =
-    useState<WebVerboseSettings>(DEFAULT_WEB_SETTINGS);
-  const [webSettingsSaving, setWebSettingsSaving] = useState(false);
+  const [webSettings, setWebSettings] = useState<WebVerboseSettings>(readStoredWebSettings);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const tmux = useTmux();
@@ -69,39 +89,21 @@ function App() {
     clearMaximized();
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    void getWebSettings()
-      .then((settings) => {
-        if (!cancelled) setWebSettings(settings);
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          console.warn("[App] failed to load web settings:", error);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const handleWebSettingsChange = useCallback(
-    async (patch: Partial<WebVerboseSettings>) => {
-      const previous = webSettings;
-      setWebSettings((current) => ({ ...current, ...patch }));
-      setWebSettingsSaving(true);
-      try {
-        const saved = await updateWebSettings(patch);
-        setWebSettings(saved);
-      } catch (error) {
-        console.warn("[App] failed to update web settings:", error);
-        setWebSettings(previous);
-      } finally {
-        setWebSettingsSaving(false);
-      }
+    (patch: Partial<WebVerboseSettings>) => {
+      setWebSettings((current) => {
+        const next = { ...current, ...patch };
+        if (typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(WEB_SETTINGS_STORAGE_KEY, JSON.stringify(next));
+          } catch (error) {
+            console.warn("[App] failed to persist web settings:", error);
+          }
+        }
+        return next;
+      });
     },
-    [webSettings],
+    [],
   );
 
   return (
@@ -120,7 +122,6 @@ function App() {
           runningSessions={runningSessions}
           chatStatus={chatStatus}
           webSettings={webSettings}
-          webSettingsSaving={webSettingsSaving}
           onWebSettingsChange={handleWebSettingsChange}
         />
 

@@ -16,6 +16,7 @@ import {
   getLaunchSessions,
   getProfiles,
   getWorkspaces,
+  uploadChatFile,
 } from "@/api/sessions";
 import { getAgentDisplayName } from "@/lib/agents";
 import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
@@ -39,7 +40,7 @@ import { NewChatAgentPicker } from "./NewChatAgentPicker";
 import { NewChatHome } from "./NewChatHome";
 import { NewChatWorkspacePicker } from "./NewChatWorkspacePicker";
 import { PendingPermissions } from "./PendingPermissions";
-import type { ChatSessionSelection } from "./chatTypes";
+import type { ChatAttachment, ChatSessionSelection } from "./chatTypes";
 import { useWebChatConnection } from "./useWebChatConnection";
 
 interface ChatViewProps {
@@ -122,6 +123,9 @@ export function ChatView({
   const { t } = useI18n();
   const [storedLaunchSelection] = useState(readStoredLaunchSelection);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachmentsUploading, setAttachmentsUploading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | undefined>();
   const [selectedAgent, setSelectedAgent] = useState<string>(
     storedLaunchSelection.agentId ?? "claude",
   );
@@ -464,6 +468,8 @@ export function ChatView({
         });
         setSelectedAgent(sidebarAgentId);
         clearConversationView({ abortReplay: true });
+        setAttachments([]);
+        setAttachmentError(undefined);
         return;
       }
       if (selection.kind !== "resume") return;
@@ -480,6 +486,8 @@ export function ChatView({
       }));
       setSelectedAgent(sidebarAgentId);
       setSelectedWorkspacePath(launchSession.workspace);
+      setAttachments([]);
+      setAttachmentError(undefined);
       resumeSession({
         agentId: sidebarAgentId,
         profileId: profileSelections[sidebarAgentId] ?? DIRECT_PROFILE_ID,
@@ -584,12 +592,50 @@ export function ChatView({
     [clearConversationView, selectedAgent, sessionSelection],
   );
 
+  const handleFilesSelected = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    const rejected = files.find((file) => !isAllowedAttachment(file));
+    if (rejected) {
+      setAttachmentError(describeRejection(rejected, t));
+      return;
+    }
+    setAttachmentsUploading(true);
+    setAttachmentError(undefined);
+    try {
+      const uploaded = await Promise.all(files.map((file) => uploadChatFile(file)));
+      setAttachments((prev) => [
+        ...prev,
+        ...uploaded.map((file) => ({
+          id: file.id,
+          name: file.name,
+          mimeType: file.mime_type,
+          size: file.size,
+          uri: file.uri,
+        })),
+      ]);
+    } catch (error) {
+      console.warn("[ChatView] failed to upload attachment:", error);
+      setAttachmentError(
+        error instanceof Error ? error.message : t("Failed to upload attachment"),
+      );
+    } finally {
+      setAttachmentsUploading(false);
+    }
+  }, [t]);
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
+    setAttachmentError(undefined);
+  }, []);
+
   const handleSubmit = useCallback(() => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && attachments.length === 0) return;
+    if (attachmentsUploading) return;
     if (replayLoading) return;
     const sent = sendMessage({
       text,
+      attachments,
       agentId: selectedAgent,
       profileId: selectedProfileId,
       workspacePath: selectedWorkspace?.path,
@@ -599,10 +645,14 @@ export function ChatView({
     if (!sent) return;
 
     setInput("");
+    setAttachments([]);
+    setAttachmentError(undefined);
     if (sessionSelection.kind === "new") {
       setSessionSelections((prev) => ({ ...prev, [selectedAgent]: { kind: "current" } }));
     }
   }, [
+    attachments,
+    attachmentsUploading,
     input,
     replayLoading,
     selectedAgent,
@@ -758,8 +808,13 @@ export function ChatView({
                 onChange={setInput}
                 onSubmit={handleSubmit}
                 onStop={stopStreaming}
+                attachments={attachments}
+                attachmentsUploading={attachmentsUploading}
+                attachmentError={attachmentError}
+                onFilesSelected={handleFilesSelected}
+                onRemoveAttachment={handleRemoveAttachment}
                 disabled={!connected}
-                submitDisabled={streaming || replayLoading}
+                submitDisabled={streaming || replayLoading || attachmentsUploading}
                 isStreaming={streaming}
                 placeholder={
                   connected ? t("Ask {{agent}} anything…", { agent: agentLabel }) : t("Connecting…")
@@ -814,8 +869,13 @@ export function ChatView({
               onChange={setInput}
               onSubmit={handleSubmit}
               onStop={stopStreaming}
+              attachments={attachments}
+              attachmentsUploading={attachmentsUploading}
+              attachmentError={attachmentError}
+              onFilesSelected={handleFilesSelected}
+              onRemoveAttachment={handleRemoveAttachment}
               disabled={!connected || replayLoading}
-              submitDisabled={streaming || replayLoading}
+              submitDisabled={streaming || replayLoading || attachmentsUploading}
               isStreaming={streaming}
               placeholder={
                 connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")
@@ -827,4 +887,31 @@ export function ChatView({
       </div>
     </div>
   );
+}
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_PREFIXES = ["image/", "text/"];
+const ALLOWED_ATTACHMENT_EXACT = ["application/pdf", "application/json"];
+
+function isAllowedAttachment(file: File): boolean {
+  if (file.size > MAX_ATTACHMENT_BYTES) return false;
+  const mime = (file.type ?? "").trim().toLowerCase();
+  if (!mime) return true; // server resolves from filename extension
+  return (
+    ALLOWED_ATTACHMENT_PREFIXES.some((prefix) => mime.startsWith(prefix)) ||
+    ALLOWED_ATTACHMENT_EXACT.includes(mime)
+  );
+}
+
+function describeRejection(
+  file: File,
+  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
+): string {
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return t("{{name}} exceeds the {{limit}} MB upload limit.", {
+      name: file.name,
+      limit: MAX_ATTACHMENT_BYTES / (1024 * 1024),
+    });
+  }
+  return t("{{name}} file type is not allowed.", { name: file.name });
 }
