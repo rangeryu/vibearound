@@ -4,13 +4,59 @@ import { FileDiff } from "lucide-react";
 import { useMemo } from "react";
 import { useI18n } from "@va/i18n";
 import { cn } from "@/lib/utils";
-import { buildLineDiff, diffLineStats } from "./diffUtils";
+import { buildLineDiff, diffLineStats, type DiffLine } from "./diffUtils";
 import type { ToolCallContent } from "@agentclientprotocol/sdk";
 
-type DiffContent = Extract<ToolCallContent, { type: "diff" }>;
+export type DiffContent = Extract<ToolCallContent, { type: "diff" }>;
+
+export function DiffLines({ lines }: { lines: DiffLine[] }) {
+  const { t } = useI18n();
+
+  if (lines.length === 0) {
+    return (
+      <div className="px-3 py-2 text-muted-foreground">
+        {t("No textual changes")}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {lines.map((line, index) => (
+        <div
+          key={`${line.kind}-${line.oldLine ?? "-"}-${line.newLine ?? "-"}-${index}`}
+          className={cn(
+            "grid min-w-max grid-cols-[1.5rem_3rem_3rem_minmax(24rem,1fr)]",
+            line.kind === "added" && "bg-emerald-500/10",
+            line.kind === "removed" && "bg-red-500/10",
+          )}
+        >
+          <span
+            className={cn(
+              "select-none px-2 py-1 text-center",
+              line.kind === "added" && "text-emerald-600",
+              line.kind === "removed" && "text-red-600",
+              line.kind === "context" && "text-muted-foreground/40",
+            )}
+          >
+            {line.kind === "added" ? "+" : line.kind === "removed" ? "-" : ""}
+          </span>
+          <span className="select-none px-2 py-1 text-right text-muted-foreground/45">
+            {line.oldLine ?? ""}
+          </span>
+          <span className="select-none px-2 py-1 text-right text-muted-foreground/45">
+            {line.newLine ?? ""}
+          </span>
+          <span className="whitespace-pre px-3 py-1 text-foreground/85">
+            {line.text || " "}
+          </span>
+        </div>
+      ))}
+    </>
+  );
+}
 
 export function DiffRenderer({ diff }: { diff: DiffContent }) {
-  const { t } = useI18n();
   const lines = useMemo(
     () => buildLineDiff(diff.oldText, diff.newText),
     [diff.oldText, diff.newText],
@@ -30,40 +76,7 @@ export function DiffRenderer({ diff }: { diff: DiffContent }) {
         </span>
       </summary>
       <div className="max-h-96 overflow-auto border-t border-border/60 bg-background/80 font-mono text-xs">
-        {lines.length === 0 ? (
-          <div className="px-3 py-2 text-muted-foreground">{t("No textual changes")}</div>
-        ) : (
-          lines.map((line, index) => (
-            <div
-              key={`${line.kind}-${line.oldLine ?? "-"}-${line.newLine ?? "-"}-${index}`}
-              className={cn(
-                "grid min-w-max grid-cols-[1.5rem_3rem_3rem_minmax(24rem,1fr)]",
-                line.kind === "added" && "bg-emerald-500/10",
-                line.kind === "removed" && "bg-red-500/10",
-              )}
-            >
-              <span
-                className={cn(
-                  "select-none px-2 py-1 text-center",
-                  line.kind === "added" && "text-emerald-600",
-                  line.kind === "removed" && "text-red-600",
-                  line.kind === "context" && "text-muted-foreground/40",
-                )}
-              >
-                {line.kind === "added" ? "+" : line.kind === "removed" ? "-" : ""}
-              </span>
-              <span className="select-none px-2 py-1 text-right text-muted-foreground/45">
-                {line.oldLine ?? ""}
-              </span>
-              <span className="select-none px-2 py-1 text-right text-muted-foreground/45">
-                {line.newLine ?? ""}
-              </span>
-              <span className="whitespace-pre px-3 py-1 text-foreground/85">
-                {line.text || " "}
-              </span>
-            </div>
-          ))
-        )}
+        <DiffLines lines={lines} />
       </div>
     </details>
   );
