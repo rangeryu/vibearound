@@ -1459,6 +1459,7 @@ export function ChatView({
                 disabled={!connected}
                 submitDisabled={streaming || replayLoading || attachmentsUploading}
                 isStreaming={streaming}
+                sendWithModifierEnter={webSettings.send_with_modifier_enter}
                 placeholder={
                   connected ? t("Ask {{agent}} anything…", { agent: agentLabel }) : t("Connecting…")
                 }
@@ -1523,6 +1524,7 @@ export function ChatView({
               disabled={!connected || replayLoading}
               submitDisabled={streaming || replayLoading || attachmentsUploading}
               isStreaming={streaming}
+              sendWithModifierEnter={webSettings.send_with_modifier_enter}
               placeholder={
                 connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")
               }

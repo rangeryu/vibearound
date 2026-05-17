@@ -33,6 +33,7 @@ export interface ChatInputProps {
   attachmentsUploading?: boolean;
   attachmentsUploadingCount?: number;
   attachmentError?: string;
+  sendWithModifierEnter?: boolean;
   onFilesSelected?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   placeholder?: string;
@@ -54,6 +55,7 @@ export function ChatInput({
   attachmentsUploading = false,
   attachmentsUploadingCount = 0,
   attachmentError,
+  sendWithModifierEnter = false,
   onFilesSelected,
   onRemoveAttachment,
   placeholder = "Message Claude…",
@@ -82,8 +84,15 @@ export function ChatInput({
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const isComposing =
       isComposingRef.current || e.nativeEvent.isComposing || e.keyCode === 229;
-    if (e.key === "Enter" && !e.shiftKey) {
-      if (isComposing) return;
+    if (isComposing || e.key !== "Enter") return;
+    if (sendWithModifierEnter) {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        if (!disabled && !submitDisabled && canSend) onSubmit();
+      }
+      return;
+    }
+    if (!e.shiftKey) {
       e.preventDefault();
       if (!disabled && !submitDisabled && canSend) onSubmit();
     }
