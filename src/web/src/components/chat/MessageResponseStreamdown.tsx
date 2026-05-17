@@ -1,5 +1,4 @@
 import type { MessageResponseProps } from "./MessageResponse";
-import { DirectiveRenderer } from "./renderers/DirectiveRenderer";
 import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
 import { splitMessageSegments } from "./renderers/messageSegments";
 
@@ -14,16 +13,14 @@ export function MessageResponseStreamdown({
   return (
     <>
       {segments.map((segment, index) =>
-        segment.kind === "directive" ? (
-          <DirectiveRenderer key={`${segment.name}-${index}`} segment={segment} />
-        ) : (
+        segment.kind === "markdown" ? (
           <MarkdownRenderer
             key={`markdown-${index}`}
             isStreaming={isStreaming}
             className={className}
             content={segment.content}
           />
-        ),
+        ) : null,
       )}
     </>
   );

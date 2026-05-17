@@ -53,3 +53,13 @@ export function splitMessageSegments(content: string): MessageSegment[] {
   flushMarkdown();
   return segments;
 }
+
+export function stripMessageDirectives(content: string) {
+  return splitMessageSegments(content)
+    .filter((segment): segment is Extract<MessageSegment, { kind: "markdown" }> =>
+      segment.kind === "markdown"
+    )
+    .map((segment) => segment.content)
+    .join("\n")
+    .trim();
+}

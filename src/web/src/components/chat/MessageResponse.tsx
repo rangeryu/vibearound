@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { stripMessageDirectives } from "./renderers/messageSegments";
 
 export type MessageResponseProps = {
   content: string;
@@ -15,9 +16,12 @@ const LazyMessageResponse = React.lazy(() =>
 );
 
 function PlainTextFallback({ content, className }: MessageResponseProps) {
+  const visibleContent = stripMessageDirectives(content);
+  if (!visibleContent) return null;
+
   return (
     <p className={`whitespace-pre-wrap text-sm leading-7 ${className ?? ""}`}>
-      {content}
+      {visibleContent}
     </p>
   );
 }
