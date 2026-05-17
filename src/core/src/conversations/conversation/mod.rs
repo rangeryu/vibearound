@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use tokio::sync::{broadcast, Mutex};
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 use crate::agent::{Agent, AgentClientHandler};
 use crate::routing::RouteKey;
@@ -49,7 +49,7 @@ pub struct Conversation {
     session_id: Mutex<Option<String>>,
     cli_kind: Mutex<Option<String>>,
     profile: Mutex<Option<String>>,
-    /// Resolved workspace path, set when agent is spawned.
+    /// Selected or resolved workspace path for this route.
     workspace: Mutex<Option<String>>,
     initialize: Mutex<Option<acp::InitializeResponse>>,
     busy: Mutex<bool>,
@@ -109,14 +109,58 @@ impl Conversation {
         cli_kind: String,
         resume_session_id: String,
         cwd: Option<String>,
+        profile: Option<String>,
     ) -> anyhow::Result<()> {
         let cli_kind = crate::resources::resolve_agent_id(&cli_kind).map_err(anyhow::Error::msg)?;
         self.full_reset().await;
         *self.cli_kind.lock().await = Some(cli_kind);
-        *self.profile.lock().await = None;
+        *self.profile.lock().await = profile;
         *self.handover_resume_session_id.lock().await = Some(resume_session_id);
         *self.handover_cwd.lock().await = cwd;
         Ok(())
+    }
+
+    /// Resume a session immediately, without waiting for the next prompt.
+    pub async fn resume_session(
+        self: &Arc<Self>,
+        cli_kind: String,
+        resume_session_id: String,
+        cwd: Option<String>,
+        profile: Option<String>,
+        downstream_handler: Arc<dyn AgentClientHandler>,
+    ) -> acp::Result<()> {
+        let cli_kind = crate::resources::resolve_agent_id(&cli_kind)
+            .map_err(|error| acp::Error::new(-32602, error))?;
+
+        self.full_reset().await;
+        *self.cli_kind.lock().await = Some(cli_kind.clone());
+        *self.profile.lock().await = profile;
+        *self.busy.lock().await = true;
+        *self.failed.lock().await = None;
+        let _ = self.change_tx.send(());
+
+        let result = self
+            .ensure_agent(
+                Some(cli_kind),
+                Some(resume_session_id),
+                cwd,
+                downstream_handler,
+                false,
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| {
+                let message = format!("{:#}", error);
+                acp::Error::new(-32603, message)
+            });
+
+        *self.busy.lock().await = false;
+        if let Err(error) = &result {
+            *self.failed.lock().await = Some(error.message.to_string());
+        }
+        let _ = self.change_tx.send(());
+
+        result
     }
 
     // -----------------------------------------------------------------------
@@ -152,7 +196,7 @@ impl Conversation {
             let resume_cwd = self.handover_cwd.lock().await.take();
 
             let agent = self
-                .ensure_agent(cli_kind, resume_sid, resume_cwd, downstream_handler)
+                .ensure_agent(cli_kind, resume_sid, resume_cwd, downstream_handler, true)
                 .await
                 .map_err(|error| {
                     let message = format!("{:#}", error);
@@ -193,7 +237,7 @@ impl Conversation {
                 session_id
             );
             let request = acp::PromptRequest::new(session_id, content_blocks);
-            let response = acp::Agent::prompt(&*agent, request).await;
+            let response = agent.prompt(request).await;
             tracing::info!(
                 "[Conversation] prompt RETURNED route={} ok={}",
                 self.route,
@@ -226,7 +270,7 @@ impl Conversation {
             .await
             .clone()
             .ok_or_else(acp::Error::method_not_found)?;
-        acp::Agent::cancel(&*agent, acp::CancelNotification::new(session_id)).await
+        agent.cancel(acp::CancelNotification::new(session_id)).await
     }
 
     /// Switch the current session's permission mode. Requires an active
@@ -246,7 +290,7 @@ impl Conversation {
             .clone()
             .ok_or_else(acp::Error::method_not_found)?;
         let request = acp::SetSessionModeRequest::new(session_id, mode_id);
-        acp::Agent::set_session_mode(&*agent, request).await?;
+        agent.set_session_mode(request).await?;
         Ok(())
     }
 
@@ -287,6 +331,9 @@ impl Conversation {
 
     /// Switch profile — kill current agent, next prompt spawns a new one.
     pub async fn switch_profile(&self, profile: String) {
+        if self.profile.lock().await.as_deref() == Some(profile.as_str()) {
+            return;
+        }
         tracing::info!(
             "[Conversation] switch_profile route={} new_profile={}",
             self.route,
@@ -295,6 +342,54 @@ impl Conversation {
         self.full_reset().await;
         *self.profile.lock().await = Some(profile);
         let _ = self.change_tx.send(());
+    }
+
+    /// Select an agent/profile launch route as one coherent web-chat choice.
+    ///
+    /// This differs from `switch_agent` followed by `switch_profile`: changing
+    /// the agent resets the old process once, then stores both selections
+    /// before the next prompt spawns the new agent.
+    pub async fn select_launch_route(
+        &self,
+        agent_kind: String,
+        profile: Option<String>,
+        workspace: Option<String>,
+    ) -> anyhow::Result<String> {
+        let agent_kind =
+            crate::resources::resolve_agent_id(&agent_kind).map_err(anyhow::Error::msg)?;
+        let current_agent = self.cli_kind.lock().await.clone();
+        let current_profile = self.profile.lock().await.clone();
+        let current_workspace = self.workspace.lock().await.clone();
+        let profile_changed = match profile.as_deref() {
+            Some(profile) => current_profile.as_deref() != Some(profile),
+            None => false,
+        };
+        let workspace_changed = match workspace.as_deref() {
+            Some(workspace) => current_workspace.as_deref() != Some(workspace),
+            None => false,
+        };
+        let agent_changed = current_agent.as_deref() != Some(agent_kind.as_str());
+
+        if agent_changed || profile_changed || workspace_changed {
+            tracing::info!(
+                "[Conversation] select_launch_route route={} agent={} profile={:?} workspace={:?}",
+                self.route,
+                agent_kind,
+                profile,
+                workspace
+            );
+            self.full_reset().await;
+            *self.cli_kind.lock().await = Some(agent_kind.clone());
+            if let Some(profile) = profile {
+                *self.profile.lock().await = Some(profile);
+            }
+            if let Some(workspace) = workspace {
+                *self.workspace.lock().await = Some(workspace);
+            }
+            let _ = self.change_tx.send(());
+        }
+
+        Ok(agent_kind)
     }
 
     /// Reset session — kill session but keep agent (start a fresh thread).

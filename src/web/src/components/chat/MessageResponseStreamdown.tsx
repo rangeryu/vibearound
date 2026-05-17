@@ -1,10 +1,6 @@
-"use client";
-
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { Streamdown } from "streamdown";
-
 import type { MessageResponseProps } from "./MessageResponse";
+import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
+import { splitMessageSegments } from "./renderers/messageSegments";
 
 /** Heavy markdown/code renderer loaded only when assistant output is shown. */
 export function MessageResponseStreamdown({
@@ -12,21 +8,20 @@ export function MessageResponseStreamdown({
   isStreaming = false,
   className,
 }: MessageResponseProps) {
+  const segments = splitMessageSegments(content);
+
   return (
-    <Streamdown
-      className={[
-        "prose prose-sm dark:prose-invert max-w-none text-sm",
-        "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className ?? "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      plugins={{ cjk, code }}
-      shikiTheme={["github-light", "github-dark"]}
-      isAnimating={isStreaming}
-      parseIncompleteMarkdown={true}
-    >
-      {content}
-    </Streamdown>
+    <>
+      {segments.map((segment, index) =>
+        segment.kind === "markdown" ? (
+          <MarkdownRenderer
+            key={`markdown-${index}`}
+            isStreaming={isStreaming}
+            className={className}
+            content={segment.content}
+          />
+        ) : null,
+      )}
+    </>
   );
 }

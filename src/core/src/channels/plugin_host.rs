@@ -25,7 +25,7 @@
 
 use std::sync::{Arc, Weak};
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use tokio::sync::{mpsc, oneshot};

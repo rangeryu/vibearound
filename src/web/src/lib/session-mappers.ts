@@ -13,8 +13,6 @@ export const DEFAULT_GROUPS: TerminalGroup[] = [
   { id: DEFAULT_GROUP_ID, label: "CLI", color: "#64748b", sessions: [] },
 ];
 
-export type AppPage = "terminal" | "chat";
-
 /**
  * Estimate terminal cols/rows from viewport so PTY spawns at the right
  * size (avoids TUI rendering glitches on mobile).

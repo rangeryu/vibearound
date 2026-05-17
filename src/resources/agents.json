@@ -30,7 +30,7 @@
     "install": { "type": "npm" },
     "acp": {
       "program": "node",
-      "npm_package": "@zed-industries/codex-acp",
+      "npm_package": "@zed-industries/codex-acp@0.14.0",
       "bin_name": "codex-acp"
     },
     "pty": {

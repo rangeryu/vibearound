@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 use crate::agent::AgentClientHandler;
 use crate::conversations::ConversationManager;
@@ -42,7 +42,7 @@ impl ChannelBridgeHandler {
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl AgentClientHandler for ChannelBridgeHandler {
     async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
         // Cache available_commands_update in the pod for later query.

@@ -61,7 +61,7 @@ fn extract_token<B>(req: &Request<B>) -> Option<String> {
     None
 }
 
-fn is_loopback_host(host: &str) -> bool {
+pub(crate) fn is_loopback_host(host: &str) -> bool {
     let host = host.trim().to_ascii_lowercase();
     if matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1") {
         return true;

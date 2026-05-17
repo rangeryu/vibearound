@@ -11,7 +11,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 use crate::agent::AgentClientHandler;
 
@@ -22,7 +22,7 @@ pub(crate) struct HandoverHandler {
     pub(crate) suppress_replay: Arc<AtomicBool>,
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl AgentClientHandler for HandoverHandler {
     async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
         // During handover load_session, suppress replay notifications

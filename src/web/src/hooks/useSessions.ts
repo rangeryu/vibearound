@@ -11,8 +11,6 @@ import {
 } from "@/lib/session-mappers";
 
 interface UseSessionsInput {
-  /** Only load when `page === "terminal"` — avoids spamming the backend while on chat. */
-  active: boolean;
   theme: Theme;
   /** Invoked after a successful tmux attach so the caller can refresh its tmux list. */
   onTmuxAttached?: () => void;
@@ -38,17 +36,18 @@ interface UseSessionsResult {
  * tmux sessions, closing, tab activation, maximize toggling, and applying
  * runtime status updates coming from each TerminalPanel.
  */
-export function useSessions({ active, theme, onTmuxAttached }: UseSessionsInput): UseSessionsResult {
+export function useSessions({ theme, onTmuxAttached }: UseSessionsInput): UseSessionsResult {
   const [groups, setGroups] = useState<TerminalGroup[]>(DEFAULT_GROUPS);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [maximizedSession, setMaximizedSession] = useState<string | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(true);
 
   useEffect(() => {
-    if (!active) return;
+    let cancelled = false;
     setSessionsLoading(true);
     getSessions()
       .then((list) => {
+        if (cancelled) return;
         const sessions = list.map(sessionListItemToSession);
         setGroups((prev) => {
           const g = prev.find((x) => x.id === DEFAULT_GROUP_ID) ?? DEFAULT_GROUPS[0];
@@ -61,8 +60,13 @@ export function useSessions({ active, theme, onTmuxAttached }: UseSessionsInput)
         }
       })
       .catch((e) => console.error("[VibeAround] getSessions:", e))
-      .finally(() => setSessionsLoading(false));
-  }, [active]);
+      .finally(() => {
+        if (!cancelled) setSessionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const closeSession = useCallback(
     async (sessionId: string) => {

@@ -1,700 +1,917 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Conversation,
-  ConversationContent,
-  ConversationEmptyState,
-  ConversationScrollButton,
-} from "./Conversation";
-import { Message, MessageContent } from "./Message";
-import { MessageResponse } from "./MessageResponse";
-import { ChatInput } from "./ChatInput";
-
-import { getWebSocketUrl } from "@/lib/ws-url";
-import { agentIdToToolType, getAgentDisplayName } from "@/lib/agents";
-import { ChatEventSchema, type AgentInfo } from "@va/client";
-import type { SessionNotification } from "@agentclientprotocol/sdk";
+  Bot,
+  Loader2,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
+import {
+  archiveLaunchSession,
+  createWorkspace,
+  getLaunchSessions,
+  getProfiles,
+  getWorkspaces,
+  uploadChatFile,
+} from "@/api/sessions";
+import { getAgentDisplayName } from "@/lib/agents";
+import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
+import type {
+  LaunchSessionInfo,
+  ProfileLaunchOption,
+  WebVerboseSettings,
+  WorkspaceItem,
+} from "@va/client";
 import { useI18n } from "@va/i18n";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { ChatInput } from "./ChatInput";
+import { deleteCachedChatSession } from "./chatSessionCache";
+import {
+  ChatSessionSidebar,
+  type ChatSessionWorkspaceGroup,
+} from "./ChatSessionSidebar";
+import { ChatMessageList } from "./ChatMessageList";
+import { NewChatAgentPicker } from "./NewChatAgentPicker";
+import { NewChatHome } from "./NewChatHome";
+import { NewChatWorkspacePicker } from "./NewChatWorkspacePicker";
+import { PendingPermissions } from "./PendingPermissions";
+import type { ChatAttachment, ChatSessionSelection } from "./chatTypes";
+import { useWebChatConnection } from "./useWebChatConnection";
 
-export type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-  progress?: string;
-  activities?: ChatActivity[];
-  mode?: "standalone" | "stream";
-};
-
-type ChatActivity = {
-  id: string;
-  kind: "thinking" | "tool";
-  label: string;
-  detail?: string;
-  status?: string;
-  active?: boolean;
-};
-
-type ChatMeta = {
-  channelId?: string;
-  sessionId?: string;
-  agentTitle?: string;
-  agentVersion?: string;
-  agentName?: string;
-};
-
-type PendingPermission = {
-  requestId: string;
-  request: unknown;
-};
-
-type PermissionOptionView = {
-  optionId: string;
-  name: string;
-  kind?: string;
-};
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+interface ChatViewProps {
+  webSettings: WebVerboseSettings;
+  onStatusChange?: (status: ChatRuntimeStatus) => void;
+  onOpenAppSidebar?: () => void;
 }
 
-function stringField(record: Record<string, unknown> | null | undefined, key: string) {
-  const value = record?.[key];
-  return typeof value === "string" && value.trim() ? value : undefined;
+const DIRECT_PROFILE_ID = "direct";
+const LAUNCH_SELECTION_STORAGE_KEY = "vibearound.webChat.launchSelection";
+const SESSION_SIDEBAR_WIDTH_STORAGE_KEY = "vibearound.webChat.sessionSidebarWidth";
+const SESSION_SIDEBAR_DEFAULT_WIDTH = 256;
+const SESSION_SIDEBAR_MIN_WIDTH = 224;
+const SESSION_SIDEBAR_MAX_WIDTH = 420;
+
+interface StoredLaunchSelection {
+  agentId?: string;
+  profileId?: string;
 }
 
-function permissionTitle(request: unknown) {
-  const root = asRecord(request);
-  const toolCall = asRecord(root?.toolCall);
-  return (
-    stringField(toolCall, "title") ??
-    stringField(toolCall, "kind") ??
-    "Permission requested"
-  );
-}
-
-function permissionOptions(request: unknown): PermissionOptionView[] {
-  const root = asRecord(request);
-  const options = root && Array.isArray(root.options) ? root.options : [];
-  return options.flatMap((option) => {
-    const record = asRecord(option);
-    const optionId = stringField(record, "optionId");
-    return optionId
-      ? [
-          {
-            optionId,
-            name: stringField(record, "name") ?? optionId,
-            kind: stringField(record, "kind"),
-          },
-        ]
-      : [];
-  });
-}
-
-function permissionButtonClass(kind?: string) {
-  if (kind?.startsWith("reject")) {
-    return "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15";
+function readStoredLaunchSelection(): StoredLaunchSelection {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LAUNCH_SELECTION_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as StoredLaunchSelection;
+    return {
+      agentId: typeof parsed.agentId === "string" ? parsed.agentId : undefined,
+      profileId: typeof parsed.profileId === "string" ? parsed.profileId : undefined,
+    };
+  } catch {
+    return {};
   }
-  return "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15";
 }
 
-function switchedAgentId(text: string) {
-  const match = /^Switched to ([A-Za-z0-9_-]+)\.$/.exec(text.trim());
-  return match?.[1];
-}
-
-function lastActivity(activities: ChatActivity[] | undefined) {
-  return activities?.[activities.length - 1];
-}
-
-function toolActivityId(update: unknown) {
-  const record = asRecord(update);
-  return (
-    stringField(record, "toolCallId") ??
-    stringField(record, "tool_call_id") ??
-    stringField(record, "id")
-  );
-}
-
-function toolActivityLabel(update: unknown) {
-  const record = asRecord(update);
-  const toolCall = asRecord(record?.toolCall);
-  return (
-    stringField(record, "title") ??
-    stringField(toolCall, "title") ??
-    stringField(record, "kind") ??
-    stringField(toolCall, "kind") ??
-    "tool"
-  );
-}
-
-function toolActivityStatus(update: unknown) {
-  const record = asRecord(update);
-  return stringField(record, "status");
-}
-
-function findLastMatchingActivity(
-  activities: ChatActivity[],
-  predicate: (activity: ChatActivity) => boolean,
-) {
-  for (let index = activities.length - 1; index >= 0; index -= 1) {
-    if (predicate(activities[index])) return index;
+function writeStoredLaunchSelection(selection: Required<StoredLaunchSelection>) {
+  try {
+    window.localStorage.setItem(LAUNCH_SELECTION_STORAGE_KEY, JSON.stringify(selection));
+  } catch {
+    // Ignore storage failures; the picker still works for this session.
   }
-  return -1;
 }
 
-export function ChatView() {
+function clampSessionSidebarWidth(width: number) {
+  return Math.min(
+    SESSION_SIDEBAR_MAX_WIDTH,
+    Math.max(SESSION_SIDEBAR_MIN_WIDTH, Math.round(width)),
+  );
+}
+
+function readStoredSessionSidebarWidth() {
+  if (typeof window === "undefined") return SESSION_SIDEBAR_DEFAULT_WIDTH;
+  const raw = window.localStorage.getItem(SESSION_SIDEBAR_WIDTH_STORAGE_KEY);
+  const parsed = raw ? Number(raw) : Number.NaN;
+  return Number.isFinite(parsed)
+    ? clampSessionSidebarWidth(parsed)
+    : SESSION_SIDEBAR_DEFAULT_WIDTH;
+}
+
+function writeStoredSessionSidebarWidth(width: number) {
+  try {
+    window.localStorage.setItem(
+      SESSION_SIDEBAR_WIDTH_STORAGE_KEY,
+      String(clampSessionSidebarWidth(width)),
+    );
+  } catch {
+    // Width persistence is cosmetic; dragging should still work.
+  }
+}
+
+function profileTargetsAgent(profile: ProfileLaunchOption, agentId: string) {
+  return profile.launch_targets.some((target) => target.id === agentId);
+}
+
+export function ChatView({
+  webSettings,
+  onStatusChange,
+  onOpenAppSidebar,
+}: ChatViewProps) {
   const { t } = useI18n();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [storedLaunchSelection] = useState(readStoredLaunchSelection);
   const [input, setInput] = useState("");
-  const [connected, setConnected] = useState(false);
-  const [streaming, setStreaming] = useState(false);
-  const [meta, setMeta] = useState<ChatMeta>({});
-
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<string>("claude");
-  const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
-  const promptInFlightRef = useRef(false);
-
-  const toolType = agentIdToToolType(selectedAgent);
-  const selectedAgentInfo = agents.find((agent) => agent.id === selectedAgent);
-  const agentLabel = selectedAgentInfo?.name ?? getAgentDisplayName(selectedAgent);
-
-  useEffect(() => {
-    const ws = new WebSocket(getWebSocketUrl("/ws/chat"));
-    wsRef.current = ws;
-
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => {
-      setConnected(false);
-      setStreaming(false);
-      promptInFlightRef.current = false;
-      setPendingPermissions([]);
-    };
-    ws.onerror = () => {
-      setConnected(false);
-      setStreaming(false);
-      promptInFlightRef.current = false;
-    };
-
-    ws.onmessage = (event) => {
-      if (typeof event.data !== "string") return;
-
-      let parsed;
-      try {
-        parsed = ChatEventSchema.parse(JSON.parse(event.data));
-      } catch (e) {
-        console.warn("[ChatView] bad chat frame, dropping:", e);
-        return;
-      }
-
-      switch (parsed.kind) {
-        case "config": {
-          setAgents(parsed.agents);
-          setMeta((prev) => ({ ...prev, channelId: parsed.channel_id }));
-          setSelectedAgent(parsed.default_agent);
-          break;
-        }
-        case "agent_ready": {
-          setMeta((prev) => ({
-            ...prev,
-            agentName: parsed.agent,
-            agentVersion: parsed.version,
-          }));
-          break;
-        }
-        case "session_ready": {
-          setMeta((prev) => ({ ...prev, sessionId: parsed.session_id }));
-          break;
-        }
-        case "system_text": {
-          appendStandaloneAssistant(parsed.text);
-          const agentId = switchedAgentId(parsed.text);
-          if (agentId) {
-            setSelectedAgent(agentId);
-            setMeta((prev) => ({
-              ...prev,
-              agentName: undefined,
-              agentTitle: undefined,
-              agentVersion: undefined,
-              sessionId: undefined,
-            }));
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachmentsUploading, setAttachmentsUploading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | undefined>();
+  const [selectedAgent, setSelectedAgent] = useState<string>(
+    storedLaunchSelection.agentId ?? "claude",
+  );
+  const [sidebarAgentFilter, setSidebarAgentFilter] = useState<string | undefined>();
+  const [profiles, setProfiles] = useState<ProfileLaunchOption[]>([]);
+  const [profileSelections, setProfileSelections] = useState<Record<string, string | undefined>>(
+    () =>
+      storedLaunchSelection.agentId
+        ? {
+            [storedLaunchSelection.agentId]:
+              storedLaunchSelection.profileId ?? DIRECT_PROFILE_ID,
           }
-          break;
-        }
-        case "error": {
-          appendErrorToStream(parsed.error);
-          setStreaming(false);
-          promptInFlightRef.current = false;
-          break;
-        }
-        case "prompt_done": {
-          clearStreamProgress();
-          setStreaming(false);
-          promptInFlightRef.current = false;
-          break;
-        }
-        case "acp_notification": {
-          handleAcpNotification(parsed.payload as SessionNotification);
-          break;
-        }
-        case "command_menu":
-          break;
-        case "permission_request": {
-          setPendingPermissions((prev) => [
-            ...prev.filter((permission) => permission.requestId !== parsed.request_id),
-            { requestId: parsed.request_id, request: parsed.request },
-          ]);
-          break;
-        }
-      }
-    };
-
-    function handleAcpNotification(notif: SessionNotification) {
-      const update = notif.update;
-      switch (update.sessionUpdate) {
-        case "agent_message_chunk": {
-          if (update.content.type === "text") {
-            appendToStreamAssistant(update.content.text);
-          }
-          break;
-        }
-        case "agent_thought_chunk": {
-          if (update.content.type === "text") {
-            appendThinkingActivity(update.content.text);
-          }
-          break;
-        }
-        case "tool_call":
-        case "tool_call_update": {
-          const title = toolActivityLabel(update);
-          const status = toolActivityStatus(update);
-          appendToolActivity(update);
-          if (status === "completed" || status === "failed") {
-            clearStreamProgress();
-          } else {
-            setStreamProgress(t("Using tool: {{tool}}…", { tool: title }));
-          }
-          break;
-        }
-        // Other ACP update variants (plan, available_commands_update, etc.)
-        // are not yet surfaced in the web chat UI. Ignored rather than
-        // erroring so future SDK additions don't crash the handler.
-        default:
-          break;
-      }
-    }
-
-    function appendStandaloneAssistant(text: string) {
-      if (!text) return;
-      setMessages((prev) => {
-        const next = [...prev];
-        const last = next[next.length - 1];
-        if (
-          last?.role === "assistant" &&
-          last.mode === "stream" &&
-          last.content === "" &&
-          !last.progress &&
-          !last.activities?.length
-        ) {
-          next.pop();
-        }
-        next.push({ role: "assistant", content: text, mode: "standalone" });
-        return next;
-      });
-    }
-
-    function appendToStreamAssistant(text: string) {
-      if (!text) return;
-      setMessages((prev) => {
-        if (prev.length === 0) return [{ role: "assistant", content: text, mode: "stream" }];
-        const last = prev[prev.length - 1];
-        if (last.role !== "assistant" || last.mode !== "stream") {
-          return [...prev, { role: "assistant", content: text, mode: "stream" }];
-        }
-        const next = [...prev];
-        next[next.length - 1] = { ...last, content: last.content + text, progress: undefined, mode: "stream" };
-        return next;
-      });
-    }
-
-    function updateStreamAssistant(
-      updater: (message: ChatMessage) => ChatMessage,
-      fallback: ChatMessage,
-    ) {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== "assistant" || last.mode !== "stream") {
-          return [...prev, fallback];
-        }
-        const next = [...prev];
-        next[next.length - 1] = updater(last);
-        return next;
-      });
-    }
-
-    function appendThinkingActivity(text: string) {
-      if (!text) return;
-      updateStreamAssistant(
-        (message) => {
-          const activities = [...(message.activities ?? [])];
-          const last = lastActivity(activities);
-          if (last?.kind === "thinking" && last.active !== false) {
-            activities[activities.length - 1] = {
-              ...last,
-              detail: `${last.detail ?? ""}${text}`,
-              active: true,
-            };
-          } else {
-            activities.push({
-              id: `thinking-${Date.now()}-${activities.length}`,
-              kind: "thinking",
-              label: t("Thinking"),
-              detail: text,
-              active: true,
-            });
-          }
-          return { ...message, activities, progress: text, mode: "stream" };
-        },
-        {
-          role: "assistant",
-          content: "",
-          progress: text,
-          activities: [
-            {
-              id: `thinking-${Date.now()}-0`,
-              kind: "thinking",
-              label: t("Thinking"),
-              detail: text,
-              active: true,
-            },
-          ],
-          mode: "stream",
-        },
-      );
-    }
-
-    function appendToolActivity(update: unknown) {
-      const label = toolActivityLabel(update);
-      const status = toolActivityStatus(update);
-      const id = toolActivityId(update);
-      const active = status !== "completed" && status !== "failed";
-      updateStreamAssistant(
-        (message) => {
-          const activities = [...(message.activities ?? [])];
-          const existingIndex =
-            id !== undefined
-              ? activities.findIndex((activity) => activity.id === id)
-              : findLastMatchingActivity(
-                  activities,
-                  (activity) =>
-                    activity.kind === "tool" &&
-                    activity.label === label &&
-                    activity.active !== false,
-                );
-          const activity: ChatActivity = {
-            id: id ?? `tool-${Date.now()}-${activities.length}`,
-            kind: "tool",
-            label,
-            status,
-            active,
-          };
-          if (existingIndex >= 0) {
-            activities[existingIndex] = {
-              ...activities[existingIndex],
-              ...activity,
-              id: activities[existingIndex].id,
-            };
-          } else {
-            activities.push(activity);
-          }
-          return { ...message, activities, mode: "stream" };
-        },
-        {
-          role: "assistant",
-          content: "",
-          activities: [
-            {
-              id: id ?? `tool-${Date.now()}-0`,
-              kind: "tool",
-              label,
-              status,
-              active,
-            },
-          ],
-          mode: "stream",
-        },
-      );
-    }
-
-    function setStreamProgress(progress: string) {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== "assistant" || last.mode !== "stream") {
-          return [...prev, { role: "assistant", content: "", progress, mode: "stream" }];
-        }
-        const next = [...prev];
-        next[next.length - 1] = { ...last, progress, mode: "stream" };
-        return next;
-      });
-    }
-
-    function clearStreamProgress() {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== "assistant" || last.mode !== "stream" || !last.progress) {
-          return prev;
-        }
-        const next = [...prev];
-        next[next.length - 1] = { ...last, progress: undefined, mode: "stream" };
-        return next;
-      });
-    }
-
-    function appendErrorToStream(error: string) {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== "assistant" || last.mode !== "stream") {
-          return [...prev, { role: "assistant", content: t("Error: {{error}}", { error }), mode: "stream" }];
-        }
-        const next = [...prev];
-        next[next.length - 1] = {
-          ...last,
-          content: last.content + (last.content ? "\n\n" : "") + t("Error: {{error}}", { error }),
-          progress: undefined,
-          mode: "stream",
-        };
-        return next;
-      });
-    }
-
-    return () => {
-      ws.close();
-      wsRef.current = null;
-    };
-  }, [t]);
-
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    if (promptInFlightRef.current) return;
-
-    const messageId =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-    promptInFlightRef.current = true;
-    setInput("");
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: text },
-      { role: "assistant", content: "", mode: "stream" },
-    ]);
-    setStreaming(true);
-
-    try {
-      wsRef.current.send(
-        JSON.stringify({ type: "message", messageId, text, agent: selectedAgent }),
-      );
-    } catch (error) {
-      console.warn("[ChatView] failed to send chat message:", error);
-      promptInFlightRef.current = false;
-      setStreaming(false);
-      setInput(text);
-      setMessages((prev) => prev.slice(0, -2));
-    }
-  }, [input, selectedAgent]);
-
-  const handleAgentChange = useCallback((agentId: string) => {
-    setSelectedAgent(agentId);
-  }, []);
-
-  const stopStreaming = useCallback(() => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify({ type: "stop" }));
-      } catch (error) {
-        console.warn("[ChatView] failed to stop chat message:", error);
-      }
-    }
-    promptInFlightRef.current = false;
-    setStreaming(false);
-  }, []);
-
-  const sendPermissionResponse = useCallback(
-    (requestId: string, optionId: string) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-      wsRef.current.send(JSON.stringify({ type: "permission_response", requestId, optionId }));
-      setPendingPermissions((prev) =>
-        prev.filter((permission) => permission.requestId !== requestId),
-      );
-    },
+        : {},
+  );
+  const [launchSessionGroups, setLaunchSessionGroups] = useState<ChatSessionWorkspaceGroup[]>(
     [],
   );
+  const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
+  const [defaultWorkspacePath, setDefaultWorkspacePath] = useState<string | undefined>();
+  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | undefined>();
+  const [workspacesLoading, setWorkspacesLoading] = useState(false);
+  const [workspaceCreating, setWorkspaceCreating] = useState(false);
+  const [workspaceCreateError, setWorkspaceCreateError] = useState<string | undefined>();
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionSelections, setSessionSelections] = useState<Record<string, ChatSessionSelection>>(
+    {},
+  );
+  const [selectedLaunchSessions, setSelectedLaunchSessions] = useState<
+    Record<string, LaunchSessionInfo | undefined>
+  >({});
+  const [archivingSessionId, setArchivingSessionId] = useState<string | undefined>();
+  const [showSessionSidebar, setShowSessionSidebar] = useState(true);
+  const [sessionSidebarWidth, setSessionSidebarWidth] = useState(
+    readStoredSessionSidebarWidth,
+  );
+  const [mobileSessionSidebarOpen, setMobileSessionSidebarOpen] = useState(false);
 
-  const cancelPermissionRequest = useCallback((requestId: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(
-      JSON.stringify({ type: "permission_response", requestId, outcome: "cancelled" }),
+  const handleSocketAgentSelected = useCallback(
+    (agentId: string, source: "config" | "system") => {
+      if (source === "config" && storedLaunchSelection.agentId) return;
+      setSelectedAgent(agentId);
+    },
+    [storedLaunchSelection.agentId],
+  );
+
+  const {
+    messages,
+    connected,
+    streaming,
+    meta,
+    agents,
+    pendingPermissions,
+    resumeReplay,
+    sendMessage,
+    resumeSession,
+    clearConversationView,
+    stopStreaming,
+    sendPermissionResponse,
+    cancelPermissionRequest,
+  } = useWebChatConnection({ onAgentSelected: handleSocketAgentSelected });
+
+  const sidebarAgentId = sidebarAgentFilter ?? selectedAgent;
+  const launchSessions = useMemo(
+    () => launchSessionGroups.flatMap((group) => group.sessions),
+    [launchSessionGroups],
+  );
+  const selectedAgentInfo = agents.find((agent) => agent.id === selectedAgent);
+  const agentLabel = selectedAgentInfo?.name ?? getAgentDisplayName(selectedAgent);
+  const selectedProfileId = profileSelections[selectedAgent] ?? DIRECT_PROFILE_ID;
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
+  const selectedWorkspace = workspaces.find(
+    (workspace) => workspace.path === selectedWorkspacePath,
+  );
+  const sessionSelection = sessionSelections[selectedAgent] ?? { kind: "current" };
+  const sidebarSessionSelection = sessionSelections[sidebarAgentId] ?? { kind: "current" };
+  const selectedLaunchSession =
+    sessionSelection.kind === "resume" &&
+    selectedLaunchSessions[selectedAgent]?.session_id === sessionSelection.sessionId
+      ? selectedLaunchSessions[selectedAgent]
+      : sessionSelection.kind === "resume"
+        ? launchSessions.find((session) => session.session_id === sessionSelection.sessionId)
+        : undefined;
+  const replayLoading = Boolean(resumeReplay);
+  const chatStatus: ChatRuntimeStatus =
+    pendingPermissions.length > 0
+      ? "attention"
+      : streaming || replayLoading
+        ? "working"
+        : connected
+          ? "ready"
+          : "connecting";
+  const statusLabel =
+    chatStatus === "attention"
+      ? t("Agent needs input")
+      : chatStatus === "working"
+        ? replayLoading
+          ? t("Loading chat history")
+          : t("Agent working")
+        : chatStatus === "ready"
+          ? t("Local agent ready")
+          : t("Connecting to local agent");
+  const statusIcon = !connected ? (
+    <WifiOff className="h-3.5 w-3.5" />
+  ) : streaming || replayLoading ? (
+    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+  ) : (
+    <Wifi className="h-3.5 w-3.5" />
+  );
+  const headerSessionLabel =
+    sessionSelection.kind === "new"
+      ? null
+      : selectedLaunchSession
+        ? selectedLaunchSession.title
+        : meta.sessionId
+          ? t("Current session")
+          : null;
+  const routeLabel =
+    selectedProfileId && selectedProfile
+      ? t("{{agent}} / {{profile}}", {
+          agent: agentLabel,
+          profile: selectedProfile.label,
+        })
+      : agentLabel;
+  const showNewChatHome = messages.length === 0 && sessionSelection.kind !== "resume";
+  const sidebarSessionsLoading = workspacesLoading || sessionsLoading;
+  const displaySettings = useMemo(
+    () => ({
+      showThinking: webSettings.show_thinking,
+      showTools: webSettings.show_tool_use,
+    }),
+    [webSettings],
+  );
+
+  useEffect(() => {
+    onStatusChange?.(chatStatus);
+  }, [chatStatus, onStatusChange]);
+
+  useEffect(() => {
+    if (!selectedAgent) return;
+    setProfileSelections((prev) =>
+      prev[selectedAgent] === undefined
+        ? { ...prev, [selectedAgent]: DIRECT_PROFILE_ID }
+        : prev,
     );
-    setPendingPermissions((prev) =>
-      prev.filter((permission) => permission.requestId !== requestId),
-    );
+  }, [selectedAgent]);
+
+  useEffect(() => {
+    if (!selectedAgent || profiles.length === 0) return;
+    const profileId = profileSelections[selectedAgent] ?? DIRECT_PROFILE_ID;
+    if (profileId === DIRECT_PROFILE_ID) return;
+    const profile = profiles.find((item) => item.id === profileId);
+    if (profile && profileTargetsAgent(profile, selectedAgent)) return;
+    setProfileSelections((prev) => ({ ...prev, [selectedAgent]: DIRECT_PROFILE_ID }));
+  }, [profiles, profileSelections, selectedAgent]);
+
+  useEffect(() => {
+    if (!selectedAgent) return;
+    writeStoredLaunchSelection({
+      agentId: selectedAgent,
+      profileId: profileSelections[selectedAgent] ?? DIRECT_PROFILE_ID,
+    });
+  }, [profileSelections, selectedAgent]);
+
+  useEffect(() => {
+    if (agents.length === 0) return;
+    if (agents.some((agent) => agent.id === selectedAgent)) return;
+    setSelectedAgent(agents[0]?.id ?? selectedAgent);
+  }, [agents, selectedAgent]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWorkspacesLoading(true);
+    void getWorkspaces()
+      .then(({ workspaces, default_workspace }) => {
+        if (!cancelled) {
+          setWorkspaces(workspaces);
+          setDefaultWorkspacePath(default_workspace);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn("[ChatView] failed to load workspaces:", error);
+          setWorkspaces([]);
+          setDefaultWorkspacePath(undefined);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setWorkspacesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
-      <div className="border-b border-border/60 bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono">
-          <span>{t("channel: web")}</span>
-          <span>{t("chat: {{value}}", { value: meta.channelId ?? "-" })}</span>
-          <span>{t("agent: {{value}}", { value: meta.agentTitle ?? meta.agentName ?? agentLabel })}</span>
-          <span>{t("version: {{value}}", { value: meta.agentVersion ?? "-" })}</span>
-          <span>{t("sessionId: {{value}}", { value: meta.sessionId ?? "-" })}</span>
-        </div>
-      </div>
-      <Conversation className="flex-1">
-        <ConversationContent>
-          {messages.length === 0 ? (
-            <ConversationEmptyState
-              title={t("Chat with {{agent}}", { agent: agentLabel })}
-              description={t("Send a message to start.")}
-            />
-          ) : (
-            messages.map((msg, i) => (
-              <Message key={i} from={msg.role}>
-                <MessageContent
-                  className={
-                    msg.role === "user"
-                      ? "rounded-lg bg-primary/15 px-4 py-3 text-foreground"
-                      : msg.mode === "standalone"
-                        ? "rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-muted-foreground"
-                        : "rounded-lg bg-muted/50 px-4 py-3 text-foreground"
-                  }
-                >
-                  {msg.role === "user" ? (
-                    <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                  ) : msg.mode === "standalone" ? (
-                    <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
-                  ) : (
-                    <>
-                      {msg.activities?.length ? (
-                        <div
-                          className={`space-y-2 text-xs text-muted-foreground ${msg.content ? "mb-3 border-b border-border/50 pb-3" : ""}`}
-                        >
-                          {msg.activities.map((activity) => (
-                            <div key={activity.id} className="min-w-0">
-                              <div className="flex min-w-0 items-center gap-2 font-mono">
-                                <span className="shrink-0 uppercase text-muted-foreground/70">
-                                  {activity.kind === "thinking" ? t("Thinking") : t("Tool")}
-                                </span>
-                                <span className="truncate text-foreground/75">
-                                  {activity.label}
-                                </span>
-                                {activity.status && (
-                                  <span className="shrink-0 text-muted-foreground/60">
-                                    {activity.status}
-                                  </span>
-                                )}
-                              </div>
-                              {activity.detail && (
-                                <p className="mt-1 whitespace-pre-wrap break-words leading-5 text-muted-foreground/80">
-                                  {activity.detail}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {msg.content && (
-                        <MessageResponse
-                          content={msg.content}
-                          isStreaming={streaming && i === messages.length - 1}
-                        />
-                      )}
-                      {msg.progress && (
-                        <span className="text-xs text-muted-foreground/60 font-mono animate-pulse">
-                          {msg.progress}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </MessageContent>
-              </Message>
-            ))
-          )}
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
+  useEffect(() => {
+    setSelectedWorkspacePath((current) => {
+      if (current && workspaces.some((workspace) => workspace.path === current)) {
+        return current;
+      }
+      return workspaces[0]?.path;
+    });
+  }, [workspaces]);
 
-      {pendingPermissions.length > 0 && (
-        <div className="border-t border-border/60 bg-background px-4 py-3">
-          <div className="mx-auto flex max-w-3xl flex-col gap-2">
-            {pendingPermissions.map((permission) => {
-              const options = permissionOptions(permission.request);
-              return (
-                <div
-                  key={permission.requestId}
-                  className="rounded-md border border-border/70 bg-muted/25 px-3 py-3"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-xs font-medium uppercase text-muted-foreground">
-                        {t("Permission request")}
-                      </div>
-                      <div className="truncate text-sm font-medium text-foreground">
-                        {permissionTitle(permission.request)}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {options.map((option) => (
-                        <button
-                          key={option.optionId}
-                          type="button"
-                          onClick={() =>
-                            sendPermissionResponse(permission.requestId, option.optionId)
-                          }
-                          className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${permissionButtonClass(option.kind)}`}
-                        >
-                          {option.name}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => cancelPermissionRequest(permission.requestId)}
-                        className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50"
-                      >
-                        {t("Cancel")}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+  useEffect(() => {
+    if (agents.length === 0) return;
+    setSidebarAgentFilter((current) => {
+      if (current && agents.some((agent) => agent.id === current)) {
+        return current;
+      }
+      if (agents.some((agent) => agent.id === selectedAgent)) {
+        return selectedAgent;
+      }
+      return agents[0]?.id ?? current;
+    });
+  }, [agents, selectedAgent]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getProfiles()
+      .then((items) => {
+        if (!cancelled) setProfiles(items);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn("[ChatView] failed to load profiles:", error);
+          setProfiles([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sidebarAgentId) {
+      setLaunchSessionGroups([]);
+      setSessionsLoading(false);
+      return;
+    }
+    if (workspacesLoading) {
+      setLaunchSessionGroups([]);
+      setSessionsLoading(false);
+      return;
+    }
+    if (workspaces.length === 0) {
+      setLaunchSessionGroups([]);
+      setSessionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSessionsLoading(true);
+    setLaunchSessionGroups([]);
+    void (async () => {
+      return Promise.all(
+        workspaces.map(async (workspace) => {
+          try {
+            return {
+              workspace,
+              sessions: await getLaunchSessions(sidebarAgentId, false, workspace.path),
+            };
+          } catch (error) {
+            console.warn(
+              "[ChatView] failed to load launch sessions for workspace:",
+              workspace.path,
+              error,
+            );
+            return { workspace, sessions: [] };
+          }
+        }),
+      );
+    })()
+      .then((groups) => {
+        if (cancelled) return;
+        const items = groups.flatMap((group) => group.sessions);
+        setLaunchSessionGroups(groups);
+        setSessionSelections((prev) => {
+          const current = prev[sidebarAgentId];
+          if (
+            current?.kind === "resume" &&
+            !items.some((item) => item.session_id === current.sessionId)
+          ) {
+            return { ...prev, [sidebarAgentId]: { kind: "current" } };
+          }
+          return prev;
+        });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn("[ChatView] failed to load launch sessions:", error);
+          setLaunchSessionGroups([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSessionsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sidebarAgentId, workspaces, workspacesLoading]);
+
+  const handleLaunchChange = useCallback((agentId: string, profileId?: string) => {
+    setSelectedAgent(agentId);
+    setProfileSelections((prev) => {
+      return { ...prev, [agentId]: profileId ?? DIRECT_PROFILE_ID };
+    });
+  }, []);
+
+  const handleSidebarAgentFilterChange = useCallback((agentId: string) => {
+    setSidebarAgentFilter(agentId);
+  }, []);
+
+  const handleCreateWorkspace = useCallback(async (name: string) => {
+    setWorkspaceCreating(true);
+    setWorkspaceCreateError(undefined);
+    try {
+      const response = await createWorkspace(name);
+      setWorkspaces(response.workspaces);
+      setDefaultWorkspacePath(response.default_workspace);
+      setSelectedWorkspacePath(response.workspace.path);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWorkspaceCreateError(message);
+    } finally {
+      setWorkspaceCreating(false);
+    }
+  }, []);
+
+  const handleSessionChange = useCallback(
+    (selection: ChatSessionSelection, session?: LaunchSessionInfo) => {
+      if (selection.kind === "new") {
+        setSessionSelections((prev) => ({ ...prev, [sidebarAgentId]: selection }));
+        setSelectedLaunchSessions((prev) => {
+          const next = { ...prev };
+          delete next[sidebarAgentId];
+          return next;
+        });
+        setSelectedAgent(sidebarAgentId);
+        clearConversationView({ abortReplay: true });
+        setAttachments([]);
+        setAttachmentError(undefined);
+        return;
+      }
+      if (selection.kind !== "resume") return;
+
+      const launchSession = session ?? launchSessions.find(
+        (item) => item.session_id === selection.sessionId,
+      );
+      if (!launchSession) return;
+
+      setSessionSelections((prev) => ({ ...prev, [sidebarAgentId]: selection }));
+      setSelectedLaunchSessions((prev) => ({
+        ...prev,
+        [sidebarAgentId]: launchSession,
+      }));
+      setSelectedAgent(sidebarAgentId);
+      setSelectedWorkspacePath(launchSession.workspace);
+      setAttachments([]);
+      setAttachmentError(undefined);
+      resumeSession({
+        agentId: sidebarAgentId,
+        profileId: profileSelections[sidebarAgentId] ?? DIRECT_PROFILE_ID,
+        launchSession,
+      });
+    },
+    [
+      clearConversationView,
+      launchSessions,
+      profileSelections,
+      resumeSession,
+      sidebarAgentId,
+    ],
+  );
+
+  const handleMobileSessionChange = useCallback(
+    (selection: ChatSessionSelection, session?: LaunchSessionInfo) => {
+      handleSessionChange(selection, session);
+      setMobileSessionSidebarOpen(false);
+    },
+    [handleSessionChange],
+  );
+
+  const handleSessionSidebarResizeStart = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = sessionSidebarWidth;
+      let nextWidth = startWidth;
+      const previousCursor = document.body.style.cursor;
+      const previousUserSelect = document.body.style.userSelect;
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        nextWidth = clampSessionSidebarWidth(
+          startWidth + moveEvent.clientX - startX,
+        );
+        setSessionSidebarWidth(nextWidth);
+      };
+      const handlePointerUp = () => {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousUserSelect;
+        writeStoredSessionSidebarWidth(nextWidth);
+      };
+
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp, { once: true });
+    },
+    [sessionSidebarWidth],
+  );
+
+  const handleArchiveSession = useCallback(
+    async (session: LaunchSessionInfo) => {
+      setArchivingSessionId(session.session_id);
+      try {
+        await archiveLaunchSession(session.agent_id, session.session_id, session.workspace);
+        void deleteCachedChatSession({
+          agentId: session.agent_id,
+          workspace: session.workspace,
+          sessionId: session.session_id,
+        }).catch((error) => {
+          console.warn("[ChatView] failed to delete archived session cache:", error);
+        });
+        setLaunchSessionGroups((prev) =>
+          prev.map((group) => ({
+            ...group,
+            sessions: group.sessions.filter(
+              (item) =>
+                item.agent_id !== session.agent_id || item.session_id !== session.session_id,
+            ),
+          })),
+        );
+        setSelectedLaunchSessions((prev) => {
+          if (prev[session.agent_id]?.session_id !== session.session_id) return prev;
+          const next = { ...prev };
+          delete next[session.agent_id];
+          return next;
+        });
+        setSessionSelections((prev) => {
+          const current = prev[session.agent_id];
+          if (current?.kind !== "resume" || current.sessionId !== session.session_id) {
+            return prev;
+          }
+          return { ...prev, [session.agent_id]: { kind: "new" } };
+        });
+        if (
+          selectedAgent === session.agent_id &&
+          sessionSelection.kind === "resume" &&
+          sessionSelection.sessionId === session.session_id
+        ) {
+          clearConversationView({ abortReplay: true });
+        }
+      } catch (error) {
+        console.warn("[ChatView] failed to archive launch session:", error);
+      } finally {
+        setArchivingSessionId(undefined);
+      }
+    },
+    [clearConversationView, selectedAgent, sessionSelection],
+  );
+
+  const handleFilesSelected = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    const rejected = files.find((file) => !isAllowedAttachment(file));
+    if (rejected) {
+      setAttachmentError(describeRejection(rejected, t));
+      return;
+    }
+    setAttachmentsUploading(true);
+    setAttachmentError(undefined);
+    try {
+      const uploaded = await Promise.all(files.map((file) => uploadChatFile(file)));
+      setAttachments((prev) => [
+        ...prev,
+        ...uploaded.map((file) => ({
+          id: file.id,
+          name: file.name,
+          mimeType: file.mime_type,
+          size: file.size,
+          uri: file.uri,
+        })),
+      ]);
+    } catch (error) {
+      console.warn("[ChatView] failed to upload attachment:", error);
+      setAttachmentError(
+        error instanceof Error ? error.message : t("Failed to upload attachment"),
+      );
+    } finally {
+      setAttachmentsUploading(false);
+    }
+  }, [t]);
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
+    setAttachmentError(undefined);
+  }, []);
+
+  const handleSubmit = useCallback(() => {
+    const text = input.trim();
+    if (!text && attachments.length === 0) return;
+    if (attachmentsUploading) return;
+    if (replayLoading) return;
+    const sent = sendMessage({
+      text,
+      attachments,
+      agentId: selectedAgent,
+      profileId: selectedProfileId,
+      workspacePath: selectedWorkspace?.path,
+      sessionSelection,
+      launchSession: selectedLaunchSession,
+    });
+    if (!sent) return;
+
+    setInput("");
+    setAttachments([]);
+    setAttachmentError(undefined);
+    if (sessionSelection.kind === "new") {
+      setSessionSelections((prev) => ({ ...prev, [selectedAgent]: { kind: "current" } }));
+    }
+  }, [
+    attachments,
+    attachmentsUploading,
+    input,
+    replayLoading,
+    selectedAgent,
+    selectedLaunchSession,
+    selectedProfileId,
+    selectedWorkspace?.path,
+    sendMessage,
+    sessionSelection,
+  ]);
+
+  return (
+    <div className="flex h-full overflow-hidden bg-background">
+      {showSessionSidebar && (
+        <div
+          className="relative hidden h-full shrink-0 md:flex"
+          style={{ width: sessionSidebarWidth }}
+        >
+          <ChatSessionSidebar
+            workspaceGroups={launchSessionGroups}
+            agents={agents}
+            selectedAgentFilter={sidebarAgentId}
+            className="flex w-full"
+            style={{ width: "100%" }}
+            sessionsLoading={sidebarSessionsLoading}
+            loadingSessionId={resumeReplay?.sessionId}
+            archivingSessionId={archivingSessionId}
+            sessionSelection={sidebarSessionSelection}
+            onAgentFilterChange={handleSidebarAgentFilterChange}
+            onSessionChange={handleSessionChange}
+            onArchiveSession={handleArchiveSession}
+          />
+          <button
+            type="button"
+            className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize touch-none rounded-sm bg-transparent transition-colors hover:bg-primary/25 focus-visible:bg-primary/25 focus-visible:outline-none"
+            aria-label={t("Resize sessions")}
+            title={t("Resize sessions")}
+            onPointerDown={handleSessionSidebarResizeStart}
+          />
+        </div>
+      )}
+      {mobileSessionSidebarOpen && (
+        <div className="fixed inset-0 z-40 md:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-background/70 backdrop-blur-sm"
+            aria-label={t("Close sessions")}
+            onClick={() => setMobileSessionSidebarOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 w-[min(18rem,86vw)] shadow-lg">
+            <ChatSessionSidebar
+              workspaceGroups={launchSessionGroups}
+              agents={agents}
+              selectedAgentFilter={sidebarAgentId}
+              variant="mobile"
+              sessionsLoading={sidebarSessionsLoading}
+              loadingSessionId={resumeReplay?.sessionId}
+              archivingSessionId={archivingSessionId}
+              sessionSelection={sidebarSessionSelection}
+              onAgentFilterChange={handleSidebarAgentFilterChange}
+              onSessionChange={handleMobileSessionChange}
+              onArchiveSession={handleArchiveSession}
+            />
           </div>
         </div>
       )}
 
-      <ChatInput
-        value={input}
-        onChange={setInput}
-        onSubmit={() => {
-          void sendMessage();
-        }}
-        onStop={stopStreaming}
-        disabled={!connected}
-        submitDisabled={streaming}
-        isStreaming={streaming}
-        placeholder={connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")}
-        targetLabel={agentLabel}
-        targetTool={toolType}
-        agents={agents}
-        onAgentChange={handleAgentChange}
-      />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-background/95 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setMobileSessionSidebarOpen(true)}
+              className="text-muted-foreground hover:text-foreground md:hidden"
+              title={t("Show sessions")}
+              aria-label={t("Show sessions")}
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setShowSessionSidebar((value) => !value)}
+              className="hidden text-muted-foreground hover:text-foreground md:inline-flex"
+              title={showSessionSidebar ? t("Hide sessions") : t("Show sessions")}
+              aria-label={showSessionSidebar ? t("Hide sessions") : t("Show sessions")}
+            >
+              {showSessionSidebar ? (
+                <PanelLeftClose className="h-4 w-4" />
+              ) : (
+                <PanelLeftOpen className="h-4 w-4" />
+              )}
+            </Button>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+              <Bot className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-foreground">
+                {routeLabel}
+              </div>
+              {(headerSessionLabel || meta.sessionId) && (
+                <div className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground/60">
+                  {headerSessionLabel && (
+                    <span className="truncate">{headerSessionLabel}</span>
+                  )}
+                  {meta.sessionId && (
+                    <span className="truncate text-muted-foreground/40">
+                      {meta.sessionId.slice(0, 8)}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <div
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[10px]",
+                chatStatus === "attention"
+                  ? "text-amber-400"
+                  : chatStatus === "working"
+                    ? "text-primary"
+                    : connected
+                      ? "text-emerald-400/80"
+                      : "text-muted-foreground/60",
+              )}
+              title={statusLabel}
+            >
+              {statusIcon}
+              <span className="hidden sm:inline">{statusLabel}</span>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onOpenAppSidebar}
+              className="text-muted-foreground hover:text-foreground md:hidden"
+              title={t("Show navigation")}
+              aria-label={t("Show navigation")}
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+          </div>
+        </header>
+
+        {showNewChatHome ? (
+          <NewChatHome>
+            <div className="space-y-4">
+              <ChatInput
+                value={input}
+                onChange={setInput}
+                onSubmit={handleSubmit}
+                onStop={stopStreaming}
+                attachments={attachments}
+                attachmentsUploading={attachmentsUploading}
+                attachmentError={attachmentError}
+                onFilesSelected={handleFilesSelected}
+                onRemoveAttachment={handleRemoveAttachment}
+                disabled={!connected}
+                submitDisabled={streaming || replayLoading || attachmentsUploading}
+                isStreaming={streaming}
+                placeholder={
+                  connected ? t("Ask {{agent}} anything…", { agent: agentLabel }) : t("Connecting…")
+                }
+                targetLabel={agentLabel}
+                variant="hero"
+              />
+              <div className="grid gap-4 lg:grid-cols-2">
+                <NewChatAgentPicker
+                  agents={agents}
+                  profiles={profiles}
+                  selectedAgentId={selectedAgent}
+                  selectedProfileId={selectedProfileId}
+                  fallbackAgentLabel={agentLabel}
+                  onLaunchChange={handleLaunchChange}
+                  className="min-w-0"
+                />
+                <NewChatWorkspacePicker
+                  workspaces={workspaces}
+                  defaultWorkspacePath={defaultWorkspacePath}
+                  selectedWorkspacePath={selectedWorkspace?.path}
+                  loading={workspacesLoading}
+                  creating={workspaceCreating}
+                  createError={workspaceCreateError}
+                  onWorkspaceChange={setSelectedWorkspacePath}
+                  onCreateWorkspace={handleCreateWorkspace}
+                  layout="panel"
+                  className="min-w-0"
+                />
+              </div>
+            </div>
+          </NewChatHome>
+        ) : (
+          <>
+            <ChatMessageList
+              messages={messages}
+              streaming={streaming}
+              agentLabel={agentLabel}
+              replayLoading={replayLoading}
+              replayTitle={resumeReplay?.title}
+              displaySettings={displaySettings}
+            />
+
+            <PendingPermissions
+              permissions={pendingPermissions}
+              onRespond={sendPermissionResponse}
+              onCancel={cancelPermissionRequest}
+            />
+
+            <ChatInput
+              value={input}
+              onChange={setInput}
+              onSubmit={handleSubmit}
+              onStop={stopStreaming}
+              attachments={attachments}
+              attachmentsUploading={attachmentsUploading}
+              attachmentError={attachmentError}
+              onFilesSelected={handleFilesSelected}
+              onRemoveAttachment={handleRemoveAttachment}
+              disabled={!connected || replayLoading}
+              submitDisabled={streaming || replayLoading || attachmentsUploading}
+              isStreaming={streaming}
+              placeholder={
+                connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")
+              }
+              targetLabel={agentLabel}
+            />
+          </>
+        )}
+      </div>
     </div>
   );
+}
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_PREFIXES = ["image/", "text/"];
+const ALLOWED_ATTACHMENT_EXACT = ["application/pdf", "application/json"];
+
+function isAllowedAttachment(file: File): boolean {
+  if (file.size > MAX_ATTACHMENT_BYTES) return false;
+  const mime = (file.type ?? "").trim().toLowerCase();
+  if (!mime) return true; // server resolves from filename extension
+  return (
+    ALLOWED_ATTACHMENT_PREFIXES.some((prefix) => mime.startsWith(prefix)) ||
+    ALLOWED_ATTACHMENT_EXACT.includes(mime)
+  );
+}
+
+function describeRejection(
+  file: File,
+  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
+): string {
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return t("{{name}} exceeds the {{limit}} MB upload limit.", {
+      name: file.name,
+      limit: MAX_ATTACHMENT_BYTES / (1024 * 1024),
+    });
+  }
+  return t("{{name}} file type is not allowed.", { name: file.name });
 }

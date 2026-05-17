@@ -1,10 +1,10 @@
 //! `Agent` — one live ACP connection to a coding CLI process.
 //!
-//! Each `Agent` wraps a single ACP `ClientSideConnection` to a real agent
-//! subprocess. Northbound it implements `acp::Agent` so callers
-//! ([`Conversation`]) use standard ACP methods directly. Southbound
-//! `Client` events (`session_notification`, `request_permission`) are
-//! forwarded to a caller-supplied [`AgentClientHandler`].
+//! Each `Agent` wraps a single ACP `ConnectionTo<acp::Agent>` to a real
+//! agent subprocess. Northbound callers ([`Conversation`]) use explicit
+//! methods on this type; southbound client events (`session_notification`,
+//! `request_permission`) are forwarded to a caller-supplied
+//! [`AgentClientHandler`].
 //!
 //! Only stdio ACP is supported — no provider trait, no pluggable
 //! transport. If another transport is ever needed, reintroduce a trait
@@ -28,6 +28,7 @@ use std::sync::{Arc, OnceLock};
 use anyhow::{anyhow, Context};
 use tokio::sync::{oneshot, Mutex};
 
+use acp::schema;
 use agent_client_protocol as acp;
 
 use crate::process::bridge::{BridgeFactory, ProcessBridge};
@@ -45,31 +46,30 @@ use super::bridge::AcpAgentBridge;
 ///
 /// The agent calls these methods when the real CLI sends notifications or
 /// requests back through the ACP client channel.
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 pub trait AgentClientHandler: Send + Sync + 'static {
-    async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()>;
+    async fn session_notification(&self, args: schema::SessionNotification) -> acp::Result<()>;
 
     async fn request_permission(
         &self,
-        args: acp::RequestPermissionRequest,
-    ) -> acp::Result<acp::RequestPermissionResponse>;
+        args: schema::RequestPermissionRequest,
+    ) -> acp::Result<schema::RequestPermissionResponse>;
 }
 
 /// Handle returned from a successful [`Agent::spawn`].
 pub struct AgentReady {
     pub agent: Arc<Agent>,
     pub startup_session_id: Option<String>,
-    pub initialize: acp::InitializeResponse,
+    pub initialize: schema::InitializeResponse,
 }
 
-/// One live ACP-speaking coding CLI. Northbound: `acp::Agent`. Southbound:
-/// delegates to an [`AgentClientHandler`].
+/// One live ACP-speaking coding CLI.
 pub struct Agent {
     /// The southbound ACP connection to the real agent process.
-    conn: acp::ClientSideConnection,
+    conn: acp::ConnectionTo<acp::Agent>,
     agent_id: String,
     /// ACP initialize response from first startup.
-    initialize: acp::InitializeResponse,
+    initialize: schema::InitializeResponse,
     /// ACP session ID obtained from new_session / load_session.
     session_id: Mutex<Option<String>>,
     /// Supervisor handle installed by [`Agent::spawn`] after registration.
@@ -159,9 +159,9 @@ impl Agent {
     /// Constructor used by the bridge once the ACP handshake has succeeded.
     /// Not `pub` externally — only `agent::bridge` needs it.
     pub(crate) fn from_connection(
-        conn: acp::ClientSideConnection,
+        conn: acp::ConnectionTo<acp::Agent>,
         agent_id: String,
-        initialize: acp::InitializeResponse,
+        initialize: schema::InitializeResponse,
         startup_session_id: Option<String>,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -177,7 +177,7 @@ impl Agent {
         &self.agent_id
     }
 
-    pub fn initialize_response(&self) -> acp::InitializeResponse {
+    pub fn initialize_response(&self) -> schema::InitializeResponse {
         self.initialize.clone()
     }
 
@@ -202,101 +202,60 @@ impl Agent {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Northbound: implement acp::Agent so callers use standard ACP methods
-// ---------------------------------------------------------------------------
-
-#[async_trait::async_trait(?Send)]
-impl acp::Agent for Agent {
-    async fn initialize(
+impl Agent {
+    pub async fn initialize(
         &self,
-        args: acp::InitializeRequest,
-    ) -> acp::Result<acp::InitializeResponse> {
-        self.conn.initialize(args).await
+        args: schema::InitializeRequest,
+    ) -> acp::Result<schema::InitializeResponse> {
+        self.conn.send_request(args).block_task().await
     }
 
-    async fn authenticate(
+    pub async fn authenticate(
         &self,
-        args: acp::AuthenticateRequest,
-    ) -> acp::Result<acp::AuthenticateResponse> {
-        self.conn.authenticate(args).await
+        args: schema::AuthenticateRequest,
+    ) -> acp::Result<schema::AuthenticateResponse> {
+        self.conn.send_request(args).block_task().await
     }
 
-    async fn new_session(
+    pub async fn new_session(
         &self,
-        args: acp::NewSessionRequest,
-    ) -> acp::Result<acp::NewSessionResponse> {
-        let resp = self.conn.new_session(args).await?;
+        args: schema::NewSessionRequest,
+    ) -> acp::Result<schema::NewSessionResponse> {
+        let resp = self.conn.send_request(args).block_task().await?;
         *self.session_id.lock().await = Some(resp.session_id.to_string());
         Ok(resp)
     }
 
-    async fn load_session(
+    pub async fn load_session(
         &self,
-        args: acp::LoadSessionRequest,
-    ) -> acp::Result<acp::LoadSessionResponse> {
+        args: schema::LoadSessionRequest,
+    ) -> acp::Result<schema::LoadSessionResponse> {
         let session_id = args.session_id.clone();
-        let resp = self.conn.load_session(args).await?;
+        let resp = self.conn.send_request(args).block_task().await?;
         *self.session_id.lock().await = Some(session_id.to_string());
         Ok(resp)
     }
 
-    async fn set_session_mode(
+    pub async fn set_session_mode(
         &self,
-        args: acp::SetSessionModeRequest,
-    ) -> acp::Result<acp::SetSessionModeResponse> {
-        self.conn.set_session_mode(args).await
+        args: schema::SetSessionModeRequest,
+    ) -> acp::Result<schema::SetSessionModeResponse> {
+        self.conn.send_request(args).block_task().await
     }
 
-    async fn prompt(&self, args: acp::PromptRequest) -> acp::Result<acp::PromptResponse> {
-        self.conn.prompt(args).await
+    pub async fn prompt(&self, args: schema::PromptRequest) -> acp::Result<schema::PromptResponse> {
+        self.conn.send_request(args).block_task().await
     }
 
-    async fn cancel(&self, args: acp::CancelNotification) -> acp::Result<()> {
-        self.conn.cancel(args).await
+    pub async fn cancel(&self, args: schema::CancelNotification) -> acp::Result<()> {
+        self.conn.send_notification(args)
     }
 
-    async fn set_session_config_option(
+    pub async fn set_session_config_option(
         &self,
-        args: acp::SetSessionConfigOptionRequest,
-    ) -> acp::Result<acp::SetSessionConfigOptionResponse> {
-        self.conn.set_session_config_option(args).await
-    }
-
-    async fn ext_method(&self, args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
-        self.conn.ext_method(args).await
-    }
-
-    async fn ext_notification(&self, args: acp::ExtNotification) -> acp::Result<()> {
-        self.conn.ext_notification(args).await
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Southbound: ACP Client handler that forwards to AgentClientHandler
-// ---------------------------------------------------------------------------
-
-pub(crate) struct AgentClient {
-    handler: Arc<dyn AgentClientHandler>,
-}
-
-impl AgentClient {
-    pub(crate) fn new(handler: Arc<dyn AgentClientHandler>) -> Self {
-        Self { handler }
-    }
-}
-
-#[async_trait::async_trait(?Send)]
-impl acp::Client for AgentClient {
-    async fn request_permission(
-        &self,
-        args: acp::RequestPermissionRequest,
-    ) -> acp::Result<acp::RequestPermissionResponse> {
-        self.handler.request_permission(args).await
-    }
-
-    async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
-        self.handler.session_notification(args).await
+        args: schema::SetSessionConfigOptionRequest,
+    ) -> acp::Result<schema::SetSessionConfigOptionResponse> {
+        self.conn.send_request(args).block_task().await
     }
 }
 
@@ -314,8 +273,13 @@ async fn resolve_agent_program(agent_id: &str) -> anyhow::Result<(String, Vec<St
     // 2. binary-download agents → install via install_cmd, run from PATH
     // 3. native agents → program + args from PATH
     if let Some(npm_pkg) = &agent_def.acp.npm_package {
-        let bin_name = agent_def.acp.bin_name.as_deref().unwrap_or(npm_pkg);
-        if crate::process::env::resolve_acp_agent_bin(bin_name).is_err() {
+        let default_bin_name = super::install::npm_package_bin_name(npm_pkg);
+        let bin_name = agent_def
+            .acp
+            .bin_name
+            .as_deref()
+            .unwrap_or(&default_bin_name);
+        if !super::install::npm_package_installed(npm_pkg, bin_name) {
             tracing::info!("[{}-agent] auto-installing {} ...", agent_id, npm_pkg);
             super::install::auto_install_npm_agent(npm_pkg).await?;
         }

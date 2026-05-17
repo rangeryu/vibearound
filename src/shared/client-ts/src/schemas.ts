@@ -127,6 +127,18 @@ export const CreateSessionResponseSchema = z.object({
 });
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>;
 
+export const LaunchSessionInfoSchema = z.object({
+  agent_id: z.string(),
+  session_id: z.string(),
+  title: z.string(),
+  workspace: z.string(),
+  updated_at: z.number(),
+  short_id: z.string(),
+  archived: z.boolean(),
+});
+export type LaunchSessionInfo = z.infer<typeof LaunchSessionInfoSchema>;
+export const LaunchSessionListSchema = z.array(LaunchSessionInfoSchema);
+
 export const TmuxSessionsResponseSchema = z.object({
   available: z.boolean(),
   sessions: z.array(z.string()),
@@ -145,6 +157,21 @@ export const WorkspacesResponseSchema = z.object({
   default_workspace: z.string(),
 });
 export type WorkspacesResponse = z.infer<typeof WorkspacesResponseSchema>;
+
+export const WebVerboseSettingsSchema = z.object({
+  show_thinking: z.boolean(),
+  show_tool_use: z.boolean(),
+});
+export type WebVerboseSettings = z.infer<typeof WebVerboseSettingsSchema>;
+
+export const ChatUploadResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  mime_type: z.string(),
+  size: z.number(),
+  uri: z.string(),
+});
+export type ChatUploadResponse = z.infer<typeof ChatUploadResponseSchema>;
 
 export const PreviewSnapshotSchema = z.object({
   slug: z.string(),

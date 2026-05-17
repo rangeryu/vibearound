@@ -146,39 +146,21 @@ fn render_claude_proxy_profile(
         settings.scope,
         settings.target_api_type
     );
-    let mut env = vec![
-        ("ANTHROPIC_API_KEY".to_string(), settings.api_key.clone()),
-        ("ANTHROPIC_AUTH_TOKEN".to_string(), settings.api_key),
-        ("ANTHROPIC_BASE_URL".to_string(), proxy_base_url),
-        ("ANTHROPIC_MODEL".to_string(), settings.model.clone()),
-    ];
-    if profile.provider == "deepseek" {
-        env.extend([
-            (
-                "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                settings.model.clone(),
-            ),
-            (
-                "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                settings.model.clone(),
-            ),
-            (
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                "deepseek-v4-flash".to_string(),
-            ),
-            (
-                "CLAUDE_CODE_SUBAGENT_MODEL".to_string(),
-                "deepseek-v4-flash".to_string(),
-            ),
-            ("CLAUDE_CODE_EFFORT_LEVEL".to_string(), "max".to_string()),
-        ]);
-    }
     RenderedProfile {
-        env,
+        env: claude_env(settings.api_key, proxy_base_url, settings.model),
         settings_files: Vec::new(),
         command_args: Vec::new(),
         config_env: None,
     }
+}
+
+fn claude_env(api_key: String, base_url: String, model: String) -> Vec<(String, String)> {
+    vec![
+        ("ANTHROPIC_API_KEY".to_string(), api_key.clone()),
+        ("ANTHROPIC_AUTH_TOKEN".to_string(), api_key),
+        ("ANTHROPIC_BASE_URL".to_string(), base_url),
+        ("ANTHROPIC_MODEL".to_string(), model),
+    ]
 }
 
 fn render_codex_proxy_profile(
@@ -510,6 +492,36 @@ mod tests {
             .any(|arg| arg == "model_context_window=1048576"));
     }
 
+    #[test]
+    fn claude_proxy_launch_uses_standard_env_shape() {
+        for profile in [dashscope_profile(), deepseek_profile()] {
+            let rendered = render_proxy_launch(
+                &profile,
+                "claude",
+                "launch-test",
+                "anthropic",
+                "openai-chat",
+                None,
+                Some("claude-opus-4-7[1m]"),
+            )
+            .expect("claude proxy launch renders");
+
+            let keys: Vec<_> = rendered.env.iter().map(|(key, _)| key.as_str()).collect();
+            assert_eq!(
+                keys,
+                vec![
+                    "ANTHROPIC_API_KEY",
+                    "ANTHROPIC_AUTH_TOKEN",
+                    "ANTHROPIC_BASE_URL",
+                    "ANTHROPIC_MODEL",
+                ]
+            );
+            assert!(rendered.settings_files.is_empty());
+            assert!(rendered.command_args.is_empty());
+            assert!(rendered.config_env.is_none());
+        }
+    }
+
     fn dashscope_profile() -> ProfileDef {
         let mut credentials = BTreeMap::new();
         credentials.insert("api_key".to_string(), "test-key".to_string());
@@ -558,6 +570,34 @@ mod tests {
             id: "gemini-test".to_string(),
             label: "Gemini Test".to_string(),
             provider: "gemini".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials,
+            overrides,
+            provider_settings: Default::default(),
+        }
+    }
+
+    fn deepseek_profile() -> ProfileDef {
+        let mut credentials = BTreeMap::new();
+        credentials.insert("api_key".to_string(), "test-key".to_string());
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "openai-chat".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: None,
+                base_url: None,
+                model: Some("deepseek-v4-pro".to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                capabilities: None,
+            },
+        );
+
+        ProfileDef {
+            id: "deepseek-test".to_string(),
+            label: "DeepSeek Test".to_string(),
+            provider: "deepseek".to_string(),
             auth_mode: AuthMode::ApiKey,
             api_types: vec!["openai-chat".to_string()],
             credentials,

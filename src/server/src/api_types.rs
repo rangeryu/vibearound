@@ -183,6 +183,18 @@ pub struct CreateSessionResponse {
     pub launch_target: Option<String>,
 }
 
+/// One resumable coding-agent session discovered from a CLI-owned session store.
+#[derive(Debug, Clone, Serialize)]
+pub struct LaunchSessionInfo {
+    pub agent_id: String,
+    pub session_id: String,
+    pub title: String,
+    pub workspace: String,
+    pub updated_at: u64,
+    pub short_id: String,
+    pub archived: bool,
+}
+
 /// `GET /api/tmux/sessions` response.
 #[derive(Debug, Clone, Serialize)]
 pub struct TmuxSessionsResponse {
@@ -204,6 +216,24 @@ pub struct WorkspaceItem {
 /// to the built-in workspace root.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspacesResponse {
+    pub workspaces: Vec<WorkspaceItem>,
+    pub default_workspace: String,
+}
+
+/// One file uploaded from the web chat composer and staged for the next prompt.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatUploadResponse {
+    pub id: String,
+    pub name: String,
+    pub mime_type: String,
+    pub size: u64,
+    pub uri: String,
+}
+
+/// `POST /api/workspaces/create` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateWorkspaceResponse {
+    pub workspace: WorkspaceItem,
     pub workspaces: Vec<WorkspaceItem>,
     pub default_workspace: String,
 }

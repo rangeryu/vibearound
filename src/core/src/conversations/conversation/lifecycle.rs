@@ -6,14 +6,14 @@
 //! together and this file owns all the "spawn an agent, keep it alive,
 //! wire notifications" plumbing.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context};
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 use crate::agent::{Agent, AgentClientHandler};
 use crate::agent_state;
@@ -36,6 +36,7 @@ impl Conversation {
         resume_session_id: Option<String>,
         resume_cwd: Option<String>,
         downstream_handler: Arc<dyn AgentClientHandler>,
+        suppress_resume_replay: bool,
     ) -> anyhow::Result<Arc<Agent>> {
         let requested_cli_kind = cli_kind
             .as_deref()
@@ -101,24 +102,30 @@ impl Conversation {
             .or_else(|| agent_state::resolve_default_profile(&agent_prefs, &cfg, &cli_kind))
             .unwrap_or_else(|| "default".to_string());
 
-        // Resolve workspace — handover must include cwd, normal prompt uses default.
-        let is_handover = resume_session_id.is_some();
+        // Resolve workspace — resumed sessions must include cwd, normal prompt uses default.
+        let is_resume = resume_session_id.is_some();
         let workspace = match resume_cwd {
             Some(cwd) => std::path::PathBuf::from(cwd),
-            None if is_handover => {
-                return Err(anyhow!(
-                    "Session pickup is missing the working directory. \
-                     Please re-run the handover to get an updated /pickup command that includes the cwd."
-                ));
+            None if is_resume => {
+                return Err(anyhow!("Session resume is missing the working directory."));
             }
-            None => config::ensure_loaded().resolve_workspace(&cli_kind),
+            None => self
+                .workspace
+                .lock()
+                .await
+                .clone()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| config::ensure_loaded().resolve_workspace(&cli_kind)),
         };
 
         // Track workspace for snapshot (used by /handover Direction 2).
         *self.workspace.lock().await = Some(workspace.to_string_lossy().to_string());
 
-        // Wrap downstream handler — suppress replay during handover load_session.
-        let suppress_replay = Arc::new(AtomicBool::new(is_handover));
+        // Wrap downstream handler. Handover pickups suppress history replay so
+        // IM channels do not get flooded; direct web resumes intentionally let
+        // replay through so the browser can sync the selected session.
+        let should_suppress_replay = is_resume && suppress_resume_replay;
+        let suppress_replay = Arc::new(AtomicBool::new(should_suppress_replay));
         let handler: Arc<dyn AgentClientHandler> = Arc::new(HandoverHandler {
             downstream: downstream_handler,
             suppress_replay: Arc::clone(&suppress_replay),
@@ -186,7 +193,7 @@ impl Conversation {
 
         // Store suppress_replay — released before the first prompt, not here,
         // because some agents (Gemini) continue replaying after load_session.
-        if is_handover {
+        if should_suppress_replay {
             *self.suppress_replay.lock().await = Some(suppress_replay);
         }
 
@@ -204,7 +211,7 @@ impl Conversation {
 
         if let Some(session_id) = resume_session_id.or(ready.startup_session_id) {
             *self.session_id.lock().await = Some(session_id.clone());
-            let source = if is_handover {
+            let source = if is_resume {
                 SessionStartSource::Pickup
             } else {
                 SessionStartSource::StartupSession
@@ -239,9 +246,16 @@ impl Conversation {
             .await
             .clone()
             .unwrap_or_else(|| "claude".to_string());
-        let workspace = config::ensure_loaded().resolve_workspace(&agent_kind);
-        let response =
-            acp::Agent::new_session(&**agent, acp::NewSessionRequest::new(workspace)).await?;
+        let workspace = self
+            .workspace
+            .lock()
+            .await
+            .clone()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| config::ensure_loaded().resolve_workspace(&agent_kind));
+        let response = agent
+            .new_session(acp::NewSessionRequest::new(workspace))
+            .await?;
         let session_id = response.session_id.to_string();
         *self.session_id.lock().await = Some(session_id.clone());
         self.log_im_session_started_once(&session_id, SessionStartSource::NewSession)
@@ -261,7 +275,7 @@ impl Conversation {
     /// identity clear the profile explicitly before the next spawn.
     ///
     /// Does not wait for any in-flight prompt — the agent shutdown signal
-    /// is sent immediately. Any concurrent `acp::Agent::prompt` future will
+    /// is sent immediately. Any concurrent `Agent::prompt` future will
     /// receive an ACP error. Subsequent prompts will re-spawn a fresh agent
     /// via `ensure_agent`.
     pub(super) async fn full_reset(&self) {
@@ -273,6 +287,7 @@ impl Conversation {
         *self.initialize.lock().await = None;
         *self.failed.lock().await = None;
         *self.busy.lock().await = false;
+        *self.workspace.lock().await = None;
         *self.logged_session_id.lock().await = None;
         *self.handover_resume_session_id.lock().await = None;
         *self.handover_cwd.lock().await = None;

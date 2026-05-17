@@ -155,6 +155,8 @@ export default function Onboarding() {
           setCatalog(catalogDefs);
           setProfiles(profileDefs);
 
+          const registryPluginIds = new Set(pluginDefs.map((p) => p.id));
+
           if (Array.isArray(loadedSettings.enabled_agents)) {
             setEnabledAgents(
               new Set(loadedSettings.enabled_agents as AgentId[]),
@@ -172,6 +174,7 @@ export default function Onboarding() {
           const enabled = new Set<string>();
           const configs: Record<string, Record<string, string>> = {};
           for (const [id, channelConfig] of Object.entries(channels)) {
+            if (!registryPluginIds.has(id)) continue;
             enabled.add(id);
             const configMap: Record<string, string> = {};
             for (const [key, value] of Object.entries(channelConfig)) {
@@ -283,6 +286,7 @@ export default function Onboarding() {
       configureTunnel,
       enabledAgents,
       enabledChannels,
+      registryPluginIds: new Set(pluginRegistry.map((plugin) => plugin.id)),
       channelConfigs,
       discoveredPlugins,
       tunnelProvider,
@@ -384,6 +388,9 @@ export default function Onboarding() {
             </div>
           ))}
         </div>
+        <span className="font-mono text-[10px] text-muted-foreground/60">
+          v{__APP_VERSION_LABEL__}
+        </span>
         <LanguageMenu />
       </div>
       <div className="px-6 pb-3">

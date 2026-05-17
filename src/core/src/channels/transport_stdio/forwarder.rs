@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use serde_json::value::RawValue;
 
+use acp::schema;
 use agent_client_protocol as acp;
 
 use super::super::plugin_host::PluginHost;
@@ -22,18 +23,17 @@ use super::super::ChannelOutput;
 
 /// Forward a `ChannelOutput` to the plugin via the ACP Client API.
 pub(super) async fn forward_output_to_plugin(
-    conn: &acp::AgentSideConnection,
+    conn: &acp::ConnectionTo<acp::Client>,
     channel_kind: &str,
     plugin_host: &Arc<PluginHost>,
     output: ChannelOutput,
 ) {
     match output {
         ChannelOutput::RawAcp { route, payload } => {
-            match serde_json::from_value::<acp::SessionNotification>(payload.clone()) {
+            match serde_json::from_value::<schema::SessionNotification>(payload.clone()) {
                 Ok(mut notification) => {
                     notification.session_id = route.chat_id.clone().into();
-                    if let Err(error) = acp::Client::session_notification(conn, notification).await
-                    {
+                    if let Err(error) = conn.send_notification(notification) {
                         tracing::info!(
                             "[{}] failed to send session_notification: {}",
                             channel_kind,
@@ -121,7 +121,7 @@ pub(super) async fn forward_output_to_plugin(
             // ACP `requestPermission` call. The plugin's client-side handler
             // (channel-sdk/plugin.ts → renderer.requestPermission) replies,
             // and we push the response onto the waiting oneshot.
-            let request: acp::RequestPermissionRequest =
+            let request: schema::RequestPermissionRequest =
                 match serde_json::from_value(payload) {
                     Ok(r) => r,
                     Err(e) => {
@@ -132,14 +132,14 @@ pub(super) async fn forward_output_to_plugin(
                         if let Some((_, (_, tx))) =
                             plugin_host.pending_permissions.remove(&request_id)
                         {
-                            let _ = tx.send(acp::RequestPermissionResponse::new(
-                                acp::RequestPermissionOutcome::Cancelled,
+                            let _ = tx.send(schema::RequestPermissionResponse::new(
+                                schema::RequestPermissionOutcome::Cancelled,
                             ));
                         }
                         return;
                     }
                 };
-            let response = acp::Client::request_permission(conn, request).await;
+            let response = conn.send_request(request).block_task().await;
             let Some((_, (_, tx))) = plugin_host.pending_permissions.remove(&request_id) else {
                 tracing::info!(
                     "[{}] PermissionRequest response dropped — no pending route={} request_id={}",
@@ -161,8 +161,8 @@ pub(super) async fn forward_output_to_plugin(
                         request_id,
                         e
                     );
-                    let _ = tx.send(acp::RequestPermissionResponse::new(
-                        acp::RequestPermissionOutcome::Cancelled,
+                    let _ = tx.send(schema::RequestPermissionResponse::new(
+                        schema::RequestPermissionOutcome::Cancelled,
                     ));
                 }
             }
@@ -171,7 +171,7 @@ pub(super) async fn forward_output_to_plugin(
 }
 
 async fn send_ext_notification(
-    conn: &acp::AgentSideConnection,
+    conn: &acp::ConnectionTo<acp::Client>,
     channel_kind: &str,
     method: &str,
     params: &serde_json::Value,
@@ -188,8 +188,11 @@ async fn send_ext_notification(
                 return;
             }
         };
-    let notification = acp::ExtNotification::new(method, raw_params);
-    if let Err(error) = acp::Client::ext_notification(conn, notification).await {
+    let notification = schema::AgentNotification::ExtNotification(schema::ExtNotification::new(
+        format!("_{}", method),
+        raw_params,
+    ));
+    if let Err(error) = conn.send_notification(notification) {
         tracing::info!(
             "[{}] failed to send ext_notification {}: {}",
             channel_kind,

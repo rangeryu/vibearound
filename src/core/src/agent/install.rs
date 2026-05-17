@@ -15,6 +15,72 @@ pub struct InstallOutput {
     pub stderr: String,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct NpmPackageSpec<'a> {
+    package_name: &'a str,
+    requested_version: Option<&'a str>,
+}
+
+fn npm_package_spec(npm_package: &str) -> NpmPackageSpec<'_> {
+    let npm_package = npm_package.trim();
+    let version_separator = if npm_package.starts_with('@') {
+        npm_package
+            .rfind('@')
+            .filter(|separator| *separator > 0 && npm_package[..*separator].contains('/'))
+    } else {
+        npm_package.rfind('@').filter(|separator| *separator > 0)
+    };
+
+    if let Some(separator) = version_separator {
+        NpmPackageSpec {
+            package_name: &npm_package[..separator],
+            requested_version: Some(&npm_package[separator + 1..]),
+        }
+    } else {
+        NpmPackageSpec {
+            package_name: npm_package,
+            requested_version: None,
+        }
+    }
+}
+
+pub fn npm_package_bin_name(npm_package: &str) -> String {
+    npm_package_spec(npm_package)
+        .package_name
+        .rsplit('/')
+        .next()
+        .unwrap_or(npm_package)
+        .to_string()
+}
+
+pub fn npm_package_installed(npm_package: &str, bin_name: &str) -> bool {
+    crate::process::env::resolve_acp_agent_bin(bin_name).is_ok()
+        && npm_package_version_satisfied(npm_package)
+}
+
+fn npm_package_version_satisfied(npm_package: &str) -> bool {
+    let spec = npm_package_spec(npm_package);
+    let Some(requested_version) = spec.requested_version else {
+        return true;
+    };
+
+    let package_json = spec
+        .package_name
+        .split('/')
+        .fold(
+            crate::process::env::acp_agents_dir().join("node_modules"),
+            |path, segment| path.join(segment),
+        )
+        .join("package.json");
+    let Ok(contents) = std::fs::read_to_string(package_json) else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) else {
+        return false;
+    };
+    json.get("version").and_then(serde_json::Value::as_str) == Some(requested_version)
+}
+
 /// Auto-install an npm ACP agent package into `~/.vibearound/plugins/`.
 pub async fn auto_install_npm_agent(npm_package: &str) -> anyhow::Result<()> {
     auto_install_npm_agent_with_output(npm_package)
@@ -277,8 +343,13 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
 
         // npm-based agents (Claude ACP, Codex ACP)
         if let Some(npm_pkg) = &agent_def.acp.npm_package {
-            let bin_name = agent_def.acp.bin_name.as_deref().unwrap_or(npm_pkg);
-            if crate::process::env::resolve_acp_agent_bin(bin_name).is_ok() {
+            let default_bin_name = npm_package_bin_name(npm_pkg);
+            let bin_name = agent_def
+                .acp
+                .bin_name
+                .as_deref()
+                .unwrap_or(&default_bin_name);
+            if npm_package_installed(npm_pkg, bin_name) {
                 continue;
             }
             tracing::info!("[agent] installing ACP agent: {}", npm_pkg);
@@ -304,4 +375,36 @@ fn has_enabled_channels(settings: &serde_json::Value) -> bool {
         .and_then(|v| v.as_object())
         .map(|channels| !channels.is_empty())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{npm_package_bin_name, npm_package_spec, NpmPackageSpec};
+
+    #[test]
+    fn parses_scoped_npm_package_specs() {
+        assert_eq!(
+            npm_package_spec("@zed-industries/codex-acp@0.14.0"),
+            NpmPackageSpec {
+                package_name: "@zed-industries/codex-acp",
+                requested_version: Some("0.14.0"),
+            }
+        );
+        assert_eq!(
+            npm_package_spec("@agentclientprotocol/claude-agent-acp"),
+            NpmPackageSpec {
+                package_name: "@agentclientprotocol/claude-agent-acp",
+                requested_version: None,
+            }
+        );
+    }
+
+    #[test]
+    fn derives_default_bin_name_from_package_name() {
+        assert_eq!(
+            npm_package_bin_name("@zed-industries/codex-acp@0.14.0"),
+            "codex-acp"
+        );
+        assert_eq!(npm_package_bin_name("plain-agent@1.2.3"), "plain-agent");
+    }
 }

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nProvider } from "@va/i18n";
 import App from "./App";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { PairingGate } from "./PairingGate";
 import { initTheme } from "./lib/theme";
 import { initAuthFromUrl, getAuthToken, isLocalDashboard } from "./lib/auth";
@@ -82,6 +83,10 @@ const hasToken = hasLocalAccess || getAuthToken() !== null;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <I18nProvider>{hasToken ? <App /> : <PairingGate />}</I18nProvider>
+    <I18nProvider>
+      <AppErrorBoundary>
+        {hasToken ? <App /> : <PairingGate />}
+      </AppErrorBoundary>
+    </I18nProvider>
   </StrictMode>
 );

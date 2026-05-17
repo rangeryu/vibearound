@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 use crate::agent::AgentClientHandler;
 use crate::conversations::ConversationManager;
@@ -138,6 +138,7 @@ pub(crate) async fn handle_prompt(
                                 agent_kind.clone(),
                                 session_id.clone(),
                                 Some(cwd),
+                                None,
                             )
                             .await
                         {
@@ -179,6 +180,7 @@ pub(crate) async fn handle_prompt(
                         agent_kind.clone(),
                         session_id.clone(),
                         cwd.clone(),
+                        None,
                     )
                     .await
                 {

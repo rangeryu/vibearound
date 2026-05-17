@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -57,6 +57,105 @@ pub async fn list_sessions_handler(
         })
         .collect();
     Json(items)
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct LaunchSessionsQuery {
+    workspace_path: Option<String>,
+    include_archived: Option<bool>,
+    limit: Option<usize>,
+}
+
+/// GET /api/agents/:agent_id/launch-sessions -- list CLI sessions this agent can resume.
+pub async fn list_launch_sessions_handler(
+    Path(agent_id): Path<String>,
+    Query(query): Query<LaunchSessionsQuery>,
+) -> Result<Json<Vec<crate::api_types::LaunchSessionInfo>>, (StatusCode, String)> {
+    let agent_id = common::resources::resolve_agent_id(&agent_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    let workspace = query
+        .workspace_path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| common::config::ensure_loaded().resolve_workspace(&agent_id));
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let sessions = common::launch_sessions::list_for_agent_workspace_with_archived(
+        &agent_id,
+        &workspace,
+        limit,
+        query.include_archived.unwrap_or(false),
+    )
+    .into_iter()
+    .map(|session| crate::api_types::LaunchSessionInfo {
+        short_id: common::launch_sessions::short_id(&session.session_id),
+        agent_id: session.agent_id,
+        session_id: session.session_id,
+        title: session.title,
+        workspace: session.workspace,
+        updated_at: session.updated_at,
+        archived: session.archived,
+    })
+    .collect();
+
+    Ok(Json(sessions))
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct LaunchSessionArchiveBody {
+    workspace_path: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct LaunchSessionArchiveQuery {
+    workspace_path: Option<String>,
+}
+
+/// POST /api/agents/:agent_id/launch-sessions/:session_id/archive -- hide a
+/// CLI-owned session in VibeAround without modifying the agent's session store.
+pub async fn archive_launch_session_handler(
+    Path((agent_id, session_id)): Path<(String, String)>,
+    Json(body): Json<LaunchSessionArchiveBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    set_launch_session_archived(agent_id, session_id, body.workspace_path, true).await
+}
+
+/// POST /api/agents/:agent_id/launch-sessions/:session_id/unarchive -- show a
+/// previously hidden session again without relying on a DELETE request body.
+pub async fn unarchive_launch_session_handler(
+    Path((agent_id, session_id)): Path<(String, String)>,
+    Json(body): Json<LaunchSessionArchiveBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    set_launch_session_archived(agent_id, session_id, body.workspace_path, false).await
+}
+
+/// DELETE /api/agents/:agent_id/launch-sessions/:session_id/archive -- legacy
+/// unarchive endpoint. Use query parameters so clients do not need a DELETE
+/// request body.
+pub async fn unarchive_launch_session_delete_handler(
+    Path((agent_id, session_id)): Path<(String, String)>,
+    Query(query): Query<LaunchSessionArchiveQuery>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    set_launch_session_archived(agent_id, session_id, query.workspace_path, false).await
+}
+
+async fn set_launch_session_archived(
+    agent_id: String,
+    session_id: String,
+    workspace_path: Option<String>,
+    archived: bool,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let agent_id = common::resources::resolve_agent_id(&agent_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    let workspace = workspace_path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| common::config::ensure_loaded().resolve_workspace(&agent_id));
+
+    let result = if archived {
+        common::launch_sessions::archive_session(&agent_id, &workspace, &session_id)
+    } else {
+        common::launch_sessions::unarchive_session(&agent_id, &workspace, &session_id)
+    };
+    result.map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// POST /api/sessions -- create a new PTY session.

@@ -32,7 +32,7 @@ mod toolbar;
 
 use axum::body::Body;
 use axum::extract::{Path, Request};
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
 use axum::response::Response;
 
 pub use cookie_proxy::cookie_proxy_fallback;
@@ -46,17 +46,19 @@ use toolbar::url_encode_query;
 // Preview iframe — sets cookie, renders iframe with src="/"
 // ===========================================================================
 
-/// GET /preview/u/{slug} — owner preview. Requires `va_owner` cookie.
+/// GET /preview/u/{slug} — owner preview. Requires `va_owner` cookie on
+/// non-loopback hosts.
 ///
 /// Dispatches by session target: Server → iframe + cookie proxy,
-/// File → rendered markdown. If the cookie is missing or invalid,
-/// redirects to `/va/?next=<original-url>` so the pairing gate can
+/// File → rendered markdown. Loopback dashboards are already trusted by the
+/// local web auth middleware. For non-loopback hosts, if the cookie is missing
+/// or invalid, redirects to `/va/?next=<original-url>` so the pairing gate can
 /// send the user back to their intended destination.
 pub async fn owner_preview_handler(
     Path(slug): Path<String>,
     req: Request,
 ) -> Result<Response, (StatusCode, String)> {
-    if !owner_cookie_valid(&req) {
+    if !owner_access_allowed(&req) {
         // `req.uri().path_and_query()` sees the path AFTER the `/va` nest
         // prefix has been stripped by axum, so prepend `/va` to rebuild the
         // absolute URL the browser should land on after pairing.
@@ -74,6 +76,10 @@ pub async fn owner_preview_handler(
             .unwrap());
     }
     render_preview(&slug).await
+}
+
+fn owner_access_allowed(req: &Request) -> bool {
+    owner_cookie_valid(req) || is_loopback_request(req)
 }
 
 /// GET /preview/s/{slug} — share preview. Slug itself is the auth.
@@ -98,6 +104,13 @@ fn owner_cookie_valid(req: &Request) -> bool {
         .unwrap_or(false)
 }
 
+fn is_loopback_request(req: &Request) -> bool {
+    req.headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(crate::web_server::auth::is_loopback_host)
+}
+
 // ===========================================================================
 // Markdown preview — rendered document page
 // ===========================================================================
@@ -115,4 +128,40 @@ pub async fn md_preview_handler(
         )
     })?;
     render_md_page(&entry).await
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+    use axum::http::Request;
+
+    use super::is_loopback_request;
+
+    fn request_with_host(host: &str) -> Request<Body> {
+        Request::builder()
+            .header("host", host)
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    #[test]
+    fn owner_preview_trusts_loopback_hosts() {
+        for host in [
+            "localhost",
+            "localhost:12358",
+            "127.0.0.1",
+            "127.0.0.1:12358",
+            "::1",
+            "[::1]:12358",
+        ] {
+            assert!(is_loopback_request(&request_with_host(host)), "{host}");
+        }
+    }
+
+    #[test]
+    fn owner_preview_does_not_trust_non_loopback_hosts() {
+        for host in ["example.com", "example.com:12358", "192.168.1.20:12358"] {
+            assert!(!is_loopback_request(&request_with_host(host)), "{host}");
+        }
+    }
 }

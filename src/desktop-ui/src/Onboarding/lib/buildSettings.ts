@@ -8,6 +8,7 @@ export interface BuildSettingsInput {
   configureTunnel?: boolean;
   enabledAgents: Set<AgentId>;
   enabledChannels: Set<string>;
+  registryPluginIds?: Set<string>;
   channelConfigs: Record<string, Record<string, string>>;
   discoveredPlugins: DiscoveredChannelPlugin[];
   tunnelProvider: TunnelProvider;
@@ -30,6 +31,7 @@ export function buildSettings(input: BuildSettingsInput): Settings {
     configureTunnel = true,
     enabledAgents,
     enabledChannels,
+    registryPluginIds = new Set(enabledChannels),
     channelConfigs,
     discoveredPlugins,
     tunnelProvider,
@@ -50,8 +52,23 @@ export function buildSettings(input: BuildSettingsInput): Settings {
   }
 
   if (configureChannels) {
+    const existingChannels = isRecord(settings.channels)
+      ? settings.channels
+      : {};
     const channels: Record<string, Record<string, unknown>> = {};
+
+    // Preserve internal/custom channel config (for example web/ws verbose flags)
+    // while rebuilding the registry-backed plugin selection from the UI.
+    for (const [id, existingConfig] of Object.entries(existingChannels)) {
+      if (registryPluginIds.has(id)) continue;
+      if (isRecord(existingConfig)) {
+        channels[id] = { ...existingConfig };
+      }
+    }
+
     for (const id of enabledChannels) {
+      if (!registryPluginIds.has(id)) continue;
+
       const config: Record<string, unknown> = {};
       const userConfig = channelConfigs[id] ?? {};
 
@@ -71,9 +88,7 @@ export function buildSettings(input: BuildSettingsInput): Settings {
       }
 
       const existingVerbose = (
-        settings.channels as
-          | Record<string, Record<string, unknown>>
-          | undefined
+        existingChannels as Record<string, Record<string, unknown>>
       )?.[id]?.verbose;
       config.verbose = existingVerbose ?? {
         show_thinking: false,
@@ -110,4 +125,8 @@ export function buildSettings(input: BuildSettingsInput): Settings {
   }
 
   return result;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

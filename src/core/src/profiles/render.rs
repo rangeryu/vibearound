@@ -91,6 +91,9 @@ pub fn render(
             env.push((k.clone(), v));
         }
     }
+    if launch_target == "claude" && api_type == "anthropic" {
+        normalize_claude_env(&mut env, &context);
+    }
 
     // Settings files — substitute against the same context, validate each path.
     let mut settings_files: Vec<RenderedSettingsFile> = Vec::new();
@@ -261,6 +264,53 @@ fn command_args_for(launch_target: &str, ctx: &BTreeMap<String, String>) -> Vec<
         toml_string(codex_provider_env_key(provider_id)),
     );
     args
+}
+
+fn normalize_claude_env(env: &mut Vec<(String, String)>, ctx: &BTreeMap<String, String>) {
+    let api_key = first_env_value(env, &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"])
+        .or_else(|| ctx.get("api_key").cloned())
+        .unwrap_or_default();
+    let base_url = first_env_value(env, &["ANTHROPIC_BASE_URL"])
+        .or_else(|| ctx.get("base_url").cloned())
+        .unwrap_or_default();
+    let model = first_env_value(env, &["ANTHROPIC_MODEL"])
+        .or_else(|| ctx.get("model").cloned())
+        .unwrap_or_default();
+
+    env.retain(|(key, _)| !is_standardized_claude_env_key(key));
+    push_env_if_nonempty(env, "ANTHROPIC_API_KEY", api_key.clone());
+    push_env_if_nonempty(env, "ANTHROPIC_AUTH_TOKEN", api_key);
+    push_env_if_nonempty(env, "ANTHROPIC_BASE_URL", base_url);
+    push_env_if_nonempty(env, "ANTHROPIC_MODEL", model);
+}
+
+fn first_env_value(env: &[(String, String)], keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        env.iter()
+            .find(|(candidate, value)| candidate == key && !value.is_empty())
+            .map(|(_, value)| value.clone())
+    })
+}
+
+fn push_env_if_nonempty(env: &mut Vec<(String, String)>, key: &str, value: String) {
+    if !value.is_empty() {
+        env.push((key.to_string(), value));
+    }
+}
+
+fn is_standardized_claude_env_key(key: &str) -> bool {
+    matches!(
+        key,
+        "ANTHROPIC_API_KEY"
+            | "ANTHROPIC_AUTH_TOKEN"
+            | "ANTHROPIC_BASE_URL"
+            | "ANTHROPIC_MODEL"
+            | "ANTHROPIC_DEFAULT_OPUS_MODEL"
+            | "ANTHROPIC_DEFAULT_SONNET_MODEL"
+            | "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+            | "CLAUDE_CODE_SUBAGENT_MODEL"
+            | "CLAUDE_CODE_EFFORT_LEVEL"
+    )
 }
 
 fn codex_provider_env_key(provider_id: &str) -> &'static str {
@@ -466,4 +516,81 @@ fn is_valid_env_key(key: &str) -> bool {
             .map(|c| c.is_ascii_alphabetic() || c == '_')
             .unwrap_or(false)
         && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::profiles::schema::{ApiTypeOverrides, AuthMode, ProfileDef};
+
+    use super::*;
+
+    #[test]
+    fn claude_launch_env_has_same_shape_for_anthropic_providers() {
+        for profile in [
+            anthropic_profile("deepseek", None, "deepseek-v4-pro"),
+            anthropic_profile("dashscope", Some("coding-plan"), "qwen3.6-plus"),
+            anthropic_profile("kimi", None, "kimi-for-coding"),
+        ] {
+            let provider = catalog::get(&profile.provider).expect("provider exists");
+            let rendered =
+                render(&profile, "anthropic", "claude", provider).expect("claude profile renders");
+            let keys: Vec<_> = rendered.env.iter().map(|(key, _)| key.as_str()).collect();
+
+            assert_eq!(
+                keys,
+                vec![
+                    "ANTHROPIC_API_KEY",
+                    "ANTHROPIC_AUTH_TOKEN",
+                    "ANTHROPIC_BASE_URL",
+                    "ANTHROPIC_MODEL",
+                ]
+            );
+            assert_eq!(
+                rendered
+                    .env
+                    .iter()
+                    .find(|(key, _)| key == "ANTHROPIC_MODEL")
+                    .map(|(_, value)| value.as_str()),
+                Some(model_for(&profile))
+            );
+        }
+    }
+
+    fn anthropic_profile(provider: &str, endpoint_id: Option<&str>, model: &str) -> ProfileDef {
+        let mut credentials = BTreeMap::new();
+        credentials.insert("api_key".to_string(), "test-key".to_string());
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "anthropic".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: endpoint_id.map(ToOwned::to_owned),
+                base_url: None,
+                model: Some(model.to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                capabilities: None,
+            },
+        );
+
+        ProfileDef {
+            id: format!("{provider}-test"),
+            label: format!("{provider} test"),
+            provider: provider.to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["anthropic".to_string()],
+            credentials,
+            overrides,
+            provider_settings: Default::default(),
+        }
+    }
+
+    fn model_for(profile: &ProfileDef) -> &str {
+        profile
+            .overrides
+            .get("anthropic")
+            .and_then(|overrides| overrides.model.as_deref())
+            .expect("test profile has model")
+    }
 }

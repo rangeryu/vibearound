@@ -50,7 +50,6 @@ export function AddCliDropdown({
   const [newTmuxName, setNewTmuxName] = useState("");
   const [profiles, setProfiles] = useState<ProfileLaunchOption[]>([]);
   const align = variant === "top" ? "start" : "center";
-  const inputFontClass = variant === "top" ? "text-[11px]" : "text-sm";
   const profileAgentGroups = groupProfilesByAgent(profiles);
 
   const refreshProfiles = () => {
@@ -93,54 +92,90 @@ export function AddCliDropdown({
       }}
     >
       <DropdownMenuTrigger asChild>{trigger ?? defaultTrigger}</DropdownMenuTrigger>
-      <DropdownMenuContent className="min-w-[140px] font-mono text-xs" align={align}>
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+      <DropdownMenuContent
+        className="max-h-[min(28rem,calc(100vh-1rem))] min-w-[180px] max-w-[min(24rem,calc(100vw-1rem))] overflow-y-auto p-1 font-mono text-xs"
+        align={align}
+      >
+        <DropdownMenuLabel className="px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground">
           {t("New session")}
         </DropdownMenuLabel>
         {TOOL_OPTIONS.map((tool) => (
-          <DropdownMenuItem key={tool} onSelect={() => onAddCli(tool)} className="capitalize">
+          <DropdownMenuItem
+            key={tool}
+            onSelect={() => onAddCli(tool)}
+            className="px-2 py-1.5 text-xs capitalize"
+          >
             {sessionToName(tool)}
           </DropdownMenuItem>
         ))}
-        {profiles.length > 0 && (
+        {profileAgentGroups.length > 0 && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            <DropdownMenuLabel className="px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground">
               {t("Profiles")}
             </DropdownMenuLabel>
-            {profileAgentGroups.map((group) => (
-              <DropdownMenuSub key={group.agentId}>
-                <DropdownMenuSubTrigger className="text-xs">
-                  {group.label}
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="min-w-[180px] font-mono text-xs">
+            <div className="hidden sm:block">
+              {profileAgentGroups.map((group) => (
+                <DropdownMenuSub key={group.agentId}>
+                  <DropdownMenuSubTrigger className="px-2 py-1.5 text-xs">
+                    {group.label}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="min-w-[190px] max-w-[min(22rem,calc(100vw-1rem))] p-1 font-mono text-xs">
+                    {group.items.map(({ profile, target }) => (
+                      <DropdownMenuItem
+                        key={`${profile.id}:${target.id}`}
+                        onSelect={() => onAddProfileCli(profile.id, target.id)}
+                        className="gap-2 px-2 py-1.5 text-xs"
+                      >
+                        <span className="min-w-0 flex-1 truncate">{profile.label}</span>
+                        {target.proxy_target_api_type && (
+                          <span className="shrink-0 text-muted-foreground/70">
+                            {t("Proxy")}
+                          </span>
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              ))}
+            </div>
+            <div className="space-y-1 sm:hidden">
+              {profileAgentGroups.map((group) => (
+                <div key={group.agentId}>
+                  <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                    {group.label}
+                  </div>
                   {group.items.map(({ profile, target }) => (
                     <DropdownMenuItem
                       key={`${profile.id}:${target.id}`}
                       onSelect={() => onAddProfileCli(profile.id, target.id)}
-                      className="text-xs"
+                      className="gap-2 px-4 py-1.5 text-xs"
                     >
-                      <span className="min-w-0 truncate">{profile.label}</span>
+                      <span className="min-w-0 flex-1 truncate">{profile.label}</span>
                       {target.proxy_target_api_type && (
-                        <span className="ml-auto text-muted-foreground/70">
-                          ({t("Proxy")})
+                        <span className="shrink-0 text-muted-foreground/70">
+                          {t("Proxy")}
                         </span>
                       )}
                     </DropdownMenuItem>
                   ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            ))}
+                </div>
+              ))}
+            </div>
           </>
         )}
         {tmuxAvailable && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            <DropdownMenuLabel className="px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground">
               {t("tmux sessions")}
             </DropdownMenuLabel>
             {tmuxSessions.map((name) => (
-              <DropdownMenuItem key={`tmux-${name}`} onSelect={() => onAttachTmux(name)}>
+              <DropdownMenuItem
+                key={`tmux-${name}`}
+                onSelect={() => onAttachTmux(name)}
+                className="px-2 py-1.5 text-xs"
+              >
                 ⎈ {name}
               </DropdownMenuItem>
             ))}
@@ -157,7 +192,7 @@ export function AddCliDropdown({
                   e.stopPropagation();
                   if (e.key === "Enter") submitNewTmux();
                 }}
-                className={`flex-1 min-w-0 bg-transparent border border-border/40 rounded px-1.5 py-0.5 ${inputFontClass} font-mono text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary/50`}
+                className="min-w-0 flex-1 rounded border border-border/40 bg-transparent px-1.5 py-0.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-primary/50"
               />
               <Button
                 variant="ghost"

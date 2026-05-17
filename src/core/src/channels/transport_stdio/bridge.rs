@@ -1,7 +1,7 @@
 //! ACP bridge driver for a single stdio plugin.
 //!
-//! Owns the `AgentSideConnection` to the child and two concurrent tasks:
-//! - The IO driver itself (`handle_io`).
+//! Owns the ACP connection to the child and two concurrent tasks:
+//! - The SDK connection driver.
 //! - A `ChannelOutput` forwarder that drains `output_rx` and dispatches
 //!   each variant to the corresponding ACP Client call.
 //!
@@ -14,10 +14,12 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
+use acp::schema;
 use agent_client_protocol as acp;
 
 use crate::conversations::ConversationManager;
 use crate::proc_log;
+use crate::process::acp_transport::notifying_stdio_transport;
 use crate::process::bridge::{BridgeExit, CancelSignal};
 use crate::process::registry::ProcessKind;
 
@@ -26,10 +28,8 @@ use super::super::{ChannelInput, ChannelOutput};
 use super::forwarder::forward_output_to_plugin;
 use super::handler::PluginAgentHandler;
 
-/// Run the ACP agent-side connection for a plugin to completion. Must be
-/// called on a `LocalSet` — the ACP connection spawns `!Send` tasks via
-/// `spawn_local`. Returns when the IO driver finishes or the cancel
-/// signal fires.
+/// Run the ACP agent-side connection for a plugin to completion. Returns
+/// when the child closes stdout or the cancel signal fires.
 pub(crate) async fn run_acp_plugin_bridge(
     channel_kind: String,
     config: serde_json::Value,
@@ -46,75 +46,140 @@ pub(crate) async fn run_acp_plugin_bridge(
     // the end of the bridge.
     let forwarder_plugin_host = Arc::clone(&plugin_host);
     let drain_plugin_host = Arc::clone(&plugin_host);
-    let (conn, handle_io) = acp::AgentSideConnection::new(
-        PluginAgentHandler::new(
-            channel_kind.clone(),
-            config.clone(),
-            input_tx.clone(),
-            conversation_manager,
-            plugin_host,
-        ),
-        stdin.compat_write(),
-        stdout.compat(),
-        |fut| {
-            tokio::task::spawn_local(fut);
-        },
-    );
+    let handler = Arc::new(PluginAgentHandler::new(
+        channel_kind.clone(),
+        config.clone(),
+        input_tx.clone(),
+        conversation_manager,
+        plugin_host,
+    ));
+    let (transport, mut stdio_closed) =
+        notifying_stdio_transport(stdin.compat_write(), stdout.compat());
 
-    // Forward ChannelOutput → ACP Client methods. Spawned so it runs
-    // concurrently with the IO driver below.
-    let fwd_channel = channel_kind.clone();
-    let forwarder = tokio::task::spawn_local(async move {
-        proc_log!(
-            info,
-            kind = ProcessKind::ChannelPlugin,
-            label = fwd_channel,
-            event = "forwarder_started"
-        );
-        while let Some(output) = output_rx.recv().await {
-            forward_output_to_plugin(&conn, &fwd_channel, &forwarder_plugin_host, output).await;
-        }
-        proc_log!(
-            info,
-            kind = ProcessKind::ChannelPlugin,
-            label = fwd_channel,
-            event = "forwarder_ended"
-        );
-    });
+    let init_handler = Arc::clone(&handler);
+    let prompt_handler = Arc::clone(&handler);
+    let cancel_handler = Arc::clone(&handler);
+    let ext_notification_handler = Arc::clone(&handler);
+    let ext_request_handler = Arc::clone(&handler);
+    let channel_for_run = channel_kind.clone();
 
-    let exit = tokio::select! {
-        result = handle_io => match result {
-            Ok(()) => {
+    let run_result = acp::Agent
+        .builder()
+        .name(format!("{}-plugin-host", channel_kind))
+        .on_receive_request(
+            async move |args: schema::InitializeRequest, responder, _cx| {
+                responder.respond_with_result(init_handler.initialize(args).await)
+            },
+            acp::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |args: schema::PromptRequest, responder, _cx| {
+                responder.respond_with_result(prompt_handler.prompt(args).await)
+            },
+            acp::on_receive_request!(),
+        )
+        .on_receive_notification(
+            async move |args: schema::CancelNotification, _cx| cancel_handler.cancel(args).await,
+            acp::on_receive_notification!(),
+        )
+        .on_receive_notification(
+            async move |notification: schema::ClientNotification, cx| match notification {
+                schema::ClientNotification::ExtNotification(ext) => {
+                    ext_notification_handler.ext_notification(ext).await?;
+                    Ok(acp::Handled::Yes)
+                }
+                other => Ok(acp::Handled::No {
+                    message: (other, cx),
+                    retry: false,
+                }),
+            },
+            acp::on_receive_notification!(),
+        )
+        .on_receive_request(
+            async move |request: schema::ClientRequest, responder, _cx| match request {
+                schema::ClientRequest::ExtMethodRequest(ext) => {
+                    match ext_request_handler.ext_method(ext).await {
+                        Ok(raw) => {
+                            let value = serde_json::from_str(raw.0.get())
+                                .map_err(acp::Error::into_internal_error)?;
+                            responder.respond(value)?;
+                        }
+                        Err(error) => responder.respond_with_error(error)?,
+                    }
+                    Ok(acp::Handled::Yes)
+                }
+                other => Ok(acp::Handled::No {
+                    message: (other, responder),
+                    retry: false,
+                }),
+            },
+            acp::on_receive_request!(),
+        )
+        .connect_with(transport, async move |conn| {
+            let fwd_channel = channel_for_run.clone();
+            let forward_conn = conn.clone();
+            let forwarder = conn.spawn(async move {
                 proc_log!(
                     info,
                     kind = ProcessKind::ChannelPlugin,
-                    label = channel_kind,
-                    event = "io_exited_clean"
+                    label = fwd_channel,
+                    event = "forwarder_started"
                 );
-                BridgeExit::Clean
-            }
-            Err(error) => {
+                while let Some(output) = output_rx.recv().await {
+                    forward_output_to_plugin(
+                        &forward_conn,
+                        &fwd_channel,
+                        &forwarder_plugin_host,
+                        output,
+                    )
+                    .await;
+                }
                 proc_log!(
                     info,
                     kind = ProcessKind::ChannelPlugin,
-                    label = channel_kind,
-                    event = "io_terminated",
-                    error = %error
+                    label = fwd_channel,
+                    event = "forwarder_ended"
                 );
-                BridgeExit::ProtocolError(anyhow::anyhow!(error))
+                Ok(())
+            });
+            forwarder?;
+
+            tokio::select! {
+                _ = &mut stdio_closed => {
+                    proc_log!(
+                        info,
+                        kind = ProcessKind::ChannelPlugin,
+                        label = channel_for_run,
+                        event = "io_exited_clean"
+                    );
+                    Ok(BridgeExit::Clean)
+                }
+                _ = cancel.wait_for(|v| *v) => {
+                    proc_log!(
+                        info,
+                        kind = ProcessKind::ChannelPlugin,
+                        label = channel_for_run,
+                        event = "bridge_cancelled"
+                    );
+                    Ok(BridgeExit::Cancelled)
+                }
             }
-        },
-        _ = cancel.wait_for(|v| *v) => {
+        })
+        .await;
+
+    let exit = match run_result {
+        Ok(exit) => exit,
+        Err(error) => {
             proc_log!(
                 info,
                 kind = ProcessKind::ChannelPlugin,
                 label = channel_kind,
-                event = "bridge_cancelled"
+                event = "io_terminated",
+                error = %error
             );
-            BridgeExit::Cancelled
+            BridgeExit::ProtocolError(anyhow::anyhow!(error))
         }
     };
-    forwarder.abort();
 
     // Drain pending permission senders for this channel — otherwise any
     // `ChannelBridgeHandler::request_permission` caller blocked on a

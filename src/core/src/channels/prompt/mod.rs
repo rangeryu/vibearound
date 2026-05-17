@@ -20,10 +20,10 @@ mod mode;
 
 use std::sync::Arc;
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 use crate::conversations::ConversationManager;
-use crate::routing::RouteKey;
+use crate::routing::{Attachment, RouteKey};
 
 use super::plugin_host::PluginHost;
 use super::types::{ChannelInput, ChannelOutput};
@@ -58,12 +58,7 @@ pub async fn handle_channel_input(
                 "channel input"
             );
 
-            // Wrap text into content blocks for backward compat (web chat path)
-            let content_blocks = if text.is_empty() {
-                vec![]
-            } else {
-                vec![acp::ContentBlock::Text(acp::TextContent::new(text))]
-            };
+            let content_blocks = envelope_content_blocks(&text, &envelope.attachments);
 
             match handle_prompt(
                 conversation_manager,
@@ -104,6 +99,43 @@ pub async fn handle_channel_input(
             );
         }
     }
+}
+
+fn envelope_content_blocks(text: &str, attachments: &[Attachment]) -> Vec<acp::ContentBlock> {
+    let mut blocks = Vec::with_capacity(usize::from(!text.is_empty()) + attachments.len());
+    if !text.is_empty() {
+        blocks.push(acp::ContentBlock::Text(acp::TextContent::new(text)));
+    }
+    blocks.extend(attachments.iter().map(attachment_content_block));
+    blocks
+}
+
+fn attachment_content_block(attachment: &Attachment) -> acp::ContentBlock {
+    let mut link = acp::ResourceLink::new(
+        attachment.file_name.clone(),
+        attachment_uri(&attachment.file_key),
+    );
+    if !attachment.resource_type.trim().is_empty() {
+        link.mime_type = Some(attachment.resource_type.clone());
+    }
+    link.size = attachment.size;
+    acp::ContentBlock::ResourceLink(link)
+}
+
+fn attachment_uri(file_key: &str) -> String {
+    if file_key.starts_with("file://")
+        || file_key.starts_with("http://")
+        || file_key.starts_with("https://")
+    {
+        return file_key.to_string();
+    }
+    format!(
+        "file://{}",
+        crate::config::data_dir()
+            .join(".cache")
+            .join(file_key)
+            .to_string_lossy()
+    )
 }
 
 /// Fire-and-forget helper: emit a `SystemText` to the plugin for this route.

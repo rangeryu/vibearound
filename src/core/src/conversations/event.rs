@@ -12,7 +12,7 @@
 
 use crate::routing::RouteKey;
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 #[derive(Debug, Clone)]
 pub enum SystemEvent {

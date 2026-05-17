@@ -44,18 +44,16 @@ pub struct RunningDaemon {
     pub tunnels: Arc<TunnelManager>,
     pub pty: Registry,
     pub hook_registry: Arc<agent_hooks::AgentHookRegistry>,
-    /// Signal to the channel-input OS thread that it should unwind.
+    /// Signal to the channel-input task that it should unwind.
     /// Dropped sender = no wake-up ever, so we hold this for the life of
     /// `RunningDaemon` and signal on `stop()`.
     channel_input_shutdown: Arc<Notify>,
-    /// Owned so `stop()` can join the thread — otherwise each
-    /// daemon-restart cycle leaks the thread + its full ACP/plugin
-    /// object graph.
-    channel_input_thread: Option<std::thread::JoinHandle<()>>,
+    /// Owned so `stop()` can wait for the dispatcher to exit.
+    channel_input_handle: JoinHandle<()>,
 }
 
 impl RunningDaemon {
-    pub async fn stop(mut self) {
+    pub async fn stop(self) {
         self.conversation_manager.shutdown_all().await;
         self.channel_hub.shutdown_all().await;
 
@@ -80,12 +78,10 @@ impl RunningDaemon {
         self.web_handle.abort();
         self.tunnel_handle.abort();
 
-        // Wake the channel-input thread and join it so the next
-        // `start_background()` call doesn't accumulate orphaned threads.
+        // Wake the channel-input task and wait for it to exit.
         self.channel_input_shutdown.notify_waiters();
-        if let Some(handle) = self.channel_input_thread.take() {
-            let _ = tokio::task::spawn_blocking(move || handle.join()).await;
-        }
+        self.channel_input_handle.abort();
+        let _ = self.channel_input_handle.await;
 
         // Clear tunnel + PTY registries so stale entries don't persist
         // across restarts.
@@ -180,11 +176,10 @@ impl ServerDaemon {
             })
         };
 
-        // Start channel input processing loop on a dedicated thread with LocalSet.
-        //
-        // The thread can't observe mpsc channel closure on its own — its own
-        // `Arc<PluginHost>` transitively holds the input_tx — so we give it
-        // an explicit shutdown `Notify` and hand the join handle back to
+        // Start channel input processing loop. The task can't observe mpsc
+        // channel closure on its own — its own `Arc<PluginHost>` transitively
+        // holds the input_tx — so we give it an explicit shutdown `Notify`
+        // and hand the join handle back to
         // `RunningDaemon` so `stop()` can unwind cleanly.
         let mut input_rx = channel_hub
             .take_input_rx()
@@ -192,35 +187,23 @@ impl ServerDaemon {
         let manager_for_input = Arc::clone(&conversation_manager);
         let plugin_host_for_input = channel_hub.plugin_host();
         let channel_input_shutdown = Arc::new(Notify::new());
-        let input_shutdown_for_thread = Arc::clone(&channel_input_shutdown);
-        let channel_input_thread = std::thread::Builder::new()
-            .name("channel-input".to_string())
-            .spawn(move || {
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("Failed to build input runtime");
-                runtime.block_on(async move {
-                    let local = tokio::task::LocalSet::new();
-                    local.run_until(async move {
-                        loop {
-                            tokio::select! {
-                                biased;
-                                _ = input_shutdown_for_thread.notified() => break,
-                                maybe = input_rx.recv() => {
-                                    let Some(input) = maybe else { break };
-                                    let conversation_manager = Arc::clone(&manager_for_input);
-                                    let plugin_host = Arc::clone(&plugin_host_for_input);
-                                    tokio::task::spawn_local(async move {
-                                        handle_channel_input(&conversation_manager, &plugin_host, input).await;
-                                    });
-                                }
-                            }
-                        }
-                    }).await;
-                });
-            })
-            .expect("Failed to spawn channel input thread");
+        let input_shutdown_for_task = Arc::clone(&channel_input_shutdown);
+        let channel_input_handle = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = input_shutdown_for_task.notified() => break,
+                    maybe = input_rx.recv() => {
+                        let Some(input) = maybe else { break };
+                        let conversation_manager = Arc::clone(&manager_for_input);
+                        let plugin_host = Arc::clone(&plugin_host_for_input);
+                        tokio::spawn(async move {
+                            handle_channel_input(&conversation_manager, &plugin_host, input).await;
+                        });
+                    }
+                }
+            }
+        });
 
         // 3. Channel plugins — supervised by ChannelMonitor (respawn on
         //    crash + heartbeat watchdog). Handlers reach the monitor
@@ -297,7 +280,7 @@ impl ServerDaemon {
             pty,
             hook_registry,
             channel_input_shutdown,
-            channel_input_thread: Some(channel_input_thread),
+            channel_input_handle,
         })
     }
 

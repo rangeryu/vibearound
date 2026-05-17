@@ -2,7 +2,7 @@
 //!
 //! [`Conversation`]: super::Conversation
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 /// Mutable runtime fields of a conversation. Consumers (dashboard, TUI,
 /// CLI) that want a consistent view of the current state call

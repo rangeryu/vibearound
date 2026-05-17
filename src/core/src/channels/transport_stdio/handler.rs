@@ -1,12 +1,12 @@
-//! `PluginAgentHandler` — the host's `acp::Agent` implementation that the
-//! plugin connects to. Drives the prompt lifecycle and routes
-//! `ext_notification` messages back into the host.
+//! `PluginAgentHandler` — host-side behavior for ACP channel plugins.
+//! Drives the prompt lifecycle and routes extension notifications back into
+//! the host.
 
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 use crate::conversations::ConversationManager;
 use crate::proc_log;
@@ -45,11 +45,7 @@ impl PluginAgentHandler {
             plugin_host,
         }
     }
-}
-
-#[async_trait::async_trait(?Send)]
-impl acp::Agent for PluginAgentHandler {
-    async fn initialize(
+    pub(super) async fn initialize(
         &self,
         _args: acp::InitializeRequest,
     ) -> acp::Result<acp::InitializeResponse> {
@@ -80,21 +76,10 @@ impl acp::Agent for PluginAgentHandler {
             .meta(meta))
     }
 
-    async fn authenticate(
+    pub(super) async fn prompt(
         &self,
-        _args: acp::AuthenticateRequest,
-    ) -> acp::Result<acp::AuthenticateResponse> {
-        Err(acp::Error::method_not_found())
-    }
-
-    async fn new_session(
-        &self,
-        _args: acp::NewSessionRequest,
-    ) -> acp::Result<acp::NewSessionResponse> {
-        Err(acp::Error::method_not_found())
-    }
-
-    async fn prompt(&self, args: acp::PromptRequest) -> acp::Result<acp::PromptResponse> {
+        args: acp::PromptRequest,
+    ) -> acp::Result<acp::PromptResponse> {
         let chat_id = args.session_id.to_string();
         let route = RouteKey::new(&self.channel_kind, &chat_id);
 
@@ -149,7 +134,7 @@ impl acp::Agent for PluginAgentHandler {
         result
     }
 
-    async fn cancel(&self, args: acp::CancelNotification) -> acp::Result<()> {
+    pub(super) async fn cancel(&self, args: acp::CancelNotification) -> acp::Result<()> {
         let chat_id = args.session_id.to_string();
         let route = RouteKey::new(&self.channel_kind, &chat_id);
 
@@ -165,7 +150,7 @@ impl acp::Agent for PluginAgentHandler {
         Ok(())
     }
 
-    async fn ext_notification(&self, args: acp::ExtNotification) -> acp::Result<()> {
+    pub(super) async fn ext_notification(&self, args: acp::ExtNotification) -> acp::Result<()> {
         // Rust ACP SDK already strips the "_" prefix before dispatching here.
         let method = args.method.to_string();
         let params: serde_json::Value = serde_json::from_str(args.params.get())
@@ -235,7 +220,7 @@ impl acp::Agent for PluginAgentHandler {
         Ok(())
     }
 
-    async fn ext_method(&self, args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
+    pub(super) async fn ext_method(&self, args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
         let method = args.method.to_string();
         proc_log!(
             info,

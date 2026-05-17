@@ -12,6 +12,7 @@
 //!   pipes the supervisor hands back.
 //! - [`error`]: `ProcessError` at the supervisor boundary.
 
+pub mod acp_transport;
 pub mod bridge;
 pub mod env;
 pub mod error;

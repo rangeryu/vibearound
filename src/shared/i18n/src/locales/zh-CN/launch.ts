@@ -2,6 +2,8 @@ export const zhCNLaunch: Record<string, string> = {
   "One-click coding agent in your Terminal": "一键在终端启动 Coding Agent",
   "New profile": "新建配置",
   "New workspace": "新建工作区",
+  "Folder name": "文件夹名",
+  "Create workspace in default folder": "在默认工作区下创建",
   "Quick launch": "快速启动",
   "Launch the default CLI": "启动默认 CLI",
   "Launch {{agent}} directly": "直接启动 {{agent}}",

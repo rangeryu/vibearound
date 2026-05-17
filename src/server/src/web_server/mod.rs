@@ -159,6 +159,7 @@ pub async fn run_web_server(
     );
 
     let assets_dir = web_dist.join("assets");
+    let brand_dir = web_dist.join("brand");
     let preview_client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -193,6 +194,28 @@ pub async fn run_web_server(
             "/api/sessions/{session_id}",
             delete(api::delete_session_handler),
         )
+        .route(
+            "/api/agents/{agent_id}/launch-sessions",
+            get(api::list_launch_sessions_handler),
+        )
+        .route(
+            "/api/agents/{agent_id}/launch-sessions/{session_id}/archive",
+            post(api::archive_launch_session_handler)
+                .delete(api::unarchive_launch_session_delete_handler),
+        )
+        .route(
+            "/api/agents/{agent_id}/launch-sessions/{session_id}/unarchive",
+            post(api::unarchive_launch_session_handler),
+        )
+        .route(
+            "/api/chat/uploads",
+            post(api::upload_chat_file_handler)
+                .layer(DefaultBodyLimit::max(LOCAL_PROXY_BODY_LIMIT_BYTES)),
+        )
+        .route(
+            "/api/chat/files/download",
+            get(api::download_chat_file_handler),
+        )
         .route("/api/tmux/sessions", get(api::list_tmux_sessions_handler))
         .route("/api/agents", get(api::list_agents_handler))
         .route("/api/profiles", get(api::list_profiles_handler))
@@ -224,6 +247,10 @@ pub async fn run_web_server(
         .route(
             "/api/workspaces",
             get(api::list_workspaces_handler).post(api::add_workspace_handler),
+        )
+        .route(
+            "/api/workspaces/create",
+            post(api::create_workspace_handler),
         )
         .route(
             "/api/workspaces/remove",
@@ -298,6 +325,7 @@ pub async fn run_web_server(
         // Legacy markdown route (kept for backward compatibility).
         .route("/md-preview/{slug}", get(preview::md_preview_handler))
         .nest_service("/assets", ServeDir::new(assets_dir))
+        .nest_service("/brand", ServeDir::new(brand_dir))
         .fallback(any(spa_fallback_handler));
 
     // ALL VibeAround routes live under `/va/` — the root `/` namespace is

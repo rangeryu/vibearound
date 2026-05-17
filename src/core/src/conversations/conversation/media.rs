@@ -6,7 +6,7 @@
 //! the agent we move each file into a session-scoped cache under the
 //! workspace so the agent sees a stable URI tied to the live session.
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 use crate::config;
 use crate::routing::RouteKey;
@@ -51,7 +51,14 @@ pub(super) async fn relocate_cached_media(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            let dest = workspace_cache.join(&file_name);
+            let dest_name = src
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .and_then(|name| name.to_str())
+                .filter(|name| *name != ".cache")
+                .map(|prefix| format!("{prefix}-{file_name}"))
+                .unwrap_or(file_name);
+            let dest = workspace_cache.join(&dest_name);
 
             if let Err(e) = tokio::fs::create_dir_all(&workspace_cache).await {
                 tracing::info!(

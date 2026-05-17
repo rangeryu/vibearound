@@ -62,7 +62,7 @@ pub fn get_install_manifest(settings: &Value, scope: InstallScope) -> Vec<Instal
         Vec::new()
     };
     let enabled_channels = if scope.channels {
-        enabled_channel_ids(settings)
+        enabled_registry_channel_ids(settings)
     } else {
         Vec::new()
     };
@@ -198,7 +198,7 @@ async fn run_install<R: Runtime>(
         Vec::new()
     };
     let enabled_channels = if scope.channels {
-        enabled_channel_ids(&settings)
+        enabled_registry_channel_ids(&settings)
     } else {
         Vec::new()
     };
@@ -349,6 +349,20 @@ fn enabled_channel_ids(settings: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn enabled_registry_channel_ids(settings: &Value) -> Vec<String> {
+    // settings.channels can also hold internal channel config such as web/ws;
+    // only registry-backed channel plugins have onboarding install tasks.
+    enabled_channel_ids(settings)
+        .into_iter()
+        .filter(|id| {
+            matches!(
+                common::resources::plugin_by_id(id),
+                Some(plugin) if plugin.is_kind("channel")
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,5 +416,58 @@ mod tests {
         assert!(!ids.contains(&"agent:codex:acp".to_string()));
         assert!(ids.contains(&"agent:claude:mcp".to_string()));
         assert!(ids.contains(&"agent:codex:mcp".to_string()));
+    }
+
+    #[test]
+    fn manifest_ignores_internal_channels_for_plugin_install() {
+        let settings = serde_json::json!({
+            "enabled_agents": ["claude", "codex"],
+            "channels": {
+                "web": { "verbose": { "show_thinking": true } },
+                "ws": { "verbose": { "show_tool_use": true } },
+                "onboarding": {},
+                "telegram": {}
+            }
+        });
+
+        let ids = manifest_ids(
+            settings,
+            InstallScope {
+                agents: false,
+                channels: true,
+            },
+        );
+
+        assert!(ids.contains(&"plugin:telegram".to_string()));
+        assert!(ids.contains(&"agent:claude:acp".to_string()));
+        assert!(ids.contains(&"agent:codex:acp".to_string()));
+        assert!(!ids.contains(&"plugin:web".to_string()));
+        assert!(!ids.contains(&"plugin:ws".to_string()));
+        assert!(!ids.contains(&"plugin:onboarding".to_string()));
+    }
+
+    #[test]
+    fn manifest_does_not_install_acp_agents_for_internal_channels_only() {
+        let settings = serde_json::json!({
+            "enabled_agents": ["claude", "codex"],
+            "channels": {
+                "web": { "verbose": { "show_thinking": true } },
+                "ws": { "verbose": { "show_tool_use": true } }
+            }
+        });
+
+        let ids = manifest_ids(
+            settings,
+            InstallScope {
+                agents: false,
+                channels: true,
+            },
+        );
+
+        assert!(!ids.contains(&"agent:claude:acp".to_string()));
+        assert!(!ids.contains(&"agent:codex:acp".to_string()));
+        assert!(!ids.contains(&"plugin:web".to_string()));
+        assert!(!ids.contains(&"plugin:ws".to_string()));
+        assert!(ids.is_empty());
     }
 }
