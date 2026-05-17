@@ -41,6 +41,12 @@ type TurnDisplayModel = {
   segments: TurnDisplaySegment[];
 };
 
+type CompletedTurnDisplayModel = {
+  processSegments: TurnDisplaySegment[];
+  finalItems: ResultItem[];
+  resultItems: ResultItem[];
+};
+
 function contentBlockHasText(block: ContentBlock) {
   return block.type === "text" && block.text.trim().length > 0;
 }
@@ -79,6 +85,10 @@ function toolResultItems(part: ChatToolCallPart): ResultItem[] {
     }
   });
   return results;
+}
+
+function resultItemIsText(item: ResultItem) {
+  return item.kind === "content" && contentBlockHasText(item.block);
 }
 
 export function chatPartVisibleForDisplay(
@@ -164,6 +174,53 @@ function buildTurnDisplayModel(message: ChatMessage): TurnDisplayModel {
   return { segments };
 }
 
+function buildCompletedTurnDisplayModel(
+  message: ChatMessage,
+): CompletedTurnDisplayModel {
+  const model = buildTurnDisplayModel(message);
+  let lastTextIndex = -1;
+  let finalTextStart = -1;
+
+  model.segments.forEach((segment, index) => {
+    if (segment.kind === "display" && resultItemIsText(segment.item)) {
+      lastTextIndex = index;
+    }
+  });
+
+  if (lastTextIndex >= 0) {
+    finalTextStart = lastTextIndex;
+    for (let index = lastTextIndex - 1; index >= 0; index -= 1) {
+      const segment = model.segments[index];
+      if (segment.kind !== "display" || !resultItemIsText(segment.item)) break;
+      finalTextStart = index;
+    }
+  }
+
+  const processSegments: TurnDisplaySegment[] = [];
+  const finalItems: ResultItem[] = [];
+  const resultItems: ResultItem[] = [];
+
+  model.segments.forEach((segment, index) => {
+    if (segment.kind === "work") {
+      processSegments.push(segment);
+      return;
+    }
+
+    if (resultItemIsText(segment.item)) {
+      if (index >= finalTextStart && index <= lastTextIndex) {
+        finalItems.push(segment.item);
+      } else {
+        processSegments.push(segment);
+      }
+      return;
+    }
+
+    resultItems.push(segment.item);
+  });
+
+  return { processSegments, finalItems, resultItems };
+}
+
 function workItemVisible(item: WorkItem, settings: ChatDisplaySettings) {
   if (item.kind === "activity") {
     return item.activity.kind === "thinking" ? settings.showThinking : settings.showTools;
@@ -242,6 +299,51 @@ function WorkProgressRow({
   );
 }
 
+function WorkItemBlock({
+  item,
+  isStreaming,
+  isLatest,
+}: {
+  item: WorkItem;
+  isStreaming: boolean;
+  isLatest: boolean;
+}) {
+  if (item.kind === "activity") {
+    return <WorkActivityRow activity={item.activity} />;
+  }
+  if (item.kind === "progress") {
+    return <WorkProgressRow item={item} isStreaming={isStreaming} />;
+  }
+  return <>{renderWorkPart(item.part, isStreaming, isLatest)}</>;
+}
+
+function WorkSequence({
+  items,
+  isStreaming,
+  displaySettings,
+}: {
+  items: WorkItem[];
+  isStreaming: boolean;
+  displaySettings: ChatDisplaySettings;
+}) {
+  const visibleItems = items.filter((item) => workItemVisible(item, displaySettings));
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      {visibleItems.map((item, index) => (
+        <div key={item.id}>
+          <WorkItemBlock
+            item={item}
+            isStreaming={isStreaming}
+            isLatest={index === visibleItems.length - 1}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function WorkGroup({
   items,
   isStreaming,
@@ -268,20 +370,51 @@ function WorkGroup({
         <span className="min-w-0 truncate">{title}</span>
         <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open/work:rotate-180" />
       </summary>
-      <div className="mt-3 space-y-2">
-        {visibleItems.map((item, index) => {
-          const isLatest = index === visibleItems.length - 1;
-          if (item.kind === "activity") {
-            return <WorkActivityRow key={item.id} activity={item.activity} />;
+      <div className="mt-3">
+        <WorkSequence
+          items={visibleItems}
+          isStreaming={isStreaming}
+          displaySettings={displaySettings}
+        />
+      </div>
+    </details>
+  );
+}
+
+function ProcessDetails({
+  segments,
+  displaySettings,
+}: {
+  segments: TurnDisplaySegment[];
+  displaySettings: ChatDisplaySettings;
+}) {
+  const { t } = useI18n();
+  const visibleSegments = segments.filter((segment) => {
+    if (segment.kind === "display") return true;
+    return segment.items.some((item) => workItemVisible(item, displaySettings));
+  });
+
+  if (visibleSegments.length === 0) return null;
+
+  return (
+    <details className="group/process text-muted-foreground">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground">
+        <span className="min-w-0 truncate">{t("Work details")}</span>
+        <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open/process:rotate-180" />
+      </summary>
+      <div className="mt-4 space-y-4">
+        {visibleSegments.map((segment) => {
+          if (segment.kind === "work") {
+            return (
+              <WorkSequence
+                key={segment.id}
+                items={segment.items}
+                isStreaming={false}
+                displaySettings={displaySettings}
+              />
+            );
           }
-          if (item.kind === "progress") {
-            return <WorkProgressRow key={item.id} item={item} isStreaming={isStreaming} />;
-          }
-          return (
-            <div key={item.id}>
-              {renderWorkPart(item.part, isStreaming, isLatest)}
-            </div>
-          );
+          return <ResultBlock key={segment.id} item={segment.item} />;
         })}
       </div>
     </details>
@@ -322,34 +455,64 @@ export function ChatTurnDisplay({
   isStreaming: boolean;
   displaySettings: ChatDisplaySettings;
 }) {
-  const model = buildTurnDisplayModel(message);
+  if (isStreaming) {
+    const model = buildTurnDisplayModel(message);
+    if (model.segments.length === 0) {
+      return null;
+    }
 
-  if (model.segments.length === 0) {
+    return (
+      <div className="flex min-w-0 flex-col gap-4">
+        {model.segments.map((segment, index) => {
+          const isLastSegment = index === model.segments.length - 1;
+          if (segment.kind === "work") {
+            return (
+              <WorkGroup
+                key={segment.id}
+                items={segment.items}
+                isStreaming={isLastSegment}
+                displaySettings={displaySettings}
+              />
+            );
+          }
+          return (
+            <ResultBlock
+              key={segment.id}
+              item={segment.item}
+              isStreaming={isLastSegment}
+            />
+          );
+        })}
+      </div>
+    );
+  }
+
+  const model = buildCompletedTurnDisplayModel(message);
+  const hasProcessContent = model.processSegments.some((segment) => {
+    if (segment.kind === "display") return true;
+    return segment.items.some((item) => workItemVisible(item, displaySettings));
+  });
+  const hasContent =
+    hasProcessContent ||
+    model.finalItems.length > 0 ||
+    model.resultItems.length > 0;
+
+  if (!hasContent) {
     return null;
   }
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      {model.segments.map((segment, index) => {
-        const isLastSegment = index === model.segments.length - 1;
-        if (segment.kind === "work") {
-          return (
-            <WorkGroup
-              key={segment.id}
-              items={segment.items}
-              isStreaming={isStreaming && isLastSegment}
-              displaySettings={displaySettings}
-            />
-          );
-        }
-        return (
-          <ResultBlock
-            key={segment.id}
-            item={segment.item}
-            isStreaming={isStreaming && isLastSegment}
-          />
-        );
-      })}
+      <ProcessDetails
+        segments={model.processSegments}
+        displaySettings={displaySettings}
+      />
+      {model.finalItems.map((item) => (
+        <ResultBlock key={item.id} item={item} />
+      ))}
+      {model.resultItems.map((item) => (
+        <ResultBlock key={item.id} item={item} />
+      ))}
     </div>
   );
 }
