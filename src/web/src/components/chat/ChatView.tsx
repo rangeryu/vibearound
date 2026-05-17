@@ -634,12 +634,22 @@ export function ChatView({
     selectedWorkspace?.path,
     t,
   ]);
+  const visibleRuntimeLaunchSessions = useMemo(
+    () =>
+      sidebarAgentFilter === ALL_AGENTS_FILTER
+        ? runtimeLaunchSessions
+        : runtimeLaunchSessions.filter(
+            (session) => session.agent_id === sidebarAgentFilter,
+          ),
+    [runtimeLaunchSessions, sidebarAgentFilter],
+  );
   const runtimeBusySessionKeys = useMemo(
-    () => new Set(runtimeLaunchSessions.map((session) => chatSessionKey(session))),
-    [runtimeLaunchSessions],
+    () =>
+      new Set(visibleRuntimeLaunchSessions.map((session) => chatSessionKey(session))),
+    [visibleRuntimeLaunchSessions],
   );
   const displayLaunchSessionGroups = useMemo(() => {
-    if (runtimeLaunchSessions.length === 0) return launchSessionGroups;
+    if (visibleRuntimeLaunchSessions.length === 0) return launchSessionGroups;
     const groupsByWorkspace = new Map<string, ChatSessionWorkspaceGroup>();
     for (const group of launchSessionGroups) {
       groupsByWorkspace.set(group.workspace.path, {
@@ -647,7 +657,7 @@ export function ChatView({
         sessions: [...group.sessions],
       });
     }
-    for (const session of runtimeLaunchSessions) {
+    for (const session of visibleRuntimeLaunchSessions) {
       const workspace =
         groupsByWorkspace.get(session.workspace)?.workspace ??
         workspaces.find((item) => item.path === session.workspace) ?? {
@@ -673,7 +683,12 @@ export function ChatView({
       groupsByWorkspace.set(session.workspace, group);
     }
     return Array.from(groupsByWorkspace.values());
-  }, [defaultWorkspacePath, launchSessionGroups, runtimeLaunchSessions, workspaces]);
+  }, [
+    defaultWorkspacePath,
+    launchSessionGroups,
+    visibleRuntimeLaunchSessions,
+    workspaces,
+  ]);
 
   const createDraftRuntime = useCallback((agentId: string, workspacePath?: string) => {
     const runtimeKey = `draft:${agentId}:${Date.now()}:${Math.random()
