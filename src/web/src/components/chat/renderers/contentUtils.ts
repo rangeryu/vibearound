@@ -20,6 +20,45 @@ export function formatJson(value: unknown) {
   }
 }
 
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 10 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function previewJsonValue(value: unknown, maxStringLength: number): unknown {
+  if (typeof value === "string") {
+    if (value.length <= maxStringLength) return value;
+    const bytes =
+      typeof Blob !== "undefined"
+        ? new Blob([value]).size
+        : new TextEncoder().encode(value).byteLength;
+    return `<string omitted: ${formatBytes(bytes)}>`;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => previewJsonValue(item, maxStringLength));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        previewJsonValue(item, maxStringLength),
+      ]),
+    );
+  }
+  return value;
+}
+
+export function formatJsonPreview(value: unknown, maxStringLength = 4096) {
+  return formatJson(previewJsonValue(value, maxStringLength));
+}
+
 export function lineCount(text: string | null | undefined) {
   if (!text) return 0;
   return text.split("\n").length;

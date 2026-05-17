@@ -7,7 +7,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
-import { formatJson } from "./contentUtils";
+import { formatJson, formatJsonPreview } from "./contentUtils";
 import { ToolContentRenderer } from "./ToolContentRenderer";
 import type { ChatToolCallPart } from "../chatTypes";
 
@@ -63,7 +63,7 @@ function ToolDetails({ part }: { part: ChatToolCallPart }) {
             {t("Output")}
           </summary>
           <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-background/70 p-3 text-xs leading-5 text-muted-foreground">
-            {formatJson(part.rawOutput)}
+            {formatJsonPreview(part.rawOutput)}
           </pre>
         </details>
       )}
@@ -120,7 +120,7 @@ export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
 
   return (
     <details
-      open={active || part.status === "failed"}
+      open={active || part.status === "failed" || hasRichContent}
       className="rounded-md border border-border/70 bg-muted/20 px-3 py-2"
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 text-sm">
