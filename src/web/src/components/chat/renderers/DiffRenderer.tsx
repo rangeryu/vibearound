@@ -18,8 +18,8 @@ export function DiffRenderer({ diff }: { diff: DiffContent }) {
   const stats = useMemo(() => diffLineStats(lines), [lines]);
 
   return (
-    <details>
-      <summary className="flex cursor-pointer items-center gap-2 py-2 text-sm">
+    <details className="overflow-hidden rounded-md border border-border/70 bg-background/70">
+      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm">
         <FileDiff className="h-4 w-4 text-primary" />
         <span className="min-w-0 truncate font-medium">{diff.path}</span>
         <span className="ml-auto shrink-0 font-mono text-xs text-emerald-600">
@@ -29,7 +29,7 @@ export function DiffRenderer({ diff }: { diff: DiffContent }) {
           -{stats.removed}
         </span>
       </summary>
-      <div className="max-h-96 overflow-auto bg-background/80 font-mono text-xs">
+      <div className="max-h-96 overflow-auto border-t border-border/60 bg-background/80 font-mono text-xs">
         {lines.length === 0 ? (
           <div className="px-3 py-2 text-muted-foreground">{t("No textual changes")}</div>
         ) : (
