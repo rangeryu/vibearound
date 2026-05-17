@@ -248,6 +248,117 @@ function workItemLabel(item: WorkItem) {
   }
 }
 
+function plural(count: number, singular: string, pluralForm = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+function joinSummaryParts(parts: string[]) {
+  if (parts.length <= 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+function workItemCategory(item: WorkItem) {
+  if (item.kind === "activity") {
+    if (item.activity.kind === "thinking") return "thinking";
+    return categorizeToolLabel(item.activity.label);
+  }
+
+  if (item.kind === "progress") {
+    if (item.progressKind === "thinking") return "thinking";
+    return categorizeToolLabel(item.text);
+  }
+
+  if (item.part.kind === "thought") return "thinking";
+  if (item.part.kind === "plan") return "plan";
+  return categorizeToolLabel(workItemLabel(item));
+}
+
+function categorizeToolLabel(label: string) {
+  const normalized = label.toLowerCase();
+  if (
+    normalized.includes("exec") ||
+    normalized.includes("command") ||
+    normalized.includes("shell") ||
+    normalized.includes("stdin") ||
+    normalized.includes("terminal")
+  ) {
+    return "command";
+  }
+  if (
+    normalized.includes("search") ||
+    normalized.includes("grep") ||
+    normalized.includes("rg") ||
+    normalized.includes("find")
+  ) {
+    return "search";
+  }
+  if (
+    normalized.includes("edit") ||
+    normalized.includes("write") ||
+    normalized.includes("patch")
+  ) {
+    return "edit";
+  }
+  if (
+    normalized.includes("list") ||
+    normalized.includes("ls") ||
+    normalized.includes("glob")
+  ) {
+    return "list";
+  }
+  if (
+    normalized.includes("read") ||
+    normalized.includes("file") ||
+    normalized.includes("open") ||
+    normalized.includes("view")
+  ) {
+    return "file";
+  }
+  return "tool";
+}
+
+function workItemsSummary(items: WorkItem[]) {
+  const counts = items.reduce(
+    (acc, item) => {
+      acc[workItemCategory(item)] += 1;
+      return acc;
+    },
+    {
+      command: 0,
+      edit: 0,
+      file: 0,
+      list: 0,
+      plan: 0,
+      search: 0,
+      thinking: 0,
+      tool: 0,
+    } as Record<
+      "command" | "edit" | "file" | "list" | "plan" | "search" | "thinking" | "tool",
+      number
+    >,
+  );
+
+  const explored = [
+    counts.file ? plural(counts.file, "file") : "",
+    counts.search ? plural(counts.search, "search", "searches") : "",
+    counts.list ? plural(counts.list, "list") : "",
+  ].filter(Boolean);
+  const clauses: string[] = [];
+  if (explored.length > 0) {
+    clauses.push(`Explored ${joinSummaryParts(explored)}`);
+  }
+  if (counts.command) clauses.push(`ran ${plural(counts.command, "command")}`);
+  if (counts.edit) clauses.push(`edited ${plural(counts.edit, "file")}`);
+  if (counts.plan) clauses.push(`planned ${plural(counts.plan, "step")}`);
+  if (counts.thinking) clauses.push(`thought through ${plural(counts.thinking, "step")}`);
+  if (counts.tool) clauses.push(`used ${plural(counts.tool, "tool")}`);
+
+  if (clauses.length === 0) return "Work";
+  return clauses
+    .join(", ")
+    .replace(/^./, (character) => character.toUpperCase());
+}
+
 function renderWorkPart(
   part: WorkPart,
   isMessageStreaming: boolean,
@@ -326,21 +437,34 @@ function WorkSequence({
   isStreaming: boolean;
   displaySettings: ChatDisplaySettings;
 }) {
+  const { t } = useI18n();
   const visibleItems = items.filter((item) => workItemVisible(item, displaySettings));
   if (visibleItems.length === 0) return null;
 
+  const summary = workItemsSummary(visibleItems);
+  const title = isStreaming
+    ? t("Current work: {{label}}", { label: summary })
+    : summary;
+
   return (
-    <div className="space-y-2">
-      {visibleItems.map((item, index) => (
-        <div key={item.id}>
-          <WorkItemBlock
-            item={item}
-            isStreaming={isStreaming}
-            isLatest={index === visibleItems.length - 1}
-          />
-        </div>
-      ))}
-    </div>
+    <details className="group/work-segment text-muted-foreground">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground">
+        {isStreaming && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
+        <span className="min-w-0 truncate">{title}</span>
+        <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open/work-segment:rotate-180" />
+      </summary>
+      <div className="mt-3 space-y-2 pl-5">
+        {visibleItems.map((item, index) => (
+          <div key={item.id}>
+            <WorkItemBlock
+              item={item}
+              isStreaming={isStreaming}
+              isLatest={index === visibleItems.length - 1}
+            />
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -353,31 +477,12 @@ function WorkGroup({
   isStreaming: boolean;
   displaySettings: ChatDisplaySettings;
 }) {
-  const { t } = useI18n();
-  const visibleItems = items.filter((item) => workItemVisible(item, displaySettings));
-  if (visibleItems.length === 0) return null;
-
-  const latest = visibleItems[visibleItems.length - 1];
-  const latestLabel = workItemLabel(latest);
-  const title = isStreaming
-    ? t("Current work: {{label}}", { label: latestLabel })
-    : t("Work details");
-
   return (
-    <details className="group/work text-muted-foreground">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground">
-        {isStreaming && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
-        <span className="min-w-0 truncate">{title}</span>
-        <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open/work:rotate-180" />
-      </summary>
-      <div className="mt-3">
-        <WorkSequence
-          items={visibleItems}
-          isStreaming={isStreaming}
-          displaySettings={displaySettings}
-        />
-      </div>
-    </details>
+    <WorkSequence
+      items={items}
+      isStreaming={isStreaming}
+      displaySettings={displaySettings}
+    />
   );
 }
 
