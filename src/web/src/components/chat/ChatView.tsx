@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bot,
   Loader2,
   Menu,
   PanelLeftClose,
@@ -21,18 +20,22 @@ import {
 import { getAgentDisplayName } from "@/lib/agents";
 import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
 import type {
+  AgentInfo,
   LaunchSessionInfo,
   ProfileLaunchOption,
   WebVerboseSettings,
   WorkspaceItem,
 } from "@va/client";
 import { useI18n } from "@va/i18n";
+import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "./ChatInput";
 import { deleteCachedChatSession } from "./chatSessionCache";
 import {
+  chatSessionKey,
   ChatSessionSidebar,
+  ALL_AGENTS_FILTER,
   type ChatSessionWorkspaceGroup,
 } from "./ChatSessionSidebar";
 import { ChatMessageList } from "./ChatMessageList";
@@ -40,8 +43,17 @@ import { NewChatAgentPicker } from "./NewChatAgentPicker";
 import { NewChatHome } from "./NewChatHome";
 import { NewChatWorkspacePicker } from "./NewChatWorkspacePicker";
 import { PendingPermissions } from "./PendingPermissions";
-import type { ChatAttachment, ChatSessionSelection } from "./chatTypes";
-import { useWebChatConnection } from "./useWebChatConnection";
+import type {
+  ChatAttachment,
+  ChatMessage,
+  ChatMeta,
+  ChatSessionSelection,
+  PendingPermission,
+} from "./chatTypes";
+import {
+  type ResumeReplayState,
+  useWebChatConnection,
+} from "./useWebChatConnection";
 
 interface ChatViewProps {
   webSettings: WebVerboseSettings;
@@ -51,15 +63,65 @@ interface ChatViewProps {
 
 const DIRECT_PROFILE_ID = "direct";
 const LAUNCH_SELECTION_STORAGE_KEY = "vibearound.webChat.launchSelection";
+const LAUNCH_SESSION_CACHE_STORAGE_KEY = "vibearound.webChat.launchSessions.v1";
 const SESSION_SIDEBAR_WIDTH_STORAGE_KEY = "vibearound.webChat.sessionSidebarWidth";
 const SESSION_SIDEBAR_DEFAULT_WIDTH = 256;
 const SESSION_SIDEBAR_MIN_WIDTH = 224;
 const SESSION_SIDEBAR_MAX_WIDTH = 420;
+const INITIAL_RUNTIME_KEY = "draft:initial";
 
 interface StoredLaunchSelection {
   agentId?: string;
   profileId?: string;
 }
+
+interface StoredLaunchSessionCache {
+  scope: string;
+  syncedAt: number;
+  groups: ChatSessionWorkspaceGroup[];
+}
+
+interface ChatRuntimeSpec {
+  agentId: string;
+  profileId?: string;
+  workspacePath?: string;
+  launchSession?: LaunchSessionInfo;
+  title?: string;
+  initialResume?: {
+    agentId: string;
+    profileId?: string;
+    launchSession: LaunchSessionInfo;
+  };
+}
+
+interface ChatRuntimeSnapshot {
+  messages: ChatMessage[];
+  connected: boolean;
+  streaming: boolean;
+  meta: ChatMeta;
+  agents: AgentInfo[];
+  pendingPermissions: PendingPermission[];
+  resumeReplay: ResumeReplayState | null;
+}
+
+interface ChatRuntimeActions {
+  sendMessage: ReturnType<typeof useWebChatConnection>["sendMessage"];
+  resumeSession: ReturnType<typeof useWebChatConnection>["resumeSession"];
+  clearConversationView: ReturnType<typeof useWebChatConnection>["clearConversationView"];
+  stopStreaming: ReturnType<typeof useWebChatConnection>["stopStreaming"];
+  sendPermissionResponse: ReturnType<typeof useWebChatConnection>["sendPermissionResponse"];
+  cancelPermissionRequest: ReturnType<typeof useWebChatConnection>["cancelPermissionRequest"];
+}
+
+const EMPTY_RUNTIME_SNAPSHOT: ChatRuntimeSnapshot = {
+  messages: [],
+  connected: false,
+  streaming: false,
+  meta: {},
+  agents: [],
+  pendingPermissions: [],
+  resumeReplay: null,
+};
 
 function readStoredLaunchSelection(): StoredLaunchSelection {
   if (typeof window === "undefined") return {};
@@ -115,6 +177,193 @@ function profileTargetsAgent(profile: ProfileLaunchOption, agentId: string) {
   return profile.launch_targets.some((target) => target.id === agentId);
 }
 
+function sessionSyncScope(
+  agents: string[],
+  workspaces: WorkspaceItem[],
+  showArchived: boolean,
+) {
+  return `${agents.join(",")}\u0000${showArchived ? "archived" : "active"}\u0000${workspaces.map((workspace) => workspace.path).join("\u0000")}`;
+}
+
+function launchSessionKey(session: LaunchSessionInfo) {
+  return `${session.agent_id}\u0000${session.workspace}\u0000${session.session_id}`;
+}
+
+function readCachedLaunchSessionGroups(
+  scope: string,
+  workspaces: WorkspaceItem[],
+): ChatSessionWorkspaceGroup[] | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(LAUNCH_SESSION_CACHE_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as Partial<StoredLaunchSessionCache>;
+    if (parsed.scope !== scope || !Array.isArray(parsed.groups)) return undefined;
+    return normalizeSessionGroups(parsed.groups, workspaces);
+  } catch {
+    return undefined;
+  }
+}
+
+function writeCachedLaunchSessionGroups(
+  scope: string,
+  groups: ChatSessionWorkspaceGroup[],
+) {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: StoredLaunchSessionCache = {
+      scope,
+      syncedAt: Date.now(),
+      groups,
+    };
+    window.localStorage.setItem(
+      LAUNCH_SESSION_CACHE_STORAGE_KEY,
+      JSON.stringify(payload),
+    );
+  } catch {
+    // Session cache is an optimization; sync still works without storage.
+  }
+}
+
+function normalizeSessionGroups(
+  groups: ChatSessionWorkspaceGroup[],
+  workspaces: WorkspaceItem[],
+): ChatSessionWorkspaceGroup[] {
+  const workspaceByPath = new Map(workspaces.map((workspace) => [workspace.path, workspace]));
+  return groups
+    .flatMap((group) => {
+      const path = group.workspace?.path;
+      if (typeof path !== "string") return [];
+      const workspace = workspaceByPath.get(path) ?? group.workspace;
+      const sessions = Array.isArray(group.sessions)
+        ? group.sessions.filter(isLaunchSessionInfo)
+        : [];
+      return [{ workspace, sessions }];
+    })
+    .filter((group) =>
+      workspaces.length === 0 ||
+      workspaces.some((workspace) => workspace.path === group.workspace.path),
+    );
+}
+
+function isLaunchSessionInfo(value: unknown): value is LaunchSessionInfo {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<LaunchSessionInfo>;
+  return (
+    typeof item.agent_id === "string" &&
+    typeof item.session_id === "string" &&
+    typeof item.title === "string" &&
+    typeof item.workspace === "string" &&
+    typeof item.updated_at === "number" &&
+    typeof item.short_id === "string" &&
+    typeof item.archived === "boolean"
+  );
+}
+
+function mergeSessionGroups(
+  cachedGroups: ChatSessionWorkspaceGroup[],
+  freshGroups: ChatSessionWorkspaceGroup[],
+  workspaces: WorkspaceItem[],
+): ChatSessionWorkspaceGroup[] {
+  const groups = new Map<string, ChatSessionWorkspaceGroup>();
+  for (const workspace of workspaces) {
+    groups.set(workspace.path, { workspace, sessions: [] });
+  }
+  for (const group of [...cachedGroups, ...freshGroups]) {
+    const workspace =
+      workspaces.find((item) => item.path === group.workspace.path) ?? group.workspace;
+    const current = groups.get(workspace.path) ?? { workspace, sessions: [] };
+    const sessions = new Map(current.sessions.map((session) => [launchSessionKey(session), session]));
+    for (const session of group.sessions) {
+      sessions.set(launchSessionKey(session), session);
+    }
+    groups.set(workspace.path, {
+      workspace,
+      sessions: Array.from(sessions.values()),
+    });
+  }
+  return Array.from(groups.values());
+}
+
+function ChatRuntimeHost({
+  runtimeKey,
+  initialResume,
+  onSnapshot,
+  onActions,
+  onAgentSelected,
+}: {
+  runtimeKey: string;
+  initialResume?: ChatRuntimeSpec["initialResume"];
+  onSnapshot: (runtimeKey: string, snapshot: ChatRuntimeSnapshot) => void;
+  onActions: (runtimeKey: string, actions: ChatRuntimeActions | null) => void;
+  onAgentSelected: (
+    runtimeKey: string,
+    agentId: string,
+    source: "config" | "system",
+  ) => void;
+}) {
+  const initialResumeStartedRef = useRef(false);
+  const handleAgentSelected = useCallback(
+    (agentId: string, source: "config" | "system") =>
+      onAgentSelected(runtimeKey, agentId, source),
+    [onAgentSelected, runtimeKey],
+  );
+  const connection = useWebChatConnection({ onAgentSelected: handleAgentSelected });
+
+  useEffect(() => {
+    onSnapshot(runtimeKey, {
+      messages: connection.messages,
+      connected: connection.connected,
+      streaming: connection.streaming,
+      meta: connection.meta,
+      agents: connection.agents,
+      pendingPermissions: connection.pendingPermissions,
+      resumeReplay: connection.resumeReplay,
+    });
+  }, [
+    connection.agents,
+    connection.connected,
+    connection.messages,
+    connection.meta,
+    connection.pendingPermissions,
+    connection.resumeReplay,
+    connection.streaming,
+    onSnapshot,
+    runtimeKey,
+  ]);
+
+  useEffect(() => {
+    onActions(runtimeKey, {
+      sendMessage: connection.sendMessage,
+      resumeSession: connection.resumeSession,
+      clearConversationView: connection.clearConversationView,
+      stopStreaming: connection.stopStreaming,
+      sendPermissionResponse: connection.sendPermissionResponse,
+      cancelPermissionRequest: connection.cancelPermissionRequest,
+    });
+    return () => onActions(runtimeKey, null);
+  }, [
+    connection.cancelPermissionRequest,
+    connection.clearConversationView,
+    connection.resumeSession,
+    connection.sendMessage,
+    connection.sendPermissionResponse,
+    connection.stopStreaming,
+    onActions,
+    runtimeKey,
+  ]);
+
+  useEffect(() => {
+    if (!initialResume || initialResumeStartedRef.current || !connection.connected) {
+      return;
+    }
+    initialResumeStartedRef.current = true;
+    connection.resumeSession(initialResume);
+  }, [connection.connected, connection.resumeSession, initialResume]);
+
+  return null;
+}
+
 export function ChatView({
   webSettings,
   onStatusChange,
@@ -129,7 +378,7 @@ export function ChatView({
   const [selectedAgent, setSelectedAgent] = useState<string>(
     storedLaunchSelection.agentId ?? "claude",
   );
-  const [sidebarAgentFilter, setSidebarAgentFilter] = useState<string | undefined>();
+  const [sidebarAgentFilter, setSidebarAgentFilter] = useState<string>(ALL_AGENTS_FILTER);
   const [profiles, setProfiles] = useState<ProfileLaunchOption[]>([]);
   const [profileSelections, setProfileSelections] = useState<Record<string, string | undefined>>(
     () =>
@@ -140,9 +389,9 @@ export function ChatView({
           }
         : {},
   );
-  const [launchSessionGroups, setLaunchSessionGroups] = useState<ChatSessionWorkspaceGroup[]>(
-    [],
-  );
+  const [syncedLaunchSessionGroups, setSyncedLaunchSessionGroups] = useState<
+    ChatSessionWorkspaceGroup[]
+  >([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [defaultWorkspacePath, setDefaultWorkspacePath] = useState<string | undefined>();
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | undefined>();
@@ -162,35 +411,87 @@ export function ChatView({
     readStoredSessionSidebarWidth,
   );
   const [mobileSessionSidebarOpen, setMobileSessionSidebarOpen] = useState(false);
+  const syncedSessionScopeRef = useRef<string | undefined>(undefined);
+  const [runtimeKeys, setRuntimeKeys] = useState<string[]>([INITIAL_RUNTIME_KEY]);
+  const [activeRuntimeKey, setActiveRuntimeKey] = useState(INITIAL_RUNTIME_KEY);
+  const activeRuntimeKeyRef = useRef(activeRuntimeKey);
+  const [runtimeSpecs, setRuntimeSpecs] = useState<Record<string, ChatRuntimeSpec>>(
+    () => ({
+      [INITIAL_RUNTIME_KEY]: {
+        agentId: storedLaunchSelection.agentId ?? "claude",
+        profileId: storedLaunchSelection.profileId ?? DIRECT_PROFILE_ID,
+      },
+    }),
+  );
+  const [runtimeSnapshots, setRuntimeSnapshots] = useState<
+    Record<string, ChatRuntimeSnapshot>
+  >({});
+  const runtimeActionsRef = useRef<Record<string, ChatRuntimeActions>>({});
+
+  useEffect(() => {
+    activeRuntimeKeyRef.current = activeRuntimeKey;
+  }, [activeRuntimeKey]);
 
   const handleSocketAgentSelected = useCallback(
-    (agentId: string, source: "config" | "system") => {
+    (runtimeKey: string, agentId: string, source: "config" | "system") => {
+      if (runtimeKey !== activeRuntimeKeyRef.current) return;
       if (source === "config" && storedLaunchSelection.agentId) return;
       setSelectedAgent(agentId);
     },
     [storedLaunchSelection.agentId],
   );
 
-  const {
-    messages,
-    connected,
-    streaming,
-    meta,
-    agents,
-    pendingPermissions,
-    resumeReplay,
-    sendMessage,
-    resumeSession,
-    clearConversationView,
-    stopStreaming,
-    sendPermissionResponse,
-    cancelPermissionRequest,
-  } = useWebChatConnection({ onAgentSelected: handleSocketAgentSelected });
+  const handleRuntimeSnapshot = useCallback(
+    (runtimeKey: string, snapshot: ChatRuntimeSnapshot) => {
+      setRuntimeSnapshots((prev) => ({ ...prev, [runtimeKey]: snapshot }));
+    },
+    [],
+  );
 
-  const sidebarAgentId = sidebarAgentFilter ?? selectedAgent;
+  const handleRuntimeActions = useCallback(
+    (runtimeKey: string, actions: ChatRuntimeActions | null) => {
+      if (actions) {
+        runtimeActionsRef.current[runtimeKey] = actions;
+        return;
+      }
+      delete runtimeActionsRef.current[runtimeKey];
+    },
+    [],
+  );
+
+  const activeRuntime = runtimeSnapshots[activeRuntimeKey] ?? EMPTY_RUNTIME_SNAPSHOT;
+  const activeRuntimeActions = runtimeActionsRef.current[activeRuntimeKey];
+  const messages = activeRuntime.messages;
+  const connected = activeRuntime.connected;
+  const streaming = activeRuntime.streaming;
+  const meta = activeRuntime.meta;
+  const agents = useMemo(
+    () =>
+      Object.values(runtimeSnapshots).find((snapshot) => snapshot.agents.length > 0)
+        ?.agents ?? [],
+    [runtimeSnapshots],
+  );
+  const pendingPermissions = activeRuntime.pendingPermissions;
+  const resumeReplay = activeRuntime.resumeReplay;
+  const sendMessage = activeRuntimeActions?.sendMessage;
+  const stopStreaming = activeRuntimeActions?.stopStreaming;
+  const sendPermissionResponse = activeRuntimeActions?.sendPermissionResponse;
+  const cancelPermissionRequest = activeRuntimeActions?.cancelPermissionRequest;
+
+  const launchSessionGroups = useMemo(
+    () =>
+      syncedLaunchSessionGroups.map((group) => ({
+        ...group,
+        sessions:
+          sidebarAgentFilter === ALL_AGENTS_FILTER
+            ? group.sessions
+            : group.sessions.filter((session) => session.agent_id === sidebarAgentFilter),
+      })),
+    [sidebarAgentFilter, syncedLaunchSessionGroups],
+  );
   const launchSessions = useMemo(
-    () => launchSessionGroups.flatMap((group) => group.sessions),
-    [launchSessionGroups],
+    () => syncedLaunchSessionGroups.flatMap((group) => group.sessions),
+    [syncedLaunchSessionGroups],
   );
   const selectedAgentInfo = agents.find((agent) => agent.id === selectedAgent);
   const agentLabel = selectedAgentInfo?.name ?? getAgentDisplayName(selectedAgent);
@@ -200,13 +501,17 @@ export function ChatView({
     (workspace) => workspace.path === selectedWorkspacePath,
   );
   const sessionSelection = sessionSelections[selectedAgent] ?? { kind: "current" };
-  const sidebarSessionSelection = sessionSelections[sidebarAgentId] ?? { kind: "current" };
   const selectedLaunchSession =
     sessionSelection.kind === "resume" &&
+    selectedLaunchSessions[selectedAgent]?.agent_id === selectedAgent &&
     selectedLaunchSessions[selectedAgent]?.session_id === sessionSelection.sessionId
       ? selectedLaunchSessions[selectedAgent]
       : sessionSelection.kind === "resume"
-        ? launchSessions.find((session) => session.session_id === sessionSelection.sessionId)
+        ? launchSessions.find(
+            (session) =>
+              session.agent_id === selectedAgent &&
+              session.session_id === sessionSelection.sessionId,
+          )
         : undefined;
   const replayLoading = Boolean(resumeReplay);
   const chatStatus: ChatRuntimeStatus =
@@ -258,6 +563,148 @@ export function ChatView({
     }),
     [webSettings],
   );
+  const runtimeLaunchSessions = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    return Object.entries(runtimeSpecs).flatMap(([runtimeKey, spec]) => {
+      const snapshot = runtimeSnapshots[runtimeKey];
+      if (!snapshot || (!snapshot.streaming && !snapshot.resumeReplay)) return [];
+      const sessionId = spec.launchSession?.session_id ?? snapshot.meta.sessionId;
+      const workspacePath =
+        spec.launchSession?.workspace ??
+        spec.workspacePath ??
+        selectedWorkspace?.path ??
+        defaultWorkspacePath;
+      if (!sessionId || !workspacePath) return [];
+      const title =
+        spec.launchSession?.title ??
+        spec.title ??
+        (snapshot.resumeReplay?.title || t("Current session"));
+      return [
+        {
+          agent_id: spec.launchSession?.agent_id ?? spec.agentId,
+          session_id: sessionId,
+          title,
+          workspace: workspacePath,
+          updated_at: spec.launchSession?.updated_at ?? now,
+          short_id: spec.launchSession?.short_id ?? sessionId.slice(0, 8),
+          archived: false,
+        } satisfies LaunchSessionInfo,
+      ];
+    });
+  }, [
+    defaultWorkspacePath,
+    runtimeSnapshots,
+    runtimeSpecs,
+    selectedWorkspace?.path,
+    t,
+  ]);
+  const runtimeBusySessionKeys = useMemo(
+    () => new Set(runtimeLaunchSessions.map((session) => chatSessionKey(session))),
+    [runtimeLaunchSessions],
+  );
+  const displayLaunchSessionGroups = useMemo(() => {
+    if (runtimeLaunchSessions.length === 0) return launchSessionGroups;
+    const groupsByWorkspace = new Map<string, ChatSessionWorkspaceGroup>();
+    for (const group of launchSessionGroups) {
+      groupsByWorkspace.set(group.workspace.path, {
+        workspace: group.workspace,
+        sessions: [...group.sessions],
+      });
+    }
+    for (const session of runtimeLaunchSessions) {
+      const workspace =
+        groupsByWorkspace.get(session.workspace)?.workspace ??
+        workspaces.find((item) => item.path === session.workspace) ?? {
+          path: session.workspace,
+          is_default: session.workspace === defaultWorkspacePath,
+          is_builtin: false,
+        };
+      const group = groupsByWorkspace.get(session.workspace) ?? {
+        workspace,
+        sessions: [],
+      };
+      const existingIndex = group.sessions.findIndex(
+        (item) => chatSessionKey(item) === chatSessionKey(session),
+      );
+      if (existingIndex >= 0) {
+        group.sessions[existingIndex] = {
+          ...group.sessions[existingIndex],
+          ...session,
+        };
+      } else {
+        group.sessions.unshift(session);
+      }
+      groupsByWorkspace.set(session.workspace, group);
+    }
+    return Array.from(groupsByWorkspace.values());
+  }, [defaultWorkspacePath, launchSessionGroups, runtimeLaunchSessions, workspaces]);
+
+  const createDraftRuntime = useCallback((agentId: string, workspacePath?: string) => {
+    const runtimeKey = `draft:${agentId}:${Date.now()}:${Math.random()
+      .toString(36)
+      .slice(2)}`;
+    setRuntimeSpecs((prev) => ({
+      ...prev,
+      [runtimeKey]: {
+        agentId,
+        profileId: profileSelections[agentId] ?? DIRECT_PROFILE_ID,
+        workspacePath,
+      },
+    }));
+    setRuntimeKeys((prev) => [...prev, runtimeKey]);
+    setActiveRuntimeKey(runtimeKey);
+    setSelectedAgent(agentId);
+    if (workspacePath) setSelectedWorkspacePath(workspacePath);
+    return runtimeKey;
+  }, [profileSelections]);
+
+  const activateRuntimeForSession = useCallback(
+    (session: LaunchSessionInfo) => {
+      const runtimeKey = `session:${chatSessionKey(session)}`;
+      setRuntimeSpecs((prev) =>
+        prev[runtimeKey]
+          ? prev
+          : {
+              ...prev,
+              [runtimeKey]: {
+                agentId: session.agent_id,
+                profileId: profileSelections[session.agent_id] ?? DIRECT_PROFILE_ID,
+                workspacePath: session.workspace,
+                launchSession: session,
+                title: session.title,
+                initialResume: {
+                  agentId: session.agent_id,
+                  profileId: profileSelections[session.agent_id] ?? DIRECT_PROFILE_ID,
+                  launchSession: session,
+                },
+              },
+            },
+      );
+      setRuntimeKeys((prev) =>
+        prev.includes(runtimeKey) ? prev : [...prev, runtimeKey],
+      );
+      setActiveRuntimeKey(runtimeKey);
+      setSelectedAgent(session.agent_id);
+      setSelectedWorkspacePath(session.workspace);
+      return runtimeKey;
+    },
+    [profileSelections],
+  );
+
+  const removeRuntime = useCallback((runtimeKey: string) => {
+    setRuntimeKeys((prev) => prev.filter((key) => key !== runtimeKey));
+    setRuntimeSpecs((prev) => {
+      const next = { ...prev };
+      delete next[runtimeKey];
+      return next;
+    });
+    setRuntimeSnapshots((prev) => {
+      const next = { ...prev };
+      delete next[runtimeKey];
+      return next;
+    });
+    delete runtimeActionsRef.current[runtimeKey];
+  }, []);
 
   useEffect(() => {
     onStatusChange?.(chatStatus);
@@ -333,15 +780,12 @@ export function ChatView({
   useEffect(() => {
     if (agents.length === 0) return;
     setSidebarAgentFilter((current) => {
-      if (current && agents.some((agent) => agent.id === current)) {
+      if (current === ALL_AGENTS_FILTER || agents.some((agent) => agent.id === current)) {
         return current;
       }
-      if (agents.some((agent) => agent.id === selectedAgent)) {
-        return selectedAgent;
-      }
-      return agents[0]?.id ?? current;
+      return ALL_AGENTS_FILTER;
     });
-  }, [agents, selectedAgent]);
+  }, [agents]);
 
   useEffect(() => {
     let cancelled = false;
@@ -361,74 +805,79 @@ export function ChatView({
     };
   }, []);
 
-  useEffect(() => {
-    if (!sidebarAgentId) {
-      setLaunchSessionGroups([]);
-      setSessionsLoading(false);
-      return;
-    }
-    if (workspacesLoading) {
-      setLaunchSessionGroups([]);
-      setSessionsLoading(false);
-      return;
-    }
-    if (workspaces.length === 0) {
-      setLaunchSessionGroups([]);
-      setSessionsLoading(false);
-      return;
-    }
+  const syncLaunchSessions = useCallback(
+    async (options?: { force?: boolean }) => {
+      const agentIds = agents.map((agent) => agent.id);
+      if (agentIds.length === 0 || workspacesLoading || workspaces.length === 0) {
+        syncedSessionScopeRef.current = undefined;
+        setSyncedLaunchSessionGroups([]);
+        setSessionsLoading(false);
+        return;
+      }
 
-    let cancelled = false;
-    setSessionsLoading(true);
-    setLaunchSessionGroups([]);
-    void (async () => {
-      return Promise.all(
-        workspaces.map(async (workspace) => {
-          try {
+      const scope = sessionSyncScope(agentIds, workspaces, webSettings.show_archived);
+      const previousScope = syncedSessionScopeRef.current;
+      if (!options?.force && previousScope === scope) return;
+      syncedSessionScopeRef.current = scope;
+      const canMergeCurrentGroups = previousScope === scope;
+
+      const cachedGroups = readCachedLaunchSessionGroups(scope, workspaces);
+      if (cachedGroups) {
+        setSyncedLaunchSessionGroups(cachedGroups);
+      } else if (!canMergeCurrentGroups) {
+        setSyncedLaunchSessionGroups([]);
+      }
+
+      setSessionsLoading(true);
+      try {
+        const freshGroups = await Promise.all(
+          workspaces.map(async (workspace) => {
+            const sessionGroups = await Promise.all(
+              agentIds.map(async (agentId) => {
+                try {
+                  return await getLaunchSessions(
+                    agentId,
+                    webSettings.show_archived,
+                    workspace.path,
+                  );
+                } catch (error) {
+                  console.warn(
+                    "[ChatView] failed to sync launch sessions for workspace:",
+                    workspace.path,
+                    agentId,
+                    error,
+                  );
+                  return [];
+                }
+              }),
+            );
             return {
               workspace,
-              sessions: await getLaunchSessions(sidebarAgentId, false, workspace.path),
+              sessions: sessionGroups.flat(),
             };
-          } catch (error) {
-            console.warn(
-              "[ChatView] failed to load launch sessions for workspace:",
-              workspace.path,
-              error,
-            );
-            return { workspace, sessions: [] };
-          }
-        }),
-      );
-    })()
-      .then((groups) => {
-        if (cancelled) return;
-        const items = groups.flatMap((group) => group.sessions);
-        setLaunchSessionGroups(groups);
-        setSessionSelections((prev) => {
-          const current = prev[sidebarAgentId];
-          if (
-            current?.kind === "resume" &&
-            !items.some((item) => item.session_id === current.sessionId)
-          ) {
-            return { ...prev, [sidebarAgentId]: { kind: "current" } };
-          }
-          return prev;
+          }),
+        );
+        setSyncedLaunchSessionGroups((currentGroups) => {
+          const mergedGroups = mergeSessionGroups(
+            cachedGroups ?? (canMergeCurrentGroups ? currentGroups : []),
+            freshGroups,
+            workspaces,
+          );
+          writeCachedLaunchSessionGroups(scope, mergedGroups);
+          return mergedGroups;
         });
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          console.warn("[ChatView] failed to load launch sessions:", error);
-          setLaunchSessionGroups([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setSessionsLoading(false);
-      });
+      } catch (error) {
+        console.warn("[ChatView] failed to sync launch sessions:", error);
+      } finally {
+        setSessionsLoading(false);
+      }
+    },
+    [agents, webSettings.show_archived, workspaces, workspacesLoading],
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [sidebarAgentId, workspaces, workspacesLoading]);
+  useEffect(() => {
+    void syncLaunchSessions();
+  }, [syncLaunchSessions]);
 
   const handleLaunchChange = useCallback((agentId: string, profileId?: string) => {
     setSelectedAgent(agentId);
@@ -440,6 +889,10 @@ export function ChatView({
   const handleSidebarAgentFilterChange = useCallback((agentId: string) => {
     setSidebarAgentFilter(agentId);
   }, []);
+
+  const handleSyncSessions = useCallback(() => {
+    void syncLaunchSessions({ force: true });
+  }, [syncLaunchSessions]);
 
   const handleCreateWorkspace = useCallback(async (name: string) => {
     setWorkspaceCreating(true);
@@ -459,15 +912,17 @@ export function ChatView({
 
   const handleSessionChange = useCallback(
     (selection: ChatSessionSelection, session?: LaunchSessionInfo) => {
+      const targetAgentId =
+        session?.agent_id ??
+        (sidebarAgentFilter === ALL_AGENTS_FILTER ? selectedAgent : sidebarAgentFilter);
       if (selection.kind === "new") {
-        setSessionSelections((prev) => ({ ...prev, [sidebarAgentId]: selection }));
+        setSessionSelections((prev) => ({ ...prev, [targetAgentId]: selection }));
         setSelectedLaunchSessions((prev) => {
           const next = { ...prev };
-          delete next[sidebarAgentId];
+          delete next[targetAgentId];
           return next;
         });
-        setSelectedAgent(sidebarAgentId);
-        clearConversationView({ abortReplay: true });
+        createDraftRuntime(targetAgentId, selectedWorkspace?.path);
         setAttachments([]);
         setAttachmentError(undefined);
         return;
@@ -475,31 +930,27 @@ export function ChatView({
       if (selection.kind !== "resume") return;
 
       const launchSession = session ?? launchSessions.find(
-        (item) => item.session_id === selection.sessionId,
+        (item) =>
+          item.agent_id === targetAgentId && item.session_id === selection.sessionId,
       );
       if (!launchSession) return;
 
-      setSessionSelections((prev) => ({ ...prev, [sidebarAgentId]: selection }));
+      setSessionSelections((prev) => ({ ...prev, [launchSession.agent_id]: selection }));
       setSelectedLaunchSessions((prev) => ({
         ...prev,
-        [sidebarAgentId]: launchSession,
+        [launchSession.agent_id]: launchSession,
       }));
-      setSelectedAgent(sidebarAgentId);
-      setSelectedWorkspacePath(launchSession.workspace);
       setAttachments([]);
       setAttachmentError(undefined);
-      resumeSession({
-        agentId: sidebarAgentId,
-        profileId: profileSelections[sidebarAgentId] ?? DIRECT_PROFILE_ID,
-        launchSession,
-      });
+      activateRuntimeForSession(launchSession);
     },
     [
-      clearConversationView,
+      activateRuntimeForSession,
+      createDraftRuntime,
       launchSessions,
-      profileSelections,
-      resumeSession,
-      sidebarAgentId,
+      selectedAgent,
+      sidebarAgentFilter,
+      selectedWorkspace?.path,
     ],
   );
 
@@ -546,6 +997,20 @@ export function ChatView({
     async (session: LaunchSessionInfo) => {
       setArchivingSessionId(session.session_id);
       try {
+        const runtimeEntry = Object.entries(runtimeSpecs).find(([runtimeKey, spec]) => {
+          const snapshot = runtimeSnapshots[runtimeKey];
+          const sessionId = spec.launchSession?.session_id ?? snapshot?.meta.sessionId;
+          const workspace =
+            spec.launchSession?.workspace ?? spec.workspacePath ?? defaultWorkspacePath;
+          return (
+            spec.agentId === session.agent_id &&
+            sessionId === session.session_id &&
+            workspace === session.workspace
+          );
+        });
+        if (runtimeEntry) {
+          runtimeActionsRef.current[runtimeEntry[0]]?.stopStreaming();
+        }
         await archiveLaunchSession(session.agent_id, session.session_id, session.workspace);
         void deleteCachedChatSession({
           agentId: session.agent_id,
@@ -554,15 +1019,27 @@ export function ChatView({
         }).catch((error) => {
           console.warn("[ChatView] failed to delete archived session cache:", error);
         });
-        setLaunchSessionGroups((prev) =>
-          prev.map((group) => ({
+        setSyncedLaunchSessionGroups((prev) => {
+          const next = prev.map((group) => ({
             ...group,
-            sessions: group.sessions.filter(
-              (item) =>
-                item.agent_id !== session.agent_id || item.session_id !== session.session_id,
-            ),
-          })),
-        );
+            sessions: webSettings.show_archived
+              ? group.sessions.map((item) =>
+                  item.agent_id === session.agent_id &&
+                  item.session_id === session.session_id
+                    ? { ...item, archived: true }
+                    : item,
+                )
+              : group.sessions.filter(
+                  (item) =>
+                    item.agent_id !== session.agent_id ||
+                    item.session_id !== session.session_id,
+                ),
+          }));
+          if (syncedSessionScopeRef.current) {
+            writeCachedLaunchSessionGroups(syncedSessionScopeRef.current, next);
+          }
+          return next;
+        });
         setSelectedLaunchSessions((prev) => {
           if (prev[session.agent_id]?.session_id !== session.session_id) return prev;
           const next = { ...prev };
@@ -581,7 +1058,10 @@ export function ChatView({
           sessionSelection.kind === "resume" &&
           sessionSelection.sessionId === session.session_id
         ) {
-          clearConversationView({ abortReplay: true });
+          createDraftRuntime(session.agent_id, session.workspace);
+        }
+        if (runtimeEntry) {
+          removeRuntime(runtimeEntry[0]);
         }
       } catch (error) {
         console.warn("[ChatView] failed to archive launch session:", error);
@@ -589,7 +1069,16 @@ export function ChatView({
         setArchivingSessionId(undefined);
       }
     },
-    [clearConversationView, selectedAgent, sessionSelection],
+    [
+      createDraftRuntime,
+      defaultWorkspacePath,
+      removeRuntime,
+      runtimeSnapshots,
+      runtimeSpecs,
+      selectedAgent,
+      sessionSelection,
+      webSettings.show_archived,
+    ],
   );
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
@@ -633,6 +1122,7 @@ export function ChatView({
     if (!text && attachments.length === 0) return;
     if (attachmentsUploading) return;
     if (replayLoading) return;
+    if (!sendMessage) return;
     const sent = sendMessage({
       text,
       attachments,
@@ -647,10 +1137,26 @@ export function ChatView({
     setInput("");
     setAttachments([]);
     setAttachmentError(undefined);
+    setRuntimeSpecs((prev) => ({
+      ...prev,
+      [activeRuntimeKey]: {
+        ...(prev[activeRuntimeKey] ?? { agentId: selectedAgent }),
+        agentId: selectedAgent,
+        profileId: selectedProfileId,
+        workspacePath: selectedWorkspace?.path,
+        launchSession: selectedLaunchSession,
+        title:
+          text ||
+          attachments[0]?.name ||
+          selectedLaunchSession?.title ||
+          t("Current session"),
+      },
+    }));
     if (sessionSelection.kind === "new") {
       setSessionSelections((prev) => ({ ...prev, [selectedAgent]: { kind: "current" } }));
     }
   }, [
+    activeRuntimeKey,
     attachments,
     attachmentsUploading,
     input,
@@ -661,25 +1167,39 @@ export function ChatView({
     selectedWorkspace?.path,
     sendMessage,
     sessionSelection,
+    t,
   ]);
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
+      {runtimeKeys.map((runtimeKey) => (
+        <ChatRuntimeHost
+          key={runtimeKey}
+          runtimeKey={runtimeKey}
+          initialResume={runtimeSpecs[runtimeKey]?.initialResume}
+          onSnapshot={handleRuntimeSnapshot}
+          onActions={handleRuntimeActions}
+          onAgentSelected={handleSocketAgentSelected}
+        />
+      ))}
       {showSessionSidebar && (
         <div
           className="relative hidden h-full shrink-0 md:flex"
           style={{ width: sessionSidebarWidth }}
         >
           <ChatSessionSidebar
-            workspaceGroups={launchSessionGroups}
+            workspaceGroups={displayLaunchSessionGroups}
             agents={agents}
-            selectedAgentFilter={sidebarAgentId}
+            selectedAgentFilter={sidebarAgentFilter}
+            activeAgentId={selectedAgent}
             className="flex w-full"
             style={{ width: "100%" }}
             sessionsLoading={sidebarSessionsLoading}
             loadingSessionId={resumeReplay?.sessionId}
+            loadingSessionKeys={runtimeBusySessionKeys}
             archivingSessionId={archivingSessionId}
-            sessionSelection={sidebarSessionSelection}
+            sessionSelection={sessionSelection}
+            onSyncSessions={handleSyncSessions}
             onAgentFilterChange={handleSidebarAgentFilterChange}
             onSessionChange={handleSessionChange}
             onArchiveSession={handleArchiveSession}
@@ -703,14 +1223,17 @@ export function ChatView({
           />
           <div className="absolute inset-y-0 left-0 w-[min(18rem,86vw)] shadow-lg">
             <ChatSessionSidebar
-              workspaceGroups={launchSessionGroups}
+              workspaceGroups={displayLaunchSessionGroups}
               agents={agents}
-              selectedAgentFilter={sidebarAgentId}
+              selectedAgentFilter={sidebarAgentFilter}
+              activeAgentId={selectedAgent}
               variant="mobile"
               sessionsLoading={sidebarSessionsLoading}
               loadingSessionId={resumeReplay?.sessionId}
+              loadingSessionKeys={runtimeBusySessionKeys}
               archivingSessionId={archivingSessionId}
-              sessionSelection={sidebarSessionSelection}
+              sessionSelection={sessionSelection}
+              onSyncSessions={handleSyncSessions}
               onAgentFilterChange={handleSidebarAgentFilterChange}
               onSessionChange={handleMobileSessionChange}
               onArchiveSession={handleArchiveSession}
@@ -749,7 +1272,12 @@ export function ChatView({
               )}
             </Button>
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-              <Bot className="h-4 w-4" />
+              <BrandIcon
+                kind="cli"
+                id={selectedAgent}
+                label={agentLabel}
+                className="h-4 w-4"
+              />
             </div>
             <div className="min-w-0">
               <div className="truncate text-sm font-medium text-foreground">
@@ -860,8 +1388,10 @@ export function ChatView({
 
             <PendingPermissions
               permissions={pendingPermissions}
-              onRespond={sendPermissionResponse}
-              onCancel={cancelPermissionRequest}
+              onRespond={(requestId, optionId) =>
+                sendPermissionResponse?.(requestId, optionId)
+              }
+              onCancel={(requestId) => cancelPermissionRequest?.(requestId)}
             />
 
             <ChatInput

@@ -55,6 +55,14 @@ export function ChatSettingsMenu({ settings, onChange }: ChatSettingsMenuProps) 
         >
           {t("Show tools")}
         </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={settings.show_archived}
+          onCheckedChange={(checked) =>
+            onChange({ show_archived: checked === true })
+          }
+        >
+          {t("Show archived")}
+        </DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
         <div className="px-2 py-1 text-[11px] text-muted-foreground/70">
           {t("version: {{value}}", { value: `v${__APP_VERSION_LABEL__}` })}
