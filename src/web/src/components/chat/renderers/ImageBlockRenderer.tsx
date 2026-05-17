@@ -18,14 +18,14 @@ export function ImageBlockRenderer({ block }: { block: ImageBlock }) {
     : dataUrl(block.mimeType, block.data);
 
   return (
-    <figure className="overflow-hidden rounded-md border border-border/70 bg-muted/20">
+    <figure className="overflow-hidden">
       <img
         src={imageSrc}
         alt={block.uri ? fileNameFromUri(block.uri) : t("Image")}
         className="max-h-[28rem] w-full object-contain"
         loading="lazy"
       />
-      <figcaption className="flex items-center gap-2 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
+      <figcaption className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
         <ImageIcon className="h-3.5 w-3.5" />
         <span className="truncate">{block.uri ?? block.mimeType}</span>
       </figcaption>

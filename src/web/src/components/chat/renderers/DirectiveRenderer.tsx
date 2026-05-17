@@ -51,7 +51,7 @@ export function DirectiveRenderer({ segment }: { segment: DirectiveSegment }) {
 
   return (
     <div
-      className="not-prose my-2 flex min-w-0 items-center gap-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+      className="not-prose my-2 flex min-w-0 items-center gap-2 py-2 text-xs text-muted-foreground"
       title={segment.raw}
     >
       <span className="shrink-0 font-mono uppercase tracking-wide text-primary/80">

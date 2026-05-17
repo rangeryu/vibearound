@@ -115,9 +115,9 @@ export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
     }
 
     return (
-      <details className="rounded-md px-1 py-0.5">
+      <details className="py-0.5">
         {summary}
-        <div className="ml-5 mt-2 border-l border-border/50 pl-3">
+        <div className="ml-5 mt-2 pl-3">
           <ToolDetails part={part} />
         </div>
       </details>
@@ -127,7 +127,7 @@ export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
   return (
     <details
       open={active || part.status === "failed" || hasRichContent}
-      className="rounded-md border border-border/70 bg-muted/20 px-3 py-2"
+      className="px-1 py-1"
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 text-sm">
         {statusIcon(part.status, active)}

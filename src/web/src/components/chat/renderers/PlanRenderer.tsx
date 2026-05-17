@@ -17,7 +17,7 @@ export function PlanRenderer({
   if (part.plan.entries.length === 0) return null;
 
   return (
-    <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-3">
+    <div className="py-3">
       <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
         <Code2 className="h-3.5 w-3.5" />
         {t("Plan")}
