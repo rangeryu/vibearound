@@ -189,6 +189,18 @@ function launchSessionKey(session: LaunchSessionInfo) {
   return `${session.agent_id}\u0000${session.workspace}\u0000${session.session_id}`;
 }
 
+function sameLaunchSession(a: LaunchSessionInfo, b: LaunchSessionInfo) {
+  return (
+    a.agent_id === b.agent_id &&
+    a.session_id === b.session_id &&
+    a.title === b.title &&
+    a.workspace === b.workspace &&
+    a.updated_at === b.updated_at &&
+    a.short_id === b.short_id &&
+    a.archived === b.archived
+  );
+}
+
 function readCachedLaunchSessionGroups(
   scope: string,
   workspaces: WorkspaceItem[],
@@ -260,26 +272,48 @@ function isLaunchSessionInfo(value: unknown): value is LaunchSessionInfo {
   );
 }
 
-function mergeSessionGroups(
-  cachedGroups: ChatSessionWorkspaceGroup[],
-  freshGroups: ChatSessionWorkspaceGroup[],
+function mergeSessionGroupUpdates(
+  currentGroups: ChatSessionWorkspaceGroup[],
+  updatedGroups: ChatSessionWorkspaceGroup[],
   workspaces: WorkspaceItem[],
+  updatedAgentIds: string[],
 ): ChatSessionWorkspaceGroup[] {
+  const workspaceByPath = new Map(workspaces.map((workspace) => [workspace.path, workspace]));
+  const updatedAgents = new Set(updatedAgentIds);
   const groups = new Map<string, ChatSessionWorkspaceGroup>();
   for (const workspace of workspaces) {
     groups.set(workspace.path, { workspace, sessions: [] });
   }
-  for (const group of [...cachedGroups, ...freshGroups]) {
+  for (const group of currentGroups) {
     const workspace =
-      workspaces.find((item) => item.path === group.workspace.path) ?? group.workspace;
-    const current = groups.get(workspace.path) ?? { workspace, sessions: [] };
-    const sessions = new Map(current.sessions.map((session) => [launchSessionKey(session), session]));
-    for (const session of group.sessions) {
-      sessions.set(launchSessionKey(session), session);
+      workspaceByPath.get(group.workspace.path) ?? group.workspace;
+    groups.set(workspace.path, { workspace, sessions: group.sessions });
+  }
+
+  for (const group of normalizeSessionGroups(updatedGroups, workspaces)) {
+    const current = groups.get(group.workspace.path) ?? {
+      workspace: workspaceByPath.get(group.workspace.path) ?? group.workspace,
+      sessions: [],
+    };
+    const sessions = new Map<string, LaunchSessionInfo>();
+    for (const session of current.sessions) {
+      if (!updatedAgents.has(session.agent_id)) {
+        sessions.set(launchSessionKey(session), session);
+      }
     }
-    groups.set(workspace.path, {
-      workspace,
-      sessions: Array.from(sessions.values()),
+    for (const session of group.sessions) {
+      const key = launchSessionKey(session);
+      const existing = sessions.get(key);
+      sessions.set(key, existing && sameLaunchSession(existing, session) ? existing : session);
+    }
+    const nextSessions = Array.from(sessions.values());
+    groups.set(group.workspace.path, {
+      workspace: current.workspace,
+      sessions:
+        nextSessions.length === current.sessions.length &&
+        nextSessions.every((session, index) => session === current.sessions[index])
+          ? current.sessions
+          : nextSessions,
     });
   }
   return Array.from(groups.values());
@@ -412,6 +446,8 @@ export function ChatView({
   );
   const [mobileSessionSidebarOpen, setMobileSessionSidebarOpen] = useState(false);
   const syncedSessionScopeRef = useRef<string | undefined>(undefined);
+  const syncedLaunchSessionAgentsRef = useRef<Set<string>>(new Set());
+  const sessionSyncRequestIdRef = useRef(0);
   const [runtimeKeys, setRuntimeKeys] = useState<string[]>([INITIAL_RUNTIME_KEY]);
   const [activeRuntimeKey, setActiveRuntimeKey] = useState(INITIAL_RUNTIME_KEY);
   const activeRuntimeKeyRef = useRef(activeRuntimeKey);
@@ -806,34 +842,52 @@ export function ChatView({
   }, []);
 
   const syncLaunchSessions = useCallback(
-    async (options?: { force?: boolean }) => {
+    async (options?: { force?: boolean; agentIds?: string[] }) => {
       const agentIds = agents.map((agent) => agent.id);
+      const requestedAgentIds =
+        options?.agentIds?.filter((agentId) => agentIds.includes(agentId)) ?? agentIds;
       if (agentIds.length === 0 || workspacesLoading || workspaces.length === 0) {
         syncedSessionScopeRef.current = undefined;
+        syncedLaunchSessionAgentsRef.current = new Set();
         setSyncedLaunchSessionGroups([]);
         setSessionsLoading(false);
         return;
       }
+      if (requestedAgentIds.length === 0) return;
 
       const scope = sessionSyncScope(agentIds, workspaces, webSettings.show_archived);
       const previousScope = syncedSessionScopeRef.current;
       if (!options?.force && previousScope === scope) return;
       syncedSessionScopeRef.current = scope;
       const canMergeCurrentGroups = previousScope === scope;
+      if (!canMergeCurrentGroups) {
+        syncedLaunchSessionAgentsRef.current = new Set();
+      }
 
-      const cachedGroups = readCachedLaunchSessionGroups(scope, workspaces);
+      const cachedGroups = canMergeCurrentGroups
+        ? undefined
+        : readCachedLaunchSessionGroups(scope, workspaces);
       if (cachedGroups) {
-        setSyncedLaunchSessionGroups(cachedGroups);
+        syncedLaunchSessionAgentsRef.current = new Set(agentIds);
+        setSyncedLaunchSessionGroups((currentGroups) =>
+          mergeSessionGroupUpdates(
+            canMergeCurrentGroups ? currentGroups : [],
+            cachedGroups,
+            workspaces,
+            agentIds,
+          ),
+        );
       } else if (!canMergeCurrentGroups) {
         setSyncedLaunchSessionGroups([]);
       }
 
+      const requestId = ++sessionSyncRequestIdRef.current;
       setSessionsLoading(true);
       try {
         const freshGroups = await Promise.all(
           workspaces.map(async (workspace) => {
             const sessionGroups = await Promise.all(
-              agentIds.map(async (agentId) => {
+              requestedAgentIds.map(async (agentId) => {
                 try {
                   return await getLaunchSessions(
                     agentId,
@@ -857,19 +911,33 @@ export function ChatView({
             };
           }),
         );
+        if (sessionSyncRequestIdRef.current !== requestId) return;
         setSyncedLaunchSessionGroups((currentGroups) => {
-          const mergedGroups = mergeSessionGroups(
-            cachedGroups ?? (canMergeCurrentGroups ? currentGroups : []),
+          const baseGroups =
+            cachedGroups && !canMergeCurrentGroups
+              ? mergeSessionGroupUpdates([], cachedGroups, workspaces, agentIds)
+              : currentGroups;
+          const mergedGroups = mergeSessionGroupUpdates(
+            baseGroups,
             freshGroups,
             workspaces,
+            requestedAgentIds,
           );
-          writeCachedLaunchSessionGroups(scope, mergedGroups);
+          syncedLaunchSessionAgentsRef.current = new Set([
+            ...syncedLaunchSessionAgentsRef.current,
+            ...requestedAgentIds,
+          ]);
+          if (agentIds.every((agentId) => syncedLaunchSessionAgentsRef.current.has(agentId))) {
+            writeCachedLaunchSessionGroups(scope, mergedGroups);
+          }
           return mergedGroups;
         });
       } catch (error) {
         console.warn("[ChatView] failed to sync launch sessions:", error);
       } finally {
-        setSessionsLoading(false);
+        if (sessionSyncRequestIdRef.current === requestId) {
+          setSessionsLoading(false);
+        }
       }
     },
     [agents, webSettings.show_archived, workspaces, workspacesLoading],
@@ -888,7 +956,11 @@ export function ChatView({
 
   const handleSidebarAgentFilterChange = useCallback((agentId: string) => {
     setSidebarAgentFilter(agentId);
-  }, []);
+    void syncLaunchSessions({
+      force: true,
+      agentIds: agentId === ALL_AGENTS_FILTER ? undefined : [agentId],
+    });
+  }, [syncLaunchSessions]);
 
   const handleSyncSessions = useCallback(() => {
     void syncLaunchSessions({ force: true });
