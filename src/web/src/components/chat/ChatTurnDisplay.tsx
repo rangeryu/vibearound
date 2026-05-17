@@ -3,6 +3,10 @@
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 import { ContentBlockRenderer } from "./renderers/ContentBlockRenderer";
+import {
+  DiffGroupRenderer,
+  type DiffGroupItem,
+} from "./renderers/DiffGroupRenderer";
 import { DiffRenderer } from "./renderers/DiffRenderer";
 import { PlanRenderer } from "./renderers/PlanRenderer";
 import { ThoughtRenderer } from "./renderers/ThoughtRenderer";
@@ -32,6 +36,14 @@ type WorkItem =
 type ResultItem =
   | { id: string; kind: "content"; block: ContentBlock }
   | { id: string; kind: "toolContent"; item: ToolCallContent };
+
+type DiffResultItem = Extract<ResultItem, { kind: "toolContent" }> & {
+  item: Extract<ToolCallContent, { type: "diff" }>;
+};
+
+type ResultDisplayGroup =
+  | { id: string; kind: "item"; item: ResultItem }
+  | { id: string; kind: "diffGroup"; items: DiffGroupItem[] };
 
 type TurnDisplaySegment =
   | { id: string; kind: "work"; items: WorkItem[] }
@@ -89,6 +101,38 @@ function toolResultItems(part: ChatToolCallPart): ResultItem[] {
 
 function resultItemIsText(item: ResultItem) {
   return item.kind === "content" && contentBlockHasText(item.block);
+}
+
+function resultItemIsDiff(item: ResultItem): item is DiffResultItem {
+  return item.kind === "toolContent" && item.item.type === "diff";
+}
+
+function groupResultItems(items: ResultItem[]): ResultDisplayGroup[] {
+  const groups: ResultDisplayGroup[] = [];
+  let pendingDiffs: DiffGroupItem[] = [];
+
+  const flushDiffs = () => {
+    if (pendingDiffs.length === 0) return;
+    groups.push({
+      id: `diff-group-${pendingDiffs[0]?.id}`,
+      kind: "diffGroup",
+      items: pendingDiffs,
+    });
+    pendingDiffs = [];
+  };
+
+  items.forEach((item) => {
+    if (resultItemIsDiff(item)) {
+      pendingDiffs.push({ id: item.id, diff: item.item });
+      return;
+    }
+
+    flushDiffs();
+    groups.push({ id: `item-${item.id}`, kind: "item", item });
+  });
+
+  flushDiffs();
+  return groups;
 }
 
 export function chatPartVisibleForDisplay(
@@ -503,7 +547,7 @@ function ProcessDetails({
 
   return (
     <details className="group/process text-muted-foreground">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground/75">
+      <summary className="flex cursor-pointer list-none items-center gap-2 border-b border-border/60 pb-3 text-sm text-muted-foreground/75">
         <span className="min-w-0 truncate">{t("Work details")}</span>
         <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open/process:rotate-180" />
       </summary>
@@ -549,6 +593,19 @@ function ResultBlock({
     return <ContentBlockRenderer block={item.item.content} role="assistant" />;
   }
   return null;
+}
+
+function ResultItems({ items }: { items: ResultItem[] }) {
+  return (
+    <>
+      {groupResultItems(items).map((group) => {
+        if (group.kind === "diffGroup") {
+          return <DiffGroupRenderer key={group.id} items={group.items} />;
+        }
+        return <ResultBlock key={group.id} item={group.item} />;
+      })}
+    </>
+  );
 }
 
 export function ChatTurnDisplay({
@@ -615,9 +672,7 @@ export function ChatTurnDisplay({
       {model.finalItems.map((item) => (
         <ResultBlock key={item.id} item={item} />
       ))}
-      {model.resultItems.map((item) => (
-        <ResultBlock key={item.id} item={item} />
-      ))}
+      <ResultItems items={model.resultItems} />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 # VibeAround
 
-**让本地 Coding Agent 出现在你工作的每个入口。**
+**你的随身氛围编程利器。**
 
 [下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [English](README.md)
 
@@ -16,9 +16,9 @@
 
 </div>
 
-VibeAround 把你的电脑变成本地优先的 AI 编程控制中心。Claude Code、Codex CLI、Gemini CLI、Cursor CLI、Kiro CLI、Qwen Code、OpenCode 仍然运行在你的项目和工具链旁边，但你可以从桌面应用、浏览器终端，甚至手机 IM 里进入它们。
+从桌面到手机，从浏览器到 IM，VibeAround 随时连接你的本地编程智能体。
 
-它面向的是日常 agentic coding 里那些真实而琐碎的循环：在正确 workspace 启动正确 Agent，不改全局配置就切换 provider，桥接不兼容的 AI API 格式，把正在运行的会话接力到手机，打开本地预览链接，然后继续往前推进。
+通过统一代理兼容各类 API 接口，为 Claude Code、Codex CLI、Gemini CLI 等本地编程智能体配置不同模型，并行启动、同步干活。
 
 ## 界面截图
 
@@ -26,29 +26,41 @@ VibeAround 把你的电脑变成本地优先的 AI 编程控制中心。Claude C
 |---|---|
 | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-profiles.webp" alt="VibeAround 模型配置" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-channels.webp" alt="VibeAround 频道插件" width="100%" /> |
 
-## 你可以用它做什么
+## 你将会得到
 
-### 启动本地 Coding Agent
+### 本地编程智能体启动器
 
-在正确 workspace 里，用正确的 provider profile 启动 Claude Code、Codex CLI、Gemini CLI、OpenCode 等 Agent。
+为 Claude Code、Codex CLI、Gemini CLI、OpenCode 等本地编程智能体配置不同模型 Profile，并行启动。
 
-### 打通 AI API 格式
+### 通过 IM 触达本地智能体
 
-让 DeepSeek、阿里云百炼、Kimi、MiniMax、Z.AI/GLM 等 provider 接入你喜欢的本地 Coding Agent，即使它们的 API 格式并不一样。
+在 Telegram、飞书/Lark、Discord、Slack、微信、钉钉、企业微信、QQ Bot 或内置 Web Chat 中，和同一个本地编程智能体对话。
 
-### 从桌面、浏览器或 IM 对话
+### Web Terminal
 
-从桌面应用、浏览器终端、Telegram、飞书/Lark、Discord、Slack、微信、钉钉、企业微信或 QQ Bot 访问同一个本地 Agent。
+在浏览器里打开完整终端，进入你的 workspace；移动端提供常用特殊按键，也可以通过 tmux 保持会话。
 
-### 接力会话和预览
+### 保持 Agent 配置干净
 
-用 `/handover` 和 `/pickup` 在电脑和手机之间移动实时会话，也可以把本地开发服务、Markdown 或 HTML 预览生成带鉴权的短时链接。
+通过保存的 Profile 和统一代理切换 provider，不用反复改每个 CLI 的配置文件。
+
+### 统一代理与协议兼容
+
+在 OpenAI Responses、Chat Completions、Anthropic Messages、Gemini Generate Content 等协议之间转换，把 DeepSeek、阿里云百炼、Kimi、MiniMax、Z.AI/GLM、OpenRouter、Azure OpenAI 和自定义 endpoint 接入本地编程智能体。
+
+### 传递会话
+
+用 `/handover` 和 `/pickup` 在终端、Web 和 IM 之间移动正在运行的智能体会话，不必从头开始。
+
+### 远程预览
+
+把本地开发服务、Markdown 或 HTML 预览生成带鉴权的短时链接，在手机或任意浏览器里打开。
 
 ## 演示视频
 
-[![VibeAround 演示视频 - 会话接力、Agent 切换、多频道并发](https://img.youtube.com/vi/6kxNKTMz-AM/maxresdefault.jpg)](https://youtu.be/6kxNKTMz-AM)
+[![VibeAround 演示视频 - 本地编程智能体跨桌面、浏览器和 IM 协同](https://img.youtube.com/vi/6kxNKTMz-AM/maxresdefault.jpg)](https://youtu.be/6kxNKTMz-AM)
 
-*在 IM 中直达本地 Agent，在终端与手机之间接力会话，并在对话中切换 Agent。*
+*通过通讯软件远程控制本地智能体，并在终端和手机之间传递会话。*
 
 ## 下载 VibeAround
 
@@ -68,15 +80,15 @@ macOS 当前发布 Apple Silicon 版本。Windows 和 Linux 桌面包由 GitHub 
 
 Agent 通过 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 在 stdio 上通信。需要 npm 分发 bridge 时，VibeAround 会按需安装。
 
-| Agent | IM 对话 | 会话接力 | Launch profile |
-|---|---|---|---|
-| Claude Code | ✅ | ✅ | ✅ |
-| Codex CLI | ✅ | ✅ | ✅ |
-| Gemini CLI | ✅ | ✅ | 直接启动 |
-| Cursor CLI | ✅ | ✅ | 直接启动 |
-| Kiro CLI | ✅ | ✅ | 直接启动 |
-| Qwen Code | ✅ | ✅ | 直接启动 |
-| OpenCode | ✅ | ❌ | 直接启动 |
+| Agent | IM 对话 | 传递会话 | Profile 启动 | 手动 proxy 配置 |
+|---|---|---|---|---|
+| Claude Code | ✅ | ✅ | ✅ | ✅ |
+| Codex CLI | ✅ | ✅ | ✅ | ✅ |
+| Gemini CLI | ✅ | ✅ | ✅ | ✅ |
+| Cursor CLI | ✅ | ✅ | 直接启动 | ❌ |
+| Kiro CLI | ✅ | ✅ | 直接启动 | ❌ |
+| Qwen Code | ✅ | ✅ | 直接启动 | ❌ |
+| OpenCode | ✅ | ❌ | ✅ | ✅ |
 
 ### Model providers 和 proxy 路由
 
@@ -94,13 +106,14 @@ Provider profile 让本地 Agent 可以连接官方 API、OpenAI-compatible endp
 | Azure OpenAI | 内置 Azure profile |
 | Custom endpoint | 自带兼容 base URL |
 
-VibeAround 的本地 API proxy 由 [va-ai-api-proxy](https://github.com/jazzenchen/va-ai-api-proxy) 驱动，重点打通三种常见 Agent API 形态：
+VibeAround 的本地 API proxy 由 [va-ai-api-proxy](https://github.com/jazzenchen/va-ai-api-proxy) 驱动，重点打通常见 Agent API 形态：
 
 | API 形态 | 常见 endpoint |
 |---|---|
 | OpenAI Responses | `/v1/responses` |
 | OpenAI Chat Completions | `/v1/chat/completions` |
 | Anthropic Messages | `/v1/messages` |
+| Gemini Generate Content | `/v1beta/models/{model}:generateContent` |
 
 ### 频道插件
 
@@ -162,6 +175,8 @@ bun run dev
 ## 社区
 
 提问、交流想法，或者聊聊你如何使用 VibeAround。
+
+[![Product Hunt](https://img.shields.io/badge/Product%20Hunt-Follow%20VibeAround-DA552F?logo=producthunt&logoColor=white)](https://www.producthunt.com/products/vibearound)
 
 <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/wechat-group-compressed.webp" width="150" alt="VibeAround 微信群二维码" />
 

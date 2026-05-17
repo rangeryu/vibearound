@@ -149,18 +149,11 @@ export function buildManualSetting(
   }
 
   const claudeEnv: Record<string, string> = {
-    ANTHROPIC_BASE_URL: manualConfig.baseUrl,
     ANTHROPIC_API_KEY: PLACEHOLDER_API_KEY,
     ANTHROPIC_AUTH_TOKEN: PLACEHOLDER_API_KEY,
+    ANTHROPIC_BASE_URL: manualConfig.baseUrl,
     ANTHROPIC_MODEL: model,
   };
-  if (profile.provider === "deepseek") {
-    claudeEnv.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
-    claudeEnv.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
-    claudeEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL = "deepseek-v4-flash";
-    claudeEnv.CLAUDE_CODE_SUBAGENT_MODEL = "deepseek-v4-flash";
-    claudeEnv.CLAUDE_CODE_EFFORT_LEVEL = "max";
-  }
 
   return {
     agentId,

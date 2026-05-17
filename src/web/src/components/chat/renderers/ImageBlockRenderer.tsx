@@ -22,7 +22,7 @@ export function ImageBlockRenderer({ block }: { block: ImageBlock }) {
       <img
         src={imageSrc}
         alt={block.uri ? fileNameFromUri(block.uri) : t("Image")}
-        className="max-h-[28rem] w-full object-contain"
+        className="block max-h-[28rem] max-w-full object-contain object-left"
         loading="lazy"
       />
       <figcaption className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
