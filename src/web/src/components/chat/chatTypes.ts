@@ -66,6 +66,11 @@ export type ChatMessage = {
   mode?: "standalone" | "stream";
 };
 
+export type ChatDisplaySettings = {
+  showThinking: boolean;
+  showTools: boolean;
+};
+
 export type ChatAttachment = {
   id: string;
   name: string;
