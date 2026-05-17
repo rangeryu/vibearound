@@ -380,14 +380,14 @@ function WorkActivityRow({ activity }: { activity: ChatActivity }) {
       ? activity.status
       : null;
   return (
-    <div className="min-w-0 py-1 text-xs text-muted-foreground">
+    <div className="min-w-0 py-1 text-xs text-muted-foreground/60">
       <div className="flex min-w-0 items-center gap-2 font-mono">
-        <span className="shrink-0 uppercase text-muted-foreground/70">{activity.kind}</span>
-        <span className="truncate text-foreground/75">{activity.label}</span>
-        {status && <span className="shrink-0 text-muted-foreground/60">{status}</span>}
+        <span className="shrink-0 uppercase text-muted-foreground/55">{activity.kind}</span>
+        <span className="truncate text-muted-foreground/65">{activity.label}</span>
+        {status && <span className="shrink-0 text-muted-foreground/50">{status}</span>}
       </div>
       {activity.detail && (
-        <p className="mt-1 whitespace-pre-wrap break-words leading-5 text-muted-foreground/80">
+        <p className="mt-1 whitespace-pre-wrap break-words leading-5 text-muted-foreground/60">
           {activity.detail}
         </p>
       )}
@@ -403,7 +403,7 @@ function WorkProgressRow({
   isStreaming: boolean;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-2 py-1 font-mono text-xs text-muted-foreground">
+    <div className="flex min-w-0 items-center gap-2 py-1 font-mono text-xs text-muted-foreground/60">
       {isStreaming && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
       <span className="truncate">{item.text}</span>
     </div>
@@ -447,13 +447,13 @@ function WorkSequence({
     : summary;
 
   return (
-    <details className="group/work-segment text-muted-foreground">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground">
+    <details className="group/work-segment text-muted-foreground/65">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground/70">
         {isStreaming && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
         <span className="min-w-0 truncate">{title}</span>
         <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open/work-segment:rotate-180" />
       </summary>
-      <div className="mt-3 space-y-2 pl-5">
+      <div className="mt-2 space-y-1 text-muted-foreground/60">
         {visibleItems.map((item, index) => (
           <div key={item.id}>
             <WorkItemBlock
@@ -503,7 +503,7 @@ function ProcessDetails({
 
   return (
     <details className="group/process text-muted-foreground">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground/75">
         <span className="min-w-0 truncate">{t("Work details")}</span>
         <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open/process:rotate-180" />
       </summary>

@@ -101,7 +101,7 @@ export function ToolCallRenderer({
 
   if (part.status === "completed" && !hasRichContent) {
     const summary = (
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-1 py-1 text-xs text-muted-foreground/65">
+      <summary className="flex cursor-pointer list-none items-center gap-2 py-1 text-xs text-muted-foreground/60">
         {statusIcon(part.status, active)}
         <span className="min-w-0 truncate">{title}</span>
         {part.toolKind && part.title !== part.toolKind && (
@@ -114,7 +114,7 @@ export function ToolCallRenderer({
 
     if (!hasDetails) {
       return (
-        <div className="flex min-w-0 items-center gap-2 px-1 py-1 text-xs text-muted-foreground/65">
+        <div className="flex min-w-0 items-center gap-2 py-1 text-xs text-muted-foreground/60">
           {statusIcon(part.status, active)}
           <span className="min-w-0 truncate">{title}</span>
         </div>
@@ -124,7 +124,7 @@ export function ToolCallRenderer({
     return (
       <details className="py-0.5">
         {summary}
-        <div className="ml-5 mt-2 pl-3">
+        <div className="mt-2">
           <ToolDetails part={part} />
         </div>
       </details>
@@ -134,18 +134,18 @@ export function ToolCallRenderer({
   return (
     <details
       {...(shouldOpen ? { open: true } : {})}
-      className="px-1 py-1"
+      className="py-1 text-muted-foreground/65"
     >
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground/70">
         {statusIcon(part.status, active)}
-        <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
+        <span className="min-w-0 truncate font-normal text-muted-foreground/70">{title}</span>
         {part.toolKind && (
-          <span className="ml-auto shrink-0 rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
+          <span className="ml-auto shrink-0 rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground/50">
             {part.toolKind}
           </span>
         )}
         {status && (
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground/55">
             {status}
           </span>
         )}
