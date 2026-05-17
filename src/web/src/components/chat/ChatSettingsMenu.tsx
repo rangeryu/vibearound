@@ -53,6 +53,14 @@ export function ChatSettingsMenu({ settings, onChange }: ChatSettingsMenuProps) 
         >
           {t("Show tools")}
         </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={settings.show_archived}
+          onCheckedChange={(checked) =>
+            onChange({ show_archived: checked === true })
+          }
+        >
+          {t("Show archived")}
+        </DropdownMenuCheckboxItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

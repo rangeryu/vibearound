@@ -19,6 +19,10 @@ import type { ChatSessionSelection } from "./chatTypes";
 
 const SESSION_PREVIEW_LIMIT = 5;
 
+export function chatSessionKey(session: Pick<LaunchSessionInfo, "agent_id" | "workspace" | "session_id">) {
+  return `${session.agent_id}\u0000${session.workspace}\u0000${session.session_id}`;
+}
+
 export interface ChatSessionWorkspaceGroup {
   workspace: WorkspaceItem;
   sessions: LaunchSessionInfo[];
@@ -33,6 +37,7 @@ interface ChatSessionSidebarProps {
   style?: CSSProperties;
   sessionsLoading?: boolean;
   loadingSessionId?: string;
+  loadingSessionKeys?: ReadonlySet<string>;
   archivingSessionId?: string;
   sessionSelection: ChatSessionSelection;
   onAgentFilterChange: (agentId: string) => void;
@@ -77,6 +82,7 @@ export function ChatSessionSidebar({
   style,
   sessionsLoading = false,
   loadingSessionId,
+  loadingSessionKeys,
   archivingSessionId,
   sessionSelection,
   onAgentFilterChange,
@@ -100,6 +106,9 @@ export function ChatSessionSidebar({
       [workspace]: !prev[workspace],
     }));
   };
+
+  const agentLabel = (agentId: string) =>
+    agents.find((agent) => agent.id === agentId)?.name ?? agentId;
 
   return (
     <aside
@@ -229,12 +238,16 @@ export function ChatSessionSidebar({
                             {visibleSessions.map((session) => {
                               const active =
                                 sessionSelection.kind === "resume" &&
+                                selectedAgentFilter === session.agent_id &&
                                 sessionSelection.sessionId === session.session_id;
-                              const loading = loadingSessionId === session.session_id;
+                              const loading =
+                                loadingSessionId === session.session_id ||
+                                loadingSessionKeys?.has(chatSessionKey(session));
                               const archiving = archivingSessionId === session.session_id;
+                              const sessionAgentLabel = agentLabel(session.agent_id);
                               return (
                                 <div
-                                  key={session.session_id}
+                                  key={chatSessionKey(session)}
                                   className="group/session relative"
                                 >
                                   <button
@@ -251,6 +264,12 @@ export function ChatSessionSidebar({
                                       )
                                     }
                                   >
+                                    <BrandIcon
+                                      kind="cli"
+                                      id={session.agent_id}
+                                      label={sessionAgentLabel}
+                                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                                    />
                                     <span className="min-w-0 flex-1">
                                       <span className="block truncate text-foreground/90">
                                         {session.title}

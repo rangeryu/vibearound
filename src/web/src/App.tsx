@@ -27,6 +27,7 @@ const WEB_SETTINGS_STORAGE_KEY = "vibearound.web.transcriptSettings";
 const DEFAULT_WEB_SETTINGS: WebVerboseSettings = {
   show_thinking: true,
   show_tool_use: true,
+  show_archived: false,
 };
 
 function readStoredWebSettings(): WebVerboseSettings {
@@ -44,6 +45,10 @@ function readStoredWebSettings(): WebVerboseSettings {
         typeof parsed.show_tool_use === "boolean"
           ? parsed.show_tool_use
           : DEFAULT_WEB_SETTINGS.show_tool_use,
+      show_archived:
+        typeof parsed.show_archived === "boolean"
+          ? parsed.show_archived
+          : DEFAULT_WEB_SETTINGS.show_archived,
     };
   } catch {
     return DEFAULT_WEB_SETTINGS;
