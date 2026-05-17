@@ -46,6 +46,10 @@ export function MarkdownRenderer({
         "[&_[data-streamdown='code-block-body']_pre]:p-0",
         "[&_[data-streamdown='code-block-body']_code]:text-[13px]",
         "[&_[data-streamdown='code-block-body']_code]:leading-6",
+        "[&_[data-streamdown='image-wrapper']]:mx-0",
+        "[&_[data-streamdown='image-wrapper']]:block",
+        "[&_[data-streamdown='image-wrapper']]:w-fit",
+        "[&_[data-streamdown='image']]:object-left",
         className ?? "",
       ]
         .filter(Boolean)
