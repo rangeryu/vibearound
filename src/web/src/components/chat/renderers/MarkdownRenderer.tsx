@@ -4,6 +4,8 @@ import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { Streamdown } from "streamdown";
 
+import { ExternalLinkSafetyModal } from "./ExternalLinkSafetyModal";
+
 interface MarkdownRendererProps {
   content: string;
   isStreaming?: boolean;
@@ -53,6 +55,10 @@ export function MarkdownRenderer({
       shikiTheme={["github-light", "github-dark"]}
       isAnimating={isStreaming}
       parseIncompleteMarkdown={true}
+      linkSafety={{
+        enabled: true,
+        renderModal: (props) => <ExternalLinkSafetyModal {...props} />,
+      }}
     >
       {content}
     </Streamdown>

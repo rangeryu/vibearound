@@ -45,4 +45,9 @@ export const zhCNWebDashboard: Record<string, string> = {
   "Chat with": "聊天对象",
   "Loading sessions…": "正在加载会话…",
   "Scroll to bottom": "滚动到底部",
+  "Open external link?": "打开外部链接？",
+  "You're about to visit an external website.": "你即将访问外部网站。",
+  "Copy link": "复制链接",
+  Copied: "已复制",
+  "Open link": "打开链接",
 };
