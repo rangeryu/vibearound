@@ -9,6 +9,7 @@ import {
   ConversationScrollButton,
 } from "./Conversation";
 import { Message, MessageContent } from "./Message";
+import { MessageRenderErrorBoundary } from "./MessageRenderErrorBoundary";
 import { ChatMessageParts } from "./ChatMessageParts";
 import { chatPartVisibleForDisplay } from "./ChatTurnDisplay";
 import type { ChatDisplaySettings, ChatMessage } from "./chatTypes";
@@ -47,6 +48,28 @@ function progressVisible(message: ChatMessage, settings: ChatDisplaySettings) {
   if (!message.progress) return false;
   if (message.progressKind === "thinking") return settings.showThinking;
   return settings.showTools;
+}
+
+function messageRenderResetKey(message: ChatMessage, index: number) {
+  const partKey =
+    message.parts
+      ?.map((part) => {
+        if (part.kind === "tool_call") {
+          return `${part.id}:${part.status ?? "unknown"}:${part.content?.length ?? 0}`;
+        }
+        return part.id;
+      })
+      .join("|") ?? "";
+  return [
+    index,
+    message.messageId ?? "",
+    message.role,
+    message.mode ?? "",
+    message.content.length,
+    message.progress ?? "",
+    message.activities?.length ?? 0,
+    partKey,
+  ].join(":");
 }
 
 export function ChatMessageList({
@@ -117,11 +140,15 @@ export function ChatMessageList({
                         {t("AI is working…")}
                       </span>
                     )}
-                    <ChatMessageParts
-                      message={msg}
-                      isStreaming={isLastStreamingMessage}
-                      displaySettings={displaySettings}
-                    />
+                    <MessageRenderErrorBoundary
+                      resetKey={messageRenderResetKey(msg, i)}
+                    >
+                      <ChatMessageParts
+                        message={msg}
+                        isStreaming={isLastStreamingMessage}
+                        displaySettings={displaySettings}
+                      />
+                    </MessageRenderErrorBoundary>
                   </MessageContent>
                 </Message>
               );
