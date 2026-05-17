@@ -30,6 +30,7 @@ import { useI18n } from "@va/i18n";
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { MAX_ATTACHMENT_BYTES, isAllowedAttachment } from "./attachmentTypes";
 import { ChatInput } from "./ChatInput";
 import { deleteCachedChatSession } from "./chatSessionCache";
 import {
@@ -1531,20 +1532,6 @@ export function ChatView({
         )}
       </div>
     </div>
-  );
-}
-
-const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-const ALLOWED_ATTACHMENT_PREFIXES = ["image/", "text/"];
-const ALLOWED_ATTACHMENT_EXACT = ["application/pdf", "application/json"];
-
-function isAllowedAttachment(file: File): boolean {
-  if (file.size > MAX_ATTACHMENT_BYTES) return false;
-  const mime = (file.type ?? "").trim().toLowerCase();
-  if (!mime) return true; // server resolves from filename extension
-  return (
-    ALLOWED_ATTACHMENT_PREFIXES.some((prefix) => mime.startsWith(prefix)) ||
-    ALLOWED_ATTACHMENT_EXACT.includes(mime)
   );
 }
 

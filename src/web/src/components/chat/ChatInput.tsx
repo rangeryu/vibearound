@@ -12,6 +12,7 @@ import { ArrowUp, Paperclip, Square, X } from "lucide-react";
 import { useI18n } from "@va/i18n";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { CHAT_ATTACHMENT_ACCEPT } from "./attachmentTypes";
 import type { ChatAttachment } from "./chatTypes";
 
 export type { ChatSessionSelection } from "./chatTypes";
@@ -248,7 +249,7 @@ export function ChatInput({
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept="image/*,text/*,application/pdf,application/json"
+                  accept={CHAT_ATTACHMENT_ACCEPT}
                   className="hidden"
                   onChange={handleFileChange}
                 />
