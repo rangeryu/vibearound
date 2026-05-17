@@ -408,6 +408,7 @@ export function ChatView({
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [attachmentsUploading, setAttachmentsUploading] = useState(false);
+  const [attachmentsUploadingCount, setAttachmentsUploadingCount] = useState(0);
   const [attachmentError, setAttachmentError] = useState<string | undefined>();
   const [selectedAgent, setSelectedAgent] = useState<string>(
     storedLaunchSelection.agentId ?? "claude",
@@ -1170,25 +1171,49 @@ export function ChatView({
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
-    const rejected = files.find((file) => !isAllowedAttachment(file));
-    if (rejected) {
-      setAttachmentError(describeRejection(rejected, t));
+    const accepted = files.filter(isAllowedAttachment);
+    const rejected = files.filter((file) => !isAllowedAttachment(file));
+    if (rejected.length > 0) {
+      setAttachmentError(describeRejections(rejected, t));
+    }
+    if (accepted.length === 0) {
       return;
     }
     setAttachmentsUploading(true);
-    setAttachmentError(undefined);
+    setAttachmentsUploadingCount(accepted.length);
+    if (rejected.length === 0) {
+      setAttachmentError(undefined);
+    }
     try {
-      const uploaded = await Promise.all(files.map((file) => uploadChatFile(file)));
-      setAttachments((prev) => [
-        ...prev,
-        ...uploaded.map((file) => ({
-          id: file.id,
-          name: file.name,
-          mimeType: file.mime_type,
-          size: file.size,
-          uri: file.uri,
-        })),
-      ]);
+      const results = await Promise.allSettled(
+        accepted.map((file) => uploadChatFile(file)),
+      );
+      const uploaded = results.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
+      );
+      const failed = results.filter((result) => result.status === "rejected");
+      if (uploaded.length > 0) {
+        setAttachments((prev) => [
+          ...prev,
+          ...uploaded.map((file) => ({
+            id: file.id,
+            name: file.name,
+            mimeType: file.mime_type,
+            size: file.size,
+            uri: file.uri,
+          })),
+        ]);
+      }
+      if (failed.length > 0) {
+        failed.forEach((result) => {
+          if (result.status === "rejected") {
+            console.warn("[ChatView] failed to upload attachment:", result.reason);
+          }
+        });
+        setAttachmentError(
+          t("{{count}} files failed to upload.", { count: failed.length }),
+        );
+      }
     } catch (error) {
       console.warn("[ChatView] failed to upload attachment:", error);
       setAttachmentError(
@@ -1196,6 +1221,7 @@ export function ChatView({
       );
     } finally {
       setAttachmentsUploading(false);
+      setAttachmentsUploadingCount(0);
     }
   }, [t]);
 
@@ -1425,6 +1451,7 @@ export function ChatView({
                 onStop={stopStreaming}
                 attachments={attachments}
                 attachmentsUploading={attachmentsUploading}
+                attachmentsUploadingCount={attachmentsUploadingCount}
                 attachmentError={attachmentError}
                 onFilesSelected={handleFilesSelected}
                 onRemoveAttachment={handleRemoveAttachment}
@@ -1488,6 +1515,7 @@ export function ChatView({
               onStop={stopStreaming}
               attachments={attachments}
               attachmentsUploading={attachmentsUploading}
+              attachmentsUploadingCount={attachmentsUploadingCount}
               attachmentError={attachmentError}
               onFilesSelected={handleFilesSelected}
               onRemoveAttachment={handleRemoveAttachment}
@@ -1518,6 +1546,20 @@ function isAllowedAttachment(file: File): boolean {
     ALLOWED_ATTACHMENT_PREFIXES.some((prefix) => mime.startsWith(prefix)) ||
     ALLOWED_ATTACHMENT_EXACT.includes(mime)
   );
+}
+
+function describeRejections(
+  files: File[],
+  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
+): string {
+  const [first, ...rest] = files;
+  if (!first) return "";
+  const message = describeRejection(first, t);
+  if (rest.length === 0) return message;
+  return t("{{message}} {{count}} more files were skipped.", {
+    message,
+    count: rest.length,
+  });
 }
 
 function describeRejection(

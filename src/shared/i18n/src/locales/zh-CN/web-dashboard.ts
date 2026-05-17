@@ -101,12 +101,17 @@ export const zhCNWebDashboard: Record<string, string> = {
   "Show tools": "显示工具",
   "Show archived": "显示已归档",
   "Attach files": "添加文件",
+  "Drop files to attach": "松开即可添加文件",
   "Remove attachment": "移除附件",
   "Uploading…": "正在上传…",
+  "Uploading {{count}} files…": "正在上传 {{count}} 个文件…",
   "Failed to upload attachment": "上传附件失败",
+  "{{count}} files failed to upload.": "{{count}} 个文件上传失败。",
   "{{name}} exceeds the {{limit}} MB upload limit.":
     "{{name}} 超过 {{limit}} MB 上传限制。",
   "{{name}} file type is not allowed.": "{{name}} 的文件类型不支持。",
+  "{{message}} {{count}} more files were skipped.":
+    "{{message}} 另有 {{count}} 个文件已跳过。",
   "Permission request": "权限请求",
   Thinking: "思考",
   Plan: "计划",
