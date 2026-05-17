@@ -388,6 +388,9 @@ export default function Onboarding() {
             </div>
           ))}
         </div>
+        <span className="font-mono text-[10px] text-muted-foreground/60">
+          v{__APP_VERSION_LABEL__}
+        </span>
         <LanguageMenu />
       </div>
       <div className="px-6 pb-3">

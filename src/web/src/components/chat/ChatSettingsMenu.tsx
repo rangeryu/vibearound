@@ -35,7 +35,9 @@ export function ChatSettingsMenu({ settings, onChange }: ChatSettingsMenuProps) 
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuLabel className="text-xs">{t("Transcript")}</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs">
+          {t("Transcript")}
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuCheckboxItem
           checked={settings.show_thinking}
@@ -53,6 +55,10 @@ export function ChatSettingsMenu({ settings, onChange }: ChatSettingsMenuProps) 
         >
           {t("Show tools")}
         </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <div className="px-2 py-1 text-[11px] text-muted-foreground/70">
+          {t("version: {{value}}", { value: `v${__APP_VERSION_LABEL__}` })}
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

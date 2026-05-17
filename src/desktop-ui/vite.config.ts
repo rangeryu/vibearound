@@ -1,30 +1,44 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { readFileSync } from "node:fs";
 import path from "path";
 import { defineConfig } from "vite";
 
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: [
-      { find: "@va/ui/button", replacement: path.resolve(__dirname, "../shared/ui/src/button.tsx") },
-      { find: "@va/ui/dropdown-menu", replacement: path.resolve(__dirname, "../shared/ui/src/dropdown-menu.tsx") },
-      { find: "@va/ui/input", replacement: path.resolve(__dirname, "../shared/ui/src/input.tsx") },
-      { find: "@va/ui", replacement: path.resolve(__dirname, "../shared/ui/src/index.ts") },
-      { find: "@va/i18n", replacement: path.resolve(__dirname, "../shared/i18n/src/index.tsx") },
-      { find: "@va/client", replacement: path.resolve(__dirname, "../shared/client-ts/src/index.ts") },
-      { find: "@", replacement: path.resolve(__dirname, "./src") },
-    ],
-  },
-  clearScreen: false,
-  server: {
-    port: 5181,
-    strictPort: true,
-    proxy: {
-      "/tray": {
-        target: "http://localhost:5182",
-        rewrite: (p) => p.replace(/^\/tray/, ""),
+const packageJson = JSON.parse(
+  readFileSync(path.resolve(__dirname, "package.json"), "utf8"),
+) as { version?: string };
+const packageVersion = packageJson.version ?? "0.0.0";
+
+export default defineConfig(({ mode }) => {
+  const versionLabel =
+    mode === "production" ? packageVersion : `${packageVersion} dev`;
+
+  return {
+    define: {
+      __APP_VERSION_LABEL__: JSON.stringify(versionLabel),
+    },
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: [
+        { find: "@va/ui/button", replacement: path.resolve(__dirname, "../shared/ui/src/button.tsx") },
+        { find: "@va/ui/dropdown-menu", replacement: path.resolve(__dirname, "../shared/ui/src/dropdown-menu.tsx") },
+        { find: "@va/ui/input", replacement: path.resolve(__dirname, "../shared/ui/src/input.tsx") },
+        { find: "@va/ui", replacement: path.resolve(__dirname, "../shared/ui/src/index.ts") },
+        { find: "@va/i18n", replacement: path.resolve(__dirname, "../shared/i18n/src/index.tsx") },
+        { find: "@va/client", replacement: path.resolve(__dirname, "../shared/client-ts/src/index.ts") },
+        { find: "@", replacement: path.resolve(__dirname, "./src") },
+      ],
+    },
+    clearScreen: false,
+    server: {
+      port: 5181,
+      strictPort: true,
+      proxy: {
+        "/tray": {
+          target: "http://localhost:5182",
+          rewrite: (p) => p.replace(/^\/tray/, ""),
+        },
       },
     },
-  },
+  };
 });

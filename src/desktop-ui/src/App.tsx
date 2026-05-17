@@ -8,8 +8,6 @@ import {
   RefreshCw,
   ExternalLink,
   Settings,
-  Wifi,
-  WifiOff,
   Eye,
   Play,
   Rocket,
@@ -341,8 +339,6 @@ function Dashboard() {
 
   const anyEverLoaded =
     channels.everLoaded || tunnels.everLoaded || agents.everLoaded;
-  const anyConnected =
-    channels.connected || tunnels.connected || agents.connected;
   const firstError = channels.error ?? tunnels.error ?? agents.error ?? null;
 
   const refreshLauncherPrefs = useCallback(() => {
@@ -478,24 +474,10 @@ function Dashboard() {
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-2">
-          {anyConnected ? (
-            <span className="flex items-center gap-1 text-xs text-emerald-600">
-              <Wifi className="w-3 h-3" /> {t("Live")}
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <WifiOff className="w-3 h-3" /> {t("Polling")}
-            </span>
-          )}
+          <span className="font-mono text-[10px] text-muted-foreground/60">
+            v{__APP_VERSION_LABEL__}
+          </span>
           <LanguageMenu />
-          <Button
-            onClick={refreshAll}
-            variant="ghost"
-            size="icon-xs"
-            title={t("Refresh")}
-          >
-            <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
-          </Button>
           <Button
             onClick={() => window.location.replace("/onboarding")}
             variant="ghost"
