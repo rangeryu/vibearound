@@ -229,8 +229,8 @@ function WorkGroup({
   const latest = visibleItems[visibleItems.length - 1];
   const latestLabel = workItemLabel(latest);
   const title = isStreaming
-    ? t("Working on {{label}}", { label: latestLabel })
-    : t("Worked");
+    ? t("Current work: {{label}}", { label: latestLabel })
+    : t("Work details");
 
   return (
     <details className="group/work text-muted-foreground">
