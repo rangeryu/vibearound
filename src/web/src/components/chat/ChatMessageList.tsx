@@ -54,26 +54,37 @@ function ChatActivityList({
           {t("{{count}} earlier activity events", { count: hiddenCount })}
         </div>
       )}
-      {visibleActivities.map((activity) => (
-        <div key={activity.id} className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2 font-mono">
-            <span className="shrink-0 uppercase text-muted-foreground/70">
-              {activity.kind === "thinking" ? t("Thinking") : t("Tool")}
-            </span>
-            <span className="truncate text-foreground/75">{activity.label}</span>
-            {activity.status && (
-              <span className="shrink-0 text-muted-foreground/60">{activity.status}</span>
+      {visibleActivities.map((activity) => {
+        const status = visibleActivityStatus(activity);
+        return (
+          <div key={activity.id} className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2 font-mono">
+              <span className="shrink-0 uppercase text-muted-foreground/70">
+                {activity.kind === "thinking" ? t("Thinking") : t("Tool")}
+              </span>
+              <span className="truncate text-foreground/75">{activity.label}</span>
+              {status && (
+                <span className="shrink-0 text-muted-foreground/60">{status}</span>
+              )}
+            </div>
+            {activity.detail && (
+              <p className="mt-1 whitespace-pre-wrap break-words leading-5 text-muted-foreground/80">
+                {activity.detail}
+              </p>
             )}
           </div>
-          {activity.detail && (
-            <p className="mt-1 whitespace-pre-wrap break-words leading-5 text-muted-foreground/80">
-              {activity.detail}
-            </p>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
+}
+
+function visibleActivityStatus(activity: ChatActivity) {
+  if (!activity.status) return null;
+  if (activity.active) return activity.status;
+  return activity.status === "completed" || activity.status === "failed"
+    ? activity.status
+    : null;
 }
 
 function activityVisible(activity: ChatActivity, settings: ChatDisplaySettings) {

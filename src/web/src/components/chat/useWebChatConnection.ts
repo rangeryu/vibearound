@@ -38,6 +38,7 @@ import {
   appendUserMessageChunk,
   clearStreamProgressMessage,
   setStreamProgressMessage,
+  settleStreamActivitiesMessage,
 } from "./chatMessageUpdates";
 import {
   readCachedChatSession,
@@ -180,7 +181,9 @@ export function useWebChatConnection({
       if (current && options?.cache) {
         const replayBuffer = replayMessageBufferRef.current;
         if (replayBuffer?.sessionId === current.sessionId) {
-          const replayedMessages = replayBuffer.messages;
+          const replayedMessages = settleStreamActivitiesMessage(
+            replayBuffer.messages,
+          );
           replayMessageBufferRef.current = null;
           if (replayedMessages.length > 0) {
             messagesRef.current = replayedMessages;
@@ -225,6 +228,7 @@ export function useWebChatConnection({
     ws.onclose = () => {
       setConnected(false);
       setStreaming(false);
+      setMessages((prev) => settleStreamActivitiesMessage(prev));
       promptInFlightRef.current = false;
       setPendingPermissions([]);
       finishResumeReplay();
@@ -232,6 +236,7 @@ export function useWebChatConnection({
     ws.onerror = () => {
       setConnected(false);
       setStreaming(false);
+      setMessages((prev) => settleStreamActivitiesMessage(prev));
       promptInFlightRef.current = false;
       finishResumeReplay();
     };
@@ -300,7 +305,7 @@ export function useWebChatConnection({
           break;
         }
         case "prompt_done": {
-          clearStreamProgress();
+          settleStreamActivities();
           setStreaming(false);
           promptInFlightRef.current = false;
           break;
@@ -443,6 +448,10 @@ export function useWebChatConnection({
 
     function clearStreamProgress(replaySessionId?: string) {
       applyMessageUpdate((prev) => clearStreamProgressMessage(prev), replaySessionId);
+    }
+
+    function settleStreamActivities(replaySessionId?: string) {
+      applyMessageUpdate((prev) => settleStreamActivitiesMessage(prev), replaySessionId);
     }
 
     function appendErrorToStream(error: string) {
@@ -612,9 +621,10 @@ export function useWebChatConnection({
           });
           if (resumeRequestIdRef.current !== requestId) return;
           if (cachedMessages) {
+            const settledCachedMessages = settleStreamActivitiesMessage(cachedMessages);
             replayMessageBufferRef.current = null;
             clearReplayCacheContext();
-            setMessages(cachedMessages);
+            setMessages(settledCachedMessages);
             updateResumeReplay(null);
             return;
           }
@@ -671,6 +681,7 @@ export function useWebChatConnection({
     }
     promptInFlightRef.current = false;
     setStreaming(false);
+    setMessages((prev) => settleStreamActivitiesMessage(prev));
     replayMessageBufferRef.current = null;
     clearReplayCacheContext();
     updateResumeReplay(null);

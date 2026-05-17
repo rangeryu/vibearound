@@ -108,6 +108,29 @@ function settleActiveThinking(message: ChatMessage): ChatMessage {
   };
 }
 
+function settleActiveStreamState(message: ChatMessage): ChatMessage {
+  const activities = message.activities?.map((activity) =>
+    activity.active !== false ? { ...activity, active: false } : activity,
+  );
+  const parts = message.parts?.map((part) => {
+    if (part.kind === "thought" && part.active !== false) {
+      return { ...part, active: false };
+    }
+    if (part.kind === "tool_call" && part.active !== false) {
+      return { ...part, active: false };
+    }
+    return part;
+  });
+
+  return {
+    ...message,
+    activities,
+    parts,
+    progress: undefined,
+    progressKind: undefined,
+  };
+}
+
 export function appendStandaloneAssistantMessage(
   prev: ChatMessage[],
   text: string,
@@ -545,6 +568,17 @@ export function clearStreamProgressMessage(prev: ChatMessage[]): ChatMessage[] {
     mode: "stream",
   };
   return next;
+}
+
+export function settleStreamActivitiesMessage(prev: ChatMessage[]): ChatMessage[] {
+  let changed = false;
+  const next = prev.map((message) => {
+    if (message.role !== "assistant" || message.mode !== "stream") return message;
+    const settled = settleActiveStreamState(message);
+    if (settled !== message) changed = true;
+    return { ...settled, mode: "stream" as const };
+  });
+  return changed ? next : prev;
 }
 
 export function appendErrorToStreamMessage(

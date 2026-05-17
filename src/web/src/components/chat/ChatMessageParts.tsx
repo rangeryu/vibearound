@@ -22,7 +22,8 @@ interface ChatMessagePartsProps {
 function renderPart(
   part: ChatMessagePart,
   role: ChatMessage["role"],
-  isStreaming?: boolean,
+  isPartStreaming?: boolean,
+  isMessageStreaming?: boolean,
 ) {
   switch (part.kind) {
     case "content":
@@ -31,7 +32,7 @@ function renderPart(
           key={part.id}
           block={part.block}
           role={role}
-          isStreaming={isStreaming}
+          isStreaming={isPartStreaming}
         />
       );
     case "thought":
@@ -39,7 +40,7 @@ function renderPart(
     case "tool_call":
       return <ToolCallRenderer key={part.id} part={part} />;
     case "plan":
-      return <PlanRenderer key={part.id} part={part} />;
+      return <PlanRenderer key={part.id} part={part} isStreaming={isMessageStreaming} />;
   }
 }
 
@@ -73,7 +74,12 @@ export function ChatMessageParts({
   return (
     <div className="flex min-w-0 flex-col gap-3">
       {parts.map((part, index) =>
-        renderPart(part, message.role, isStreaming && index === parts.length - 1),
+        renderPart(
+          part,
+          message.role,
+          isStreaming && index === parts.length - 1,
+          isStreaming,
+        ),
       )}
     </div>
   );

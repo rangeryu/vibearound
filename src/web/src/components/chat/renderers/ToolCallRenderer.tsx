@@ -12,16 +12,24 @@ import { ToolContentRenderer } from "./ToolContentRenderer";
 import type { ChatToolCallPart } from "../chatTypes";
 
 function statusIcon(status: ChatToolCallPart["status"], active?: boolean) {
-  if (active || status === "in_progress") {
+  if (active === true || (active === undefined && status === "in_progress")) {
     return <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />;
   }
   if (status === "failed") return <XCircle className="h-3.5 w-3.5 text-destructive" />;
-  if (status === "pending") return <CircleDashed className="h-3.5 w-3.5 text-muted-foreground" />;
+  if (active && status === "pending") {
+    return <CircleDashed className="h-3.5 w-3.5 text-muted-foreground" />;
+  }
   return <Circle className="h-3.5 w-3.5 fill-primary/20 text-primary/70" />;
 }
 
 function displayTitle(part: ChatToolCallPart) {
   return part.title === "tool" && part.toolKind ? part.toolKind : part.title;
+}
+
+function visibleStatus(status: ChatToolCallPart["status"], active: boolean) {
+  if (!status) return null;
+  if (active) return status;
+  return status === "completed" || status === "failed" ? status : null;
 }
 
 function ToolDetails({ part }: { part: ChatToolCallPart }) {
@@ -74,6 +82,7 @@ function ToolDetails({ part }: { part: ChatToolCallPart }) {
 export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
   const active = part.active ?? (part.status !== "completed" && part.status !== "failed");
   const title = displayTitle(part);
+  const status = visibleStatus(part.status, active);
   const hasRichContent = Boolean(part.content?.length);
   const hasDetails =
     Boolean(part.locations?.length) ||
@@ -131,9 +140,9 @@ export function ToolCallRenderer({ part }: { part: ChatToolCallPart }) {
             {part.toolKind}
           </span>
         )}
-        {part.status && (
+        {status && (
           <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-            {part.status}
+            {status}
           </span>
         )}
       </summary>
