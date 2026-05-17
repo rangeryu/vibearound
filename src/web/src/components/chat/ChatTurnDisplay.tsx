@@ -18,8 +18,10 @@ import type {
 } from "./chatTypes";
 import type { ContentBlock, ToolCallContent } from "@agentclientprotocol/sdk";
 
+type WorkPart = Exclude<ChatMessagePart, ChatContentPart>;
+
 type WorkItem =
-  | { id: string; kind: "part"; part: ChatMessagePart }
+  | { id: string; kind: "part"; part: WorkPart }
   | { id: string; kind: "activity"; activity: ChatActivity }
   | {
       id: string;
@@ -33,8 +35,7 @@ type ResultItem =
   | { id: string; kind: "toolContent"; item: ToolCallContent };
 
 type TurnDisplayModel = {
-  latestTextPart: ChatContentPart | null;
-  results: ResultItem[];
+  displayItems: ResultItem[];
   workItems: WorkItem[];
 };
 
@@ -96,23 +97,16 @@ function workToolCallPart(part: ChatToolCallPart): ChatToolCallPart {
 
 function buildTurnDisplayModel(message: ChatMessage): TurnDisplayModel {
   const parts = message.parts ?? [];
-  const latestTextIndex = findLastTextPartIndex(parts);
   const workItems: WorkItem[] = [];
-  const results: ResultItem[] = [];
+  const displayItems: ResultItem[] = [];
 
-  parts.forEach((part, index) => {
+  parts.forEach((part) => {
     switch (part.kind) {
       case "content":
-        if (part.block.type === "text") {
-          if (index !== latestTextIndex && contentBlockHasText(part.block)) {
-            workItems.push({ id: part.id, kind: "part", part });
-          }
-        } else {
-          results.push({ id: part.id, kind: "content", block: part.block });
-        }
+        displayItems.push({ id: part.id, kind: "content", block: part.block });
         break;
       case "tool_call": {
-        results.push(...toolResultItems(part));
+        displayItems.push(...toolResultItems(part));
         workItems.push({ id: part.id, kind: "part", part: workToolCallPart(part) });
         break;
       }
@@ -138,20 +132,7 @@ function buildTurnDisplayModel(message: ChatMessage): TurnDisplayModel {
     });
   }
 
-  const latestTextPart =
-    latestTextIndex >= 0 && parts[latestTextIndex]?.kind === "content"
-      ? (parts[latestTextIndex] as ChatContentPart)
-      : null;
-
-  return { latestTextPart, results, workItems };
-}
-
-function findLastTextPartIndex(parts: ChatMessagePart[]) {
-  for (let index = parts.length - 1; index >= 0; index -= 1) {
-    const part = parts[index];
-    if (part.kind === "content" && contentBlockHasText(part.block)) return index;
-  }
-  return -1;
+  return { displayItems, workItems };
 }
 
 function workItemVisible(item: WorkItem, settings: ChatDisplaySettings) {
@@ -170,8 +151,6 @@ function workItemLabel(item: WorkItem) {
   if (item.kind === "activity") return item.activity.label;
   if (item.kind === "progress") return item.text;
   switch (item.part.kind) {
-    case "content":
-      return "Earlier message";
     case "thought":
       return "Thinking";
     case "tool_call":
@@ -184,22 +163,11 @@ function workItemLabel(item: WorkItem) {
 }
 
 function renderWorkPart(
-  part: ChatMessagePart,
+  part: WorkPart,
   isMessageStreaming: boolean,
   isPartStreaming: boolean,
 ) {
   switch (part.kind) {
-    case "content":
-      return part.block.type === "text" ? (
-        <details className="py-1 text-muted-foreground">
-          <summary className="cursor-pointer font-mono text-xs uppercase">
-            Earlier message
-          </summary>
-          <div className="mt-2">
-            <ContentBlockRenderer block={part.block} role="assistant" />
-          </div>
-        </details>
-      ) : null;
     case "thought":
       return <ThoughtRenderer part={part} />;
     case "tool_call":
@@ -296,7 +264,7 @@ function LiveWorkPart({
   isMessageStreaming,
   isPartStreaming,
 }: {
-  part: ChatMessagePart;
+  part: WorkPart;
   isMessageStreaming: boolean;
   isPartStreaming: boolean;
 }) {
@@ -450,10 +418,9 @@ export function ChatTurnDisplay({
   }
 
   const model = buildTurnDisplayModel(message);
-  const hasLatestText = Boolean(model.latestTextPart);
-  const hasResults = model.results.length > 0;
+  const hasDisplayItems = model.displayItems.length > 0;
 
-  if (!hasLatestText && !hasResults && model.workItems.length === 0) {
+  if (!hasDisplayItems && model.workItems.length === 0) {
     return null;
   }
 
@@ -464,16 +431,9 @@ export function ChatTurnDisplay({
         isStreaming={isStreaming}
         displaySettings={displaySettings}
       />
-      {model.latestTextPart && (
-        <ContentBlockRenderer
-          block={model.latestTextPart.block}
-          role="assistant"
-          isStreaming={isStreaming}
-        />
-      )}
-      {model.results.length > 0 && (
+      {model.displayItems.length > 0 && (
         <div className="flex min-w-0 flex-col gap-4">
-          {model.results.map((item) => (
+          {model.displayItems.map((item) => (
             <ResultBlock key={item.id} item={item} />
           ))}
         </div>
