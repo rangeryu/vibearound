@@ -629,6 +629,7 @@ export function useWebChatConnection({
 
   const clearConversationView = useCallback((options?: {
     abortReplay?: boolean;
+    preserveMessages?: boolean;
     sendStop?: boolean;
   }) => {
     const ws = wsRef.current;
@@ -660,7 +661,10 @@ export function useWebChatConnection({
     setStreaming(false);
     setPendingPermissions([]);
     updateResumeReplay(null);
-    setMessages([]);
+    if (!options?.preserveMessages) {
+      messagesRef.current = [];
+      setMessages([]);
+    }
     setMeta((prev) => ({
       ...prev,
       sessionId: undefined,
@@ -674,7 +678,11 @@ export function useWebChatConnection({
     ({ agentId, profileId, launchSession }: ResumeChatSessionRequest) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false;
 
-      clearConversationView({ abortReplay: true, sendStop: false });
+      clearConversationView({
+        abortReplay: true,
+        preserveMessages: true,
+        sendStop: false,
+      });
       const requestId = resumeRequestIdRef.current + 1;
       resumeRequestIdRef.current = requestId;
       ignoredReplaySessionsRef.current.delete(launchSession.session_id);
