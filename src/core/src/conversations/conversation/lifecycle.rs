@@ -115,7 +115,9 @@ impl Conversation {
                 .await
                 .clone()
                 .map(PathBuf::from)
-                .unwrap_or_else(|| config::ensure_loaded().resolve_workspace(&cli_kind)),
+                .unwrap_or_else(|| {
+                    agent_state::resolve_agent_workspace(&agent_prefs, &cfg, &cli_kind)
+                }),
         };
 
         // Track workspace for snapshot (used by /handover Direction 2).
