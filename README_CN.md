@@ -6,7 +6,7 @@
 
 **让本地编程 Agent 留在身边，从桌面、网页、IM 随时接入。**
 
-[下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [English](README.md)
+[下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [English](README.md)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.82+-000?style=flat-square&logo=rust&logoColor=fff" alt="Rust" />
@@ -50,6 +50,10 @@ VibeAround 是一个面向本地 AI 编程 Agent 的桌面中枢。它把 Claude
 | 模型配置 | 频道插件 |
 |---|---|
 | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-profiles.webp" alt="VibeAround 模型配置" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-channels.webp" alt="VibeAround 频道插件" width="100%" /> |
+
+| 启动本地 Agent | 查看代码变更 | 生成视觉素材 |
+|---|---|---|
+| <img src="docs/assets/screenshots/web-chat-start.jpg" alt="VibeAround Web Chat 工作区启动页" width="100%" /> | <img src="docs/assets/screenshots/web-chat-diff.jpg" alt="VibeAround Web Chat 代码 diff 对话" width="100%" /> | <img src="docs/assets/screenshots/web-chat-imagegen.jpg" alt="VibeAround Web Chat 图片生成会话" width="100%" /> |
 
 ## 可以做什么
 
