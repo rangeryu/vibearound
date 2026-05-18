@@ -6,7 +6,7 @@
 
 **Keep your local coding agents reachable from desktop, web, and messaging.**
 
-[Download](https://github.com/jazzenchen/VibeAround/releases/latest) | [Demo](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [简体中文](README_CN.md)
+[Download](https://github.com/jazzenchen/VibeAround/releases/latest) | [Demo](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [WeChat](#community) | [简体中文](README_CN.md)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.82+-000?style=flat-square&logo=rust&logoColor=fff" alt="Rust" />
@@ -51,6 +51,10 @@ Local coding agents are powerful, but they are usually trapped inside one termin
 |---|---|
 | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/en-profiles.webp" alt="VibeAround model profiles" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/en-channels.webp" alt="VibeAround channel plugins" width="100%" /> |
 
+| Start a local agent | Review code changes | Generate visual assets |
+|---|---|---|
+| <img src="docs/assets/screenshots/web-chat-start.jpg" alt="VibeAround web chat workspace launcher" width="100%" /> | <img src="docs/assets/screenshots/web-chat-diff.jpg" alt="VibeAround web chat code review with diff" width="100%" /> | <img src="docs/assets/screenshots/web-chat-imagegen.jpg" alt="VibeAround web chat image generation session" width="100%" /> |
+
 ## What You Can Do
 
 ### Launch local coding agents
@@ -81,13 +85,13 @@ Remotely control local agents from messaging apps, and hand over sessions betwee
 
 ## Download
 
-Latest release: [VibeAround v0.6.1](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.1).
+Latest release: [VibeAround v0.6.2](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.2).
 
 | Platform | Recommended download |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.6.1_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround-win-0.6.1-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.6.2_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround-win-0.6.2-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_amd64.deb) |
 
 macOS is currently published for Apple Silicon. Windows and Linux desktop packages are produced by GitHub Actions; the macOS DMG is signed and notarized.
 

@@ -42,6 +42,10 @@ pub enum SystemEvent {
         route: RouteKey,
         session_id: String,
     },
+    SessionMode {
+        route: RouteKey,
+        session_mode: serde_json::Value,
+    },
 }
 
 impl SystemEvent {
@@ -52,7 +56,8 @@ impl SystemEvent {
             | Self::RouteFailed { route, .. }
             | Self::AgentInitialized { route, .. }
             | Self::AgentInitializeFailed { route, .. }
-            | Self::SessionReady { route, .. } => route,
+            | Self::SessionReady { route, .. }
+            | Self::SessionMode { route, .. } => route,
         }
     }
 }

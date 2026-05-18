@@ -135,6 +135,7 @@ export const LaunchSessionInfoSchema = z.object({
   updated_at: z.number(),
   short_id: z.string(),
   archived: z.boolean(),
+  active: z.boolean().optional(),
 });
 export type LaunchSessionInfo = z.infer<typeof LaunchSessionInfoSchema>;
 export const LaunchSessionListSchema = z.array(LaunchSessionInfoSchema);
@@ -163,7 +164,6 @@ export const WebVerboseSettingsSchema = z.object({
   show_tool_use: z.boolean(),
   show_archived: z.boolean(),
   send_with_modifier_enter: z.boolean(),
-  permission_mode: z.enum(["default", "acceptEdits", "bypassPermissions", "dontAsk"]),
 });
 export type WebVerboseSettings = z.infer<typeof WebVerboseSettingsSchema>;
 
@@ -297,6 +297,10 @@ export const ChatEventSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("session_ready"),
     session_id: z.string(),
+  }),
+  z.object({
+    kind: z.literal("session_mode"),
+    session_mode: z.unknown(),
   }),
   z.object({
     kind: z.literal("command_menu"),

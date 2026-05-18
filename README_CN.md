@@ -6,7 +6,7 @@
 
 **让本地编程 Agent 留在身边，从桌面、网页、IM 随时接入。**
 
-[下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [English](README.md)
+[下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [English](README.md)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.82+-000?style=flat-square&logo=rust&logoColor=fff" alt="Rust" />
@@ -51,6 +51,10 @@ VibeAround 是一个面向本地 AI 编程 Agent 的桌面中枢。它把 Claude
 |---|---|
 | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-profiles.webp" alt="VibeAround 模型配置" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-channels.webp" alt="VibeAround 频道插件" width="100%" /> |
 
+| 启动本地 Agent | 查看代码变更 | 生成视觉素材 |
+|---|---|---|
+| <img src="docs/assets/screenshots/web-chat-start.jpg" alt="VibeAround Web Chat 工作区启动页" width="100%" /> | <img src="docs/assets/screenshots/web-chat-diff.jpg" alt="VibeAround Web Chat 代码 diff 对话" width="100%" /> | <img src="docs/assets/screenshots/web-chat-imagegen.jpg" alt="VibeAround Web Chat 图片生成会话" width="100%" /> |
+
 ## 可以做什么
 
 ### 启动本地编程 Agent
@@ -81,13 +85,13 @@ VibeAround 是一个面向本地 AI 编程 Agent 的桌面中枢。它把 Claude
 
 ## 下载
 
-最新版本：[VibeAround v0.6.1](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.1)。
+最新版本：[VibeAround v0.6.2](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.2)。
 
 | 平台 | 推荐下载 |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.6.1_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround-win-0.6.1-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.6.2_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround-win-0.6.2-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_amd64.deb) |
 
 macOS 当前发布 Apple Silicon 版本。Windows 和 Linux 桌面包由 GitHub Actions 构建；macOS DMG 已签名并完成 notarization。
 

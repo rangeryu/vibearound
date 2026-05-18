@@ -1,0 +1,146 @@
+"use client";
+
+import {
+  Loader2,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
+import { useI18n } from "@va/i18n";
+import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
+import { BrandIcon } from "@/components/brand-icon";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { shortSessionId } from "./chatSessionDisplay";
+
+interface ChatHeaderProps {
+  selectedAgent: string;
+  agentLabel: string;
+  routeLabel: string;
+  headerSessionLabel: string | null;
+  sessionId?: string;
+  chatStatus: ChatRuntimeStatus;
+  statusLabel: string;
+  connected: boolean;
+  streaming: boolean;
+  replayLoading: boolean;
+  showSessionSidebar: boolean;
+  onShowMobileSessions: () => void;
+  onToggleSessionSidebar: () => void;
+  onOpenAppSidebar?: () => void;
+}
+
+export function ChatHeader({
+  selectedAgent,
+  agentLabel,
+  routeLabel,
+  headerSessionLabel,
+  sessionId,
+  chatStatus,
+  statusLabel,
+  connected,
+  streaming,
+  replayLoading,
+  showSessionSidebar,
+  onShowMobileSessions,
+  onToggleSessionSidebar,
+  onOpenAppSidebar,
+}: ChatHeaderProps) {
+  const { t } = useI18n();
+  const statusIcon = !connected ? (
+    <WifiOff className="h-3.5 w-3.5" />
+  ) : streaming || replayLoading ? (
+    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+  ) : (
+    <Wifi className="h-3.5 w-3.5" />
+  );
+
+  return (
+    <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-background/95 px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onShowMobileSessions}
+          className="text-muted-foreground hover:text-foreground md:hidden"
+          title={t("Show sessions")}
+          aria-label={t("Show sessions")}
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onToggleSessionSidebar}
+          className="hidden text-muted-foreground hover:text-foreground md:inline-flex"
+          title={showSessionSidebar ? t("Hide sessions") : t("Show sessions")}
+          aria-label={showSessionSidebar ? t("Hide sessions") : t("Show sessions")}
+        >
+          {showSessionSidebar ? (
+            <PanelLeftClose className="h-4 w-4" />
+          ) : (
+            <PanelLeftOpen className="h-4 w-4" />
+          )}
+        </Button>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <BrandIcon
+            kind="cli"
+            id={selectedAgent}
+            label={agentLabel}
+            className="h-4 w-4"
+          />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-foreground">
+            {routeLabel}
+          </div>
+          {(headerSessionLabel || sessionId) && (
+            <div className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground/60">
+              {headerSessionLabel && (
+                <span className="truncate">{headerSessionLabel}</span>
+              )}
+              {sessionId && (
+                <span className="truncate text-muted-foreground/40">
+                  {shortSessionId(sessionId)}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <div
+          className={cn(
+            "flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[10px]",
+            chatStatus === "attention"
+              ? "text-amber-400"
+              : chatStatus === "working"
+                ? "text-primary"
+                : connected
+                  ? "text-emerald-400/80"
+                  : "text-muted-foreground/60",
+          )}
+          title={statusLabel}
+        >
+          {statusIcon}
+          <span className="hidden sm:inline">{statusLabel}</span>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onOpenAppSidebar}
+          className="text-muted-foreground hover:text-foreground md:hidden"
+          title={t("Show navigation")}
+          aria-label={t("Show navigation")}
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
+      </div>
+    </header>
+  );
+}

@@ -68,6 +68,7 @@ pub(crate) struct LaunchSessionsQuery {
 
 /// GET /api/agents/:agent_id/launch-sessions -- list CLI sessions this agent can resume.
 pub async fn list_launch_sessions_handler(
+    State(state): State<AppState>,
     Path(agent_id): Path<String>,
     Query(query): Query<LaunchSessionsQuery>,
 ) -> Result<Json<Vec<crate::api_types::LaunchSessionInfo>>, (StatusCode, String)> {
@@ -85,14 +86,20 @@ pub async fn list_launch_sessions_handler(
         query.include_archived.unwrap_or(false),
     )
     .into_iter()
-    .map(|session| crate::api_types::LaunchSessionInfo {
-        short_id: common::launch_sessions::short_id(&session.session_id),
-        agent_id: session.agent_id,
-        session_id: session.session_id,
-        title: session.title,
-        workspace: session.workspace,
-        updated_at: session.updated_at,
-        archived: session.archived,
+    .map(|session| {
+        let active = state
+            .web_channel
+            .session_is_active(&session.agent_id, &session.session_id);
+        crate::api_types::LaunchSessionInfo {
+            short_id: common::launch_sessions::short_id(&session.session_id),
+            agent_id: session.agent_id,
+            session_id: session.session_id,
+            title: session.title,
+            workspace: session.workspace,
+            updated_at: session.updated_at,
+            archived: session.archived,
+            active,
+        }
     })
     .collect();
 

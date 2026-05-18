@@ -2,59 +2,66 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Loader2,
-  Menu,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Wifi,
-  WifiOff,
-} from "lucide-react";
-import {
   archiveLaunchSession,
   createWorkspace,
   getLaunchSessions,
   getProfiles,
   getWorkspaces,
-  uploadChatFile,
 } from "@/api/sessions";
 import { getAgentDisplayName } from "@/lib/agents";
 import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
 import type {
-  AgentInfo,
   LaunchSessionInfo,
   ProfileLaunchOption,
   WebVerboseSettings,
   WorkspaceItem,
 } from "@va/client";
 import { useI18n } from "@va/i18n";
-import { BrandIcon } from "@/components/brand-icon";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { MAX_ATTACHMENT_BYTES, isAllowedAttachment } from "./attachmentTypes";
 import { ChatInput } from "./ChatInput";
+import { ChatHeader } from "./ChatHeader";
+import { ChatRuntimeHost } from "./ChatRuntimeHost";
+import {
+  chatRuntimeKeyForSession,
+  createDraftRuntimeKey,
+  INITIAL_RUNTIME_KEY,
+} from "./chatRuntimeKeys";
+import type {
+  ChatRuntimeActions,
+  ChatRuntimeSnapshot,
+  ChatRuntimeSpec,
+} from "./chatRuntimeTypes";
+import { EMPTY_RUNTIME_SNAPSHOT } from "./chatRuntimeTypes";
 import { deleteCachedChatSession } from "./chatSessionCache";
 import {
   chatSessionKey,
-  ChatSessionSidebar,
   ALL_AGENTS_FILTER,
+  mergeSessionGroupUpdates,
+  profileTargetsAgent,
+  sessionSyncScope,
   type ChatSessionWorkspaceGroup,
-} from "./ChatSessionSidebar";
+} from "./chatSessionModel";
+import { ChatSessionSidebar } from "./ChatSessionSidebar";
+import {
+  clampSessionSidebarWidth,
+  clearStoredActiveLaunchSession,
+  readCachedLaunchSessionGroups,
+  readStoredActiveLaunchSession,
+  readStoredLaunchSelection,
+  readStoredSessionSidebarWidth,
+  writeCachedLaunchSessionGroups,
+  writeStoredActiveLaunchSession,
+  writeStoredLaunchSelection,
+  writeStoredSessionSidebarWidth,
+} from "./chatSessionStorage";
+import { shortSessionId } from "./chatSessionDisplay";
 import { ChatMessageList } from "./ChatMessageList";
 import { NewChatAgentPicker } from "./NewChatAgentPicker";
 import { NewChatHome } from "./NewChatHome";
 import { NewChatWorkspacePicker } from "./NewChatWorkspacePicker";
 import { PendingPermissions } from "./PendingPermissions";
-import type {
-  ChatAttachment,
-  ChatMessage,
-  ChatMeta,
-  ChatSessionSelection,
-  PendingPermission,
-} from "./chatTypes";
-import {
-  type ResumeReplayState,
-  useWebChatConnection,
-} from "./useWebChatConnection";
+import { currentUnixSeconds } from "./chatTime";
+import type { ChatSessionSelection } from "./chatTypes";
+import { useChatAttachments } from "./useChatAttachments";
 
 interface ChatViewProps {
   webSettings: WebVerboseSettings;
@@ -63,409 +70,6 @@ interface ChatViewProps {
 }
 
 const DIRECT_PROFILE_ID = "direct";
-const LAUNCH_SELECTION_STORAGE_KEY = "vibearound.webChat.launchSelection";
-const ACTIVE_LAUNCH_SESSION_STORAGE_KEY = "vibearound.webChat.activeLaunchSession";
-const LAUNCH_SESSION_CACHE_STORAGE_KEY = "vibearound.webChat.launchSessions.v1";
-const SESSION_SIDEBAR_WIDTH_STORAGE_KEY = "vibearound.webChat.sessionSidebarWidth";
-const SESSION_SIDEBAR_DEFAULT_WIDTH = 256;
-const SESSION_SIDEBAR_MIN_WIDTH = 224;
-const SESSION_SIDEBAR_MAX_WIDTH = 420;
-const INITIAL_RUNTIME_KEY = "draft:initial";
-
-interface StoredLaunchSelection {
-  agentId?: string;
-  profileId?: string;
-}
-
-interface StoredActiveLaunchSession {
-  agentId: string;
-  sessionId: string;
-  workspace: string;
-}
-
-interface StoredLaunchSessionCache {
-  scope: string;
-  syncedAt: number;
-  groups: ChatSessionWorkspaceGroup[];
-}
-
-interface ChatRuntimeSpec {
-  agentId: string;
-  profileId?: string;
-  workspacePath?: string;
-  launchSession?: LaunchSessionInfo;
-  title?: string;
-  initialResume?: {
-    agentId: string;
-    profileId?: string;
-    launchSession: LaunchSessionInfo;
-  };
-}
-
-interface ChatRuntimeSnapshot {
-  messages: ChatMessage[];
-  connected: boolean;
-  streaming: boolean;
-  meta: ChatMeta;
-  agents: AgentInfo[];
-  pendingPermissions: PendingPermission[];
-  resumeReplay: ResumeReplayState | null;
-  lastPromptDoneAt?: number;
-}
-
-interface ChatRuntimeActions {
-  sendMessage: ReturnType<typeof useWebChatConnection>["sendMessage"];
-  resumeSession: ReturnType<typeof useWebChatConnection>["resumeSession"];
-  clearConversationView: ReturnType<typeof useWebChatConnection>["clearConversationView"];
-  setSessionMode: ReturnType<typeof useWebChatConnection>["setSessionMode"];
-  stopStreaming: ReturnType<typeof useWebChatConnection>["stopStreaming"];
-  sendPermissionResponse: ReturnType<typeof useWebChatConnection>["sendPermissionResponse"];
-  cancelPermissionRequest: ReturnType<typeof useWebChatConnection>["cancelPermissionRequest"];
-}
-
-const EMPTY_RUNTIME_SNAPSHOT: ChatRuntimeSnapshot = {
-  messages: [],
-  connected: false,
-  streaming: false,
-  meta: {},
-  agents: [],
-  pendingPermissions: [],
-  resumeReplay: null,
-  lastPromptDoneAt: undefined,
-};
-
-function readStoredLaunchSelection(): StoredLaunchSelection {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(LAUNCH_SELECTION_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as StoredLaunchSelection;
-    return {
-      agentId: typeof parsed.agentId === "string" ? parsed.agentId : undefined,
-      profileId: typeof parsed.profileId === "string" ? parsed.profileId : undefined,
-    };
-  } catch {
-    return {};
-  }
-}
-
-function writeStoredLaunchSelection(selection: Required<StoredLaunchSelection>) {
-  try {
-    window.localStorage.setItem(LAUNCH_SELECTION_STORAGE_KEY, JSON.stringify(selection));
-  } catch {
-    // Ignore storage failures; the picker still works for this session.
-  }
-}
-
-function readStoredActiveLaunchSession(): StoredActiveLaunchSession | undefined {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const raw = window.localStorage.getItem(ACTIVE_LAUNCH_SESSION_STORAGE_KEY);
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as Partial<StoredActiveLaunchSession>;
-    if (
-      typeof parsed.agentId !== "string" ||
-      typeof parsed.sessionId !== "string" ||
-      typeof parsed.workspace !== "string"
-    ) {
-      return undefined;
-    }
-    return {
-      agentId: parsed.agentId,
-      sessionId: parsed.sessionId,
-      workspace: parsed.workspace,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function writeStoredActiveLaunchSession(session: StoredActiveLaunchSession) {
-  try {
-    window.localStorage.setItem(
-      ACTIVE_LAUNCH_SESSION_STORAGE_KEY,
-      JSON.stringify(session),
-    );
-  } catch {
-    // Restoring the active chat is best-effort; the session list remains usable.
-  }
-}
-
-function clearStoredActiveLaunchSession() {
-  try {
-    window.localStorage.removeItem(ACTIVE_LAUNCH_SESSION_STORAGE_KEY);
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function clampSessionSidebarWidth(width: number) {
-  return Math.min(
-    SESSION_SIDEBAR_MAX_WIDTH,
-    Math.max(SESSION_SIDEBAR_MIN_WIDTH, Math.round(width)),
-  );
-}
-
-function readStoredSessionSidebarWidth() {
-  if (typeof window === "undefined") return SESSION_SIDEBAR_DEFAULT_WIDTH;
-  const raw = window.localStorage.getItem(SESSION_SIDEBAR_WIDTH_STORAGE_KEY);
-  const parsed = raw ? Number(raw) : Number.NaN;
-  return Number.isFinite(parsed)
-    ? clampSessionSidebarWidth(parsed)
-    : SESSION_SIDEBAR_DEFAULT_WIDTH;
-}
-
-function writeStoredSessionSidebarWidth(width: number) {
-  try {
-    window.localStorage.setItem(
-      SESSION_SIDEBAR_WIDTH_STORAGE_KEY,
-      String(clampSessionSidebarWidth(width)),
-    );
-  } catch {
-    // Width persistence is cosmetic; dragging should still work.
-  }
-}
-
-function profileTargetsAgent(profile: ProfileLaunchOption, agentId: string) {
-  return profile.launch_targets.some((target) => target.id === agentId);
-}
-
-function sessionSyncScope(
-  agents: string[],
-  workspaces: WorkspaceItem[],
-  showArchived: boolean,
-) {
-  return `${agents.join(",")}\u0000${showArchived ? "archived" : "active"}\u0000${workspaces.map((workspace) => workspace.path).join("\u0000")}`;
-}
-
-function launchSessionKey(session: LaunchSessionInfo) {
-  return `${session.agent_id}\u0000${session.workspace}\u0000${session.session_id}`;
-}
-
-function sameLaunchSession(a: LaunchSessionInfo, b: LaunchSessionInfo) {
-  return (
-    a.agent_id === b.agent_id &&
-    a.session_id === b.session_id &&
-    a.title === b.title &&
-    a.workspace === b.workspace &&
-    a.updated_at === b.updated_at &&
-    a.short_id === b.short_id &&
-    a.archived === b.archived
-  );
-}
-
-function readCachedLaunchSessionGroups(
-  scope: string,
-  workspaces: WorkspaceItem[],
-): ChatSessionWorkspaceGroup[] | undefined {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const raw = window.localStorage.getItem(LAUNCH_SESSION_CACHE_STORAGE_KEY);
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as Partial<StoredLaunchSessionCache>;
-    if (parsed.scope !== scope || !Array.isArray(parsed.groups)) return undefined;
-    return normalizeSessionGroups(parsed.groups, workspaces);
-  } catch {
-    return undefined;
-  }
-}
-
-function writeCachedLaunchSessionGroups(
-  scope: string,
-  groups: ChatSessionWorkspaceGroup[],
-) {
-  if (typeof window === "undefined") return;
-  try {
-    const payload: StoredLaunchSessionCache = {
-      scope,
-      syncedAt: Date.now(),
-      groups,
-    };
-    window.localStorage.setItem(
-      LAUNCH_SESSION_CACHE_STORAGE_KEY,
-      JSON.stringify(payload),
-    );
-  } catch {
-    // Session cache is an optimization; sync still works without storage.
-  }
-}
-
-function normalizeSessionGroups(
-  groups: ChatSessionWorkspaceGroup[],
-  workspaces: WorkspaceItem[],
-): ChatSessionWorkspaceGroup[] {
-  const workspaceByPath = new Map(workspaces.map((workspace) => [workspace.path, workspace]));
-  return groups
-    .flatMap((group) => {
-      const path = group.workspace?.path;
-      if (typeof path !== "string") return [];
-      const workspace = workspaceByPath.get(path) ?? group.workspace;
-      const sessions = Array.isArray(group.sessions)
-        ? group.sessions.filter(isLaunchSessionInfo)
-        : [];
-      return [{ workspace, sessions }];
-    })
-    .filter((group) =>
-      workspaces.length === 0 ||
-      workspaces.some((workspace) => workspace.path === group.workspace.path),
-    );
-}
-
-function isLaunchSessionInfo(value: unknown): value is LaunchSessionInfo {
-  if (!value || typeof value !== "object") return false;
-  const item = value as Partial<LaunchSessionInfo>;
-  return (
-    typeof item.agent_id === "string" &&
-    typeof item.session_id === "string" &&
-    typeof item.title === "string" &&
-    typeof item.workspace === "string" &&
-    typeof item.updated_at === "number" &&
-    typeof item.short_id === "string" &&
-    typeof item.archived === "boolean"
-  );
-}
-
-function mergeSessionGroupUpdates(
-  currentGroups: ChatSessionWorkspaceGroup[],
-  updatedGroups: ChatSessionWorkspaceGroup[],
-  workspaces: WorkspaceItem[],
-  updatedAgentIds: string[],
-): ChatSessionWorkspaceGroup[] {
-  const workspaceByPath = new Map(workspaces.map((workspace) => [workspace.path, workspace]));
-  const updatedAgents = new Set(updatedAgentIds);
-  const groups = new Map<string, ChatSessionWorkspaceGroup>();
-  for (const workspace of workspaces) {
-    groups.set(workspace.path, { workspace, sessions: [] });
-  }
-  for (const group of currentGroups) {
-    const workspace =
-      workspaceByPath.get(group.workspace.path) ?? group.workspace;
-    groups.set(workspace.path, { workspace, sessions: group.sessions });
-  }
-
-  for (const group of normalizeSessionGroups(updatedGroups, workspaces)) {
-    const current = groups.get(group.workspace.path) ?? {
-      workspace: workspaceByPath.get(group.workspace.path) ?? group.workspace,
-      sessions: [],
-    };
-    const sessions = new Map<string, LaunchSessionInfo>();
-    for (const session of current.sessions) {
-      if (!updatedAgents.has(session.agent_id)) {
-        sessions.set(launchSessionKey(session), session);
-      }
-    }
-    for (const session of group.sessions) {
-      const key = launchSessionKey(session);
-      const existing = sessions.get(key);
-      sessions.set(key, existing && sameLaunchSession(existing, session) ? existing : session);
-    }
-    const nextSessions = Array.from(sessions.values());
-    groups.set(group.workspace.path, {
-      workspace: current.workspace,
-      sessions:
-        nextSessions.length === current.sessions.length &&
-        nextSessions.every((session, index) => session === current.sessions[index])
-          ? current.sessions
-          : nextSessions,
-    });
-  }
-  return Array.from(groups.values());
-}
-
-function ChatRuntimeHost({
-  runtimeKey,
-  initialResume,
-  permissionMode,
-  onSnapshot,
-  onActions,
-  onAgentSelected,
-}: {
-  runtimeKey: string;
-  initialResume?: ChatRuntimeSpec["initialResume"];
-  permissionMode: WebVerboseSettings["permission_mode"];
-  onSnapshot: (runtimeKey: string, snapshot: ChatRuntimeSnapshot) => void;
-  onActions: (runtimeKey: string, actions: ChatRuntimeActions | null) => void;
-  onAgentSelected: (
-    runtimeKey: string,
-    agentId: string,
-    source: "config" | "system",
-  ) => void;
-}) {
-  const initialResumeStartedRef = useRef(false);
-  const handleAgentSelected = useCallback(
-    (agentId: string, source: "config" | "system") =>
-      onAgentSelected(runtimeKey, agentId, source),
-    [onAgentSelected, runtimeKey],
-  );
-  const connection = useWebChatConnection({ onAgentSelected: handleAgentSelected });
-
-  useEffect(() => {
-    onSnapshot(runtimeKey, {
-      messages: connection.messages,
-      connected: connection.connected,
-      streaming: connection.streaming,
-      meta: connection.meta,
-      agents: connection.agents,
-      pendingPermissions: connection.pendingPermissions,
-      resumeReplay: connection.resumeReplay,
-      lastPromptDoneAt: connection.lastPromptDoneAt,
-    });
-  }, [
-    connection.agents,
-    connection.connected,
-    connection.lastPromptDoneAt,
-    connection.messages,
-    connection.meta,
-    connection.pendingPermissions,
-    connection.resumeReplay,
-    connection.streaming,
-    onSnapshot,
-    runtimeKey,
-  ]);
-
-  useEffect(() => {
-    onActions(runtimeKey, {
-      sendMessage: connection.sendMessage,
-      resumeSession: connection.resumeSession,
-      clearConversationView: connection.clearConversationView,
-      setSessionMode: connection.setSessionMode,
-      stopStreaming: connection.stopStreaming,
-      sendPermissionResponse: connection.sendPermissionResponse,
-      cancelPermissionRequest: connection.cancelPermissionRequest,
-    });
-    return () => onActions(runtimeKey, null);
-  }, [
-    connection.cancelPermissionRequest,
-    connection.clearConversationView,
-    connection.resumeSession,
-    connection.sendMessage,
-    connection.sendPermissionResponse,
-    connection.setSessionMode,
-    connection.stopStreaming,
-    onActions,
-    runtimeKey,
-  ]);
-
-  useEffect(() => {
-    if (!connection.connected || !connection.meta.sessionId) return;
-    connection.setSessionMode(permissionMode);
-  }, [
-    connection.connected,
-    connection.meta.sessionId,
-    connection.setSessionMode,
-    permissionMode,
-  ]);
-
-  useEffect(() => {
-    if (!initialResume || initialResumeStartedRef.current || !connection.connected) {
-      return;
-    }
-    initialResumeStartedRef.current = true;
-    connection.resumeSession(initialResume);
-  }, [connection.connected, connection.resumeSession, initialResume]);
-
-  return null;
-}
 
 export function ChatView({
   webSettings,
@@ -475,10 +79,15 @@ export function ChatView({
   const { t } = useI18n();
   const [storedLaunchSelection] = useState(readStoredLaunchSelection);
   const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [attachmentsUploading, setAttachmentsUploading] = useState(false);
-  const [attachmentsUploadingCount, setAttachmentsUploadingCount] = useState(0);
-  const [attachmentError, setAttachmentError] = useState<string | undefined>();
+  const {
+    attachments,
+    attachmentsUploading,
+    attachmentsUploadingCount,
+    attachmentError,
+    clearAttachments,
+    handleFilesSelected,
+    handleRemoveAttachment,
+  } = useChatAttachments(t);
   const [selectedAgent, setSelectedAgent] = useState<string>(
     storedLaunchSelection.agentId ?? "claude",
   );
@@ -536,6 +145,7 @@ export function ChatView({
   >({});
   const runtimeActionsRef = useRef<Record<string, ChatRuntimeActions>>({});
   const syncedPromptDoneRef = useRef<Record<string, number>>({});
+  const syncedActiveSessionRef = useRef<Record<string, string | undefined>>({});
 
   useEffect(() => {
     activeRuntimeKeyRef.current = activeRuntimeKey;
@@ -581,12 +191,15 @@ export function ChatView({
     [runtimeSnapshots],
   );
   const pendingPermissions = activeRuntime.pendingPermissions;
+  const sessionMode = activeRuntime.sessionMode;
   const resumeReplay = activeRuntime.resumeReplay;
   const replayBlocksInput = Boolean(
     resumeReplay && resumeReplay.blocking !== false,
   );
   const sendMessage = activeRuntimeActions?.sendMessage;
   const stopStreaming = activeRuntimeActions?.stopStreaming;
+  const setSessionMode = activeRuntimeActions?.setSessionMode;
+  const setSessionConfigOption = activeRuntimeActions?.setSessionConfigOption;
   const sendPermissionResponse = activeRuntimeActions?.sendPermissionResponse;
   const cancelPermissionRequest = activeRuntimeActions?.cancelPermissionRequest;
 
@@ -644,13 +257,6 @@ export function ChatView({
         : chatStatus === "ready"
           ? t("Local agent ready")
           : t("Connecting to local agent");
-  const statusIcon = !connected ? (
-    <WifiOff className="h-3.5 w-3.5" />
-  ) : streaming || replayLoading ? (
-    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-  ) : (
-    <Wifi className="h-3.5 w-3.5" />
-  );
   const headerSessionLabel =
     sessionSelection.kind === "new"
       ? null
@@ -696,9 +302,14 @@ export function ChatView({
           session_id: sessionId,
           title,
           workspace: workspacePath,
-          updated_at: spec.launchSession?.updated_at ?? snapshot.resumeReplay?.updatedAt ?? 0,
-          short_id: spec.launchSession?.short_id ?? sessionId.slice(0, 8),
+          updated_at: Math.max(
+            spec.lastPromptAt ?? 0,
+            spec.launchSession?.updated_at ?? 0,
+            snapshot.resumeReplay?.updatedAt ?? 0,
+          ),
+          short_id: spec.launchSession?.short_id ?? shortSessionId(sessionId),
           archived: false,
+          active: true,
         } satisfies LaunchSessionInfo,
       ];
     });
@@ -718,11 +329,23 @@ export function ChatView({
           ),
     [runtimeLaunchSessions, sidebarAgentFilter],
   );
-  const runtimeBusySessionKeys = useMemo(
+  const activeLaunchSessionKeys = useMemo(
     () =>
-      new Set(visibleRuntimeLaunchSessions.map((session) => chatSessionKey(session))),
-    [visibleRuntimeLaunchSessions],
+      new Set(
+        launchSessionGroups
+          .flatMap((group) => group.sessions)
+          .filter((session) => session.active)
+          .map((session) => chatSessionKey(session)),
+      ),
+    [launchSessionGroups],
   );
+  const runtimeBusySessionKeys = useMemo(() => {
+    const keys = new Set(activeLaunchSessionKeys);
+    for (const session of visibleRuntimeLaunchSessions) {
+      keys.add(chatSessionKey(session));
+    }
+    return keys;
+  }, [activeLaunchSessionKeys, visibleRuntimeLaunchSessions]);
   const displayLaunchSessionGroups = useMemo(() => {
     if (visibleRuntimeLaunchSessions.length === 0) return launchSessionGroups;
     const groupsByWorkspace = new Map<string, ChatSessionWorkspaceGroup>();
@@ -768,9 +391,7 @@ export function ChatView({
   const createDraftRuntime = useCallback((agentId: string, workspacePath?: string) => {
     clearStoredActiveLaunchSession();
     storedActiveLaunchSessionKeyRef.current = undefined;
-    const runtimeKey = `draft:${agentId}:${Date.now()}:${Math.random()
-      .toString(36)
-      .slice(2)}`;
+    const runtimeKey = createDraftRuntimeKey(agentId);
     setRuntimeSpecs((prev) => ({
       ...prev,
       [runtimeKey]: {
@@ -826,7 +447,7 @@ export function ChatView({
         return runtimeKey;
       }
 
-      const runtimeKey = `session:${chatSessionKey(session)}`;
+      const runtimeKey = chatRuntimeKeyForSession(session);
       setRuntimeSpecs((prev) =>
         prev[runtimeKey]
           ? prev
@@ -871,6 +492,7 @@ export function ChatView({
     });
     delete runtimeActionsRef.current[runtimeKey];
     delete syncedPromptDoneRef.current[runtimeKey];
+    delete syncedActiveSessionRef.current[runtimeKey];
   }, []);
 
   useEffect(() => {
@@ -1093,6 +715,30 @@ export function ChatView({
   }, [runtimeSnapshots, runtimeSpecs, syncLaunchSessions]);
 
   useEffect(() => {
+    const agentIds = new Set<string>();
+    for (const [runtimeKey, snapshot] of Object.entries(runtimeSnapshots)) {
+      const spec = runtimeSpecs[runtimeKey];
+      if (!spec) continue;
+      const active = snapshot.streaming || Boolean(snapshot.resumeReplay);
+      const sessionId = spec.launchSession?.session_id ?? snapshot.meta.sessionId;
+      const workspace =
+        spec.launchSession?.workspace ??
+        spec.workspacePath ??
+        snapshot.resumeReplay?.workspace;
+      const activeKey =
+        active && sessionId && workspace
+          ? `${spec.agentId}\u0000${workspace}\u0000${sessionId}`
+          : undefined;
+      const previousActiveKey = syncedActiveSessionRef.current[runtimeKey];
+      if (previousActiveKey === activeKey) continue;
+      syncedActiveSessionRef.current[runtimeKey] = activeKey;
+      if (activeKey || previousActiveKey) agentIds.add(spec.agentId);
+    }
+    if (agentIds.size === 0) return;
+    void syncLaunchSessions({ force: true, agentIds: Array.from(agentIds) });
+  }, [runtimeSnapshots, runtimeSpecs, syncLaunchSessions]);
+
+  useEffect(() => {
     if (restoredActiveLaunchSessionRef.current) return;
     const stored = readStoredActiveLaunchSession();
     if (!stored) {
@@ -1118,7 +764,7 @@ export function ChatView({
       ...prev,
       [session.agent_id]: session,
     }));
-    storedActiveLaunchSessionKeyRef.current = launchSessionKey(session);
+    storedActiveLaunchSessionKeyRef.current = chatSessionKey(session);
     activateRuntimeForSession(session);
   }, [
     activateRuntimeForSession,
@@ -1206,8 +852,7 @@ export function ChatView({
           return next;
         });
         createDraftRuntime(targetAgentId, selectedWorkspace?.path);
-        setAttachments([]);
-        setAttachmentError(undefined);
+        clearAttachments();
         return;
       }
       if (selection.kind !== "resume") return;
@@ -1228,13 +873,13 @@ export function ChatView({
         sessionId: launchSession.session_id,
         workspace: launchSession.workspace,
       });
-      storedActiveLaunchSessionKeyRef.current = launchSessionKey(launchSession);
-      setAttachments([]);
-      setAttachmentError(undefined);
+      storedActiveLaunchSessionKeyRef.current = chatSessionKey(launchSession);
+      clearAttachments();
       activateRuntimeForSession(launchSession);
     },
     [
       activateRuntimeForSession,
+      clearAttachments,
       createDraftRuntime,
       launchSessions,
       selectedAgent,
@@ -1370,96 +1015,36 @@ export function ChatView({
     ],
   );
 
-  const handleFilesSelected = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
-    const accepted = files.filter(isAllowedAttachment);
-    const rejected = files.filter((file) => !isAllowedAttachment(file));
-    if (rejected.length > 0) {
-      setAttachmentError(describeRejections(rejected, t));
-    }
-    if (accepted.length === 0) {
-      return;
-    }
-    setAttachmentsUploading(true);
-    setAttachmentsUploadingCount(accepted.length);
-    if (rejected.length === 0) {
-      setAttachmentError(undefined);
-    }
-    try {
-      const results = await Promise.allSettled(
-        accepted.map((file) => uploadChatFile(file)),
-      );
-      const uploaded = results.flatMap((result) =>
-        result.status === "fulfilled" ? [result.value] : [],
-      );
-      const failed = results.filter((result) => result.status === "rejected");
-      if (uploaded.length > 0) {
-        setAttachments((prev) => [
-          ...prev,
-          ...uploaded.map((file) => ({
-            id: file.id,
-            name: file.name,
-            mimeType: file.mime_type,
-            size: file.size,
-            uri: file.uri,
-          })),
-        ]);
-      }
-      if (failed.length > 0) {
-        failed.forEach((result) => {
-          if (result.status === "rejected") {
-            console.warn("[ChatView] failed to upload attachment:", result.reason);
-          }
-        });
-        setAttachmentError(
-          t("{{count}} files failed to upload.", { count: failed.length }),
-        );
-      }
-    } catch (error) {
-      console.warn("[ChatView] failed to upload attachment:", error);
-      setAttachmentError(
-        error instanceof Error ? error.message : t("Failed to upload attachment"),
-      );
-    } finally {
-      setAttachmentsUploading(false);
-      setAttachmentsUploadingCount(0);
-    }
-  }, [t]);
-
-  const handleRemoveAttachment = useCallback((id: string) => {
-    setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
-    setAttachmentError(undefined);
-  }, []);
-
   const handleSubmit = useCallback(() => {
     const text = input.trim();
     if (!text && attachments.length === 0) return;
     if (attachmentsUploading) return;
     if (replayBlocksInput) return;
     if (!sendMessage) return;
+    const messageWorkspacePath = selectedWorkspace?.path ?? defaultWorkspacePath;
     const sent = sendMessage({
       text,
       attachments,
       agentId: selectedAgent,
       profileId: selectedProfileId,
-      workspacePath: selectedWorkspace?.path,
+      workspacePath: messageWorkspacePath,
       sessionSelection,
       launchSession: selectedLaunchSession,
-      permissionMode: webSettings.permission_mode,
     });
     if (!sent) return;
 
+    const promptSubmittedAt = currentUnixSeconds();
     setInput("");
-    setAttachments([]);
-    setAttachmentError(undefined);
+    clearAttachments();
     setRuntimeSpecs((prev) => ({
       ...prev,
       [activeRuntimeKey]: {
         ...(prev[activeRuntimeKey] ?? { agentId: selectedAgent }),
         agentId: selectedAgent,
         profileId: selectedProfileId,
-        workspacePath: selectedWorkspace?.path,
+        workspacePath: messageWorkspacePath,
         launchSession: selectedLaunchSession,
+        lastPromptAt: promptSubmittedAt,
         title:
           text ||
           attachments[0]?.name ||
@@ -1474,8 +1059,10 @@ export function ChatView({
     activeRuntimeKey,
     attachments,
     attachmentsUploading,
+    clearAttachments,
     input,
     replayBlocksInput,
+    defaultWorkspacePath,
     selectedAgent,
     selectedLaunchSession,
     selectedProfileId,
@@ -1483,8 +1070,21 @@ export function ChatView({
     sendMessage,
     sessionSelection,
     t,
-    webSettings.permission_mode,
   ]);
+
+  const handleSessionModeChange = useCallback(
+    (value: string) => {
+      if (!sessionMode) return;
+      if (sessionMode.source === "config_option") {
+        if (sessionMode.configId) {
+          setSessionConfigOption?.(sessionMode.configId, value);
+        }
+        return;
+      }
+      setSessionMode?.(value);
+    },
+    [sessionMode, setSessionConfigOption, setSessionMode],
+  );
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
@@ -1493,7 +1093,6 @@ export function ChatView({
           key={runtimeKey}
           runtimeKey={runtimeKey}
           initialResume={runtimeSpecs[runtimeKey]?.initialResume}
-          permissionMode={webSettings.permission_mode}
           onSnapshot={handleRuntimeSnapshot}
           onActions={handleRuntimeActions}
           onAgentSelected={handleSocketAgentSelected}
@@ -1560,90 +1159,22 @@ export function ChatView({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-background/95 px-3 py-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setMobileSessionSidebarOpen(true)}
-              className="text-muted-foreground hover:text-foreground md:hidden"
-              title={t("Show sessions")}
-              aria-label={t("Show sessions")}
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setShowSessionSidebar((value) => !value)}
-              className="hidden text-muted-foreground hover:text-foreground md:inline-flex"
-              title={showSessionSidebar ? t("Hide sessions") : t("Show sessions")}
-              aria-label={showSessionSidebar ? t("Hide sessions") : t("Show sessions")}
-            >
-              {showSessionSidebar ? (
-                <PanelLeftClose className="h-4 w-4" />
-              ) : (
-                <PanelLeftOpen className="h-4 w-4" />
-              )}
-            </Button>
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-              <BrandIcon
-                kind="cli"
-                id={selectedAgent}
-                label={agentLabel}
-                className="h-4 w-4"
-              />
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-foreground">
-                {routeLabel}
-              </div>
-              {(headerSessionLabel || meta.sessionId) && (
-                <div className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground/60">
-                  {headerSessionLabel && (
-                    <span className="truncate">{headerSessionLabel}</span>
-                  )}
-                  {meta.sessionId && (
-                    <span className="truncate text-muted-foreground/40">
-                      {meta.sessionId.slice(0, 8)}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <div
-              className={cn(
-                "flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[10px]",
-                chatStatus === "attention"
-                  ? "text-amber-400"
-                  : chatStatus === "working"
-                    ? "text-primary"
-                    : connected
-                      ? "text-emerald-400/80"
-                      : "text-muted-foreground/60",
-              )}
-              title={statusLabel}
-            >
-              {statusIcon}
-              <span className="hidden sm:inline">{statusLabel}</span>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={onOpenAppSidebar}
-              className="text-muted-foreground hover:text-foreground md:hidden"
-              title={t("Show navigation")}
-              aria-label={t("Show navigation")}
-            >
-              <Menu className="h-4 w-4" />
-            </Button>
-          </div>
-        </header>
+        <ChatHeader
+          selectedAgent={selectedAgent}
+          agentLabel={agentLabel}
+          routeLabel={routeLabel}
+          headerSessionLabel={headerSessionLabel}
+          sessionId={meta.sessionId}
+          chatStatus={chatStatus}
+          statusLabel={statusLabel}
+          connected={connected}
+          streaming={streaming}
+          replayLoading={replayLoading}
+          showSessionSidebar={showSessionSidebar}
+          onShowMobileSessions={() => setMobileSessionSidebarOpen(true)}
+          onToggleSessionSidebar={() => setShowSessionSidebar((value) => !value)}
+          onOpenAppSidebar={onOpenAppSidebar}
+        />
 
         {showNewChatHome ? (
           <NewChatHome>
@@ -1663,6 +1194,8 @@ export function ChatView({
                 submitDisabled={streaming || replayBlocksInput || attachmentsUploading}
                 isStreaming={streaming}
                 sendWithModifierEnter={webSettings.send_with_modifier_enter}
+                sessionMode={sessionMode}
+                onSessionModeChange={handleSessionModeChange}
                 placeholder={
                   connected ? t("Ask {{agent}} anything…", { agent: agentLabel }) : t("Connecting…")
                 }
@@ -1728,6 +1261,8 @@ export function ChatView({
               submitDisabled={streaming || replayBlocksInput || attachmentsUploading}
               isStreaming={streaming}
               sendWithModifierEnter={webSettings.send_with_modifier_enter}
+              sessionMode={sessionMode}
+              onSessionModeChange={handleSessionModeChange}
               placeholder={
                 connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")
               }
@@ -1738,31 +1273,4 @@ export function ChatView({
       </div>
     </div>
   );
-}
-
-function describeRejections(
-  files: File[],
-  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
-): string {
-  const [first, ...rest] = files;
-  if (!first) return "";
-  const message = describeRejection(first, t);
-  if (rest.length === 0) return message;
-  return t("{{message}} {{count}} more files were skipped.", {
-    message,
-    count: rest.length,
-  });
-}
-
-function describeRejection(
-  file: File,
-  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
-): string {
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    return t("{{name}} exceeds the {{limit}} MB upload limit.", {
-      name: file.name,
-      limit: MAX_ATTACHMENT_BYTES / (1024 * 1024),
-    });
-  }
-  return t("{{name}} file type is not allowed.", { name: file.name });
 }

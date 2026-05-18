@@ -8,12 +8,28 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from "react";
-import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Hand,
+  Paperclip,
+  ShieldAlert,
+  ShieldCheck,
+  Square,
+  X,
+} from "lucide-react";
 import { useI18n } from "@va/i18n";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { CHAT_ATTACHMENT_ACCEPT } from "./attachmentTypes";
-import type { ChatAttachment } from "./chatTypes";
+import type { ChatAttachment, SessionModeState } from "./chatTypes";
 
 export type { ChatSessionSelection } from "./chatTypes";
 
@@ -34,6 +50,8 @@ export interface ChatInputProps {
   attachmentsUploadingCount?: number;
   attachmentError?: string;
   sendWithModifierEnter?: boolean;
+  sessionMode?: SessionModeState | null;
+  onSessionModeChange?: (value: string) => void;
   onFilesSelected?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   placeholder?: string;
@@ -56,6 +74,8 @@ export function ChatInput({
   attachmentsUploadingCount = 0,
   attachmentError,
   sendWithModifierEnter = false,
+  sessionMode,
+  onSessionModeChange,
   onFilesSelected,
   onRemoveAttachment,
   placeholder = "Message Claude…",
@@ -148,6 +168,12 @@ export function ChatInput({
   const showStop = isStreaming && onStop;
   const showDropTarget =
     dragDepth > 0 && Boolean(onFilesSelected) && !disabled && !attachmentsUploading;
+  const selectedMode = sessionMode?.options.find(
+    (option) => option.value === sessionMode.currentValue,
+  );
+  const canSelectMode = Boolean(
+    sessionMode && selectedMode && onSessionModeChange && !disabled,
+  );
   const uploadingLabel =
     attachmentsUploading && attachmentsUploadingCount > 1
       ? t("Uploading {{count}} files…", { count: attachmentsUploadingCount })
@@ -276,6 +302,13 @@ export function ChatInput({
                 </Button>
               </>
             )}
+            {sessionMode && selectedMode && (
+              <SessionModePicker
+                mode={sessionMode}
+                disabled={!canSelectMode}
+                onChange={onSessionModeChange}
+              />
+            )}
             <span className="min-w-0 truncate px-1 text-xs font-medium text-muted-foreground">
               {targetLabel}
             </span>
@@ -298,6 +331,85 @@ export function ChatInput({
       </div>
     </div>
   );
+}
+
+function SessionModePicker({
+  mode,
+  disabled,
+  onChange,
+}: {
+  mode: SessionModeState;
+  disabled: boolean;
+  onChange?: (value: string) => void;
+}) {
+  const { t } = useI18n();
+  const selected = mode.options.find((option) => option.value === mode.currentValue);
+  if (!selected) return null;
+  const pickerLabel = mode.name ?? t("Session mode");
+  const Icon = sessionModeIcon(selected.value, selected.name);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className="flex h-6 max-w-[13rem] shrink items-center gap-1 rounded-sm px-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
+          aria-label={`${pickerLabel}: ${selected.name}`}
+          title={selected.description ?? selected.name}
+        >
+          <Icon className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 truncate">{selected.name}</span>
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="w-72">
+        {mode.options.map((option) => {
+          const OptionIcon = sessionModeIcon(option.value, option.name);
+          return (
+            <DropdownMenuItem
+              key={option.value}
+              className="flex items-start gap-2 px-2 py-1.5 text-xs"
+              onSelect={() => onChange?.(option.value)}
+            >
+              <OptionIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium">{option.name}</span>
+                {option.description && (
+                  <span className="mt-0.5 block line-clamp-3 text-[11px] leading-snug text-muted-foreground">
+                    {option.description}
+                  </span>
+                )}
+              </span>
+              {option.value === mode.currentValue && (
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              )}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function sessionModeIcon(value: string, name: string) {
+  const token = `${value} ${name}`.toLowerCase();
+  if (
+    token.includes("read") ||
+    token.includes("ask") ||
+    token.includes("view")
+  ) {
+    return Hand;
+  }
+  if (
+    token.includes("full") ||
+    token.includes("bypass") ||
+    token.includes("unrestricted") ||
+    token.includes("danger")
+  ) {
+    return ShieldAlert;
+  }
+  return ShieldCheck;
 }
 
 function formatBytes(size: number) {

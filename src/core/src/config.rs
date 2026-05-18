@@ -115,7 +115,6 @@ impl Config {
         self.raw_channels.get(name).cloned()
     }
 
-
     /// Resolve the workspace directory for an agent session.
     /// The default workspace is fixed to ~/.vibearound/workspaces.
     pub fn resolve_workspace(&self, _agent_kind: &str) -> PathBuf {

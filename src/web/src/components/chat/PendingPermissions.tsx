@@ -46,10 +46,12 @@ function permissionOptions(request: unknown): PermissionOptionView[] {
 }
 
 function permissionButtonClass(kind?: string) {
+  const base =
+    "h-auto min-h-6 max-w-full shrink justify-start whitespace-normal break-words px-2.5 py-1.5 text-left leading-snug [overflow-wrap:anywhere]";
   if (kind?.startsWith("reject")) {
-    return "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15";
+    return `${base} border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15`;
   }
-  return "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15";
+  return `${base} border-primary/30 bg-primary/10 text-primary hover:bg-primary/15`;
 }
 
 export function PendingPermissions({
@@ -62,7 +64,7 @@ export function PendingPermissions({
   if (!permissions.length) return null;
 
   return (
-    <div className="border-t border-border/60 bg-background px-4 py-3">
+    <div className="bg-background px-4 py-3">
       <div className="mx-auto flex max-w-3xl flex-col gap-2">
         {permissions.map((permission) => {
           const options = permissionOptions(permission.request);
@@ -71,16 +73,16 @@ export function PendingPermissions({
               key={permission.requestId}
               className="rounded-md border border-border/70 bg-muted/25 px-3 py-3"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-col gap-3">
                 <div className="min-w-0">
                   <div className="text-xs font-medium uppercase text-muted-foreground">
                     {t("Permission request")}
                   </div>
-                  <div className="truncate text-sm font-medium text-foreground">
+                  <div className="break-words text-sm font-medium text-foreground [overflow-wrap:anywhere]">
                     {permissionTitle(permission.request)}
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex min-w-0 max-w-full flex-wrap items-start gap-2">
                   {options.map((option) => (
                     <Button
                       key={option.optionId}

@@ -137,6 +137,21 @@ pub fn resolve_default_profile(
     resolve_agent_profile(prefs, cfg, &agent_id)
 }
 
+pub fn resolve_agent_workspace(
+    prefs: &AgentsPrefsFile,
+    cfg: &config::Config,
+    agent_id: &str,
+) -> PathBuf {
+    let agent_id = canonical_agent_id(agent_id);
+    prefs
+        .agents
+        .get(&agent_id)
+        .and_then(|preference| preference.workspace.as_ref())
+        .filter(|workspace| !workspace.as_os_str().is_empty())
+        .cloned()
+        .unwrap_or_else(|| cfg.resolve_workspace(&agent_id))
+}
+
 pub fn write_selected_agent(agent_id: &str) -> anyhow::Result<()> {
     update_prefs(|prefs| {
         freeze_legacy_default(prefs);
@@ -392,6 +407,37 @@ mod tests {
         assert_eq!(
             resolve_default_profile(&prefs, &cfg, "codex").as_deref(),
             Some("global-deepseek")
+        );
+    }
+
+    #[test]
+    fn agent_workspace_overrides_builtin_default() {
+        let cfg = config::Config::default();
+        let workspace = PathBuf::from("/tmp/codex-project");
+        let prefs = AgentsPrefsFile {
+            agents: [(
+                "codex".to_string(),
+                AgentLaunchPreference {
+                    profile_id: None,
+                    workspace: Some(workspace.clone()),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+
+        assert_eq!(resolve_agent_workspace(&prefs, &cfg, "codex"), workspace);
+    }
+
+    #[test]
+    fn missing_agent_workspace_uses_config_default() {
+        let cfg = config::Config::default();
+        let prefs = AgentsPrefsFile::default();
+
+        assert_eq!(
+            resolve_agent_workspace(&prefs, &cfg, "codex"),
+            cfg.resolve_workspace("codex")
         );
     }
 }

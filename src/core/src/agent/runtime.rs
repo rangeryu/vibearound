@@ -60,6 +60,8 @@ pub trait AgentClientHandler: Send + Sync + 'static {
 pub struct AgentReady {
     pub agent: Arc<Agent>,
     pub startup_session_id: Option<String>,
+    pub startup_modes: Option<schema::SessionModeState>,
+    pub startup_config_options: Option<Vec<schema::SessionConfigOption>>,
     pub initialize: schema::InitializeResponse,
 }
 

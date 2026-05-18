@@ -10,23 +10,28 @@
       "models": [
         {
           "id": "glm-5.1",
-          "label": "GLM-5.1"
+          "label": "GLM-5.1",
+          "context_window": 200000
         },
         {
           "id": "glm-5",
-          "label": "GLM-5"
+          "label": "GLM-5",
+          "context_window": 200000
         },
         {
           "id": "glm-4.7",
-          "label": "GLM-4.7"
+          "label": "GLM-4.7",
+          "context_window": 200000
         },
         {
           "id": "glm-4.6",
-          "label": "GLM-4.6"
+          "label": "GLM-4.6",
+          "context_window": 200000
         },
         {
           "id": "glm-4.5",
-          "label": "GLM-4.5"
+          "label": "GLM-4.5",
+          "context_window": 128000
         }
       ],
       "auth_modes": [
@@ -60,15 +65,18 @@
       "models": [
         {
           "id": "glm-5.1",
-          "label": "GLM-5.1"
+          "label": "GLM-5.1",
+          "context_window": 200000
         },
         {
           "id": "glm-5",
-          "label": "GLM-5"
+          "label": "GLM-5",
+          "context_window": 200000
         },
         {
           "id": "glm-5-turbo",
-          "label": "GLM-5 Turbo"
+          "label": "GLM-5 Turbo",
+          "context_window": 200000
         },
         {
           "id": "glm-5v-turbo",
@@ -76,11 +84,13 @@
           "capabilities": {
             "image_input": true,
             "file_input": true
-          }
+          },
+          "context_window": 200000
         },
         {
           "id": "glm-4.7",
-          "label": "GLM-4.7"
+          "label": "GLM-4.7",
+          "context_window": 200000
         },
         {
           "id": "glm-4.7-flash",
@@ -92,7 +102,8 @@
         },
         {
           "id": "glm-4.6",
-          "label": "GLM-4.6"
+          "label": "GLM-4.6",
+          "context_window": 200000
         },
         {
           "id": "glm-4.6v",
@@ -104,7 +115,8 @@
         },
         {
           "id": "glm-4.5",
-          "label": "GLM-4.5"
+          "label": "GLM-4.5",
+          "context_window": 128000
         },
         {
           "id": "glm-4.5-air",
@@ -161,15 +173,18 @@
       "models": [
         {
           "id": "glm-5.1",
-          "label": "GLM-5.1"
+          "label": "GLM-5.1",
+          "context_window": 200000
         },
         {
           "id": "glm-5",
-          "label": "GLM-5"
+          "label": "GLM-5",
+          "context_window": 200000
         },
         {
           "id": "glm-5-turbo",
-          "label": "GLM-5 Turbo"
+          "label": "GLM-5 Turbo",
+          "context_window": 200000
         },
         {
           "id": "glm-5v-turbo",
@@ -177,11 +192,13 @@
           "capabilities": {
             "image_input": true,
             "file_input": true
-          }
+          },
+          "context_window": 200000
         },
         {
           "id": "glm-4.7",
-          "label": "GLM-4.7"
+          "label": "GLM-4.7",
+          "context_window": 200000
         },
         {
           "id": "glm-4.7-flash",
@@ -193,7 +210,8 @@
         },
         {
           "id": "glm-4.6",
-          "label": "GLM-4.6"
+          "label": "GLM-4.6",
+          "context_window": 200000
         },
         {
           "id": "glm-4.6v",
@@ -205,7 +223,8 @@
         },
         {
           "id": "glm-4.5",
-          "label": "GLM-4.5"
+          "label": "GLM-4.5",
+          "context_window": 128000
         },
         {
           "id": "glm-4.5-air",
@@ -262,19 +281,23 @@
       "models": [
         {
           "id": "glm-5.1",
-          "label": "GLM-5.1"
+          "label": "GLM-5.1",
+          "context_window": 200000
         },
         {
           "id": "glm-5",
-          "label": "GLM-5"
+          "label": "GLM-5",
+          "context_window": 200000
         },
         {
           "id": "glm-5-turbo",
-          "label": "GLM-5 Turbo"
+          "label": "GLM-5 Turbo",
+          "context_window": 200000
         },
         {
           "id": "glm-4.7",
-          "label": "GLM-4.7"
+          "label": "GLM-4.7",
+          "context_window": 200000
         },
         {
           "id": "glm-4.7-flash",
@@ -323,19 +346,23 @@
       "models": [
         {
           "id": "glm-5.1",
-          "label": "GLM-5.1"
+          "label": "GLM-5.1",
+          "context_window": 200000
         },
         {
           "id": "glm-5",
-          "label": "GLM-5"
+          "label": "GLM-5",
+          "context_window": 200000
         },
         {
           "id": "glm-5-turbo",
-          "label": "GLM-5 Turbo"
+          "label": "GLM-5 Turbo",
+          "context_window": 200000
         },
         {
           "id": "glm-4.7",
-          "label": "GLM-4.7"
+          "label": "GLM-4.7",
+          "context_window": 200000
         },
         {
           "id": "glm-4.7-flash",

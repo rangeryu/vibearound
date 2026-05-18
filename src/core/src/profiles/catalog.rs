@@ -470,6 +470,10 @@ fn btree_kv(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String
 mod tests {
     use super::*;
 
+    fn model<'a>(endpoint: &'a EndpointDef, id: &str) -> &'a ModelDef {
+        find_model(endpoint, id).unwrap_or_else(|| panic!("model {id} must exist"))
+    }
+
     #[test]
     fn baseline_catalog_parses() {
         // Touching `all()` triggers the LazyLock; the panic-on-parse-error
@@ -525,6 +529,28 @@ mod tests {
             endpoint.models.first().map(|model| model.id.as_str()),
             Some("kimi-for-coding")
         );
+        let coding_model = model(endpoint, "kimi-for-coding");
+        assert_eq!(
+            coding_model.label.as_deref(),
+            Some("Kimi Code (powered by Kimi K2.6)")
+        );
+        assert_eq!(coding_model.context_window, Some(256_000));
+        assert_eq!(
+            model(endpoint, "k2p5").label.as_deref(),
+            Some("Kimi Code (legacy K2.5)")
+        );
+    }
+
+    #[test]
+    fn moonshot_catalog_tracks_kimi_k26() {
+        let provider = get("moonshot").expect("moonshot must exist");
+        for api_type in ["anthropic", "openai-chat"] {
+            let endpoint =
+                find_endpoint(provider, api_type, None).expect("moonshot endpoint must exist");
+            let kimi = model(endpoint, "kimi-k2.6");
+            assert_eq!(kimi.label.as_deref(), Some("Kimi K2.6"));
+            assert_eq!(kimi.context_window, Some(256_000));
+        }
     }
 
     #[test]
@@ -613,6 +639,14 @@ mod tests {
             Some("openai")
         );
         assert!(coding.models.iter().any(|model| model.id == "qwen3.6-plus"));
+        assert!(
+            coding.models.iter().any(|model| model.id == "kimi-k2.5"),
+            "Coding Plan still advertises Kimi K2.5 in the official docs"
+        );
+        assert!(
+            coding.models.iter().all(|model| model.id != "kimi-k2.6"),
+            "Do not list Kimi K2.6 on Coding Plan until the official docs do"
+        );
 
         let anthropic = find_endpoint(provider, "anthropic", Some("coding-plan"))
             .expect("coding plan anthropic endpoint");
@@ -621,6 +655,29 @@ mod tests {
             "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"
         );
         assert!(anthropic.auth_header);
+    }
+
+    #[test]
+    fn dashscope_token_plan_tracks_current_chinese_models() {
+        let provider = get("dashscope").expect("dashscope must exist");
+        for endpoint_id in ["token-plan", "token-plan-cn"] {
+            let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("dashscope endpoint {endpoint_id}"));
+            for (id, context_window) in [
+                ("qwen3.6-max-preview", 256_000),
+                ("qwen3.6-plus", 1_000_000),
+                ("qwen3.6-flash", 1_000_000),
+                ("deepseek-v4-pro", 1_000_000),
+                ("deepseek-v4-flash", 1_000_000),
+                ("glm-5.1", 198_000),
+                ("kimi-k2.6", 256_000),
+            ] {
+                assert_eq!(model(endpoint, id).context_window, Some(context_window));
+            }
+            assert!(model(endpoint, "qwen3.6-plus").capabilities.image_input);
+            assert!(model(endpoint, "qwen3.6-flash").capabilities.image_input);
+            assert!(model(endpoint, "kimi-k2.6").capabilities.image_input);
+        }
     }
 
     #[test]
@@ -643,6 +700,19 @@ mod tests {
             Some("{{api_key}}")
         );
         assert!(render.env.get("ANTHROPIC_API_KEY").is_none());
+    }
+
+    #[test]
+    fn zai_catalog_tracks_context_windows() {
+        let provider = get("zai").expect("zai must exist");
+        for api_type in ["anthropic", "openai-chat"] {
+            let endpoint = find_endpoint(provider, api_type, None)
+                .unwrap_or_else(|| panic!("zai {api_type} endpoint"));
+            assert_eq!(model(endpoint, "glm-5.1").context_window, Some(200_000));
+            assert_eq!(model(endpoint, "glm-5").context_window, Some(200_000));
+            assert_eq!(model(endpoint, "glm-4.7").context_window, Some(200_000));
+            assert_eq!(model(endpoint, "glm-4.5").context_window, Some(128_000));
+        }
     }
 
     #[test]

@@ -256,6 +256,17 @@ async fn forward_system_event(plugin_host: &Arc<PluginHost>, event: &SystemEvent
                 })
                 .await;
         }
+        SystemEvent::SessionMode {
+            route,
+            session_mode,
+        } => {
+            plugin_host
+                .send_output(ChannelOutput::SessionMode {
+                    route: route.clone(),
+                    session_mode: session_mode.clone(),
+                })
+                .await;
+        }
         _ => {}
     }
 }

@@ -13,6 +13,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ChatSessionSelection } from "./chatTypes";
 import { COMPACT_MENU_ITEM, COMPACT_SEPARATOR } from "./chatPickerStyles";
+import {
+  formatSessionUpdatedAt,
+  shortSessionId,
+} from "./chatSessionDisplay";
 
 interface ChatSessionSelectorProps {
   sessions: LaunchSessionInfo[];
@@ -20,15 +24,6 @@ interface ChatSessionSelectorProps {
   sessionSelection: ChatSessionSelection;
   activeSessionId?: string;
   onSessionChange: (selection: ChatSessionSelection) => void;
-}
-
-function shortSessionId(sessionId: string) {
-  return sessionId.slice(0, 8);
-}
-
-function formatSessionUpdatedAt(updatedAt: number) {
-  if (!updatedAt) return "";
-  return new Date(updatedAt * 1000).toLocaleString();
 }
 
 export function ChatSessionSelector({

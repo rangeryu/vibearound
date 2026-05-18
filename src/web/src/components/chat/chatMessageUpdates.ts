@@ -85,6 +85,34 @@ function withTextPart(message: ChatMessage, text: string): ChatMessage {
   return withContentBlock(message, textContentBlock(text));
 }
 
+function isOptimisticUserMessage(message: ChatMessage | undefined) {
+  return message?.role === "user" && message.optimistic === true;
+}
+
+function canonicalTailIndex(messages: ChatMessage[]) {
+  let index = messages.length;
+  while (index > 0 && isOptimisticUserMessage(messages[index - 1])) {
+    index -= 1;
+  }
+  return index;
+}
+
+function insertMessageAt(
+  messages: ChatMessage[],
+  index: number,
+  message: ChatMessage,
+): ChatMessage[] {
+  return [...messages.slice(0, index), message, ...messages.slice(index)];
+}
+
+function streamAssistantTargetIndex(messages: ChatMessage[]) {
+  const tailIndex = canonicalTailIndex(messages);
+  const message = messages[tailIndex - 1];
+  return message?.role === "assistant" && message.mode === "stream"
+    ? tailIndex - 1
+    : -1;
+}
+
 function settleActiveThinking(message: ChatMessage): ChatMessage {
   const activities = message.activities?.map((activity) =>
     activity.kind === "thinking" && activity.active !== false
@@ -138,7 +166,9 @@ export function appendStandaloneAssistantMessage(
 ): ChatMessage[] {
   if (!text) return prev;
   const next = [...prev];
-  const last = next[next.length - 1];
+  const tailIndex = canonicalTailIndex(next);
+  let insertionIndex = tailIndex;
+  const last = next[tailIndex - 1];
   if (
     last?.role === "assistant" &&
     last.mode === "stream" &&
@@ -147,9 +177,10 @@ export function appendStandaloneAssistantMessage(
     !last.activities?.length &&
     !last.parts?.length
   ) {
-    next.pop();
+    next.splice(tailIndex - 1, 1);
+    insertionIndex -= 1;
   }
-  next.push({
+  next.splice(insertionIndex, 0, {
     role: "assistant",
     content: text,
     parts: [{ id: partId("content"), kind: "content", block: textContentBlock(text) }],
@@ -218,6 +249,7 @@ function semanticMessageKey(message: ChatMessage) {
     message.role,
     message.content,
     message.messageId ?? "",
+    message.optimistic ? "optimistic" : "",
     message.progress ?? "",
     message.progressKind ?? "",
     message.mode ?? "",
@@ -251,15 +283,19 @@ export function appendUserMessageChunk(
     );
     if (existingIndex >= 0) {
       const existing = prev[existingIndex];
-      if (messageHasSameBlock(existing, block, options)) return prev;
+      const sameBlock = messageHasSameBlock(existing, block, options);
+      if (sameBlock && !existing.optimistic) return prev;
       const next = [...prev];
-      next[existingIndex] =
-        block.type === "text"
+      const updated = sameBlock
+        ? existing
+        : block.type === "text"
           ? withMergedUserTextBlock(existing, block.text)
           : withContentBlock(existing, block);
+      next[existingIndex] = { ...updated, optimistic: false };
       return next;
     }
   }
+  const tailIndex = canonicalTailIndex(prev);
   if (prev.length === 0) {
     return [
       {
@@ -270,26 +306,26 @@ export function appendUserMessageChunk(
       },
     ];
   }
-  const last = prev[prev.length - 1];
+  const last = prev[tailIndex - 1];
   if (
     options.forceNewMessage ||
+    !last ||
     last.role !== "user" ||
     !messageIdMatches(last, messageId)
   ) {
-    return [
-      ...prev,
-      {
-        role: "user",
-        content: text,
-        parts: [{ id: partId("content"), kind: "content", block }],
-        messageId,
-      },
-    ];
+    return insertMessageAt(prev, tailIndex, {
+      role: "user",
+      content: text,
+      parts: [{ id: partId("content"), kind: "content", block }],
+      messageId,
+      optimistic: false,
+    });
   }
   const next = [...prev];
-  next[next.length - 1] = {
+  next[tailIndex - 1] = {
     ...withContentBlock(last, block),
     messageId: last.messageId ?? messageId,
+    optimistic: false,
   };
   return next;
 }
@@ -305,6 +341,7 @@ function sameMessageShape(a: ChatMessage, b: ChatMessage) {
     a.role === b.role &&
     a.content === b.content &&
     a.messageId === b.messageId &&
+    Boolean(a.optimistic) === Boolean(b.optimistic) &&
     a.progress === b.progress &&
     a.progressKind === b.progressKind &&
     a.mode === b.mode &&
@@ -353,61 +390,57 @@ export function appendStreamAssistantMessage(
 ): ChatMessage[] {
   const text = contentBlockText(block);
   if (!text && block.type === "text") return prev;
+  const freshMessage: ChatMessage = {
+    role: "assistant",
+    content: text,
+    parts: [{ id: partId("content"), kind: "content", block }],
+    messageId,
+    mode: "stream",
+  };
   if (prev.length === 0) {
-    return [
-      {
-        role: "assistant",
-        content: text,
-        parts: [{ id: partId("content"), kind: "content", block }],
-        messageId,
-        mode: "stream",
-      },
-    ];
+    return [freshMessage];
   }
-  const last = prev[prev.length - 1];
+  if (messageId) {
+    const existingIndex = prev.findIndex(
+      (message) =>
+        message.role === "assistant" &&
+        message.mode === "stream" &&
+        message.messageId === messageId,
+    );
+    if (existingIndex >= 0) {
+      const next = [...prev];
+      const existing = next[existingIndex];
+      const settled = settleActiveThinking(existing);
+      next[existingIndex] = {
+        ...withContentBlock(settled, block),
+        progress: undefined,
+        progressKind: undefined,
+        mode: "stream",
+      };
+      return next;
+    }
+  }
+  const tailIndex = canonicalTailIndex(prev);
+  const last = prev[tailIndex - 1];
   if (options.forceNewMessage) {
-    return [
-      ...prev,
-      {
-        role: "assistant",
-        content: text,
-        parts: [{ id: partId("content"), kind: "content", block }],
-        messageId,
-        mode: "stream",
-      },
-    ];
+    return insertMessageAt(prev, tailIndex, freshMessage);
   }
-  if (isEmptyStreamAssistant(last)) {
-    return [
-      ...prev.slice(0, -1),
-      {
-        role: "assistant",
-        content: text,
-        parts: [{ id: partId("content"), kind: "content", block }],
-        messageId,
-        mode: "stream",
-      },
-    ];
+  if (last && isEmptyStreamAssistant(last)) {
+    const next = [...prev];
+    next[tailIndex - 1] = freshMessage;
+    return next;
   }
   if (
+    !last ||
     last.role !== "assistant" ||
     last.mode !== "stream" ||
     !messageIdMatches(last, messageId)
   ) {
-    return [
-      ...prev,
-      {
-        role: "assistant",
-        content: text,
-        parts: [{ id: partId("content"), kind: "content", block }],
-        messageId,
-        mode: "stream",
-      },
-    ];
+    return insertMessageAt(prev, tailIndex, freshMessage);
   }
   const next = [...prev];
   const settledLast = settleActiveThinking(last);
-  next[next.length - 1] = {
+  next[tailIndex - 1] = {
     ...withContentBlock(settledLast, block),
     messageId: settledLast.messageId ?? messageId,
     progress: undefined,
@@ -422,12 +455,12 @@ function updateStreamAssistantMessage(
   updater: (message: ChatMessage) => ChatMessage,
   fallback: ChatMessage,
 ): ChatMessage[] {
-  const last = prev[prev.length - 1];
-  if (!last || last.role !== "assistant" || last.mode !== "stream") {
-    return [...prev, fallback];
+  const targetIndex = streamAssistantTargetIndex(prev);
+  if (targetIndex < 0) {
+    return insertMessageAt(prev, canonicalTailIndex(prev), fallback);
   }
   const next = [...prev];
-  next[next.length - 1] = updater(last);
+  next[targetIndex] = updater(next[targetIndex]);
   return next;
 }
 
@@ -673,26 +706,29 @@ export function setStreamProgressMessage(
   progress: string,
   progressKind: NonNullable<ChatMessage["progressKind"]> = "tool",
 ): ChatMessage[] {
-  const last = prev[prev.length - 1];
-  if (!last || last.role !== "assistant" || last.mode !== "stream") {
-    return [
-      ...prev,
-      { role: "assistant", content: "", progress, progressKind, mode: "stream" },
-    ];
+  const targetIndex = streamAssistantTargetIndex(prev);
+  if (targetIndex < 0) {
+    return insertMessageAt(prev, canonicalTailIndex(prev), {
+      role: "assistant",
+      content: "",
+      progress,
+      progressKind,
+      mode: "stream",
+    });
   }
   const next = [...prev];
-  next[next.length - 1] = { ...last, progress, progressKind, mode: "stream" };
+  next[targetIndex] = { ...next[targetIndex], progress, progressKind, mode: "stream" };
   return next;
 }
 
 export function clearStreamProgressMessage(prev: ChatMessage[]): ChatMessage[] {
-  const last = prev[prev.length - 1];
-  if (!last || last.role !== "assistant" || last.mode !== "stream") {
+  const targetIndex = streamAssistantTargetIndex(prev);
+  if (targetIndex < 0) {
     return prev;
   }
   const next = [...prev];
-  const settledLast = settleActiveThinking(last);
-  next[next.length - 1] = {
+  const settledLast = settleActiveThinking(next[targetIndex]);
+  next[targetIndex] = {
     ...settledLast,
     progress: undefined,
     progressKind: undefined,
@@ -716,27 +752,25 @@ export function appendErrorToStreamMessage(
   prev: ChatMessage[],
   errorMessage: string,
 ): ChatMessage[] {
-  const last = prev[prev.length - 1];
-  if (!last || last.role !== "assistant" || last.mode !== "stream") {
-    return [
-      ...prev,
+  const fallback: ChatMessage = {
+    role: "assistant",
+    content: errorMessage,
+    parts: [
       {
-        role: "assistant",
-        content: errorMessage,
-        parts: [
-          {
-            id: partId("content"),
-            kind: "content",
-            block: textContentBlock(errorMessage),
-          },
-        ],
-        mode: "stream",
+        id: partId("content"),
+        kind: "content",
+        block: textContentBlock(errorMessage),
       },
-    ];
+    ],
+    mode: "stream",
+  };
+  const targetIndex = streamAssistantTargetIndex(prev);
+  if (targetIndex < 0) {
+    return insertMessageAt(prev, canonicalTailIndex(prev), fallback);
   }
   const next = [...prev];
-  const settledLast = settleActiveThinking(last);
-  next[next.length - 1] = {
+  const settledLast = settleActiveThinking(next[targetIndex]);
+  next[targetIndex] = {
     ...withTextPart(settledLast, `${settledLast.content ? "\n\n" : ""}${errorMessage}`),
     progress: undefined,
     progressKind: undefined,
