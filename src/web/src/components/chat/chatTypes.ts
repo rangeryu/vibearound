@@ -60,6 +60,7 @@ export type ChatMessage = {
   parts?: ChatMessagePart[];
   content: string;
   messageId?: string | null;
+  optimistic?: boolean;
   progress?: string;
   progressKind?: "thinking" | "tool";
   activities?: ChatActivity[];

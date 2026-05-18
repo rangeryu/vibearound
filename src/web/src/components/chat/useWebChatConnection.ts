@@ -552,8 +552,7 @@ export function useWebChatConnection({
       }));
       setMessages((prev) => [
         ...prev,
-        { role: "user", content: trimmed, parts: contentParts, messageId },
-        { role: "assistant", content: "", mode: "stream" },
+        { role: "user", content: trimmed, parts: contentParts, messageId, optimistic: true },
       ]);
       setStreaming(true);
 
@@ -597,7 +596,7 @@ export function useWebChatConnection({
         cancelReplayOnNextTurnRef.current = false;
         promptInFlightRef.current = false;
         setStreaming(false);
-        setMessages((prev) => prev.slice(0, -2));
+        setMessages((prev) => prev.filter((message) => message.messageId !== messageId));
         return false;
       }
     },
