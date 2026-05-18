@@ -313,6 +313,10 @@ export const ChatEventSchema = z.discriminatedUnion("kind", [
     message_id: z.string().optional(),
   }),
   z.object({
+    kind: z.literal("turn_status"),
+    active: z.boolean(),
+  }),
+  z.object({
     kind: z.literal("system_text"),
     text: z.string(),
   }),

@@ -320,6 +320,11 @@ export function useWebChatConnection({
           setLastPromptDoneAt(Date.now());
           break;
         }
+        case "turn_status": {
+          setStreaming(parsed.active);
+          promptInFlightRef.current = parsed.active;
+          break;
+        }
         case "acp_notification": {
           handleAcpNotification(parsed.payload as SessionNotification);
           break;

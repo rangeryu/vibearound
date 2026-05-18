@@ -97,7 +97,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             )
                             .await;
                             if let Some(route) = input_route(&input) {
-                                state.web_channel.mark_route_active(&route.chat_id);
+                                state.web_channel.mark_route_active(&route);
                                 remember_web_route_agent(&state, &route, input_agent(&input)).await;
                                 match session_intent {
                                     Some(WebChatSessionIntent::Resume {
@@ -220,7 +220,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                     continue;
                                 }
                             }
-                            state.web_channel.mark_route_active(&active_route.chat_id);
+                            state.web_channel.mark_route_active(&active_route);
                             let task_state = state.clone();
                             let task_route = active_route.clone();
                             direct_resume_task = Some(tokio::spawn(async move {
@@ -861,6 +861,7 @@ fn output_to_chat_event(output: ChannelOutput) -> ChatEvent {
             request: payload,
         },
         ChannelOutput::PromptDone { message_id, .. } => ChatEvent::PromptDone { message_id },
+        ChannelOutput::TurnStatus { active, .. } => ChatEvent::TurnStatus { active },
     }
 }
 

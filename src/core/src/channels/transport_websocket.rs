@@ -89,6 +89,13 @@ impl WebChannelManager {
                 let _ = sink.send(output);
             }
         }
+        if self.route_has_session(&route_chat_id) {
+            let route = RouteKey::new("web", &route_chat_id);
+            let _ = sink.send(ChannelOutput::TurnStatus {
+                route,
+                active: self.route_is_active(&route_chat_id),
+            });
+        }
     }
 
     pub fn unregister_connection(&self, route_chat_id: &str, connection_id: &str) {
@@ -119,11 +126,13 @@ impl WebChannelManager {
         self.route_sessions.read().contains_key(route_chat_id)
     }
 
-    pub fn mark_route_active(&self, route_chat_id: &str) {
+    pub fn mark_route_active(&self, route: &RouteKey) {
         let mut activity = self.route_activity.write();
-        let entry = activity.entry(route_chat_id.to_string()).or_default();
+        let entry = activity.entry(route.chat_id.clone()).or_default();
         entry.active = true;
         entry.generation = entry.generation.wrapping_add(1);
+        drop(activity);
+        self.send_turn_status(route, true);
     }
 
     pub fn mark_route_idle(&self, route: &RouteKey) -> WebRouteIdleDeadline {
@@ -131,9 +140,12 @@ impl WebChannelManager {
         let entry = activity.entry(route.chat_id.clone()).or_default();
         entry.active = false;
         entry.generation = entry.generation.wrapping_add(1);
+        let generation = entry.generation;
+        drop(activity);
+        self.send_turn_status(route, false);
         WebRouteIdleDeadline {
             route: route.clone(),
-            generation: entry.generation,
+            generation,
         }
     }
 
@@ -240,7 +252,10 @@ impl WebChannelManager {
     }
 
     fn push_route_history(&self, route_chat_id: &str, output: ChannelOutput) {
-        if matches!(output, ChannelOutput::PermissionRequest { .. }) {
+        if matches!(
+            output,
+            ChannelOutput::PermissionRequest { .. } | ChannelOutput::TurnStatus { .. }
+        ) {
             return;
         }
         let mut history = self.route_history.write();
@@ -286,6 +301,29 @@ impl WebChannelManager {
             .read()
             .get(&deadline.route.chat_id)
             .is_some_and(|activity| !activity.active && activity.generation == deadline.generation)
+    }
+
+    fn route_is_active(&self, route_chat_id: &str) -> bool {
+        self.route_activity
+            .read()
+            .get(route_chat_id)
+            .is_some_and(|activity| activity.active)
+    }
+
+    fn send_turn_status(&self, route: &RouteKey, active: bool) {
+        let output = ChannelOutput::TurnStatus {
+            route: route.clone(),
+            active,
+        };
+        let sinks = self
+            .connections
+            .read()
+            .get(&route.chat_id)
+            .map(|connections| connections.values().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        for sink in sinks {
+            let _ = sink.send(output.clone());
+        }
     }
 }
 
