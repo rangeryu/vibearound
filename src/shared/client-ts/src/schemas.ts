@@ -162,6 +162,7 @@ export const WebVerboseSettingsSchema = z.object({
   show_thinking: z.boolean(),
   show_tool_use: z.boolean(),
   show_archived: z.boolean(),
+  send_with_modifier_enter: z.boolean(),
 });
 export type WebVerboseSettings = z.infer<typeof WebVerboseSettingsSchema>;
 

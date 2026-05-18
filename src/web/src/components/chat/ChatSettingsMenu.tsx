@@ -34,10 +34,19 @@ export function ChatSettingsMenu({ settings, onChange }: ChatSettingsMenuProps) 
           <Settings className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="text-xs">
-          {t("Transcript")}
+          {t("Settings")}
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem
+          checked={settings.send_with_modifier_enter}
+          onCheckedChange={(checked) =>
+            onChange({ send_with_modifier_enter: checked === true })
+          }
+        >
+          {t("Send with Cmd/Ctrl + Enter")}
+        </DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
         <DropdownMenuCheckboxItem
           checked={settings.show_thinking}

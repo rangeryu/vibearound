@@ -1,17 +1,25 @@
 "use client";
 
-import { useEffect, useRef, type ChangeEvent, type KeyboardEvent } from "react";
-import { Paperclip, Send, Square, X } from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type KeyboardEvent,
+} from "react";
+import { ArrowUp, Paperclip, Square, X } from "lucide-react";
 import { useI18n } from "@va/i18n";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { CHAT_ATTACHMENT_ACCEPT } from "./attachmentTypes";
 import type { ChatAttachment } from "./chatTypes";
 
 export type { ChatSessionSelection } from "./chatTypes";
 
-const TEXTAREA_MAX_HEIGHT_PX = 128;
-const TEXTAREA_MIN_HEIGHT_PX = 40;
-const HERO_TEXTAREA_MIN_HEIGHT_PX = 72;
+const TEXTAREA_MAX_HEIGHT_PX = 256;
+const TEXTAREA_MIN_HEIGHT_PX = 72;
+const HERO_TEXTAREA_MIN_HEIGHT_PX = 128;
 
 export interface ChatInputProps {
   value: string;
@@ -23,7 +31,9 @@ export interface ChatInputProps {
   onStop?: () => void;
   attachments?: ChatAttachment[];
   attachmentsUploading?: boolean;
+  attachmentsUploadingCount?: number;
   attachmentError?: string;
+  sendWithModifierEnter?: boolean;
   onFilesSelected?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   placeholder?: string;
@@ -43,7 +53,9 @@ export function ChatInput({
   onStop,
   attachments = [],
   attachmentsUploading = false,
+  attachmentsUploadingCount = 0,
   attachmentError,
+  sendWithModifierEnter = false,
   onFilesSelected,
   onRemoveAttachment,
   placeholder = "Message Claude…",
@@ -55,6 +67,7 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
+  const [dragDepth, setDragDepth] = useState(0);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -71,8 +84,15 @@ export function ChatInput({
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const isComposing =
       isComposingRef.current || e.nativeEvent.isComposing || e.keyCode === 229;
-    if (e.key === "Enter" && !e.shiftKey) {
-      if (isComposing) return;
+    if (isComposing || e.key !== "Enter") return;
+    if (sendWithModifierEnter) {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        if (!disabled && !submitDisabled && canSend) onSubmit();
+      }
+      return;
+    }
+    if (!e.shiftKey) {
       e.preventDefault();
       if (!disabled && !submitDisabled && canSend) onSubmit();
     }
@@ -86,12 +106,52 @@ export function ChatInput({
     event.target.value = "";
   };
 
+  const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!eventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragDepth((depth) => depth + 1);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!eventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect =
+      disabled || attachmentsUploading || !onFilesSelected ? "none" : "copy";
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!eventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragDepth((depth) => Math.max(0, depth - 1));
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!eventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragDepth(0);
+    if (disabled || attachmentsUploading || !onFilesSelected) return;
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) {
+      onFilesSelected(files);
+    }
+  };
+
   const canSend =
     !disabled &&
     !submitDisabled &&
     !attachmentsUploading &&
     (!!value.trim() || attachments.length > 0);
   const showStop = isStreaming && onStop;
+  const showDropTarget =
+    dragDepth > 0 && Boolean(onFilesSelected) && !disabled && !attachmentsUploading;
+  const uploadingLabel =
+    attachmentsUploading && attachmentsUploadingCount > 1
+      ? t("Uploading {{count}} files…", { count: attachmentsUploadingCount })
+      : t("Uploading…");
 
   return (
     <div
@@ -103,13 +163,26 @@ export function ChatInput({
     >
       <div
         role="group"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         className={cn(
-          "mx-auto flex max-w-4xl flex-col rounded-lg border border-border transition-[box-shadow,border-color] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/30",
+          "relative mx-auto flex max-w-4xl flex-col rounded-lg border border-border transition-[box-shadow,border-color,background-color] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/30",
           variant === "hero"
-            ? "min-h-[7rem] bg-background shadow-lg shadow-foreground/5"
-            : "min-h-[2.5rem] bg-muted/30",
+            ? "min-h-[11rem] bg-background shadow-lg shadow-foreground/5"
+            : "min-h-[5.5rem] bg-muted/30",
+          showDropTarget && "border-primary/70 bg-primary/5 ring-2 ring-primary/25",
         )}
       >
+        {showDropTarget && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border border-primary/40 bg-background/85 backdrop-blur-sm">
+            <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-medium text-primary shadow-sm">
+              <Paperclip className="h-4 w-4" />
+              {t("Drop files to attach")}
+            </div>
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           value={value}
@@ -125,12 +198,12 @@ export function ChatInput({
           disabled={disabled}
           rows={1}
           className={cn(
-            "max-h-32 resize-none overflow-y-auto border-0 bg-transparent text-base sm:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0 transition-[height] duration-200 ease-out",
+            "max-h-64 resize-none overflow-y-auto border-0 bg-transparent text-base sm:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0 transition-[height] duration-200 ease-out",
             variant === "hero"
-              ? "min-h-[4.5rem] px-4 py-3"
-              : "min-h-[2.5rem] px-3 py-2",
+              ? "min-h-32 px-4 py-3"
+              : "min-h-[4.5rem] px-3 py-3",
           )}
-          style={{ height: variant === "hero" ? "4.5rem" : "2.5rem" }}
+          style={{ height: variant === "hero" ? "8rem" : "4.5rem" }}
         />
         {(attachments.length > 0 || attachmentsUploading || attachmentError) && (
           <div className="space-y-1.5 border-t border-border/60 px-3 py-2">
@@ -163,7 +236,7 @@ export function ChatInput({
               ))}
               {attachmentsUploading && (
                 <span className="rounded-md border border-border/70 bg-background/70 px-2 py-1 text-xs text-muted-foreground">
-                  {t("Uploading…")}
+                  {uploadingLabel}
                 </span>
               )}
             </div>
@@ -185,7 +258,7 @@ export function ChatInput({
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept="image/*,text/*,application/pdf,application/json"
+                  accept={CHAT_ATTACHMENT_ACCEPT}
                   className="hidden"
                   onChange={handleFileChange}
                 />
@@ -212,13 +285,13 @@ export function ChatInput({
             size="icon"
             onClick={showStop ? onStop : onSubmit}
             disabled={!showStop && !canSend}
-            className="h-8 w-8 shrink-0 rounded-full"
+            className="h-9 w-9 shrink-0 rounded-full"
             aria-label={showStop ? t("Stop") : t("Send")}
           >
             {showStop ? (
               <Square className="h-4 w-4" />
             ) : (
-              <Send className="h-4 w-4" />
+              <ArrowUp className="h-[18px] w-[18px]" strokeWidth={2.4} />
             )}
           </Button>
         </div>
@@ -237,4 +310,8 @@ function formatBytes(size: number) {
     unit += 1;
   }
   return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function eventHasFiles(event: DragEvent<HTMLElement>) {
+  return Array.from(event.dataTransfer.types).includes("Files");
 }

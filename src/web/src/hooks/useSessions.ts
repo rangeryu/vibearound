@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { createSession, deleteSession, getSessions } from "@/api/sessions";
-import type { TerminalGroup, TerminalStatus, ToolType } from "@/lib/terminal-types";
+import type {
+  TerminalGroup,
+  TerminalSession,
+  TerminalStatus,
+  ToolType,
+} from "@/lib/terminal-types";
 import type { Theme } from "@/lib/theme";
 import {
   DEFAULT_GROUPS,
@@ -31,6 +36,49 @@ interface UseSessionsResult {
   clearMaximized: () => void;
 }
 
+function sameTerminalSession(a: TerminalSession, b: TerminalSession) {
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.group === b.group &&
+    a.tool === b.tool &&
+    a.status === b.status &&
+    a.command === b.command &&
+    a.cwd === b.cwd &&
+    a.startedAt === b.startedAt &&
+    a.createdAt === b.createdAt &&
+    a.profileId === b.profileId &&
+    a.profileLabel === b.profileLabel &&
+    a.launchTarget === b.launchTarget &&
+    a.tmuxSession === b.tmuxSession
+  );
+}
+
+function mergeTerminalSessions(
+  currentSessions: TerminalSession[],
+  nextSessions: TerminalSession[],
+) {
+  const nextById = new Map(nextSessions.map((session) => [session.id, session]));
+  const currentIds = new Set(currentSessions.map((session) => session.id));
+  const merged = currentSessions
+    .filter((session) => nextById.has(session.id))
+    .map((session) => {
+      const next = nextById.get(session.id);
+      return next && sameTerminalSession(session, next) ? session : next ?? session;
+    });
+
+  for (const session of nextSessions) {
+    if (!currentIds.has(session.id)) {
+      merged.push(session);
+    }
+  }
+
+  return merged.length === currentSessions.length &&
+    merged.every((session, index) => session === currentSessions[index])
+    ? currentSessions
+    : merged;
+}
+
 /**
  * Owns the terminal-session collection: fetching on mount, creating CLI /
  * tmux sessions, closing, tab activation, maximize toggling, and applying
@@ -51,7 +99,7 @@ export function useSessions({ theme, onTmuxAttached }: UseSessionsInput): UseSes
         const sessions = list.map(sessionListItemToSession);
         setGroups((prev) => {
           const g = prev.find((x) => x.id === DEFAULT_GROUP_ID) ?? DEFAULT_GROUPS[0];
-          return [{ ...g, sessions }];
+          return [{ ...g, sessions: mergeTerminalSessions(g.sessions, sessions) }];
         });
         if (sessions.length > 0) {
           setActiveTabId((prev) => (prev && sessions.some((s) => s.id === prev) ? prev : sessions[0].id));

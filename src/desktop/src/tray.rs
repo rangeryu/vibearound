@@ -59,7 +59,7 @@ impl UiLocale {
                 TrayText::ShowWindow => "显示窗口",
                 TrayText::QuickLaunch => "快速启动",
                 TrayText::LaunchWithoutProfile => "不使用 Profile 启动",
-                TrayText::OpenDashboard => "打开控制台",
+                TrayText::OpenDashboard => "打开 Dashboard",
                 TrayText::OpenTunnel => "打开隧道",
                 TrayText::Proxy => "代理",
                 TrayText::Quit => "退出",
@@ -560,6 +560,14 @@ mod tests {
         assert_eq!(
             profile_entry_menu_label(&entry, UiLocale::ZhCn),
             "DeepSeek (代理)"
+        );
+    }
+
+    #[test]
+    fn zh_dashboard_tray_label_uses_dashboard_name() {
+        assert_eq!(
+            UiLocale::ZhCn.text(TrayText::OpenDashboard),
+            "打开 Dashboard"
         );
     }
 

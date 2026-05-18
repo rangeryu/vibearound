@@ -17,11 +17,43 @@ const DEFAULT_UPLOAD_MIME_TYPE: &str = "application/octet-stream";
 /// at a higher value as a coarse safety net.
 const MAX_UPLOAD_SIZE_BYTES: usize = 20 * 1024 * 1024;
 
-/// Allowed top-level MIME types for chat uploads. Specific exact types
+/// Allowed MIME prefixes for chat uploads. Specific exact types
 /// outside these prefixes are listed in `ALLOWED_EXACT_MIME_TYPES`.
 const ALLOWED_MIME_PREFIXES: &[&str] = &["image/", "text/"];
 
-const ALLOWED_EXACT_MIME_TYPES: &[&str] = &["application/pdf", "application/json"];
+const ALLOWED_EXACT_MIME_TYPES: &[&str] = &[
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/rtf",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.apple.pages",
+    "application/vnd.apple.keynote",
+    "application/vnd.apple.numbers",
+    "application/json",
+    "application/x-ndjson",
+    "application/xml",
+    "application/yaml",
+    "application/x-yaml",
+    "application/toml",
+    "application/javascript",
+    "application/x-javascript",
+    "application/typescript",
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-tar",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-7z-compressed",
+    "application/vnd.rar",
+    "application/x-rar-compressed",
+];
 
 #[derive(Debug, Deserialize)]
 pub struct UploadChatFileQuery {
@@ -68,7 +100,7 @@ pub async fn upload_chat_file_handler(
             .filter(|value| !value.trim().is_empty())
             .unwrap_or("attachment"),
     );
-    let mime_type = query
+    let supplied_mime_type = query
         .mime_type
         .as_deref()
         .or_else(|| {
@@ -77,10 +109,17 @@ pub async fn upload_chat_file_handler(
                 .and_then(|value| value.to_str().ok())
         })
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .or_else(|| mime_for_file_name(&name).map(ToOwned::to_owned))
-        .unwrap_or_else(|| DEFAULT_UPLOAD_MIME_TYPE.to_string());
+        .filter(|value| !value.is_empty());
+    let mime_type =
+        if let Some(supplied) = supplied_mime_type.filter(|value| !is_generic_upload_mime(value)) {
+            supplied.to_string()
+        } else if let Some(inferred) = mime_for_file_name(&name) {
+            inferred.to_string()
+        } else if let Some(supplied) = supplied_mime_type {
+            supplied.to_string()
+        } else {
+            DEFAULT_UPLOAD_MIME_TYPE.to_string()
+        };
 
     if !is_allowed_upload_mime(&mime_type) {
         return Err((
@@ -243,12 +282,7 @@ fn file_response(bytes: Bytes, file_name: &str, content_type: &str, inline: bool
 }
 
 fn is_allowed_upload_mime(mime: &str) -> bool {
-    let normalized = mime
-        .split(';')
-        .next()
-        .map(str::trim)
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    let normalized = normalized_mime(mime);
     if normalized.is_empty() {
         return false;
     }
@@ -261,6 +295,21 @@ fn is_allowed_upload_mime(mime: &str) -> bool {
     ALLOWED_EXACT_MIME_TYPES
         .iter()
         .any(|allowed| normalized == *allowed)
+}
+
+fn is_generic_upload_mime(mime: &str) -> bool {
+    matches!(
+        normalized_mime(mime).as_str(),
+        "application/octet-stream" | "binary/octet-stream"
+    )
+}
+
+fn normalized_mime(mime: &str) -> String {
+    mime.split(';')
+        .next()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_ascii_lowercase()
 }
 
 fn safe_file_name(value: &str) -> String {
@@ -299,17 +348,53 @@ fn file_name_from_uri(uri: &str) -> String {
 fn mime_for_file_name(file_name: &str) -> Option<&'static str> {
     let ext = file_name.rsplit('.').next()?.to_ascii_lowercase();
     match ext.as_str() {
-        "txt" | "log" => Some("text/plain; charset=utf-8"),
+        "txt" | "log" | "dockerfile" | "makefile" | "readme" | "license" | "notice"
+        | "gitignore" | "dockerignore" | "editorconfig" | "lock" => {
+            Some("text/plain; charset=utf-8")
+        }
         "md" | "markdown" => Some("text/markdown; charset=utf-8"),
         "json" => Some("application/json"),
+        "jsonl" => Some("application/x-ndjson"),
         "csv" => Some("text/csv; charset=utf-8"),
+        "tsv" => Some("text/tab-separated-values; charset=utf-8"),
         "html" | "htm" => Some("text/html; charset=utf-8"),
+        "xml" => Some("application/xml"),
+        "yaml" | "yml" => Some("application/yaml"),
+        "toml" => Some("application/toml"),
+        "js" | "jsx" => Some("application/javascript"),
+        "ts" | "tsx" => Some("application/typescript"),
+        "css" => Some("text/css; charset=utf-8"),
+        "scss" | "sass" | "less" | "py" | "java" | "c" | "cpp" | "h" | "hpp" | "cs" | "go"
+        | "rs" | "rb" | "php" | "swift" | "kt" | "kts" | "sh" | "bash" | "zsh" | "fish" | "sql"
+        | "ini" | "conf" | "cfg" | "env" => Some("text/plain; charset=utf-8"),
         "png" => Some("image/png"),
         "jpg" | "jpeg" => Some("image/jpeg"),
         "gif" => Some("image/gif"),
         "webp" => Some("image/webp"),
+        "heic" => Some("image/heic"),
+        "heif" => Some("image/heif"),
+        "bmp" => Some("image/bmp"),
+        "tif" | "tiff" => Some("image/tiff"),
         "svg" => Some("image/svg+xml"),
         "pdf" => Some("application/pdf"),
+        "doc" => Some("application/msword"),
+        "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "rtf" => Some("application/rtf"),
+        "odt" => Some("application/vnd.oasis.opendocument.text"),
+        "pages" => Some("application/vnd.apple.pages"),
+        "ppt" => Some("application/vnd.ms-powerpoint"),
+        "pptx" => Some("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        "odp" => Some("application/vnd.oasis.opendocument.presentation"),
+        "key" => Some("application/vnd.apple.keynote"),
+        "xls" => Some("application/vnd.ms-excel"),
+        "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        "ods" => Some("application/vnd.oasis.opendocument.spreadsheet"),
+        "numbers" => Some("application/vnd.apple.numbers"),
+        "zip" => Some("application/zip"),
+        "tar" => Some("application/x-tar"),
+        "gz" | "tgz" => Some("application/gzip"),
+        "7z" => Some("application/x-7z-compressed"),
+        "rar" => Some("application/vnd.rar"),
         "mp3" => Some("audio/mpeg"),
         "wav" => Some("audio/wav"),
         "mp4" => Some("video/mp4"),
@@ -384,7 +469,10 @@ fn from_hex(c: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{content_disposition, is_allowed_upload_mime, safe_file_name};
+    use super::{
+        content_disposition, is_allowed_upload_mime, is_generic_upload_mime, mime_for_file_name,
+        safe_file_name,
+    };
 
     #[test]
     fn strips_path_segments_from_upload_names() {
@@ -406,7 +494,19 @@ mod tests {
         assert!(is_allowed_upload_mime("text/plain; charset=utf-8"));
         assert!(is_allowed_upload_mime("text/markdown"));
         assert!(is_allowed_upload_mime("application/pdf"));
+        assert!(is_allowed_upload_mime("application/msword"));
+        assert!(is_allowed_upload_mime(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ));
+        assert!(is_allowed_upload_mime(
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        ));
+        assert!(is_allowed_upload_mime(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ));
         assert!(is_allowed_upload_mime("application/json"));
+        assert!(is_allowed_upload_mime("application/javascript"));
+        assert!(is_allowed_upload_mime("application/zip"));
     }
 
     #[test]
@@ -415,6 +515,40 @@ mod tests {
         assert!(!is_allowed_upload_mime("application/octet-stream"));
         assert!(!is_allowed_upload_mime("video/mp4"));
         assert!(!is_allowed_upload_mime(""));
+    }
+
+    #[test]
+    fn generic_upload_mimes_can_be_replaced_by_filename_inference() {
+        assert!(is_generic_upload_mime("application/octet-stream"));
+        assert!(is_generic_upload_mime(
+            "binary/octet-stream; charset=binary"
+        ));
+        assert!(!is_generic_upload_mime("application/pdf"));
+    }
+
+    #[test]
+    fn infers_common_document_mimes_from_file_names() {
+        assert_eq!(
+            mime_for_file_name("report.docx"),
+            Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        );
+        assert_eq!(
+            mime_for_file_name("slides.pptx"),
+            Some("application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        );
+        assert_eq!(
+            mime_for_file_name("sheet.xlsx"),
+            Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        );
+        assert_eq!(
+            mime_for_file_name("notes.md"),
+            Some("text/markdown; charset=utf-8")
+        );
+        assert_eq!(mime_for_file_name("archive.zip"), Some("application/zip"));
+        assert_eq!(
+            mime_for_file_name("Dockerfile"),
+            Some("text/plain; charset=utf-8")
+        );
     }
 
     #[test]

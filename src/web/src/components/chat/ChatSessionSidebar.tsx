@@ -6,7 +6,6 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
-  Filter,
   Folder,
   Loader2,
   PlusCircle,
@@ -69,12 +68,16 @@ function sortSessionsByUpdatedAt(sessions: LaunchSessionInfo[]) {
   });
 }
 
-function sessionButtonClass(active: boolean) {
+function sessionButtonClass(active: boolean, archived = false) {
   return cn(
     "group flex w-full items-start gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors",
-    active
-      ? "bg-primary/10 text-primary"
-      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+    active && archived
+      ? "bg-primary/5 text-muted-foreground/65 ring-1 ring-primary/15"
+      : active
+        ? "bg-primary/10 text-primary"
+        : archived
+          ? "text-muted-foreground/40 hover:bg-muted/40 hover:text-muted-foreground/65"
+          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
   );
 }
 
@@ -152,7 +155,7 @@ export function ChatSessionSidebar({
                 <button
                   type="button"
                   className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-md border transition-colors",
+                    "flex h-7 min-w-8 items-center justify-center rounded-md border px-2 font-mono text-[10px] font-semibold uppercase transition-colors",
                     selectedAgentFilter === ALL_AGENTS_FILTER
                       ? "border-primary/50 bg-primary/10 text-primary"
                       : "border-border/70 bg-background/70 text-muted-foreground hover:bg-muted/70 hover:text-foreground",
@@ -162,7 +165,7 @@ export function ChatSessionSidebar({
                   aria-pressed={selectedAgentFilter === ALL_AGENTS_FILTER}
                   onClick={() => onAgentFilterChange(ALL_AGENTS_FILTER)}
                 >
-                  <Filter className="h-3.5 w-3.5" />
+                  {t("ALL")}
                 </button>
                 {agents.map((agent) => {
                   const selected = agent.id === selectedAgentFilter;
@@ -282,6 +285,7 @@ export function ChatSessionSidebar({
                                 loadingSessionId === session.session_id ||
                                 loadingSessionKeys?.has(chatSessionKey(session));
                               const archiving = archivingSessionId === session.session_id;
+                              const archived = session.archived;
                               const sessionAgentLabel = agentLabel(session.agent_id);
                               return (
                                 <div
@@ -290,7 +294,7 @@ export function ChatSessionSidebar({
                                 >
                                   <button
                                     type="button"
-                                    className={cn(sessionButtonClass(active), "pr-8")}
+                                    className={cn(sessionButtonClass(active, archived), "pr-8")}
                                     aria-busy={loading || archiving}
                                     onClick={() =>
                                       onSessionChange(
@@ -306,13 +310,30 @@ export function ChatSessionSidebar({
                                       kind="cli"
                                       id={session.agent_id}
                                       label={sessionAgentLabel}
-                                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                                      className={cn(
+                                        "mt-0.5 h-3.5 w-3.5 shrink-0",
+                                        archived && "opacity-50",
+                                      )}
                                     />
                                     <span className="min-w-0 flex-1">
-                                      <span className="block truncate text-foreground/90">
+                                      <span
+                                        className={cn(
+                                          "block truncate",
+                                          archived
+                                            ? "text-muted-foreground/55"
+                                            : "text-foreground/90",
+                                        )}
+                                      >
                                         {session.title}
                                       </span>
-                                      <span className="block truncate text-[11px] leading-4 text-muted-foreground">
+                                      <span
+                                        className={cn(
+                                          "block truncate text-[11px] leading-4",
+                                          archived
+                                            ? "text-muted-foreground/35"
+                                            : "text-muted-foreground",
+                                        )}
+                                      >
                                         {session.short_id} -{" "}
                                         {formatSessionUpdatedAt(session.updated_at)}
                                       </span>
