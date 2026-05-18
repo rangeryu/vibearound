@@ -64,6 +64,7 @@ interface ChatViewProps {
 
 const DIRECT_PROFILE_ID = "direct";
 const LAUNCH_SELECTION_STORAGE_KEY = "vibearound.webChat.launchSelection";
+const ACTIVE_LAUNCH_SESSION_STORAGE_KEY = "vibearound.webChat.activeLaunchSession";
 const LAUNCH_SESSION_CACHE_STORAGE_KEY = "vibearound.webChat.launchSessions.v1";
 const SESSION_SIDEBAR_WIDTH_STORAGE_KEY = "vibearound.webChat.sessionSidebarWidth";
 const SESSION_SIDEBAR_DEFAULT_WIDTH = 256;
@@ -74,6 +75,12 @@ const INITIAL_RUNTIME_KEY = "draft:initial";
 interface StoredLaunchSelection {
   agentId?: string;
   profileId?: string;
+}
+
+interface StoredActiveLaunchSession {
+  agentId: string;
+  sessionId: string;
+  workspace: string;
 }
 
 interface StoredLaunchSessionCache {
@@ -145,6 +152,48 @@ function writeStoredLaunchSelection(selection: Required<StoredLaunchSelection>) 
     window.localStorage.setItem(LAUNCH_SELECTION_STORAGE_KEY, JSON.stringify(selection));
   } catch {
     // Ignore storage failures; the picker still works for this session.
+  }
+}
+
+function readStoredActiveLaunchSession(): StoredActiveLaunchSession | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_LAUNCH_SESSION_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as Partial<StoredActiveLaunchSession>;
+    if (
+      typeof parsed.agentId !== "string" ||
+      typeof parsed.sessionId !== "string" ||
+      typeof parsed.workspace !== "string"
+    ) {
+      return undefined;
+    }
+    return {
+      agentId: parsed.agentId,
+      sessionId: parsed.sessionId,
+      workspace: parsed.workspace,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function writeStoredActiveLaunchSession(session: StoredActiveLaunchSession) {
+  try {
+    window.localStorage.setItem(
+      ACTIVE_LAUNCH_SESSION_STORAGE_KEY,
+      JSON.stringify(session),
+    );
+  } catch {
+    // Restoring the active chat is best-effort; the session list remains usable.
+  }
+}
+
+function clearStoredActiveLaunchSession() {
+  try {
+    window.localStorage.removeItem(ACTIVE_LAUNCH_SESSION_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures.
   }
 }
 
@@ -465,6 +514,8 @@ export function ChatView({
   const syncedSessionScopeRef = useRef<string | undefined>(undefined);
   const syncedLaunchSessionAgentsRef = useRef<Set<string>>(new Set());
   const sessionSyncRequestIdRef = useRef(0);
+  const restoredActiveLaunchSessionRef = useRef(false);
+  const storedActiveLaunchSessionKeyRef = useRef<string | undefined>(undefined);
   const [runtimeKeys, setRuntimeKeys] = useState<string[]>([INITIAL_RUNTIME_KEY]);
   const [activeRuntimeKey, setActiveRuntimeKey] = useState(INITIAL_RUNTIME_KEY);
   const activeRuntimeKeyRef = useRef(activeRuntimeKey);
@@ -707,6 +758,8 @@ export function ChatView({
   ]);
 
   const createDraftRuntime = useCallback((agentId: string, workspacePath?: string) => {
+    clearStoredActiveLaunchSession();
+    storedActiveLaunchSessionKeyRef.current = undefined;
     const runtimeKey = `draft:${agentId}:${Date.now()}:${Math.random()
       .toString(36)
       .slice(2)}`;
@@ -1016,6 +1069,70 @@ export function ChatView({
     void syncLaunchSessions();
   }, [syncLaunchSessions]);
 
+  useEffect(() => {
+    if (restoredActiveLaunchSessionRef.current) return;
+    const stored = readStoredActiveLaunchSession();
+    if (!stored) {
+      restoredActiveLaunchSessionRef.current = true;
+      return;
+    }
+    if (agents.length === 0 || workspacesLoading || sessionsLoading) return;
+    const session = launchSessions.find(
+      (item) =>
+        item.agent_id === stored.agentId &&
+        item.session_id === stored.sessionId &&
+        item.workspace === stored.workspace,
+    );
+    if (!session) {
+      return;
+    }
+    restoredActiveLaunchSessionRef.current = true;
+    setSessionSelections((prev) => ({
+      ...prev,
+      [session.agent_id]: { kind: "resume", sessionId: session.session_id },
+    }));
+    setSelectedLaunchSessions((prev) => ({
+      ...prev,
+      [session.agent_id]: session,
+    }));
+    storedActiveLaunchSessionKeyRef.current = launchSessionKey(session);
+    activateRuntimeForSession(session);
+  }, [
+    activateRuntimeForSession,
+    agents.length,
+    launchSessions,
+    sessionsLoading,
+    workspacesLoading,
+  ]);
+
+  useEffect(() => {
+    const spec = runtimeSpecs[activeRuntimeKey];
+    const snapshot = runtimeSnapshots[activeRuntimeKey];
+    if (!spec || !snapshot) return;
+    const sessionId = spec.launchSession?.session_id ?? snapshot.meta.sessionId;
+    const workspace =
+      spec.launchSession?.workspace ??
+      spec.workspacePath ??
+      snapshot.resumeReplay?.workspace ??
+      selectedWorkspace?.path ??
+      defaultWorkspacePath;
+    if (!sessionId || !workspace) return;
+    const key = `${spec.agentId}\u0000${workspace}\u0000${sessionId}`;
+    if (storedActiveLaunchSessionKeyRef.current === key) return;
+    writeStoredActiveLaunchSession({
+      agentId: spec.agentId,
+      sessionId,
+      workspace,
+    });
+    storedActiveLaunchSessionKeyRef.current = key;
+  }, [
+    activeRuntimeKey,
+    defaultWorkspacePath,
+    runtimeSnapshots,
+    runtimeSpecs,
+    selectedWorkspace?.path,
+  ]);
+
   const handleLaunchChange = useCallback((agentId: string, profileId?: string) => {
     setSelectedAgent(agentId);
     setProfileSelections((prev) => {
@@ -1057,6 +1174,8 @@ export function ChatView({
         session?.agent_id ??
         (sidebarAgentFilter === ALL_AGENTS_FILTER ? selectedAgent : sidebarAgentFilter);
       if (selection.kind === "new") {
+        clearStoredActiveLaunchSession();
+        storedActiveLaunchSessionKeyRef.current = undefined;
         setSessionSelections((prev) => ({ ...prev, [targetAgentId]: selection }));
         setSelectedLaunchSessions((prev) => {
           const next = { ...prev };
@@ -1081,6 +1200,12 @@ export function ChatView({
         ...prev,
         [launchSession.agent_id]: launchSession,
       }));
+      writeStoredActiveLaunchSession({
+        agentId: launchSession.agent_id,
+        sessionId: launchSession.session_id,
+        workspace: launchSession.workspace,
+      });
+      storedActiveLaunchSessionKeyRef.current = launchSessionKey(launchSession);
       setAttachments([]);
       setAttachmentError(undefined);
       activateRuntimeForSession(launchSession);

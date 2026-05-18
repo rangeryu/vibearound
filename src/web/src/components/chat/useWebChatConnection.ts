@@ -218,12 +218,14 @@ export function useWebChatConnection({
 
   const scheduleResumeReplayDone = useCallback(
     (sessionId: string) => {
-      clearResumeReplayDoneTimer();
+      const currentReplay = resumeReplayRef.current;
+      if (currentReplay && currentReplay.sessionId !== sessionId) return;
+      if (resumeReplayDoneTimerRef.current) return;
       resumeReplayDoneTimerRef.current = setTimeout(() => {
         finishResumeReplay(sessionId, { cache: true });
       }, 700);
     },
-    [clearResumeReplayDoneTimer, finishResumeReplay],
+    [finishResumeReplay],
   );
 
   useEffect(() => {
