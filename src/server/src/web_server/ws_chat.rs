@@ -99,6 +99,11 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             if let Some(route) = input_route(&input) {
                                 state.web_channel.mark_route_active(&route);
                                 remember_web_route_agent(&state, &route, input_agent(&input)).await;
+                                let wait_for_session_ready = should_wait_for_user_message_session(
+                                    &state,
+                                    &route,
+                                    &session_intent,
+                                );
                                 match session_intent {
                                     Some(WebChatSessionIntent::Resume {
                                         agent,
@@ -131,6 +136,12 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                 if let Some(mode_id) = session_mode {
                                     apply_web_session_mode(&state, &route, &mode_id).await;
                                 }
+                                remember_web_user_message(
+                                    &state,
+                                    &route,
+                                    &input,
+                                    wait_for_session_ready,
+                                );
                             }
                             state.channel_hub.handle_input(input);
                         }
@@ -270,7 +281,9 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
     state
         .web_channel
         .unregister_connection(&active_route.chat_id, &connection_id);
-    if !state.web_channel.route_has_session(&active_route.chat_id) {
+    if !state.web_channel.route_has_session(&active_route.chat_id)
+        && !state.web_channel.route_is_active(&active_route.chat_id)
+    {
         state
             .channel_hub
             .conversation_manager()
@@ -328,6 +341,106 @@ async fn remember_web_route_agent(state: &AppState, route: &RouteKey, agent: Opt
     if let Some(agent_id) = resolve_web_session_agent(state, route, agent).await {
         state.web_channel.set_route_agent(&route.chat_id, agent_id);
     }
+}
+
+fn should_wait_for_user_message_session(
+    state: &AppState,
+    route: &RouteKey,
+    session_intent: &Option<WebChatSessionIntent>,
+) -> bool {
+    match session_intent {
+        Some(WebChatSessionIntent::New { .. }) => true,
+        Some(WebChatSessionIntent::Resume { session_id, .. }) => {
+            state
+                .web_channel
+                .route_session_id(&route.chat_id)
+                .as_deref()
+                != Some(session_id.as_str())
+        }
+        None => false,
+    }
+}
+
+fn remember_web_user_message(
+    state: &AppState,
+    route: &RouteKey,
+    input: &ChannelInput,
+    wait_for_session_ready: bool,
+) {
+    let ChannelInput::Message { envelope } = input else {
+        return;
+    };
+    let content = web_user_message_content(envelope);
+    state.web_channel.record_user_message(
+        route,
+        envelope.message_id.clone(),
+        content,
+        wait_for_session_ready,
+    );
+}
+
+fn web_user_message_content(envelope: &ChannelEnvelope) -> Vec<serde_json::Value> {
+    let mut blocks =
+        Vec::with_capacity(usize::from(!envelope.text.is_empty()) + envelope.attachments.len());
+    if !envelope.text.is_empty() {
+        blocks.push(serde_json::json!({
+            "type": "text",
+            "text": envelope.text.clone(),
+        }));
+    }
+    blocks.extend(
+        envelope
+            .attachments
+            .iter()
+            .map(web_attachment_content_block),
+    );
+    blocks
+}
+
+fn web_attachment_content_block(attachment: &Attachment) -> serde_json::Value {
+    let mut block = serde_json::Map::new();
+    block.insert(
+        "type".to_string(),
+        serde_json::Value::String("resource_link".to_string()),
+    );
+    block.insert(
+        "name".to_string(),
+        serde_json::Value::String(attachment.file_name.clone()),
+    );
+    block.insert(
+        "title".to_string(),
+        serde_json::Value::String(attachment.file_name.clone()),
+    );
+    block.insert(
+        "uri".to_string(),
+        serde_json::Value::String(web_attachment_uri(&attachment.file_key)),
+    );
+    if !attachment.resource_type.trim().is_empty() {
+        block.insert(
+            "mimeType".to_string(),
+            serde_json::Value::String(attachment.resource_type.clone()),
+        );
+    }
+    if let Some(size) = attachment.size {
+        block.insert("size".to_string(), serde_json::Value::Number(size.into()));
+    }
+    serde_json::Value::Object(block)
+}
+
+fn web_attachment_uri(file_key: &str) -> String {
+    if file_key.starts_with("file://")
+        || file_key.starts_with("http://")
+        || file_key.starts_with("https://")
+    {
+        return file_key.to_string();
+    }
+    format!(
+        "file://{}",
+        config::data_dir()
+            .join(".cache")
+            .join(file_key)
+            .to_string_lossy()
+    )
 }
 
 async fn resolve_web_session_agent(

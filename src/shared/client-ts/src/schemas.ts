@@ -135,6 +135,7 @@ export const LaunchSessionInfoSchema = z.object({
   updated_at: z.number(),
   short_id: z.string(),
   archived: z.boolean(),
+  active: z.boolean().optional(),
 });
 export type LaunchSessionInfo = z.infer<typeof LaunchSessionInfoSchema>;
 export const LaunchSessionListSchema = z.array(LaunchSessionInfoSchema);

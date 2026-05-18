@@ -254,7 +254,8 @@ function sameLaunchSession(a: LaunchSessionInfo, b: LaunchSessionInfo) {
     a.workspace === b.workspace &&
     a.updated_at === b.updated_at &&
     a.short_id === b.short_id &&
-    a.archived === b.archived
+    a.archived === b.archived &&
+    Boolean(a.active) === Boolean(b.active)
   );
 }
 
@@ -717,11 +718,23 @@ export function ChatView({
           ),
     [runtimeLaunchSessions, sidebarAgentFilter],
   );
-  const runtimeBusySessionKeys = useMemo(
+  const activeLaunchSessionKeys = useMemo(
     () =>
-      new Set(visibleRuntimeLaunchSessions.map((session) => chatSessionKey(session))),
-    [visibleRuntimeLaunchSessions],
+      new Set(
+        launchSessionGroups
+          .flatMap((group) => group.sessions)
+          .filter((session) => session.active)
+          .map((session) => chatSessionKey(session)),
+      ),
+    [launchSessionGroups],
   );
+  const runtimeBusySessionKeys = useMemo(() => {
+    const keys = new Set(activeLaunchSessionKeys);
+    for (const session of visibleRuntimeLaunchSessions) {
+      keys.add(chatSessionKey(session));
+    }
+    return keys;
+  }, [activeLaunchSessionKeys, visibleRuntimeLaunchSessions]);
   const displayLaunchSessionGroups = useMemo(() => {
     if (visibleRuntimeLaunchSessions.length === 0) return launchSessionGroups;
     const groupsByWorkspace = new Map<string, ChatSessionWorkspaceGroup>();

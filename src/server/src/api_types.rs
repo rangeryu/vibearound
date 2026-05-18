@@ -193,6 +193,7 @@ pub struct LaunchSessionInfo {
     pub updated_at: u64,
     pub short_id: String,
     pub archived: bool,
+    pub active: bool,
 }
 
 /// `GET /api/tmux/sessions` response.
