@@ -161,6 +161,17 @@ function messageIdMatches(message: ChatMessage, messageId?: string | null) {
   return messageId ? message.messageId === messageId : !message.messageId;
 }
 
+function messageHasSameBlock(message: ChatMessage, block: ContentBlock) {
+  if (block.type === "text") {
+    return message.content === block.text;
+  }
+  return message.parts?.some(
+    (part) =>
+      part.kind === "content" &&
+      JSON.stringify(part.block) === JSON.stringify(block),
+  );
+}
+
 function isEmptyStreamAssistant(message: ChatMessage) {
   return (
     message.role === "assistant" &&
@@ -180,6 +191,18 @@ export function appendUserMessageChunk(
 ): ChatMessage[] {
   const text = contentBlockText(block);
   if (!text && block.type === "text") return prev;
+  if (messageId) {
+    const existingIndex = prev.findIndex(
+      (message) => message.role === "user" && message.messageId === messageId,
+    );
+    if (existingIndex >= 0) {
+      const existing = prev[existingIndex];
+      if (messageHasSameBlock(existing, block)) return prev;
+      const next = [...prev];
+      next[existingIndex] = withContentBlock(existing, block);
+      return next;
+    }
+  }
   if (prev.length === 0) {
     return [
       {
@@ -212,6 +235,55 @@ export function appendUserMessageChunk(
     messageId: last.messageId ?? messageId,
   };
   return next;
+}
+
+function stableMessageKey(message: ChatMessage, index: number) {
+  if (message.messageId) return `${message.role}:id:${message.messageId}`;
+  const parts = message.parts?.map((part) => {
+    if (part.kind === "tool_call") return `tool:${part.toolCallId}`;
+    if (part.kind === "plan") return `plan:${JSON.stringify(part.plan)}`;
+    if (part.kind === "thought") return `thought:${JSON.stringify(part.blocks)}`;
+    return `content:${JSON.stringify(part.block)}`;
+  });
+  return `${message.role}:pos:${index}:${message.content}:${parts?.join("|") ?? ""}`;
+}
+
+function sameMessageShape(a: ChatMessage, b: ChatMessage) {
+  return (
+    a.role === b.role &&
+    a.content === b.content &&
+    a.messageId === b.messageId &&
+    a.progress === b.progress &&
+    a.progressKind === b.progressKind &&
+    a.mode === b.mode &&
+    JSON.stringify(a.parts ?? []) === JSON.stringify(b.parts ?? []) &&
+    JSON.stringify(a.activities ?? []) === JSON.stringify(b.activities ?? [])
+  );
+}
+
+export function mergeChatMessageSnapshots(
+  current: ChatMessage[],
+  incoming: ChatMessage[],
+): ChatMessage[] {
+  if (current.length === 0) return incoming;
+  if (incoming.length === 0) return current;
+
+  const currentByKey = new Map(
+    current.map((message, index) => [stableMessageKey(message, index), message]),
+  );
+  let changed = current.length !== incoming.length;
+  const merged = incoming.map((message, index) => {
+    const currentMessage = currentByKey.get(stableMessageKey(message, index));
+    if (!currentMessage) {
+      changed = true;
+      return message;
+    }
+    if (sameMessageShape(currentMessage, message)) return currentMessage;
+    changed = true;
+    return message;
+  });
+
+  return changed ? merged : current;
 }
 
 export function appendStreamAssistantMessage(

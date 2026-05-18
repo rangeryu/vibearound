@@ -713,6 +713,44 @@ export function ChatView({
 
   const activateRuntimeForSession = useCallback(
     (session: LaunchSessionInfo) => {
+      const existingRuntime = Object.entries(runtimeSpecs).find(([runtimeKey, spec]) => {
+        const snapshot = runtimeSnapshots[runtimeKey];
+        const sessionId = spec.launchSession?.session_id ?? snapshot?.meta.sessionId;
+        const workspace =
+          spec.launchSession?.workspace ??
+          spec.workspacePath ??
+          snapshot?.resumeReplay?.workspace;
+        return (
+          spec.agentId === session.agent_id &&
+          sessionId === session.session_id &&
+          workspace === session.workspace
+        );
+      });
+      if (existingRuntime) {
+        const [runtimeKey] = existingRuntime;
+        setRuntimeSpecs((prev) => ({
+          ...prev,
+          [runtimeKey]: {
+            ...(prev[runtimeKey] ?? {
+              agentId: session.agent_id,
+              profileId: profileSelections[session.agent_id] ?? DIRECT_PROFILE_ID,
+            }),
+            agentId: session.agent_id,
+            profileId:
+              prev[runtimeKey]?.profileId ??
+              profileSelections[session.agent_id] ??
+              DIRECT_PROFILE_ID,
+            workspacePath: session.workspace,
+            launchSession: session,
+            title: session.title,
+          },
+        }));
+        setActiveRuntimeKey(runtimeKey);
+        setSelectedAgent(session.agent_id);
+        setSelectedWorkspacePath(session.workspace);
+        return runtimeKey;
+      }
+
       const runtimeKey = `session:${chatSessionKey(session)}`;
       setRuntimeSpecs((prev) =>
         prev[runtimeKey]
@@ -741,7 +779,7 @@ export function ChatView({
       setSelectedWorkspacePath(session.workspace);
       return runtimeKey;
     },
-    [profileSelections],
+    [profileSelections, runtimeSnapshots, runtimeSpecs],
   );
 
   const removeRuntime = useCallback((runtimeKey: string) => {

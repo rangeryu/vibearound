@@ -37,6 +37,7 @@ import {
   appendToolActivityMessage,
   appendUserMessageChunk,
   clearStreamProgressMessage,
+  mergeChatMessageSnapshots,
   setStreamProgressMessage,
   settleStreamActivitiesMessage,
 } from "./chatMessageUpdates";
@@ -186,9 +187,13 @@ export function useWebChatConnection({
           );
           replayMessageBufferRef.current = null;
           if (replayedMessages.length > 0) {
-            messagesRef.current = replayedMessages;
-            setMessages(replayedMessages);
-            cacheResumeReplay(current, replayedMessages);
+            const mergedMessages = mergeChatMessageSnapshots(
+              messagesRef.current,
+              replayedMessages,
+            );
+            messagesRef.current = mergedMessages;
+            setMessages(mergedMessages);
+            cacheResumeReplay(current, mergedMessages);
           }
           clearReplayCacheContext();
         } else {
@@ -495,6 +500,7 @@ export function useWebChatConnection({
 
       clearReplayCacheContext();
       promptInFlightRef.current = true;
+      const messageId = createMessageId();
       const contentParts = messageContentBlocks(trimmed, attachments).map((block, index) => ({
         id: `user-content-${Date.now()}-${index}`,
         kind: "content" as const,
@@ -502,13 +508,12 @@ export function useWebChatConnection({
       }));
       setMessages((prev) => [
         ...prev,
-        { role: "user", content: trimmed, parts: contentParts },
+        { role: "user", content: trimmed, parts: contentParts, messageId },
         { role: "assistant", content: "", mode: "stream" },
       ]);
       setStreaming(true);
 
       try {
-        const messageId = createMessageId();
         const payload: Record<string, unknown> = {
           type: "message",
           messageId,
@@ -622,11 +627,9 @@ export function useWebChatConnection({
           if (resumeRequestIdRef.current !== requestId) return;
           if (cachedMessages) {
             const settledCachedMessages = settleStreamActivitiesMessage(cachedMessages);
-            replayMessageBufferRef.current = null;
-            clearReplayCacheContext();
-            setMessages(settledCachedMessages);
-            updateResumeReplay(null);
-            return;
+            setMessages((prev) =>
+              mergeChatMessageSnapshots(prev, settledCachedMessages),
+            );
           }
         } catch (error) {
           console.warn("[ChatView] failed to read cached session:", error);
