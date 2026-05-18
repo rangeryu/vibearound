@@ -110,6 +110,7 @@ interface ChatRuntimeSnapshot {
   agents: AgentInfo[];
   pendingPermissions: PendingPermission[];
   resumeReplay: ResumeReplayState | null;
+  lastPromptDoneAt?: number;
 }
 
 interface ChatRuntimeActions {
@@ -130,6 +131,7 @@ const EMPTY_RUNTIME_SNAPSHOT: ChatRuntimeSnapshot = {
   agents: [],
   pendingPermissions: [],
   resumeReplay: null,
+  lastPromptDoneAt: undefined,
 };
 
 function readStoredLaunchSelection(): StoredLaunchSelection {
@@ -406,10 +408,12 @@ function ChatRuntimeHost({
       agents: connection.agents,
       pendingPermissions: connection.pendingPermissions,
       resumeReplay: connection.resumeReplay,
+      lastPromptDoneAt: connection.lastPromptDoneAt,
     });
   }, [
     connection.agents,
     connection.connected,
+    connection.lastPromptDoneAt,
     connection.messages,
     connection.meta,
     connection.pendingPermissions,
@@ -531,6 +535,7 @@ export function ChatView({
     Record<string, ChatRuntimeSnapshot>
   >({});
   const runtimeActionsRef = useRef<Record<string, ChatRuntimeActions>>({});
+  const syncedPromptDoneRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     activeRuntimeKeyRef.current = activeRuntimeKey;
@@ -862,6 +867,7 @@ export function ChatView({
       return next;
     });
     delete runtimeActionsRef.current[runtimeKey];
+    delete syncedPromptDoneRef.current[runtimeKey];
   }, []);
 
   useEffect(() => {
@@ -1068,6 +1074,20 @@ export function ChatView({
   useEffect(() => {
     void syncLaunchSessions();
   }, [syncLaunchSessions]);
+
+  useEffect(() => {
+    const agentIds = new Set<string>();
+    for (const [runtimeKey, snapshot] of Object.entries(runtimeSnapshots)) {
+      const lastPromptDoneAt = snapshot.lastPromptDoneAt;
+      if (!lastPromptDoneAt) continue;
+      if (syncedPromptDoneRef.current[runtimeKey] === lastPromptDoneAt) continue;
+      syncedPromptDoneRef.current[runtimeKey] = lastPromptDoneAt;
+      const agentId = runtimeSpecs[runtimeKey]?.agentId;
+      if (agentId) agentIds.add(agentId);
+    }
+    if (agentIds.size === 0) return;
+    void syncLaunchSessions({ force: true, agentIds: Array.from(agentIds) });
+  }, [runtimeSnapshots, runtimeSpecs, syncLaunchSessions]);
 
   useEffect(() => {
     if (restoredActiveLaunchSessionRef.current) return;
