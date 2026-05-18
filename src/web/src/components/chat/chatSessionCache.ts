@@ -146,7 +146,7 @@ export async function readCachedChatSession({
     if (
       !entry ||
       entry.schemaVersion !== CACHE_SCHEMA_VERSION ||
-      entry.updatedAt !== updatedAt
+      entry.updatedAt < updatedAt
     ) {
       return null;
     }

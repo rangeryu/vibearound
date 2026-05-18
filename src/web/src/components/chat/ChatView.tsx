@@ -1481,12 +1481,13 @@ export function ChatView({
     if (attachmentsUploading) return;
     if (replayBlocksInput) return;
     if (!sendMessage) return;
+    const messageWorkspacePath = selectedWorkspace?.path ?? defaultWorkspacePath;
     const sent = sendMessage({
       text,
       attachments,
       agentId: selectedAgent,
       profileId: selectedProfileId,
-      workspacePath: selectedWorkspace?.path,
+      workspacePath: messageWorkspacePath,
       sessionSelection,
       launchSession: selectedLaunchSession,
     });
@@ -1502,7 +1503,7 @@ export function ChatView({
         ...(prev[activeRuntimeKey] ?? { agentId: selectedAgent }),
         agentId: selectedAgent,
         profileId: selectedProfileId,
-        workspacePath: selectedWorkspace?.path,
+        workspacePath: messageWorkspacePath,
         launchSession: selectedLaunchSession,
         lastPromptAt: promptSubmittedAt,
         title:
@@ -1521,6 +1522,7 @@ export function ChatView({
     attachmentsUploading,
     input,
     replayBlocksInput,
+    defaultWorkspacePath,
     selectedAgent,
     selectedLaunchSession,
     selectedProfileId,
