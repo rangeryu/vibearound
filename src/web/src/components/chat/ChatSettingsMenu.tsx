@@ -8,6 +8,8 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -47,6 +49,31 @@ export function ChatSettingsMenu({ settings, onChange }: ChatSettingsMenuProps) 
         >
           {t("Send with Cmd/Ctrl + Enter")}
         </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-xs">
+          {t("Permission mode")}
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={settings.permission_mode}
+          onValueChange={(value) =>
+            onChange({
+              permission_mode: value as WebVerboseSettings["permission_mode"],
+            })
+          }
+        >
+          <DropdownMenuRadioItem value="default" className="text-xs">
+            {t("Ask every time")}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="acceptEdits" className="text-xs">
+            {t("Accept edits")}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="bypassPermissions" className="text-xs">
+            {t("Bypass permissions")}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="dontAsk" className="text-xs">
+            {t("Don't ask")}
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuCheckboxItem
           checked={settings.show_thinking}

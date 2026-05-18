@@ -81,13 +81,13 @@ Remotely control local agents from messaging apps, and hand over sessions betwee
 
 ## Download
 
-Latest release: [VibeAround v0.6.0](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.0).
+Latest release: [VibeAround v0.6.1](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.1).
 
 | Platform | Recommended download |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.6.0_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.0/VibeAround_0.6.0_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.0/VibeAround_0.6.0_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.0/VibeAround_0.6.0_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.0/VibeAround-win-0.6.0-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.0/VibeAround_0.6.0_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.0/VibeAround_0.6.0_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.6.1_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround-win-0.6.1-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.1/VibeAround_0.6.1_amd64.deb) |
 
 macOS is currently published for Apple Silicon. Windows and Linux desktop packages are produced by GitHub Actions; the macOS DMG is signed and notarized.
 

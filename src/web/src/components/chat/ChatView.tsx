@@ -64,6 +64,7 @@ interface ChatViewProps {
 
 const DIRECT_PROFILE_ID = "direct";
 const LAUNCH_SELECTION_STORAGE_KEY = "vibearound.webChat.launchSelection";
+const ACTIVE_LAUNCH_SESSION_STORAGE_KEY = "vibearound.webChat.activeLaunchSession";
 const LAUNCH_SESSION_CACHE_STORAGE_KEY = "vibearound.webChat.launchSessions.v1";
 const SESSION_SIDEBAR_WIDTH_STORAGE_KEY = "vibearound.webChat.sessionSidebarWidth";
 const SESSION_SIDEBAR_DEFAULT_WIDTH = 256;
@@ -74,6 +75,12 @@ const INITIAL_RUNTIME_KEY = "draft:initial";
 interface StoredLaunchSelection {
   agentId?: string;
   profileId?: string;
+}
+
+interface StoredActiveLaunchSession {
+  agentId: string;
+  sessionId: string;
+  workspace: string;
 }
 
 interface StoredLaunchSessionCache {
@@ -103,12 +110,14 @@ interface ChatRuntimeSnapshot {
   agents: AgentInfo[];
   pendingPermissions: PendingPermission[];
   resumeReplay: ResumeReplayState | null;
+  lastPromptDoneAt?: number;
 }
 
 interface ChatRuntimeActions {
   sendMessage: ReturnType<typeof useWebChatConnection>["sendMessage"];
   resumeSession: ReturnType<typeof useWebChatConnection>["resumeSession"];
   clearConversationView: ReturnType<typeof useWebChatConnection>["clearConversationView"];
+  setSessionMode: ReturnType<typeof useWebChatConnection>["setSessionMode"];
   stopStreaming: ReturnType<typeof useWebChatConnection>["stopStreaming"];
   sendPermissionResponse: ReturnType<typeof useWebChatConnection>["sendPermissionResponse"];
   cancelPermissionRequest: ReturnType<typeof useWebChatConnection>["cancelPermissionRequest"];
@@ -122,6 +131,7 @@ const EMPTY_RUNTIME_SNAPSHOT: ChatRuntimeSnapshot = {
   agents: [],
   pendingPermissions: [],
   resumeReplay: null,
+  lastPromptDoneAt: undefined,
 };
 
 function readStoredLaunchSelection(): StoredLaunchSelection {
@@ -144,6 +154,48 @@ function writeStoredLaunchSelection(selection: Required<StoredLaunchSelection>) 
     window.localStorage.setItem(LAUNCH_SELECTION_STORAGE_KEY, JSON.stringify(selection));
   } catch {
     // Ignore storage failures; the picker still works for this session.
+  }
+}
+
+function readStoredActiveLaunchSession(): StoredActiveLaunchSession | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_LAUNCH_SESSION_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as Partial<StoredActiveLaunchSession>;
+    if (
+      typeof parsed.agentId !== "string" ||
+      typeof parsed.sessionId !== "string" ||
+      typeof parsed.workspace !== "string"
+    ) {
+      return undefined;
+    }
+    return {
+      agentId: parsed.agentId,
+      sessionId: parsed.sessionId,
+      workspace: parsed.workspace,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function writeStoredActiveLaunchSession(session: StoredActiveLaunchSession) {
+  try {
+    window.localStorage.setItem(
+      ACTIVE_LAUNCH_SESSION_STORAGE_KEY,
+      JSON.stringify(session),
+    );
+  } catch {
+    // Restoring the active chat is best-effort; the session list remains usable.
+  }
+}
+
+function clearStoredActiveLaunchSession() {
+  try {
+    window.localStorage.removeItem(ACTIVE_LAUNCH_SESSION_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures.
   }
 }
 
@@ -323,12 +375,14 @@ function mergeSessionGroupUpdates(
 function ChatRuntimeHost({
   runtimeKey,
   initialResume,
+  permissionMode,
   onSnapshot,
   onActions,
   onAgentSelected,
 }: {
   runtimeKey: string;
   initialResume?: ChatRuntimeSpec["initialResume"];
+  permissionMode: WebVerboseSettings["permission_mode"];
   onSnapshot: (runtimeKey: string, snapshot: ChatRuntimeSnapshot) => void;
   onActions: (runtimeKey: string, actions: ChatRuntimeActions | null) => void;
   onAgentSelected: (
@@ -354,10 +408,12 @@ function ChatRuntimeHost({
       agents: connection.agents,
       pendingPermissions: connection.pendingPermissions,
       resumeReplay: connection.resumeReplay,
+      lastPromptDoneAt: connection.lastPromptDoneAt,
     });
   }, [
     connection.agents,
     connection.connected,
+    connection.lastPromptDoneAt,
     connection.messages,
     connection.meta,
     connection.pendingPermissions,
@@ -372,6 +428,7 @@ function ChatRuntimeHost({
       sendMessage: connection.sendMessage,
       resumeSession: connection.resumeSession,
       clearConversationView: connection.clearConversationView,
+      setSessionMode: connection.setSessionMode,
       stopStreaming: connection.stopStreaming,
       sendPermissionResponse: connection.sendPermissionResponse,
       cancelPermissionRequest: connection.cancelPermissionRequest,
@@ -383,9 +440,20 @@ function ChatRuntimeHost({
     connection.resumeSession,
     connection.sendMessage,
     connection.sendPermissionResponse,
+    connection.setSessionMode,
     connection.stopStreaming,
     onActions,
     runtimeKey,
+  ]);
+
+  useEffect(() => {
+    if (!connection.connected || !connection.meta.sessionId) return;
+    connection.setSessionMode(permissionMode);
+  }, [
+    connection.connected,
+    connection.meta.sessionId,
+    connection.setSessionMode,
+    permissionMode,
   ]);
 
   useEffect(() => {
@@ -450,6 +518,8 @@ export function ChatView({
   const syncedSessionScopeRef = useRef<string | undefined>(undefined);
   const syncedLaunchSessionAgentsRef = useRef<Set<string>>(new Set());
   const sessionSyncRequestIdRef = useRef(0);
+  const restoredActiveLaunchSessionRef = useRef(false);
+  const storedActiveLaunchSessionKeyRef = useRef<string | undefined>(undefined);
   const [runtimeKeys, setRuntimeKeys] = useState<string[]>([INITIAL_RUNTIME_KEY]);
   const [activeRuntimeKey, setActiveRuntimeKey] = useState(INITIAL_RUNTIME_KEY);
   const activeRuntimeKeyRef = useRef(activeRuntimeKey);
@@ -465,6 +535,7 @@ export function ChatView({
     Record<string, ChatRuntimeSnapshot>
   >({});
   const runtimeActionsRef = useRef<Record<string, ChatRuntimeActions>>({});
+  const syncedPromptDoneRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     activeRuntimeKeyRef.current = activeRuntimeKey;
@@ -511,6 +582,9 @@ export function ChatView({
   );
   const pendingPermissions = activeRuntime.pendingPermissions;
   const resumeReplay = activeRuntime.resumeReplay;
+  const replayBlocksInput = Boolean(
+    resumeReplay && resumeReplay.blocking !== false,
+  );
   const sendMessage = activeRuntimeActions?.sendMessage;
   const stopStreaming = activeRuntimeActions?.stopStreaming;
   const sendPermissionResponse = activeRuntimeActions?.sendPermissionResponse;
@@ -602,7 +676,6 @@ export function ChatView({
     [webSettings],
   );
   const runtimeLaunchSessions = useMemo(() => {
-    const now = Math.floor(Date.now() / 1000);
     return Object.entries(runtimeSpecs).flatMap(([runtimeKey, spec]) => {
       const snapshot = runtimeSnapshots[runtimeKey];
       if (!snapshot || (!snapshot.streaming && !snapshot.resumeReplay)) return [];
@@ -623,7 +696,7 @@ export function ChatView({
           session_id: sessionId,
           title,
           workspace: workspacePath,
-          updated_at: spec.launchSession?.updated_at ?? now,
+          updated_at: spec.launchSession?.updated_at ?? snapshot.resumeReplay?.updatedAt ?? 0,
           short_id: spec.launchSession?.short_id ?? sessionId.slice(0, 8),
           archived: false,
         } satisfies LaunchSessionInfo,
@@ -693,6 +766,8 @@ export function ChatView({
   ]);
 
   const createDraftRuntime = useCallback((agentId: string, workspacePath?: string) => {
+    clearStoredActiveLaunchSession();
+    storedActiveLaunchSessionKeyRef.current = undefined;
     const runtimeKey = `draft:${agentId}:${Date.now()}:${Math.random()
       .toString(36)
       .slice(2)}`;
@@ -713,6 +788,44 @@ export function ChatView({
 
   const activateRuntimeForSession = useCallback(
     (session: LaunchSessionInfo) => {
+      const existingRuntime = Object.entries(runtimeSpecs).find(([runtimeKey, spec]) => {
+        const snapshot = runtimeSnapshots[runtimeKey];
+        const sessionId = spec.launchSession?.session_id ?? snapshot?.meta.sessionId;
+        const workspace =
+          spec.launchSession?.workspace ??
+          spec.workspacePath ??
+          snapshot?.resumeReplay?.workspace;
+        return (
+          spec.agentId === session.agent_id &&
+          sessionId === session.session_id &&
+          workspace === session.workspace
+        );
+      });
+      if (existingRuntime) {
+        const [runtimeKey] = existingRuntime;
+        setRuntimeSpecs((prev) => ({
+          ...prev,
+          [runtimeKey]: {
+            ...(prev[runtimeKey] ?? {
+              agentId: session.agent_id,
+              profileId: profileSelections[session.agent_id] ?? DIRECT_PROFILE_ID,
+            }),
+            agentId: session.agent_id,
+            profileId:
+              prev[runtimeKey]?.profileId ??
+              profileSelections[session.agent_id] ??
+              DIRECT_PROFILE_ID,
+            workspacePath: session.workspace,
+            launchSession: session,
+            title: session.title,
+          },
+        }));
+        setActiveRuntimeKey(runtimeKey);
+        setSelectedAgent(session.agent_id);
+        setSelectedWorkspacePath(session.workspace);
+        return runtimeKey;
+      }
+
       const runtimeKey = `session:${chatSessionKey(session)}`;
       setRuntimeSpecs((prev) =>
         prev[runtimeKey]
@@ -741,7 +854,7 @@ export function ChatView({
       setSelectedWorkspacePath(session.workspace);
       return runtimeKey;
     },
-    [profileSelections],
+    [profileSelections, runtimeSnapshots, runtimeSpecs],
   );
 
   const removeRuntime = useCallback((runtimeKey: string) => {
@@ -757,6 +870,7 @@ export function ChatView({
       return next;
     });
     delete runtimeActionsRef.current[runtimeKey];
+    delete syncedPromptDoneRef.current[runtimeKey];
   }, []);
 
   useEffect(() => {
@@ -964,6 +1078,84 @@ export function ChatView({
     void syncLaunchSessions();
   }, [syncLaunchSessions]);
 
+  useEffect(() => {
+    const agentIds = new Set<string>();
+    for (const [runtimeKey, snapshot] of Object.entries(runtimeSnapshots)) {
+      const lastPromptDoneAt = snapshot.lastPromptDoneAt;
+      if (!lastPromptDoneAt) continue;
+      if (syncedPromptDoneRef.current[runtimeKey] === lastPromptDoneAt) continue;
+      syncedPromptDoneRef.current[runtimeKey] = lastPromptDoneAt;
+      const agentId = runtimeSpecs[runtimeKey]?.agentId;
+      if (agentId) agentIds.add(agentId);
+    }
+    if (agentIds.size === 0) return;
+    void syncLaunchSessions({ force: true, agentIds: Array.from(agentIds) });
+  }, [runtimeSnapshots, runtimeSpecs, syncLaunchSessions]);
+
+  useEffect(() => {
+    if (restoredActiveLaunchSessionRef.current) return;
+    const stored = readStoredActiveLaunchSession();
+    if (!stored) {
+      restoredActiveLaunchSessionRef.current = true;
+      return;
+    }
+    if (agents.length === 0 || workspacesLoading || sessionsLoading) return;
+    const session = launchSessions.find(
+      (item) =>
+        item.agent_id === stored.agentId &&
+        item.session_id === stored.sessionId &&
+        item.workspace === stored.workspace,
+    );
+    if (!session) {
+      return;
+    }
+    restoredActiveLaunchSessionRef.current = true;
+    setSessionSelections((prev) => ({
+      ...prev,
+      [session.agent_id]: { kind: "resume", sessionId: session.session_id },
+    }));
+    setSelectedLaunchSessions((prev) => ({
+      ...prev,
+      [session.agent_id]: session,
+    }));
+    storedActiveLaunchSessionKeyRef.current = launchSessionKey(session);
+    activateRuntimeForSession(session);
+  }, [
+    activateRuntimeForSession,
+    agents.length,
+    launchSessions,
+    sessionsLoading,
+    workspacesLoading,
+  ]);
+
+  useEffect(() => {
+    const spec = runtimeSpecs[activeRuntimeKey];
+    const snapshot = runtimeSnapshots[activeRuntimeKey];
+    if (!spec || !snapshot) return;
+    const sessionId = spec.launchSession?.session_id ?? snapshot.meta.sessionId;
+    const workspace =
+      spec.launchSession?.workspace ??
+      spec.workspacePath ??
+      snapshot.resumeReplay?.workspace ??
+      selectedWorkspace?.path ??
+      defaultWorkspacePath;
+    if (!sessionId || !workspace) return;
+    const key = `${spec.agentId}\u0000${workspace}\u0000${sessionId}`;
+    if (storedActiveLaunchSessionKeyRef.current === key) return;
+    writeStoredActiveLaunchSession({
+      agentId: spec.agentId,
+      sessionId,
+      workspace,
+    });
+    storedActiveLaunchSessionKeyRef.current = key;
+  }, [
+    activeRuntimeKey,
+    defaultWorkspacePath,
+    runtimeSnapshots,
+    runtimeSpecs,
+    selectedWorkspace?.path,
+  ]);
+
   const handleLaunchChange = useCallback((agentId: string, profileId?: string) => {
     setSelectedAgent(agentId);
     setProfileSelections((prev) => {
@@ -1005,6 +1197,8 @@ export function ChatView({
         session?.agent_id ??
         (sidebarAgentFilter === ALL_AGENTS_FILTER ? selectedAgent : sidebarAgentFilter);
       if (selection.kind === "new") {
+        clearStoredActiveLaunchSession();
+        storedActiveLaunchSessionKeyRef.current = undefined;
         setSessionSelections((prev) => ({ ...prev, [targetAgentId]: selection }));
         setSelectedLaunchSessions((prev) => {
           const next = { ...prev };
@@ -1029,6 +1223,12 @@ export function ChatView({
         ...prev,
         [launchSession.agent_id]: launchSession,
       }));
+      writeStoredActiveLaunchSession({
+        agentId: launchSession.agent_id,
+        sessionId: launchSession.session_id,
+        workspace: launchSession.workspace,
+      });
+      storedActiveLaunchSessionKeyRef.current = launchSessionKey(launchSession);
       setAttachments([]);
       setAttachmentError(undefined);
       activateRuntimeForSession(launchSession);
@@ -1235,7 +1435,7 @@ export function ChatView({
     const text = input.trim();
     if (!text && attachments.length === 0) return;
     if (attachmentsUploading) return;
-    if (replayLoading) return;
+    if (replayBlocksInput) return;
     if (!sendMessage) return;
     const sent = sendMessage({
       text,
@@ -1245,6 +1445,7 @@ export function ChatView({
       workspacePath: selectedWorkspace?.path,
       sessionSelection,
       launchSession: selectedLaunchSession,
+      permissionMode: webSettings.permission_mode,
     });
     if (!sent) return;
 
@@ -1274,7 +1475,7 @@ export function ChatView({
     attachments,
     attachmentsUploading,
     input,
-    replayLoading,
+    replayBlocksInput,
     selectedAgent,
     selectedLaunchSession,
     selectedProfileId,
@@ -1282,6 +1483,7 @@ export function ChatView({
     sendMessage,
     sessionSelection,
     t,
+    webSettings.permission_mode,
   ]);
 
   return (
@@ -1291,6 +1493,7 @@ export function ChatView({
           key={runtimeKey}
           runtimeKey={runtimeKey}
           initialResume={runtimeSpecs[runtimeKey]?.initialResume}
+          permissionMode={webSettings.permission_mode}
           onSnapshot={handleRuntimeSnapshot}
           onActions={handleRuntimeActions}
           onAgentSelected={handleSocketAgentSelected}
@@ -1457,7 +1660,7 @@ export function ChatView({
                 onFilesSelected={handleFilesSelected}
                 onRemoveAttachment={handleRemoveAttachment}
                 disabled={!connected}
-                submitDisabled={streaming || replayLoading || attachmentsUploading}
+                submitDisabled={streaming || replayBlocksInput || attachmentsUploading}
                 isStreaming={streaming}
                 sendWithModifierEnter={webSettings.send_with_modifier_enter}
                 placeholder={
@@ -1521,8 +1724,8 @@ export function ChatView({
               attachmentError={attachmentError}
               onFilesSelected={handleFilesSelected}
               onRemoveAttachment={handleRemoveAttachment}
-              disabled={!connected || replayLoading}
-              submitDisabled={streaming || replayLoading || attachmentsUploading}
+              disabled={!connected || replayBlocksInput}
+              submitDisabled={streaming || replayBlocksInput || attachmentsUploading}
               isStreaming={streaming}
               sendWithModifierEnter={webSettings.send_with_modifier_enter}
               placeholder={

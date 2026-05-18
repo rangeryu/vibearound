@@ -163,6 +163,7 @@ export const WebVerboseSettingsSchema = z.object({
   show_tool_use: z.boolean(),
   show_archived: z.boolean(),
   send_with_modifier_enter: z.boolean(),
+  permission_mode: z.enum(["default", "acceptEdits", "bypassPermissions", "dontAsk"]),
 });
 export type WebVerboseSettings = z.infer<typeof WebVerboseSettingsSchema>;
 
@@ -310,6 +311,10 @@ export const ChatEventSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("prompt_done"),
     message_id: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal("turn_status"),
+    active: z.boolean(),
   }),
   z.object({
     kind: z.literal("system_text"),

@@ -111,7 +111,7 @@ pub(super) async fn forward_output_to_plugin(
             )
             .await;
         }
-        ChannelOutput::PromptDone { .. } => {}
+        ChannelOutput::PromptDone { .. } | ChannelOutput::TurnStatus { .. } => {}
         ChannelOutput::PermissionRequest {
             route,
             request_id,

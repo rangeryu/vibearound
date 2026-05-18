@@ -301,6 +301,9 @@ pub enum ChatEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         message_id: Option<String>,
     },
+    TurnStatus {
+        active: bool,
+    },
     SystemText {
         text: String,
     },

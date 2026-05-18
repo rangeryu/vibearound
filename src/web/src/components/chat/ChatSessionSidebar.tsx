@@ -54,6 +54,11 @@ function formatSessionUpdatedAt(updatedAt: number) {
   return new Date(updatedAt * 1000).toLocaleString();
 }
 
+function sessionMetaLabel(session: LaunchSessionInfo) {
+  const updatedAt = formatSessionUpdatedAt(session.updated_at);
+  return updatedAt ? `${session.short_id} - ${updatedAt}` : session.short_id;
+}
+
 function workspaceLabel(workspace: string) {
   const normalized = workspace.replace(/[\\/]+$/, "");
   const parts = normalized.split(/[\\/]+/).filter(Boolean);
@@ -334,8 +339,7 @@ export function ChatSessionSidebar({
                                             : "text-muted-foreground",
                                         )}
                                       >
-                                        {session.short_id} -{" "}
-                                        {formatSessionUpdatedAt(session.updated_at)}
+                                        {sessionMetaLabel(session)}
                                       </span>
                                     </span>
                                     {loading && (
