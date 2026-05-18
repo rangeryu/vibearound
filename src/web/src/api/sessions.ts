@@ -160,11 +160,12 @@ export async function getTmuxSessions(): Promise<TmuxSessionsResponse> {
 
 export async function uploadChatFile(file: File): Promise<ChatUploadResponse> {
   const params = new URLSearchParams();
+  const mimeType = uploadMimeType(file);
   params.set("filename", file.name || "attachment");
-  if (file.type) params.set("mime_type", file.type);
+  if (mimeType) params.set("mime_type", mimeType);
   const res = await fetch(`${browserBaseUrl()}/api/chat/uploads?${params.toString()}`, {
     method: "POST",
-    headers: file.type ? { "Content-Type": file.type } : undefined,
+    headers: mimeType ? { "Content-Type": mimeType } : undefined,
     body: file,
   });
   if (!res.ok) {
@@ -172,4 +173,15 @@ export async function uploadChatFile(file: File): Promise<ChatUploadResponse> {
     throw new Error(`POST /api/chat/uploads: ${res.status} ${text}`);
   }
   return ChatUploadResponseSchema.parse(await res.json());
+}
+
+function uploadMimeType(file: File): string | undefined {
+  const mime = file.type.split(";")[0]?.trim();
+  if (!mime || isGenericUploadMime(mime)) return undefined;
+  return mime;
+}
+
+function isGenericUploadMime(mime: string): boolean {
+  const normalized = mime.toLowerCase();
+  return normalized === "application/octet-stream" || normalized === "binary/octet-stream";
 }

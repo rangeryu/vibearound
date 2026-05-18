@@ -30,6 +30,7 @@ import { useI18n } from "@va/i18n";
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { MAX_ATTACHMENT_BYTES, isAllowedAttachment } from "./attachmentTypes";
 import { ChatInput } from "./ChatInput";
 import { deleteCachedChatSession } from "./chatSessionCache";
 import {
@@ -189,6 +190,18 @@ function launchSessionKey(session: LaunchSessionInfo) {
   return `${session.agent_id}\u0000${session.workspace}\u0000${session.session_id}`;
 }
 
+function sameLaunchSession(a: LaunchSessionInfo, b: LaunchSessionInfo) {
+  return (
+    a.agent_id === b.agent_id &&
+    a.session_id === b.session_id &&
+    a.title === b.title &&
+    a.workspace === b.workspace &&
+    a.updated_at === b.updated_at &&
+    a.short_id === b.short_id &&
+    a.archived === b.archived
+  );
+}
+
 function readCachedLaunchSessionGroups(
   scope: string,
   workspaces: WorkspaceItem[],
@@ -260,26 +273,48 @@ function isLaunchSessionInfo(value: unknown): value is LaunchSessionInfo {
   );
 }
 
-function mergeSessionGroups(
-  cachedGroups: ChatSessionWorkspaceGroup[],
-  freshGroups: ChatSessionWorkspaceGroup[],
+function mergeSessionGroupUpdates(
+  currentGroups: ChatSessionWorkspaceGroup[],
+  updatedGroups: ChatSessionWorkspaceGroup[],
   workspaces: WorkspaceItem[],
+  updatedAgentIds: string[],
 ): ChatSessionWorkspaceGroup[] {
+  const workspaceByPath = new Map(workspaces.map((workspace) => [workspace.path, workspace]));
+  const updatedAgents = new Set(updatedAgentIds);
   const groups = new Map<string, ChatSessionWorkspaceGroup>();
   for (const workspace of workspaces) {
     groups.set(workspace.path, { workspace, sessions: [] });
   }
-  for (const group of [...cachedGroups, ...freshGroups]) {
+  for (const group of currentGroups) {
     const workspace =
-      workspaces.find((item) => item.path === group.workspace.path) ?? group.workspace;
-    const current = groups.get(workspace.path) ?? { workspace, sessions: [] };
-    const sessions = new Map(current.sessions.map((session) => [launchSessionKey(session), session]));
-    for (const session of group.sessions) {
-      sessions.set(launchSessionKey(session), session);
+      workspaceByPath.get(group.workspace.path) ?? group.workspace;
+    groups.set(workspace.path, { workspace, sessions: group.sessions });
+  }
+
+  for (const group of normalizeSessionGroups(updatedGroups, workspaces)) {
+    const current = groups.get(group.workspace.path) ?? {
+      workspace: workspaceByPath.get(group.workspace.path) ?? group.workspace,
+      sessions: [],
+    };
+    const sessions = new Map<string, LaunchSessionInfo>();
+    for (const session of current.sessions) {
+      if (!updatedAgents.has(session.agent_id)) {
+        sessions.set(launchSessionKey(session), session);
+      }
     }
-    groups.set(workspace.path, {
-      workspace,
-      sessions: Array.from(sessions.values()),
+    for (const session of group.sessions) {
+      const key = launchSessionKey(session);
+      const existing = sessions.get(key);
+      sessions.set(key, existing && sameLaunchSession(existing, session) ? existing : session);
+    }
+    const nextSessions = Array.from(sessions.values());
+    groups.set(group.workspace.path, {
+      workspace: current.workspace,
+      sessions:
+        nextSessions.length === current.sessions.length &&
+        nextSessions.every((session, index) => session === current.sessions[index])
+          ? current.sessions
+          : nextSessions,
     });
   }
   return Array.from(groups.values());
@@ -374,6 +409,7 @@ export function ChatView({
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [attachmentsUploading, setAttachmentsUploading] = useState(false);
+  const [attachmentsUploadingCount, setAttachmentsUploadingCount] = useState(0);
   const [attachmentError, setAttachmentError] = useState<string | undefined>();
   const [selectedAgent, setSelectedAgent] = useState<string>(
     storedLaunchSelection.agentId ?? "claude",
@@ -412,6 +448,8 @@ export function ChatView({
   );
   const [mobileSessionSidebarOpen, setMobileSessionSidebarOpen] = useState(false);
   const syncedSessionScopeRef = useRef<string | undefined>(undefined);
+  const syncedLaunchSessionAgentsRef = useRef<Set<string>>(new Set());
+  const sessionSyncRequestIdRef = useRef(0);
   const [runtimeKeys, setRuntimeKeys] = useState<string[]>([INITIAL_RUNTIME_KEY]);
   const [activeRuntimeKey, setActiveRuntimeKey] = useState(INITIAL_RUNTIME_KEY);
   const activeRuntimeKeyRef = useRef(activeRuntimeKey);
@@ -598,12 +636,22 @@ export function ChatView({
     selectedWorkspace?.path,
     t,
   ]);
+  const visibleRuntimeLaunchSessions = useMemo(
+    () =>
+      sidebarAgentFilter === ALL_AGENTS_FILTER
+        ? runtimeLaunchSessions
+        : runtimeLaunchSessions.filter(
+            (session) => session.agent_id === sidebarAgentFilter,
+          ),
+    [runtimeLaunchSessions, sidebarAgentFilter],
+  );
   const runtimeBusySessionKeys = useMemo(
-    () => new Set(runtimeLaunchSessions.map((session) => chatSessionKey(session))),
-    [runtimeLaunchSessions],
+    () =>
+      new Set(visibleRuntimeLaunchSessions.map((session) => chatSessionKey(session))),
+    [visibleRuntimeLaunchSessions],
   );
   const displayLaunchSessionGroups = useMemo(() => {
-    if (runtimeLaunchSessions.length === 0) return launchSessionGroups;
+    if (visibleRuntimeLaunchSessions.length === 0) return launchSessionGroups;
     const groupsByWorkspace = new Map<string, ChatSessionWorkspaceGroup>();
     for (const group of launchSessionGroups) {
       groupsByWorkspace.set(group.workspace.path, {
@@ -611,7 +659,7 @@ export function ChatView({
         sessions: [...group.sessions],
       });
     }
-    for (const session of runtimeLaunchSessions) {
+    for (const session of visibleRuntimeLaunchSessions) {
       const workspace =
         groupsByWorkspace.get(session.workspace)?.workspace ??
         workspaces.find((item) => item.path === session.workspace) ?? {
@@ -637,7 +685,12 @@ export function ChatView({
       groupsByWorkspace.set(session.workspace, group);
     }
     return Array.from(groupsByWorkspace.values());
-  }, [defaultWorkspacePath, launchSessionGroups, runtimeLaunchSessions, workspaces]);
+  }, [
+    defaultWorkspacePath,
+    launchSessionGroups,
+    visibleRuntimeLaunchSessions,
+    workspaces,
+  ]);
 
   const createDraftRuntime = useCallback((agentId: string, workspacePath?: string) => {
     const runtimeKey = `draft:${agentId}:${Date.now()}:${Math.random()
@@ -806,34 +859,52 @@ export function ChatView({
   }, []);
 
   const syncLaunchSessions = useCallback(
-    async (options?: { force?: boolean }) => {
+    async (options?: { force?: boolean; agentIds?: string[] }) => {
       const agentIds = agents.map((agent) => agent.id);
+      const requestedAgentIds =
+        options?.agentIds?.filter((agentId) => agentIds.includes(agentId)) ?? agentIds;
       if (agentIds.length === 0 || workspacesLoading || workspaces.length === 0) {
         syncedSessionScopeRef.current = undefined;
+        syncedLaunchSessionAgentsRef.current = new Set();
         setSyncedLaunchSessionGroups([]);
         setSessionsLoading(false);
         return;
       }
+      if (requestedAgentIds.length === 0) return;
 
       const scope = sessionSyncScope(agentIds, workspaces, webSettings.show_archived);
       const previousScope = syncedSessionScopeRef.current;
       if (!options?.force && previousScope === scope) return;
       syncedSessionScopeRef.current = scope;
       const canMergeCurrentGroups = previousScope === scope;
+      if (!canMergeCurrentGroups) {
+        syncedLaunchSessionAgentsRef.current = new Set();
+      }
 
-      const cachedGroups = readCachedLaunchSessionGroups(scope, workspaces);
+      const cachedGroups = canMergeCurrentGroups
+        ? undefined
+        : readCachedLaunchSessionGroups(scope, workspaces);
       if (cachedGroups) {
-        setSyncedLaunchSessionGroups(cachedGroups);
+        syncedLaunchSessionAgentsRef.current = new Set(agentIds);
+        setSyncedLaunchSessionGroups((currentGroups) =>
+          mergeSessionGroupUpdates(
+            canMergeCurrentGroups ? currentGroups : [],
+            cachedGroups,
+            workspaces,
+            agentIds,
+          ),
+        );
       } else if (!canMergeCurrentGroups) {
         setSyncedLaunchSessionGroups([]);
       }
 
+      const requestId = ++sessionSyncRequestIdRef.current;
       setSessionsLoading(true);
       try {
         const freshGroups = await Promise.all(
           workspaces.map(async (workspace) => {
             const sessionGroups = await Promise.all(
-              agentIds.map(async (agentId) => {
+              requestedAgentIds.map(async (agentId) => {
                 try {
                   return await getLaunchSessions(
                     agentId,
@@ -857,19 +928,33 @@ export function ChatView({
             };
           }),
         );
+        if (sessionSyncRequestIdRef.current !== requestId) return;
         setSyncedLaunchSessionGroups((currentGroups) => {
-          const mergedGroups = mergeSessionGroups(
-            cachedGroups ?? (canMergeCurrentGroups ? currentGroups : []),
+          const baseGroups =
+            cachedGroups && !canMergeCurrentGroups
+              ? mergeSessionGroupUpdates([], cachedGroups, workspaces, agentIds)
+              : currentGroups;
+          const mergedGroups = mergeSessionGroupUpdates(
+            baseGroups,
             freshGroups,
             workspaces,
+            requestedAgentIds,
           );
-          writeCachedLaunchSessionGroups(scope, mergedGroups);
+          syncedLaunchSessionAgentsRef.current = new Set([
+            ...syncedLaunchSessionAgentsRef.current,
+            ...requestedAgentIds,
+          ]);
+          if (agentIds.every((agentId) => syncedLaunchSessionAgentsRef.current.has(agentId))) {
+            writeCachedLaunchSessionGroups(scope, mergedGroups);
+          }
           return mergedGroups;
         });
       } catch (error) {
         console.warn("[ChatView] failed to sync launch sessions:", error);
       } finally {
-        setSessionsLoading(false);
+        if (sessionSyncRequestIdRef.current === requestId) {
+          setSessionsLoading(false);
+        }
       }
     },
     [agents, webSettings.show_archived, workspaces, workspacesLoading],
@@ -888,7 +973,11 @@ export function ChatView({
 
   const handleSidebarAgentFilterChange = useCallback((agentId: string) => {
     setSidebarAgentFilter(agentId);
-  }, []);
+    void syncLaunchSessions({
+      force: true,
+      agentIds: agentId === ALL_AGENTS_FILTER ? undefined : [agentId],
+    });
+  }, [syncLaunchSessions]);
 
   const handleSyncSessions = useCallback(() => {
     void syncLaunchSessions({ force: true });
@@ -1083,25 +1172,49 @@ export function ChatView({
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
-    const rejected = files.find((file) => !isAllowedAttachment(file));
-    if (rejected) {
-      setAttachmentError(describeRejection(rejected, t));
+    const accepted = files.filter(isAllowedAttachment);
+    const rejected = files.filter((file) => !isAllowedAttachment(file));
+    if (rejected.length > 0) {
+      setAttachmentError(describeRejections(rejected, t));
+    }
+    if (accepted.length === 0) {
       return;
     }
     setAttachmentsUploading(true);
-    setAttachmentError(undefined);
+    setAttachmentsUploadingCount(accepted.length);
+    if (rejected.length === 0) {
+      setAttachmentError(undefined);
+    }
     try {
-      const uploaded = await Promise.all(files.map((file) => uploadChatFile(file)));
-      setAttachments((prev) => [
-        ...prev,
-        ...uploaded.map((file) => ({
-          id: file.id,
-          name: file.name,
-          mimeType: file.mime_type,
-          size: file.size,
-          uri: file.uri,
-        })),
-      ]);
+      const results = await Promise.allSettled(
+        accepted.map((file) => uploadChatFile(file)),
+      );
+      const uploaded = results.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
+      );
+      const failed = results.filter((result) => result.status === "rejected");
+      if (uploaded.length > 0) {
+        setAttachments((prev) => [
+          ...prev,
+          ...uploaded.map((file) => ({
+            id: file.id,
+            name: file.name,
+            mimeType: file.mime_type,
+            size: file.size,
+            uri: file.uri,
+          })),
+        ]);
+      }
+      if (failed.length > 0) {
+        failed.forEach((result) => {
+          if (result.status === "rejected") {
+            console.warn("[ChatView] failed to upload attachment:", result.reason);
+          }
+        });
+        setAttachmentError(
+          t("{{count}} files failed to upload.", { count: failed.length }),
+        );
+      }
     } catch (error) {
       console.warn("[ChatView] failed to upload attachment:", error);
       setAttachmentError(
@@ -1109,6 +1222,7 @@ export function ChatView({
       );
     } finally {
       setAttachmentsUploading(false);
+      setAttachmentsUploadingCount(0);
     }
   }, [t]);
 
@@ -1338,12 +1452,14 @@ export function ChatView({
                 onStop={stopStreaming}
                 attachments={attachments}
                 attachmentsUploading={attachmentsUploading}
+                attachmentsUploadingCount={attachmentsUploadingCount}
                 attachmentError={attachmentError}
                 onFilesSelected={handleFilesSelected}
                 onRemoveAttachment={handleRemoveAttachment}
                 disabled={!connected}
                 submitDisabled={streaming || replayLoading || attachmentsUploading}
                 isStreaming={streaming}
+                sendWithModifierEnter={webSettings.send_with_modifier_enter}
                 placeholder={
                   connected ? t("Ask {{agent}} anything…", { agent: agentLabel }) : t("Connecting…")
                 }
@@ -1401,12 +1517,14 @@ export function ChatView({
               onStop={stopStreaming}
               attachments={attachments}
               attachmentsUploading={attachmentsUploading}
+              attachmentsUploadingCount={attachmentsUploadingCount}
               attachmentError={attachmentError}
               onFilesSelected={handleFilesSelected}
               onRemoveAttachment={handleRemoveAttachment}
               disabled={!connected || replayLoading}
               submitDisabled={streaming || replayLoading || attachmentsUploading}
               isStreaming={streaming}
+              sendWithModifierEnter={webSettings.send_with_modifier_enter}
               placeholder={
                 connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")
               }
@@ -1419,18 +1537,18 @@ export function ChatView({
   );
 }
 
-const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-const ALLOWED_ATTACHMENT_PREFIXES = ["image/", "text/"];
-const ALLOWED_ATTACHMENT_EXACT = ["application/pdf", "application/json"];
-
-function isAllowedAttachment(file: File): boolean {
-  if (file.size > MAX_ATTACHMENT_BYTES) return false;
-  const mime = (file.type ?? "").trim().toLowerCase();
-  if (!mime) return true; // server resolves from filename extension
-  return (
-    ALLOWED_ATTACHMENT_PREFIXES.some((prefix) => mime.startsWith(prefix)) ||
-    ALLOWED_ATTACHMENT_EXACT.includes(mime)
-  );
+function describeRejections(
+  files: File[],
+  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
+): string {
+  const [first, ...rest] = files;
+  if (!first) return "";
+  const message = describeRejection(first, t);
+  if (rest.length === 0) return message;
+  return t("{{message}} {{count}} more files were skipped.", {
+    message,
+    count: rest.length,
+  });
 }
 
 function describeRejection(
