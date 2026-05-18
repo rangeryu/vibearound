@@ -22,6 +22,7 @@ type ToolCallLike = ToolCall | ToolCallUpdate;
 
 type AppendMessageOptions = {
   forceNewMessage?: boolean;
+  dedupeExistingText?: boolean;
 };
 
 function partId(prefix: string) {
@@ -161,15 +162,68 @@ function messageIdMatches(message: ChatMessage, messageId?: string | null) {
   return messageId ? message.messageId === messageId : !message.messageId;
 }
 
-function messageHasSameBlock(message: ChatMessage, block: ContentBlock) {
+function messageHasSameBlock(
+  message: ChatMessage,
+  block: ContentBlock,
+  options: AppendMessageOptions = {},
+) {
   if (block.type === "text") {
-    return message.content === block.text;
+    return options.dedupeExistingText && message.content.includes(block.text);
   }
   return message.parts?.some(
     (part) =>
       part.kind === "content" &&
       JSON.stringify(part.block) === JSON.stringify(block),
   );
+}
+
+function withMergedUserTextBlock(message: ChatMessage, text: string): ChatMessage {
+  if (text.startsWith(message.content)) {
+    let insertedText = false;
+    const parts = (message.parts ?? []).flatMap((part): ChatMessagePart[] => {
+      if (part.kind !== "content" || part.block.type !== "text") return [part];
+      if (insertedText) return [];
+      insertedText = true;
+      return [{ ...part, block: textContentBlock(text) }];
+    });
+    if (!insertedText) {
+      parts.unshift({ id: partId("content"), kind: "content", block: textContentBlock(text) });
+    }
+    return { ...message, content: text, parts };
+  }
+  return withTextPart(message, text);
+}
+
+function semanticPartKey(part: ChatMessagePart) {
+  switch (part.kind) {
+    case "content":
+      return `content:${JSON.stringify(part.block)}`;
+    case "plan":
+      return `plan:${JSON.stringify(part.plan)}`;
+    case "thought":
+      return `thought:${part.active === false ? "done" : "active"}:${JSON.stringify(part.blocks)}`;
+    case "tool_call":
+      return `tool:${part.toolCallId}:${part.title}:${part.status ?? ""}:${part.active === false ? "done" : "active"}:${JSON.stringify(part.locations ?? null)}:${JSON.stringify(part.content ?? null)}:${JSON.stringify(part.rawInput ?? null)}:${JSON.stringify(part.rawOutput ?? null)}`;
+  }
+}
+
+function semanticActivityKey(activity: ChatActivity) {
+  return `${activity.kind}:${activity.label}:${activity.detail ?? ""}:${activity.status ?? ""}:${activity.active === false ? "done" : "active"}`;
+}
+
+function semanticMessageKey(message: ChatMessage) {
+  const parts = message.parts?.map(semanticPartKey).join("|") ?? "";
+  const activities = message.activities?.map(semanticActivityKey).join("|") ?? "";
+  return [
+    message.role,
+    message.content,
+    message.messageId ?? "",
+    message.progress ?? "",
+    message.progressKind ?? "",
+    message.mode ?? "",
+    parts,
+    activities,
+  ].join("\u0000");
 }
 
 function isEmptyStreamAssistant(message: ChatMessage) {
@@ -197,9 +251,12 @@ export function appendUserMessageChunk(
     );
     if (existingIndex >= 0) {
       const existing = prev[existingIndex];
-      if (messageHasSameBlock(existing, block)) return prev;
+      if (messageHasSameBlock(existing, block, options)) return prev;
       const next = [...prev];
-      next[existingIndex] = withContentBlock(existing, block);
+      next[existingIndex] =
+        block.type === "text"
+          ? withMergedUserTextBlock(existing, block.text)
+          : withContentBlock(existing, block);
       return next;
     }
   }
@@ -239,12 +296,7 @@ export function appendUserMessageChunk(
 
 function stableMessageKey(message: ChatMessage, index: number) {
   if (message.messageId) return `${message.role}:id:${message.messageId}`;
-  const parts = message.parts?.map((part) => {
-    if (part.kind === "tool_call") return `tool:${part.toolCallId}`;
-    if (part.kind === "plan") return `plan:${JSON.stringify(part.plan)}`;
-    if (part.kind === "thought") return `thought:${JSON.stringify(part.blocks)}`;
-    return `content:${JSON.stringify(part.block)}`;
-  });
+  const parts = message.parts?.map(semanticPartKey);
   return `${message.role}:pos:${index}:${message.content}:${parts?.join("|") ?? ""}`;
 }
 
@@ -256,8 +308,10 @@ function sameMessageShape(a: ChatMessage, b: ChatMessage) {
     a.progress === b.progress &&
     a.progressKind === b.progressKind &&
     a.mode === b.mode &&
-    JSON.stringify(a.parts ?? []) === JSON.stringify(b.parts ?? []) &&
-    JSON.stringify(a.activities ?? []) === JSON.stringify(b.activities ?? [])
+    (a.parts ?? []).map(semanticPartKey).join("|") ===
+      (b.parts ?? []).map(semanticPartKey).join("|") &&
+    (a.activities ?? []).map(semanticActivityKey).join("|") ===
+      (b.activities ?? []).map(semanticActivityKey).join("|")
   );
 }
 
@@ -269,11 +323,16 @@ export function mergeChatMessageSnapshots(
   if (incoming.length === 0) return current;
 
   const currentByKey = new Map(
-    current.map((message, index) => [stableMessageKey(message, index), message]),
+    current.map((message, index) => [
+      `${stableMessageKey(message, index)}:${semanticMessageKey(message)}`,
+      message,
+    ]),
   );
   let changed = current.length !== incoming.length;
   const merged = incoming.map((message, index) => {
-    const currentMessage = currentByKey.get(stableMessageKey(message, index));
+    const currentMessage = currentByKey.get(
+      `${stableMessageKey(message, index)}:${semanticMessageKey(message)}`,
+    );
     if (!currentMessage) {
       changed = true;
       return message;

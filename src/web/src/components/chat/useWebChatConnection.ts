@@ -88,6 +88,7 @@ export function useWebChatConnection({
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
   const [resumeReplay, setResumeReplay] = useState<ResumeReplayState | null>(null);
+  const [lastPromptDoneAt, setLastPromptDoneAt] = useState<number | undefined>();
   const wsRef = useRef<WebSocket | null>(null);
   const promptInFlightRef = useRef(false);
   const resumeReplayRef = useRef<ResumeReplayState | null>(null);
@@ -316,6 +317,7 @@ export function useWebChatConnection({
           settleStreamActivities();
           setStreaming(false);
           promptInFlightRef.current = false;
+          setLastPromptDoneAt(Date.now());
           break;
         }
         case "acp_notification": {
@@ -350,6 +352,7 @@ export function useWebChatConnection({
         case "user_message_chunk": {
           appendUserMessage(update.content, update.messageId, {
             forceNewMessage: replaying && !update.messageId,
+            dedupeExistingText: !replaying,
           }, replaySessionId);
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
@@ -405,7 +408,7 @@ export function useWebChatConnection({
     function appendUserMessage(
       content: ContentBlock,
       messageId?: string | null,
-      options?: { forceNewMessage?: boolean },
+      options?: { forceNewMessage?: boolean; dedupeExistingText?: boolean },
       replaySessionId?: string,
     ) {
       applyMessageUpdate(
@@ -739,6 +742,7 @@ export function useWebChatConnection({
     agents,
     pendingPermissions,
     resumeReplay,
+    lastPromptDoneAt,
     sendMessage,
     resumeSession,
     clearConversationView,
