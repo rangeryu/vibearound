@@ -533,6 +533,7 @@ export function ChatView({
   >({});
   const runtimeActionsRef = useRef<Record<string, ChatRuntimeActions>>({});
   const syncedPromptDoneRef = useRef<Record<string, number>>({});
+  const syncedActiveSessionRef = useRef<Record<string, string | undefined>>({});
 
   useEffect(() => {
     activeRuntimeKeyRef.current = activeRuntimeKey;
@@ -699,6 +700,7 @@ export function ChatView({
           updated_at: spec.launchSession?.updated_at ?? snapshot.resumeReplay?.updatedAt ?? 0,
           short_id: spec.launchSession?.short_id ?? sessionId.slice(0, 8),
           archived: false,
+          active: true,
         } satisfies LaunchSessionInfo,
       ];
     });
@@ -883,6 +885,7 @@ export function ChatView({
     });
     delete runtimeActionsRef.current[runtimeKey];
     delete syncedPromptDoneRef.current[runtimeKey];
+    delete syncedActiveSessionRef.current[runtimeKey];
   }, []);
 
   useEffect(() => {
@@ -1099,6 +1102,30 @@ export function ChatView({
       syncedPromptDoneRef.current[runtimeKey] = lastPromptDoneAt;
       const agentId = runtimeSpecs[runtimeKey]?.agentId;
       if (agentId) agentIds.add(agentId);
+    }
+    if (agentIds.size === 0) return;
+    void syncLaunchSessions({ force: true, agentIds: Array.from(agentIds) });
+  }, [runtimeSnapshots, runtimeSpecs, syncLaunchSessions]);
+
+  useEffect(() => {
+    const agentIds = new Set<string>();
+    for (const [runtimeKey, snapshot] of Object.entries(runtimeSnapshots)) {
+      const spec = runtimeSpecs[runtimeKey];
+      if (!spec) continue;
+      const active = snapshot.streaming || Boolean(snapshot.resumeReplay);
+      const sessionId = spec.launchSession?.session_id ?? snapshot.meta.sessionId;
+      const workspace =
+        spec.launchSession?.workspace ??
+        spec.workspacePath ??
+        snapshot.resumeReplay?.workspace;
+      const activeKey =
+        active && sessionId && workspace
+          ? `${spec.agentId}\u0000${workspace}\u0000${sessionId}`
+          : undefined;
+      const previousActiveKey = syncedActiveSessionRef.current[runtimeKey];
+      if (previousActiveKey === activeKey) continue;
+      syncedActiveSessionRef.current[runtimeKey] = activeKey;
+      if (activeKey || previousActiveKey) agentIds.add(spec.agentId);
     }
     if (agentIds.size === 0) return;
     void syncLaunchSessions({ force: true, agentIds: Array.from(agentIds) });
