@@ -117,13 +117,19 @@ async fn drive_agent_bridge(
 
             // Optional session resume. A failed resume downgrades to "start
             // fresh" — matching the pre-migration behavior.
+            let mut startup_modes = None;
+            let mut startup_config_options = None;
             let startup_session_id = if let Some(resume) = resume_session_id.clone() {
                 match conn
                     .send_request(schema::LoadSessionRequest::new(resume.clone(), cwd.clone()))
                     .block_task()
                     .await
                 {
-                    Ok(_) => Some(resume),
+                    Ok(response) => {
+                        startup_modes = response.modes;
+                        startup_config_options = response.config_options;
+                        Some(resume)
+                    }
                     Err(error) => {
                         tracing::info!(
                             "[{}-agent] failed to load session {}, starting without session: {}",
@@ -147,6 +153,8 @@ async fn drive_agent_bridge(
             let ready = AgentReady {
                 agent,
                 startup_session_id,
+                startup_modes,
+                startup_config_options,
                 initialize,
             };
             if ready_tx.send(Ok(ready)).is_err() {

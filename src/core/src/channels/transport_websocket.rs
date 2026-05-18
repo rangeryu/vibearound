@@ -30,6 +30,12 @@ struct RouteActivity {
     generation: u64,
 }
 
+#[derive(Debug, Clone)]
+struct PendingUserMessage {
+    message_id: String,
+    content: Vec<serde_json::Value>,
+}
+
 /// Internal websocket-backed channel manager used by the browser chat UI.
 pub struct WebChannelManager {
     connections: RwLock<HashMap<String, HashMap<String, WebChatSink>>>,
@@ -38,6 +44,7 @@ pub struct WebChannelManager {
     session_routes: RwLock<HashMap<String, String>>,
     route_history: RwLock<HashMap<String, Vec<ChannelOutput>>>,
     route_pending_permissions: RwLock<HashMap<String, HashMap<String, ChannelOutput>>>,
+    route_pending_user_messages: RwLock<HashMap<String, Vec<PendingUserMessage>>>,
     permission_routes: RwLock<HashMap<String, String>>,
     route_activity: RwLock<HashMap<String, RouteActivity>>,
 }
@@ -51,6 +58,7 @@ impl WebChannelManager {
             session_routes: RwLock::new(HashMap::new()),
             route_history: RwLock::new(HashMap::new()),
             route_pending_permissions: RwLock::new(HashMap::new()),
+            route_pending_user_messages: RwLock::new(HashMap::new()),
             permission_routes: RwLock::new(HashMap::new()),
             route_activity: RwLock::new(HashMap::new()),
         })
@@ -89,11 +97,12 @@ impl WebChannelManager {
                 let _ = sink.send(output);
             }
         }
-        if self.route_has_session(&route_chat_id) {
+        let active = self.route_activity_state(&route_chat_id);
+        if active.is_some() || self.route_has_session(&route_chat_id) {
             let route = RouteKey::new("web", &route_chat_id);
             let _ = sink.send(ChannelOutput::TurnStatus {
                 route,
-                active: self.route_is_active(&route_chat_id),
+                active: active.unwrap_or(false),
             });
         }
     }
@@ -124,6 +133,27 @@ impl WebChannelManager {
 
     pub fn route_has_session(&self, route_chat_id: &str) -> bool {
         self.route_sessions.read().contains_key(route_chat_id)
+    }
+
+    pub fn route_session_id(&self, route_chat_id: &str) -> Option<String> {
+        self.route_sessions
+            .read()
+            .get(route_chat_id)
+            .and_then(|key| key.split_once(SESSION_KEY_SEPARATOR))
+            .map(|(_, session_id)| session_id.to_string())
+    }
+
+    pub fn route_is_active(&self, route_chat_id: &str) -> bool {
+        self.route_activity
+            .read()
+            .get(route_chat_id)
+            .is_some_and(|activity| activity.active)
+    }
+
+    pub fn session_is_active(&self, agent_id: &str, session_id: &str) -> bool {
+        self.route_for_session(agent_id, session_id)
+            .as_deref()
+            .is_some_and(|route_chat_id| self.route_is_active(route_chat_id))
     }
 
     pub fn mark_route_active(&self, route: &RouteKey) {
@@ -176,6 +206,35 @@ impl WebChannelManager {
         }
     }
 
+    pub fn record_user_message(
+        &self,
+        route: &RouteKey,
+        message_id: String,
+        content: Vec<serde_json::Value>,
+        wait_for_session_ready: bool,
+    ) {
+        if content.is_empty() {
+            return;
+        }
+        let message = PendingUserMessage {
+            message_id,
+            content,
+        };
+        if !wait_for_session_ready {
+            if let Some(session_id) = self.route_session_id(&route.chat_id) {
+                for output in user_message_outputs(route, &session_id, message) {
+                    self.broadcast_output(&route.chat_id, output);
+                }
+                return;
+            }
+        }
+        self.route_pending_user_messages
+            .write()
+            .entry(route.chat_id.clone())
+            .or_default()
+            .push(message);
+    }
+
     pub fn schedule_idle_close(
         self: &Arc<Self>,
         conversation_manager: Arc<ConversationManager>,
@@ -205,30 +264,21 @@ impl WebChannelManager {
     pub fn dispatch_output(&self, output: ChannelOutput) -> Option<WebRouteIdleDeadline> {
         let route = output.route_key().clone();
         let chat_id = route.chat_id.clone();
+        let mut follow_up_outputs = Vec::new();
         if let ChannelOutput::SessionReady { session_id, .. } = &output {
             self.bind_route_session(&chat_id, session_id);
+            follow_up_outputs = self.take_pending_user_message_outputs(&route, session_id);
         }
         if let ChannelOutput::PermissionRequest { request_id, .. } = &output {
             self.remember_pending_permission(&chat_id, request_id, &output);
         }
         if matches!(output, ChannelOutput::PromptDone { .. }) {
             self.clear_route_pending_permissions(&chat_id);
+            self.clear_route_pending_user_messages(&chat_id);
         }
-        self.push_route_history(&chat_id, output.clone());
-
-        let sinks = self
-            .connections
-            .read()
-            .get(&chat_id)
-            .map(|connections| connections.values().cloned().collect::<Vec<_>>())
-            .unwrap_or_default();
-        tracing::info!(
-            "[WebChannelManager] dispatch_output chat_id={} subscribers={}",
-            chat_id,
-            sinks.len()
-        );
-        for sink in sinks {
-            let _ = sink.send(output.clone());
+        self.broadcast_output(&chat_id, output.clone());
+        for output in follow_up_outputs {
+            self.broadcast_output(&chat_id, output);
         }
 
         if matches!(output, ChannelOutput::PromptDone { .. }) {
@@ -249,6 +299,25 @@ impl WebChannelManager {
         self.session_routes
             .write()
             .insert(key, route_chat_id.to_string());
+    }
+
+    fn broadcast_output(&self, route_chat_id: &str, output: ChannelOutput) {
+        self.push_route_history(route_chat_id, output.clone());
+
+        let sinks = self
+            .connections
+            .read()
+            .get(route_chat_id)
+            .map(|connections| connections.values().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        tracing::info!(
+            "[WebChannelManager] dispatch_output chat_id={} subscribers={}",
+            route_chat_id,
+            sinks.len()
+        );
+        for sink in sinks {
+            let _ = sink.send(output.clone());
+        }
     }
 
     fn push_route_history(&self, route_chat_id: &str, output: ChannelOutput) {
@@ -296,6 +365,26 @@ impl WebChannelManager {
         }
     }
 
+    fn clear_route_pending_user_messages(&self, route_chat_id: &str) {
+        self.route_pending_user_messages
+            .write()
+            .remove(route_chat_id);
+    }
+
+    fn take_pending_user_message_outputs(
+        &self,
+        route: &RouteKey,
+        session_id: &str,
+    ) -> Vec<ChannelOutput> {
+        self.route_pending_user_messages
+            .write()
+            .remove(&route.chat_id)
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|message| user_message_outputs(route, session_id, message))
+            .collect()
+    }
+
     fn is_idle_deadline_current(&self, deadline: &WebRouteIdleDeadline) -> bool {
         self.route_activity
             .read()
@@ -303,11 +392,11 @@ impl WebChannelManager {
             .is_some_and(|activity| !activity.active && activity.generation == deadline.generation)
     }
 
-    fn route_is_active(&self, route_chat_id: &str) -> bool {
+    fn route_activity_state(&self, route_chat_id: &str) -> Option<bool> {
         self.route_activity
             .read()
             .get(route_chat_id)
-            .is_some_and(|activity| activity.active)
+            .map(|activity| activity.active)
     }
 
     fn send_turn_status(&self, route: &RouteKey, active: bool) {
@@ -329,6 +418,145 @@ impl WebChannelManager {
 
 fn session_key(agent_id: &str, session_id: &str) -> String {
     format!("{agent_id}{SESSION_KEY_SEPARATOR}{session_id}")
+}
+
+fn user_message_outputs(
+    route: &RouteKey,
+    session_id: &str,
+    message: PendingUserMessage,
+) -> Vec<ChannelOutput> {
+    let PendingUserMessage {
+        message_id,
+        content,
+    } = message;
+    content
+        .into_iter()
+        .map(|block| ChannelOutput::RawAcp {
+            route: route.clone(),
+            payload: serde_json::json!({
+                "sessionId": session_id,
+                "update": {
+                    "sessionUpdate": "user_message_chunk",
+                    "messageId": message_id.clone(),
+                    "content": block,
+                },
+            }),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_connection_replays_active_turn_status_without_session() {
+        let manager = WebChannelManager::new();
+        let route = RouteKey::new("web", "chat-1");
+        manager.mark_route_active(&route);
+
+        let (tx, mut rx) = manager.sender();
+        manager.register_connection("chat-1".to_string(), "conn-1".to_string(), tx, true);
+
+        assert_eq!(
+            rx.try_recv().expect("turn status"),
+            ChannelOutput::TurnStatus {
+                route,
+                active: true,
+            }
+        );
+    }
+
+    #[test]
+    fn pending_user_message_replays_after_session_ready() {
+        let manager = WebChannelManager::new();
+        let route = RouteKey::new("web", "chat-1");
+        manager.set_route_agent("chat-1", "codex".to_string());
+
+        let (tx, mut rx) = manager.sender();
+        manager.register_connection("chat-1".to_string(), "conn-1".to_string(), tx, true);
+        manager.record_user_message(
+            &route,
+            "msg-1".to_string(),
+            vec![serde_json::json!({"type": "text", "text": "hello"})],
+            true,
+        );
+        assert!(rx.try_recv().is_err());
+
+        manager.dispatch_output(ChannelOutput::SessionReady {
+            route: route.clone(),
+            session_id: "sid-1".to_string(),
+        });
+
+        assert_eq!(
+            rx.try_recv().expect("session ready"),
+            ChannelOutput::SessionReady {
+                route: route.clone(),
+                session_id: "sid-1".to_string(),
+            }
+        );
+        let output = rx.try_recv().expect("user message replay");
+        let ChannelOutput::RawAcp { payload, .. } = output else {
+            panic!("expected raw acp user message replay");
+        };
+        assert_eq!(payload["sessionId"].as_str(), Some("sid-1"));
+        assert_eq!(
+            payload["update"]["sessionUpdate"].as_str(),
+            Some("user_message_chunk")
+        );
+        assert_eq!(payload["update"]["messageId"].as_str(), Some("msg-1"));
+        assert_eq!(payload["update"]["content"]["text"].as_str(), Some("hello"));
+
+        let (tx, mut replay_rx) = manager.sender();
+        manager.register_connection("chat-1".to_string(), "conn-2".to_string(), tx, true);
+        assert!(matches!(
+            replay_rx.try_recv().expect("replayed session ready"),
+            ChannelOutput::SessionReady { .. }
+        ));
+        assert!(matches!(
+            replay_rx.try_recv().expect("replayed user message"),
+            ChannelOutput::RawAcp { .. }
+        ));
+        assert_eq!(
+            replay_rx.try_recv().expect("replayed turn status"),
+            ChannelOutput::TurnStatus {
+                route,
+                active: false,
+            }
+        );
+    }
+
+    #[test]
+    fn prompt_done_drops_unbound_pending_user_message() {
+        let manager = WebChannelManager::new();
+        let route = RouteKey::new("web", "chat-1");
+        manager.set_route_agent("chat-1", "codex".to_string());
+
+        let (tx, mut rx) = manager.sender();
+        manager.register_connection("chat-1".to_string(), "conn-1".to_string(), tx, true);
+        manager.record_user_message(
+            &route,
+            "msg-1".to_string(),
+            vec![serde_json::json!({"type": "text", "text": "hello"})],
+            true,
+        );
+        manager.dispatch_output(ChannelOutput::PromptDone {
+            route: route.clone(),
+            message_id: Some("msg-1".to_string()),
+        });
+        while rx.try_recv().is_ok() {}
+
+        manager.dispatch_output(ChannelOutput::SessionReady {
+            route,
+            session_id: "sid-1".to_string(),
+        });
+
+        assert!(matches!(
+            rx.try_recv().expect("session ready"),
+            ChannelOutput::SessionReady { .. }
+        ));
+        assert!(rx.try_recv().is_err());
+    }
 }
 
 #[derive(Debug)]

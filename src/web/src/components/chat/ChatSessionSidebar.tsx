@@ -11,24 +11,24 @@ import {
   PlusCircle,
   RefreshCw,
 } from "lucide-react";
-import type { AgentInfo, LaunchSessionInfo, WorkspaceItem } from "@va/client";
+import type { AgentInfo, LaunchSessionInfo } from "@va/client";
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { cn } from "@/lib/utils";
 import type { ChatSessionSelection } from "./chatTypes";
+import {
+  ALL_AGENTS_FILTER,
+  chatSessionKey,
+  type ChatSessionWorkspaceGroup,
+} from "./chatSessionModel";
+import {
+  sessionMetaLabel,
+  sortSessionsByUpdatedAt,
+  workspaceLabel,
+} from "./chatSessionDisplay";
 
 const SESSION_PREVIEW_LIMIT = 5;
-export const ALL_AGENTS_FILTER = "__all_agents__";
-
-export function chatSessionKey(session: Pick<LaunchSessionInfo, "agent_id" | "workspace" | "session_id">) {
-  return `${session.agent_id}\u0000${session.workspace}\u0000${session.session_id}`;
-}
-
-export interface ChatSessionWorkspaceGroup {
-  workspace: WorkspaceItem;
-  sessions: LaunchSessionInfo[];
-}
 
 interface ChatSessionSidebarProps {
   workspaceGroups: ChatSessionWorkspaceGroup[];
@@ -47,30 +47,6 @@ interface ChatSessionSidebarProps {
   onAgentFilterChange: (agentId: string) => void;
   onSessionChange: (selection: ChatSessionSelection, session?: LaunchSessionInfo) => void;
   onArchiveSession: (session: LaunchSessionInfo) => void;
-}
-
-function formatSessionUpdatedAt(updatedAt: number) {
-  if (!updatedAt) return "";
-  return new Date(updatedAt * 1000).toLocaleString();
-}
-
-function sessionMetaLabel(session: LaunchSessionInfo) {
-  const updatedAt = formatSessionUpdatedAt(session.updated_at);
-  return updatedAt ? `${session.short_id} - ${updatedAt}` : session.short_id;
-}
-
-function workspaceLabel(workspace: string) {
-  const normalized = workspace.replace(/[\\/]+$/, "");
-  const parts = normalized.split(/[\\/]+/).filter(Boolean);
-  return parts[parts.length - 1] ?? workspace;
-}
-
-function sortSessionsByUpdatedAt(sessions: LaunchSessionInfo[]) {
-  return [...sessions].sort((a, b) => {
-    const updatedDiff = b.updated_at - a.updated_at;
-    if (updatedDiff !== 0) return updatedDiff;
-    return b.session_id.localeCompare(a.session_id);
-  });
 }
 
 function sessionButtonClass(active: boolean, archived = false) {

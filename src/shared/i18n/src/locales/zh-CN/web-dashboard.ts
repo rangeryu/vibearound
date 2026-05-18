@@ -98,6 +98,7 @@ export const zhCNWebDashboard: Record<string, string> = {
   Settings: "设置",
   "Chat settings": "聊天设置",
   "Send with Cmd/Ctrl + Enter": "使用 Cmd/Ctrl + Enter 发送",
+  "Session mode": "会话模式",
   "Show thinking": "显示思考",
   "Show tools": "显示工具",
   "Show archived": "显示已归档",

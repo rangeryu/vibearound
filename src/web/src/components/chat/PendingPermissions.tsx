@@ -64,7 +64,7 @@ export function PendingPermissions({
   if (!permissions.length) return null;
 
   return (
-    <div className="border-t border-border/60 bg-background px-4 py-3">
+    <div className="bg-background px-4 py-3">
       <div className="mx-auto flex max-w-3xl flex-col gap-2">
         {permissions.map((permission) => {
           const options = permissionOptions(permission.request);

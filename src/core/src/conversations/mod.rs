@@ -146,9 +146,24 @@ impl ConversationManager {
 
     /// Set the permission mode of the current session on a route.
     /// Returns an error if there is no active session yet.
-    pub async fn set_session_mode(&self, route: &RouteKey, mode_id: String) -> acp::Result<()> {
+    pub async fn set_session_mode(
+        &self,
+        route: &RouteKey,
+        mode_id: String,
+    ) -> acp::Result<Option<serde_json::Value>> {
         let conv = self.get(route).ok_or_else(acp::Error::method_not_found)?;
         conv.set_session_mode(mode_id).await
+    }
+
+    /// Set a session config option on the current route.
+    pub async fn set_session_config_option(
+        &self,
+        route: &RouteKey,
+        config_id: String,
+        value: String,
+    ) -> acp::Result<Option<serde_json::Value>> {
+        let conv = self.get(route).ok_or_else(acp::Error::method_not_found)?;
+        conv.set_session_config_option(config_id, value).await
     }
 
     /// Set the preferred permission mode for this route. If a session is
