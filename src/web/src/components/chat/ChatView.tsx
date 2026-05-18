@@ -15,7 +15,6 @@ import {
   getLaunchSessions,
   getProfiles,
   getWorkspaces,
-  uploadChatFile,
 } from "@/api/sessions";
 import { getAgentDisplayName } from "@/lib/agents";
 import type { ChatRuntimeStatus } from "@/lib/dashboard-types";
@@ -29,7 +28,6 @@ import { useI18n } from "@va/i18n";
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { MAX_ATTACHMENT_BYTES, isAllowedAttachment } from "./attachmentTypes";
 import { ChatInput } from "./ChatInput";
 import { ChatRuntimeHost } from "./ChatRuntimeHost";
 import {
@@ -72,10 +70,8 @@ import { NewChatHome } from "./NewChatHome";
 import { NewChatWorkspacePicker } from "./NewChatWorkspacePicker";
 import { PendingPermissions } from "./PendingPermissions";
 import { currentUnixSeconds } from "./chatTime";
-import type {
-  ChatAttachment,
-  ChatSessionSelection,
-} from "./chatTypes";
+import type { ChatSessionSelection } from "./chatTypes";
+import { useChatAttachments } from "./useChatAttachments";
 
 interface ChatViewProps {
   webSettings: WebVerboseSettings;
@@ -93,10 +89,15 @@ export function ChatView({
   const { t } = useI18n();
   const [storedLaunchSelection] = useState(readStoredLaunchSelection);
   const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [attachmentsUploading, setAttachmentsUploading] = useState(false);
-  const [attachmentsUploadingCount, setAttachmentsUploadingCount] = useState(0);
-  const [attachmentError, setAttachmentError] = useState<string | undefined>();
+  const {
+    attachments,
+    attachmentsUploading,
+    attachmentsUploadingCount,
+    attachmentError,
+    clearAttachments,
+    handleFilesSelected,
+    handleRemoveAttachment,
+  } = useChatAttachments(t);
   const [selectedAgent, setSelectedAgent] = useState<string>(
     storedLaunchSelection.agentId ?? "claude",
   );
@@ -868,8 +869,7 @@ export function ChatView({
           return next;
         });
         createDraftRuntime(targetAgentId, selectedWorkspace?.path);
-        setAttachments([]);
-        setAttachmentError(undefined);
+        clearAttachments();
         return;
       }
       if (selection.kind !== "resume") return;
@@ -891,12 +891,12 @@ export function ChatView({
         workspace: launchSession.workspace,
       });
       storedActiveLaunchSessionKeyRef.current = chatSessionKey(launchSession);
-      setAttachments([]);
-      setAttachmentError(undefined);
+      clearAttachments();
       activateRuntimeForSession(launchSession);
     },
     [
       activateRuntimeForSession,
+      clearAttachments,
       createDraftRuntime,
       launchSessions,
       selectedAgent,
@@ -1032,67 +1032,6 @@ export function ChatView({
     ],
   );
 
-  const handleFilesSelected = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
-    const accepted = files.filter(isAllowedAttachment);
-    const rejected = files.filter((file) => !isAllowedAttachment(file));
-    if (rejected.length > 0) {
-      setAttachmentError(describeRejections(rejected, t));
-    }
-    if (accepted.length === 0) {
-      return;
-    }
-    setAttachmentsUploading(true);
-    setAttachmentsUploadingCount(accepted.length);
-    if (rejected.length === 0) {
-      setAttachmentError(undefined);
-    }
-    try {
-      const results = await Promise.allSettled(
-        accepted.map((file) => uploadChatFile(file)),
-      );
-      const uploaded = results.flatMap((result) =>
-        result.status === "fulfilled" ? [result.value] : [],
-      );
-      const failed = results.filter((result) => result.status === "rejected");
-      if (uploaded.length > 0) {
-        setAttachments((prev) => [
-          ...prev,
-          ...uploaded.map((file) => ({
-            id: file.id,
-            name: file.name,
-            mimeType: file.mime_type,
-            size: file.size,
-            uri: file.uri,
-          })),
-        ]);
-      }
-      if (failed.length > 0) {
-        failed.forEach((result) => {
-          if (result.status === "rejected") {
-            console.warn("[ChatView] failed to upload attachment:", result.reason);
-          }
-        });
-        setAttachmentError(
-          t("{{count}} files failed to upload.", { count: failed.length }),
-        );
-      }
-    } catch (error) {
-      console.warn("[ChatView] failed to upload attachment:", error);
-      setAttachmentError(
-        error instanceof Error ? error.message : t("Failed to upload attachment"),
-      );
-    } finally {
-      setAttachmentsUploading(false);
-      setAttachmentsUploadingCount(0);
-    }
-  }, [t]);
-
-  const handleRemoveAttachment = useCallback((id: string) => {
-    setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
-    setAttachmentError(undefined);
-  }, []);
-
   const handleSubmit = useCallback(() => {
     const text = input.trim();
     if (!text && attachments.length === 0) return;
@@ -1113,8 +1052,7 @@ export function ChatView({
 
     const promptSubmittedAt = currentUnixSeconds();
     setInput("");
-    setAttachments([]);
-    setAttachmentError(undefined);
+    clearAttachments();
     setRuntimeSpecs((prev) => ({
       ...prev,
       [activeRuntimeKey]: {
@@ -1138,6 +1076,7 @@ export function ChatView({
     activeRuntimeKey,
     attachments,
     attachmentsUploading,
+    clearAttachments,
     input,
     replayBlocksInput,
     defaultWorkspacePath,
@@ -1419,31 +1358,4 @@ export function ChatView({
       </div>
     </div>
   );
-}
-
-function describeRejections(
-  files: File[],
-  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
-): string {
-  const [first, ...rest] = files;
-  if (!first) return "";
-  const message = describeRejection(first, t);
-  if (rest.length === 0) return message;
-  return t("{{message}} {{count}} more files were skipped.", {
-    message,
-    count: rest.length,
-  });
-}
-
-function describeRejection(
-  file: File,
-  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
-): string {
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    return t("{{name}} exceeds the {{limit}} MB upload limit.", {
-      name: file.name,
-      limit: MAX_ATTACHMENT_BYTES / (1024 * 1024),
-    });
-  }
-  return t("{{name}} file type is not allowed.", { name: file.name });
 }
