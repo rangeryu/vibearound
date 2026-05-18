@@ -10,6 +10,11 @@
       "default_base_url": "https://api.moonshot.cn/anthropic",
       "models": [
         {
+          "id": "kimi-k2.6",
+          "label": "Kimi K2.6",
+          "context_window": 256000
+        },
+        {
           "id": "kimi-k2-0905-preview",
           "label": "Kimi K2 (0905 preview)"
         },
@@ -53,7 +58,7 @@
       "models": [
         {
           "id": "kimi-for-coding",
-          "label": "Kimi Code",
+          "label": "Kimi Code (powered by Kimi K2.6)",
           "context_window": 256000
         },
         {
@@ -63,7 +68,7 @@
         },
         {
           "id": "k2p5",
-          "label": "Kimi Code (legacy)",
+          "label": "Kimi Code (legacy K2.5)",
           "context_window": 256000
         }
       ],
@@ -96,6 +101,11 @@
       "api_type": "openai-chat",
       "default_base_url": "https://api.moonshot.cn/v1",
       "models": [
+        {
+          "id": "kimi-k2.6",
+          "label": "Kimi K2.6",
+          "context_window": 256000
+        },
         {
           "id": "kimi-k2-0905-preview",
           "label": "Kimi K2 (0905 preview)"

@@ -48,9 +48,16 @@ fn model_uses_dashscope_enable_thinking(model: &str) -> bool {
     model.starts_with("qwen3.5")
         || model.starts_with("qwen3.6")
         || model.starts_with("qwen3-max")
+        || model.starts_with("deepseek-v4")
         || matches!(
             model.as_str(),
-            "glm-5" | "glm-4.7" | "kimi-k2.5" | "minimax-m2.5" | "minimax-m2.5-highspeed"
+            "glm-5.1"
+                | "glm-5"
+                | "glm-4.7"
+                | "kimi-k2.6"
+                | "kimi-k2.5"
+                | "minimax-m2.5"
+                | "minimax-m2.5-highspeed"
         )
 }
 
