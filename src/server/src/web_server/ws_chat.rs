@@ -32,13 +32,19 @@ pub async fn ws_chat_handler(State(state): State<AppState>, ws: WebSocketUpgrade
 }
 
 async fn handle_chat_socket(socket: WebSocket, state: AppState) {
+    let connection_id = Uuid::new_v4().to_string();
     let chat_id = Uuid::new_v4().to_string();
     let channel_id = format!("web:{}", chat_id);
-    let route = RouteKey::new("web", &chat_id);
+    let mut active_route = RouteKey::new("web", &chat_id);
 
     // Register this connection for outbound ACP events
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ChannelOutput>();
-    state.web_channel.register_connection(chat_id.clone(), tx);
+    state.web_channel.register_connection(
+        active_route.chat_id.clone(),
+        connection_id.clone(),
+        tx.clone(),
+        false,
+    );
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 
@@ -55,7 +61,9 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
         default_agent: agent_state::resolve_default_agent(&agent_prefs, &cfg),
     };
     if send_event(&mut ws_tx, &config_event).await.is_err() {
-        state.web_channel.unregister_connection(&chat_id);
+        state
+            .web_channel
+            .unregister_connection(&active_route.chat_id, &connection_id);
         return;
     }
 
@@ -74,15 +82,21 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
     while let Some(Ok(msg)) = ws_rx.next().await {
         match msg {
             Message::Text(text) => {
-                if let Some(input) = parse_web_chat_input(&chat_id, &text) {
+                if let Some(input) = parse_web_chat_input(&active_route.chat_id, &text) {
                     match input {
                         WebChatInput::Message {
                             input,
                             profile,
                             session_intent,
                         } => {
-                            abort_direct_resume_task(&mut direct_resume_task, &state, &route).await;
+                            abort_direct_resume_task(
+                                &mut direct_resume_task,
+                                &state,
+                                &active_route,
+                            )
+                            .await;
                             if let Some(route) = input_route(&input) {
+                                remember_web_route_agent(&state, &route, input_agent(&input)).await;
                                 match session_intent {
                                     Some(WebChatSessionIntent::Resume {
                                         agent,
@@ -116,7 +130,12 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             state.channel_hub.handle_input(input);
                         }
                         WebChatInput::Stop(input) => {
-                            abort_direct_resume_task(&mut direct_resume_task, &state, &route).await;
+                            abort_direct_resume_task(
+                                &mut direct_resume_task,
+                                &state,
+                                &active_route,
+                            )
+                            .await;
                             state.channel_hub.handle_input(input);
                         }
                         WebChatInput::PermissionResponse {
@@ -141,9 +160,39 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             session_id,
                             cwd,
                         } => {
-                            abort_direct_resume_task(&mut direct_resume_task, &state, &route).await;
+                            abort_direct_resume_task(
+                                &mut direct_resume_task,
+                                &state,
+                                &active_route,
+                            )
+                            .await;
+                            if let Some(agent_id) =
+                                resolve_web_session_agent(&state, &active_route, agent.clone())
+                                    .await
+                            {
+                                if let Some(route_chat_id) =
+                                    state.web_channel.route_for_session(&agent_id, &session_id)
+                                {
+                                    state.web_channel.unregister_connection(
+                                        &active_route.chat_id,
+                                        &connection_id,
+                                    );
+                                    active_route = RouteKey::new("web", &route_chat_id);
+                                    state.web_channel.register_connection(
+                                        active_route.chat_id.clone(),
+                                        connection_id.clone(),
+                                        tx.clone(),
+                                        true,
+                                    );
+                                    let _ = tx.send(ChannelOutput::SessionReady {
+                                        route: active_route.clone(),
+                                        session_id,
+                                    });
+                                    continue;
+                                }
+                            }
                             let task_state = state.clone();
-                            let task_route = route.clone();
+                            let task_route = active_route.clone();
                             direct_resume_task = Some(tokio::spawn(async move {
                                 apply_web_session_resume_now(
                                     &task_state,
@@ -168,12 +217,16 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
         task.abort();
     }
     outbound_task.abort();
-    state.web_channel.unregister_connection(&chat_id);
     state
-        .channel_hub
-        .conversation_manager()
-        .close(&route, None)
-        .await;
+        .web_channel
+        .unregister_connection(&active_route.chat_id, &connection_id);
+    if !state.web_channel.route_has_session(&active_route.chat_id) {
+        state
+            .channel_hub
+            .conversation_manager()
+            .close(&active_route, None)
+            .await;
+    }
 }
 
 async fn abort_direct_resume_task(
@@ -221,6 +274,40 @@ fn input_agent(input: &ChannelInput) -> Option<String> {
     }
 }
 
+async fn remember_web_route_agent(state: &AppState, route: &RouteKey, agent: Option<String>) {
+    if let Some(agent_id) = resolve_web_session_agent(state, route, agent).await {
+        state.web_channel.set_route_agent(&route.chat_id, agent_id);
+    }
+}
+
+async fn resolve_web_session_agent(
+    state: &AppState,
+    route: &RouteKey,
+    agent: Option<String>,
+) -> Option<String> {
+    let manager = state.channel_hub.conversation_manager();
+    let current_state = match manager.conversation(route) {
+        Some(conversation) => Some(conversation.state().await),
+        None => None,
+    };
+    let cfg = config::ensure_loaded();
+    let agent_prefs = agent_state::read_prefs();
+    let agent = agent
+        .or_else(|| {
+            current_state
+                .as_ref()
+                .and_then(|state| state.cli_kind.clone())
+        })
+        .unwrap_or_else(|| agent_state::resolve_default_agent(&agent_prefs, &cfg));
+    match common::resources::resolve_agent_id(&agent) {
+        Ok(agent_id) => Some(agent_id),
+        Err(error) => {
+            tracing::warn!(route = %route, agent = %agent, error = %error, "web chat agent resolution failed");
+            None
+        }
+    }
+}
+
 async fn apply_web_launch_selection(
     state: &AppState,
     route: &RouteKey,
@@ -258,6 +345,9 @@ async fn apply_web_session_resume(
         return;
     };
 
+    state
+        .web_channel
+        .set_route_agent(&route.chat_id, resume.agent.clone());
     if let Err(error) = state
         .channel_hub
         .conversation_manager()
@@ -288,6 +378,9 @@ async fn apply_web_session_resume_now(
         return;
     };
 
+    state
+        .web_channel
+        .set_route_agent(&route.chat_id, resume.agent.clone());
     if let Err(error) = state
         .channel_hub
         .resume_session(

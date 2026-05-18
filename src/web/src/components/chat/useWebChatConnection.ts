@@ -555,7 +555,10 @@ export function useWebChatConnection({
     [clearReplayCacheContext],
   );
 
-  const clearConversationView = useCallback((options?: { abortReplay?: boolean }) => {
+  const clearConversationView = useCallback((options?: {
+    abortReplay?: boolean;
+    sendStop?: boolean;
+  }) => {
     const ws = wsRef.current;
     const replayContext = resumeReplayRef.current ?? replayCacheContextRef.current;
     const abortedSessionId = replayContext?.sessionId;
@@ -564,6 +567,7 @@ export function useWebChatConnection({
     }
     if (
       options?.abortReplay &&
+      options.sendStop !== false &&
       replayContext &&
       ws?.readyState === WebSocket.OPEN
     ) {
@@ -597,7 +601,7 @@ export function useWebChatConnection({
     ({ agentId, profileId, launchSession }: ResumeChatSessionRequest) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false;
 
-      clearConversationView({ abortReplay: true });
+      clearConversationView({ abortReplay: true, sendStop: false });
       const requestId = resumeRequestIdRef.current + 1;
       resumeRequestIdRef.current = requestId;
       ignoredReplaySessionsRef.current.delete(launchSession.session_id);
