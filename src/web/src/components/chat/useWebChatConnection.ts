@@ -21,6 +21,8 @@ import type {
   ChatMeta,
   ChatSessionSelection,
   PendingPermission,
+  SessionModeOption,
+  SessionModeState,
 } from "./chatTypes";
 import {
   createMessageId,
@@ -56,7 +58,6 @@ interface SendChatMessageRequest {
   agentId: string;
   profileId?: string;
   workspacePath?: string;
-  permissionMode?: string;
   sessionSelection: ChatSessionSelection;
   launchSession?: LaunchSessionInfo;
 }
@@ -88,6 +89,7 @@ export function useWebChatConnection({
   const [meta, setMeta] = useState<ChatMeta>({});
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([]);
+  const [sessionMode, setSessionModeState] = useState<SessionModeState | null>(null);
   const [resumeReplay, setResumeReplay] = useState<ResumeReplayState | null>(null);
   const [lastPromptDoneAt, setLastPromptDoneAt] = useState<number | undefined>();
   const wsRef = useRef<WebSocket | null>(null);
@@ -287,9 +289,14 @@ export function useWebChatConnection({
             break;
           }
           setMeta((prev) => ({ ...prev, sessionId: parsed.session_id }));
+          setSessionModeState(null);
           if (pendingResume?.sessionId === parsed.session_id) {
             scheduleResumeReplayDone(parsed.session_id);
           }
+          break;
+        }
+        case "session_mode": {
+          setSessionModeState(parseSessionModeState(parsed.session_mode));
           break;
         }
         case "system_text": {
@@ -399,6 +406,27 @@ export function useWebChatConnection({
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
         }
+        case "config_option_update": {
+          setSessionModeState(
+            parseModeFromConfigOptions(
+              (update as { configOptions?: unknown }).configOptions,
+            ),
+          );
+          if (replaying) scheduleResumeReplayDone(notif.sessionId);
+          break;
+        }
+        case "current_mode_update": {
+          const modeId = (update as { modeId?: unknown }).modeId;
+          if (typeof modeId === "string" && modeId.trim()) {
+            setSessionModeState((prev) =>
+              prev?.source === "session_mode"
+                ? { ...prev, currentValue: modeId.trim() }
+                : prev,
+            );
+          }
+          if (replaying) scheduleResumeReplayDone(notif.sessionId);
+          break;
+        }
         // Other ACP update variants (available_commands_update, mode/config,
         // session metadata, usage, etc.) update surrounding UI rather than the
         // visible transcript. Ignored here so future SDK additions don't crash
@@ -505,7 +533,6 @@ export function useWebChatConnection({
       agentId,
       profileId,
       workspacePath,
-      permissionMode,
       sessionSelection,
       launchSession,
     }: SendChatMessageRequest) => {
@@ -549,9 +576,6 @@ export function useWebChatConnection({
         if (profileId !== undefined) {
           payload.profileId = profileId;
         }
-        if (permissionMode) {
-          payload.permissionMode = permissionMode;
-        }
         if (sessionSelection.kind === "new") {
           payload.sessionAction = "new";
           if (workspacePath) {
@@ -588,6 +612,18 @@ export function useWebChatConnection({
       return true;
     } catch (error) {
       console.warn("[ChatView] failed to set session mode:", error);
+      return false;
+    }
+  }, []);
+
+  const setSessionConfigOption = useCallback((configId: string, value: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    try {
+      ws.send(JSON.stringify({ type: "set_config_option", configId, value }));
+      return true;
+    } catch (error) {
+      console.warn("[ChatView] failed to set session config option:", error);
       return false;
     }
   }, []);
@@ -767,12 +803,14 @@ export function useWebChatConnection({
     meta,
     agents,
     pendingPermissions,
+    sessionMode,
     resumeReplay,
     lastPromptDoneAt,
     sendMessage,
     resumeSession,
     clearConversationView,
     setSessionMode,
+    setSessionConfigOption,
     stopStreaming,
     sendPermissionResponse,
     cancelPermissionRequest,
@@ -796,4 +834,74 @@ function messageContentBlocks(
     })),
   );
   return blocks;
+}
+
+function parseSessionModeState(value: unknown): SessionModeState | null {
+  if (!isRecord(value)) return null;
+  const source = value.source;
+  if (source !== "config_option" && source !== "session_mode") return null;
+  const currentValue = stringValue(value.currentValue);
+  const options = parseModeOptions(value.options);
+  if (!currentValue || options.length === 0) return null;
+  return {
+    source,
+    configId: stringValue(value.configId),
+    name: stringValue(value.name),
+    description: stringValue(value.description),
+    currentValue,
+    options,
+  };
+}
+
+function parseModeFromConfigOptions(configOptions: unknown): SessionModeState | null {
+  if (!Array.isArray(configOptions)) return null;
+  const option = configOptions.find((item) => {
+    if (!isRecord(item)) return false;
+    return item.category === "mode" || item.id === "mode";
+  });
+  if (!isRecord(option) || option.type !== "select") return null;
+  const currentValue = stringValue(option.currentValue);
+  const options = parseModeOptions(option.options);
+  if (!currentValue || options.length === 0) return null;
+  return {
+    source: "config_option",
+    configId: stringValue(option.id),
+    name: stringValue(option.name),
+    description: stringValue(option.description),
+    currentValue,
+    options,
+  };
+}
+
+function parseModeOptions(value: unknown): SessionModeOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    if (Array.isArray(item.options)) {
+      const group = stringValue(item.name);
+      return parseModeOptions(item.options).map((option) => ({
+        ...option,
+        group: option.group ?? group,
+      }));
+    }
+    const optionValue = stringValue(item.value);
+    const name = stringValue(item.name);
+    if (!optionValue || !name) return [];
+    return [
+      {
+        value: optionValue,
+        name,
+        description: stringValue(item.description),
+        group: stringValue(item.group),
+      },
+    ];
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }

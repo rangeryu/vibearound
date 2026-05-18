@@ -61,7 +61,7 @@ pub(super) async fn set_session_mode_and_reply(
         .set_session_mode(route, mode_id.to_string())
         .await
     {
-        Ok(()) => {
+        Ok(_) => {
             send_system_text(
                 plugin_host,
                 route,

@@ -144,6 +144,22 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                 );
                             }
                         }
+                        WebChatInput::SetConfigOption { config_id, value } => {
+                            apply_web_session_config_option(
+                                &state,
+                                &active_route,
+                                config_id,
+                                value,
+                            )
+                            .await;
+                            if let Some(deadline) = state.web_channel.bump_idle_route(&active_route)
+                            {
+                                state.web_channel.schedule_idle_close(
+                                    state.channel_hub.conversation_manager(),
+                                    deadline,
+                                );
+                            }
+                        }
                         WebChatInput::Stop(input) => {
                             abort_direct_resume_task(
                                 &mut direct_resume_task,
@@ -559,6 +575,33 @@ async fn apply_web_session_mode(state: &AppState, route: &RouteKey, mode_id: &st
     }
 }
 
+async fn apply_web_session_config_option(
+    state: &AppState,
+    route: &RouteKey,
+    config_id: String,
+    value: String,
+) {
+    match state
+        .channel_hub
+        .conversation_manager()
+        .set_session_config_option(route, config_id.clone(), value.clone())
+        .await
+    {
+        Ok(_) => {}
+        Err(error) => {
+            send_web_system_text(
+                state,
+                route,
+                &format!(
+                    "❌ Could not set session config `{}` to `{}`: {}.",
+                    config_id, value, error
+                ),
+            )
+            .await;
+        }
+    }
+}
+
 async fn send_event<S>(ws_tx: &mut S, event: &ChatEvent) -> Result<(), ()>
 where
     S: SinkExt<Message, Error = axum::Error> + Unpin,
@@ -582,6 +625,10 @@ enum WebChatInput {
     },
     SetMode {
         mode_id: String,
+    },
+    SetConfigOption {
+        config_id: String,
+        value: String,
     },
     Stop(ChannelInput),
     PermissionResponse {
@@ -650,6 +697,11 @@ fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
                 "set_mode" => {
                     let mode_id = string_field(&v, &["modeId", "mode_id", "permissionMode"])?;
                     Some(WebChatInput::SetMode { mode_id })
+                }
+                "set_config_option" => {
+                    let config_id = string_field(&v, &["configId", "config_id"])?;
+                    let value = string_field(&v, &["value"])?;
+                    Some(WebChatInput::SetConfigOption { config_id, value })
                 }
                 "resume_session" => {
                     let agent = parse_web_agent(&v);
@@ -843,6 +895,7 @@ fn output_to_chat_event(output: ChannelOutput) -> ChatEvent {
             ChatEvent::AgentReady { agent, version }
         }
         ChannelOutput::SessionReady { session_id, .. } => ChatEvent::SessionReady { session_id },
+        ChannelOutput::SessionMode { session_mode, .. } => ChatEvent::SessionMode { session_mode },
         ChannelOutput::CommandMenu {
             system_commands,
             agent_commands,
@@ -1087,6 +1140,22 @@ mod tests {
             canonical_web_session_mode("bypass-permissions"),
             Some("bypassPermissions"),
         );
+    }
+
+    #[test]
+    fn parses_set_config_option_message() {
+        let input = parse_web_chat_input(
+            "chat-1",
+            r#"{"type":"set_config_option","configId":"permissions","value":"fullAccess"}"#,
+        )
+        .expect("set config option input");
+
+        let WebChatInput::SetConfigOption { config_id, value } = input else {
+            panic!("expected set config option");
+        };
+
+        assert_eq!(config_id, "permissions");
+        assert_eq!(value, "fullAccess");
     }
 
     #[test]

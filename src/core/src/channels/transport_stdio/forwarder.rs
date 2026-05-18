@@ -94,6 +94,21 @@ pub(super) async fn forward_output_to_plugin(
             )
             .await;
         }
+        ChannelOutput::SessionMode {
+            route,
+            session_mode,
+        } => {
+            send_ext_notification(
+                conn,
+                channel_kind,
+                "va/session_mode",
+                &serde_json::json!({
+                    "chatId": route.chat_id,
+                    "sessionMode": session_mode,
+                }),
+            )
+            .await;
+        }
         ChannelOutput::CommandMenu {
             route,
             system_commands,

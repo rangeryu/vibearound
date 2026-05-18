@@ -87,6 +87,22 @@ export type ChatMeta = {
   agentName?: string;
 };
 
+export type SessionModeOption = {
+  value: string;
+  name: string;
+  description?: string | null;
+  group?: string | null;
+};
+
+export type SessionModeState = {
+  source: "config_option" | "session_mode";
+  configId?: string | null;
+  name?: string | null;
+  description?: string | null;
+  currentValue: string;
+  options: SessionModeOption[];
+};
+
 export type ChatSessionSelection =
   | { kind: "current" }
   | { kind: "new" }

@@ -267,6 +267,7 @@ pub struct PreviewsResponse {
 /// { "kind": "config", "channel_id": "web:abc", "agents": [...], "default_agent": "claude" }
 /// { "kind": "agent_ready", "agent": "Claude Code", "version": "1.0" }
 /// { "kind": "session_ready", "session_id": "01HX..." }
+/// { "kind": "session_mode", "session_mode": { "source": "config_option" } }
 /// { "kind": "system_text", "text": "Session paired." }
 /// { "kind": "acp_notification", "payload": { /* acp::SessionNotification */ } }
 /// { "kind": "permission_request", "request_id": "pr-1", "request": { ... } }
@@ -288,6 +289,9 @@ pub enum ChatEvent {
     },
     SessionReady {
         session_id: String,
+    },
+    SessionMode {
+        session_mode: serde_json::Value,
     },
     CommandMenu {
         system_commands: serde_json::Value,

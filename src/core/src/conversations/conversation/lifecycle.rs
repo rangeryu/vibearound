@@ -221,6 +221,12 @@ impl Conversation {
                 route: self.route.clone(),
                 session_id,
             });
+            if let Some(session_mode) = super::session_mode::from_session_setup(
+                ready.startup_config_options.as_deref(),
+                ready.startup_modes.as_ref(),
+            ) {
+                self.record_session_mode(session_mode).await;
+            }
         }
 
         self.emit(SystemEvent::AgentInitialized {
@@ -256,6 +262,10 @@ impl Conversation {
         let response = agent
             .new_session(acp::NewSessionRequest::new(workspace))
             .await?;
+        let session_mode = super::session_mode::from_session_setup(
+            response.config_options.as_deref(),
+            response.modes.as_ref(),
+        );
         let session_id = response.session_id.to_string();
         *self.session_id.lock().await = Some(session_id.clone());
         self.log_im_session_started_once(&session_id, SessionStartSource::NewSession)
@@ -265,6 +275,9 @@ impl Conversation {
             route: self.route.clone(),
             session_id: session_id.clone(),
         });
+        if let Some(session_mode) = session_mode {
+            self.record_session_mode(session_mode).await;
+        }
         let _ = self.change_tx.send(());
 
         Ok(session_id)
@@ -290,6 +303,7 @@ impl Conversation {
         *self.workspace.lock().await = None;
         *self.logged_session_id.lock().await = None;
         *self.applied_session_mode.lock().await = None;
+        *self.session_mode.lock().await = None;
         *self.handover_resume_session_id.lock().await = None;
         *self.handover_cwd.lock().await = None;
         *self.suppress_replay.lock().await = None;

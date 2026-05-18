@@ -50,6 +50,7 @@ import type {
   ChatMeta,
   ChatSessionSelection,
   PendingPermission,
+  SessionModeState,
 } from "./chatTypes";
 import {
   type ResumeReplayState,
@@ -109,6 +110,7 @@ interface ChatRuntimeSnapshot {
   meta: ChatMeta;
   agents: AgentInfo[];
   pendingPermissions: PendingPermission[];
+  sessionMode: SessionModeState | null;
   resumeReplay: ResumeReplayState | null;
   lastPromptDoneAt?: number;
 }
@@ -118,6 +120,7 @@ interface ChatRuntimeActions {
   resumeSession: ReturnType<typeof useWebChatConnection>["resumeSession"];
   clearConversationView: ReturnType<typeof useWebChatConnection>["clearConversationView"];
   setSessionMode: ReturnType<typeof useWebChatConnection>["setSessionMode"];
+  setSessionConfigOption: ReturnType<typeof useWebChatConnection>["setSessionConfigOption"];
   stopStreaming: ReturnType<typeof useWebChatConnection>["stopStreaming"];
   sendPermissionResponse: ReturnType<typeof useWebChatConnection>["sendPermissionResponse"];
   cancelPermissionRequest: ReturnType<typeof useWebChatConnection>["cancelPermissionRequest"];
@@ -130,6 +133,7 @@ const EMPTY_RUNTIME_SNAPSHOT: ChatRuntimeSnapshot = {
   meta: {},
   agents: [],
   pendingPermissions: [],
+  sessionMode: null,
   resumeReplay: null,
   lastPromptDoneAt: undefined,
 };
@@ -375,14 +379,12 @@ function mergeSessionGroupUpdates(
 function ChatRuntimeHost({
   runtimeKey,
   initialResume,
-  permissionMode,
   onSnapshot,
   onActions,
   onAgentSelected,
 }: {
   runtimeKey: string;
   initialResume?: ChatRuntimeSpec["initialResume"];
-  permissionMode: WebVerboseSettings["permission_mode"];
   onSnapshot: (runtimeKey: string, snapshot: ChatRuntimeSnapshot) => void;
   onActions: (runtimeKey: string, actions: ChatRuntimeActions | null) => void;
   onAgentSelected: (
@@ -407,6 +409,7 @@ function ChatRuntimeHost({
       meta: connection.meta,
       agents: connection.agents,
       pendingPermissions: connection.pendingPermissions,
+      sessionMode: connection.sessionMode,
       resumeReplay: connection.resumeReplay,
       lastPromptDoneAt: connection.lastPromptDoneAt,
     });
@@ -418,6 +421,7 @@ function ChatRuntimeHost({
     connection.meta,
     connection.pendingPermissions,
     connection.resumeReplay,
+    connection.sessionMode,
     connection.streaming,
     onSnapshot,
     runtimeKey,
@@ -429,6 +433,7 @@ function ChatRuntimeHost({
       resumeSession: connection.resumeSession,
       clearConversationView: connection.clearConversationView,
       setSessionMode: connection.setSessionMode,
+      setSessionConfigOption: connection.setSessionConfigOption,
       stopStreaming: connection.stopStreaming,
       sendPermissionResponse: connection.sendPermissionResponse,
       cancelPermissionRequest: connection.cancelPermissionRequest,
@@ -440,20 +445,11 @@ function ChatRuntimeHost({
     connection.resumeSession,
     connection.sendMessage,
     connection.sendPermissionResponse,
+    connection.setSessionConfigOption,
     connection.setSessionMode,
     connection.stopStreaming,
     onActions,
     runtimeKey,
-  ]);
-
-  useEffect(() => {
-    if (!connection.connected || !connection.meta.sessionId) return;
-    connection.setSessionMode(permissionMode);
-  }, [
-    connection.connected,
-    connection.meta.sessionId,
-    connection.setSessionMode,
-    permissionMode,
   ]);
 
   useEffect(() => {
@@ -581,12 +577,15 @@ export function ChatView({
     [runtimeSnapshots],
   );
   const pendingPermissions = activeRuntime.pendingPermissions;
+  const sessionMode = activeRuntime.sessionMode;
   const resumeReplay = activeRuntime.resumeReplay;
   const replayBlocksInput = Boolean(
     resumeReplay && resumeReplay.blocking !== false,
   );
   const sendMessage = activeRuntimeActions?.sendMessage;
   const stopStreaming = activeRuntimeActions?.stopStreaming;
+  const setSessionMode = activeRuntimeActions?.setSessionMode;
+  const setSessionConfigOption = activeRuntimeActions?.setSessionConfigOption;
   const sendPermissionResponse = activeRuntimeActions?.sendPermissionResponse;
   const cancelPermissionRequest = activeRuntimeActions?.cancelPermissionRequest;
 
@@ -1445,7 +1444,6 @@ export function ChatView({
       workspacePath: selectedWorkspace?.path,
       sessionSelection,
       launchSession: selectedLaunchSession,
-      permissionMode: webSettings.permission_mode,
     });
     if (!sent) return;
 
@@ -1483,8 +1481,21 @@ export function ChatView({
     sendMessage,
     sessionSelection,
     t,
-    webSettings.permission_mode,
   ]);
+
+  const handleSessionModeChange = useCallback(
+    (value: string) => {
+      if (!sessionMode) return;
+      if (sessionMode.source === "config_option") {
+        if (sessionMode.configId) {
+          setSessionConfigOption?.(sessionMode.configId, value);
+        }
+        return;
+      }
+      setSessionMode?.(value);
+    },
+    [sessionMode, setSessionConfigOption, setSessionMode],
+  );
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
@@ -1493,7 +1504,6 @@ export function ChatView({
           key={runtimeKey}
           runtimeKey={runtimeKey}
           initialResume={runtimeSpecs[runtimeKey]?.initialResume}
-          permissionMode={webSettings.permission_mode}
           onSnapshot={handleRuntimeSnapshot}
           onActions={handleRuntimeActions}
           onAgentSelected={handleSocketAgentSelected}
@@ -1663,6 +1673,8 @@ export function ChatView({
                 submitDisabled={streaming || replayBlocksInput || attachmentsUploading}
                 isStreaming={streaming}
                 sendWithModifierEnter={webSettings.send_with_modifier_enter}
+                sessionMode={sessionMode}
+                onSessionModeChange={handleSessionModeChange}
                 placeholder={
                   connected ? t("Ask {{agent}} anything…", { agent: agentLabel }) : t("Connecting…")
                 }
@@ -1728,6 +1740,8 @@ export function ChatView({
               submitDisabled={streaming || replayBlocksInput || attachmentsUploading}
               isStreaming={streaming}
               sendWithModifierEnter={webSettings.send_with_modifier_enter}
+              sessionMode={sessionMode}
+              onSessionModeChange={handleSessionModeChange}
               placeholder={
                 connected ? t("Message {{agent}}…", { agent: agentLabel }) : t("Connecting…")
               }

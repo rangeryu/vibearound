@@ -84,6 +84,10 @@ pub enum ChannelOutput {
         route: RouteKey,
         session_id: String,
     },
+    SessionMode {
+        route: RouteKey,
+        session_mode: serde_json::Value,
+    },
     CommandMenu {
         route: RouteKey,
         system_commands: serde_json::Value,
@@ -119,6 +123,7 @@ impl ChannelOutput {
             | Self::SystemText { route, .. }
             | Self::AgentReady { route, .. }
             | Self::SessionReady { route, .. }
+            | Self::SessionMode { route, .. }
             | Self::CommandMenu { route, .. }
             | Self::PromptDone { route, .. }
             | Self::TurnStatus { route, .. }

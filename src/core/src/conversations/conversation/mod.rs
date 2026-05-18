@@ -20,6 +20,7 @@
 
 mod lifecycle;
 mod media;
+mod session_mode;
 mod state;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -64,6 +65,7 @@ pub struct Conversation {
     /// session exists and before the next prompt is sent.
     desired_session_mode: Mutex<Option<String>>,
     applied_session_mode: Mutex<Option<(String, String)>>,
+    session_mode: Mutex<Option<serde_json::Value>>,
     // --- Handover state (consumed once on next prompt) ---
     handover_resume_session_id: Mutex<Option<String>>,
     handover_cwd: Mutex<Option<String>>,
@@ -100,6 +102,7 @@ impl Conversation {
             logged_session_id: Mutex::new(None),
             desired_session_mode: Mutex::new(None),
             applied_session_mode: Mutex::new(None),
+            session_mode: Mutex::new(None),
             handover_resume_session_id: Mutex::new(None),
             handover_cwd: Mutex::new(None),
             suppress_replay: Mutex::new(None),
@@ -283,7 +286,10 @@ impl Conversation {
     /// Switch the current session's permission mode. Requires an active
     /// agent + session (caller should ensure this — no auto-spawn because
     /// the mode is a session property that only exists after initialization).
-    pub async fn set_session_mode(&self, mode_id: String) -> acp::Result<()> {
+    pub async fn set_session_mode(
+        &self,
+        mode_id: String,
+    ) -> acp::Result<Option<serde_json::Value>> {
         let agent = self
             .agent
             .lock()
@@ -296,9 +302,46 @@ impl Conversation {
             .await
             .clone()
             .ok_or_else(acp::Error::method_not_found)?;
-        let request = acp::SetSessionModeRequest::new(session_id, mode_id);
+        let request = acp::SetSessionModeRequest::new(session_id, mode_id.clone());
         agent.set_session_mode(request).await?;
-        Ok(())
+        let next = self
+            .session_mode
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|state| session_mode::with_current_value(state, &mode_id));
+        if let Some(session_mode) = next.clone() {
+            self.record_session_mode(session_mode).await;
+        }
+        Ok(next)
+    }
+
+    /// Set a session config option, returning the refreshed mode selector
+    /// state when the Agent's response still exposes one.
+    pub async fn set_session_config_option(
+        &self,
+        config_id: String,
+        value: String,
+    ) -> acp::Result<Option<serde_json::Value>> {
+        let agent = self
+            .agent
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(acp::Error::method_not_found)?;
+        let session_id = self
+            .session_id
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(acp::Error::method_not_found)?;
+        let request = acp::SetSessionConfigOptionRequest::new(session_id, config_id, value);
+        let response = agent.set_session_config_option(request).await?;
+        let next = session_mode::from_config_options(&response.config_options);
+        if let Some(session_mode) = next.clone() {
+            self.record_session_mode(session_mode).await;
+        }
+        Ok(next)
     }
 
     /// Remember the preferred mode for this route and apply it immediately
@@ -321,6 +364,15 @@ impl Conversation {
     pub async fn clear_desired_session_mode(&self) {
         *self.desired_session_mode.lock().await = None;
         *self.applied_session_mode.lock().await = None;
+    }
+
+    pub(super) async fn record_session_mode(&self, session_mode: serde_json::Value) {
+        *self.session_mode.lock().await = Some(session_mode.clone());
+        self.emit(SystemEvent::SessionMode {
+            route: self.route.clone(),
+            session_mode,
+        });
+        let _ = self.change_tx.send(());
     }
 
     async fn apply_desired_session_mode(&self, agent: &Arc<Agent>, session_id: &str) {
@@ -456,6 +508,7 @@ impl Conversation {
         *self.session_id.lock().await = None;
         *self.logged_session_id.lock().await = None;
         *self.applied_session_mode.lock().await = None;
+        *self.session_mode.lock().await = None;
         let _ = self.change_tx.send(());
     }
 

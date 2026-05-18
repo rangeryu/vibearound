@@ -8,12 +8,28 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from "react";
-import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Hand,
+  Paperclip,
+  ShieldAlert,
+  ShieldCheck,
+  Square,
+  X,
+} from "lucide-react";
 import { useI18n } from "@va/i18n";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { CHAT_ATTACHMENT_ACCEPT } from "./attachmentTypes";
-import type { ChatAttachment } from "./chatTypes";
+import type { ChatAttachment, SessionModeState } from "./chatTypes";
 
 export type { ChatSessionSelection } from "./chatTypes";
 
@@ -34,6 +50,8 @@ export interface ChatInputProps {
   attachmentsUploadingCount?: number;
   attachmentError?: string;
   sendWithModifierEnter?: boolean;
+  sessionMode?: SessionModeState | null;
+  onSessionModeChange?: (value: string) => void;
   onFilesSelected?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   placeholder?: string;
@@ -56,6 +74,8 @@ export function ChatInput({
   attachmentsUploadingCount = 0,
   attachmentError,
   sendWithModifierEnter = false,
+  sessionMode,
+  onSessionModeChange,
   onFilesSelected,
   onRemoveAttachment,
   placeholder = "Message Claude…",
@@ -148,6 +168,12 @@ export function ChatInput({
   const showStop = isStreaming && onStop;
   const showDropTarget =
     dragDepth > 0 && Boolean(onFilesSelected) && !disabled && !attachmentsUploading;
+  const selectedMode = sessionMode?.options.find(
+    (option) => option.value === sessionMode.currentValue,
+  );
+  const canSelectMode = Boolean(
+    sessionMode && selectedMode && onSessionModeChange && !disabled,
+  );
   const uploadingLabel =
     attachmentsUploading && attachmentsUploadingCount > 1
       ? t("Uploading {{count}} files…", { count: attachmentsUploadingCount })
@@ -276,6 +302,13 @@ export function ChatInput({
                 </Button>
               </>
             )}
+            {sessionMode && selectedMode && (
+              <SessionModePicker
+                mode={sessionMode}
+                disabled={!canSelectMode}
+                onChange={onSessionModeChange}
+              />
+            )}
             <span className="min-w-0 truncate px-1 text-xs font-medium text-muted-foreground">
               {targetLabel}
             </span>
@@ -298,6 +331,101 @@ export function ChatInput({
       </div>
     </div>
   );
+}
+
+function SessionModePicker({
+  mode,
+  disabled,
+  onChange,
+}: {
+  mode: SessionModeState;
+  disabled: boolean;
+  onChange?: (value: string) => void;
+}) {
+  const { t } = useI18n();
+  const selected = mode.options.find((option) => option.value === mode.currentValue);
+  if (!selected) return null;
+  const tone = sessionModeTone(selected.value, selected.name);
+  const Icon = tone === "full" ? ShieldAlert : tone === "auto" ? ShieldCheck : Hand;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className={cn(
+            "flex h-8 max-w-[15rem] shrink items-center gap-1.5 rounded-full px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60",
+            sessionModeTriggerClass(tone),
+          )}
+          aria-label={t("Session permissions")}
+          title={selected.description ?? selected.name}
+        >
+          <Icon className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 truncate">{selected.name}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="w-64">
+        {mode.options.map((option) => {
+          const optionTone = sessionModeTone(option.value, option.name);
+          const OptionIcon =
+            optionTone === "full" ? ShieldAlert : optionTone === "auto" ? ShieldCheck : Hand;
+          return (
+            <DropdownMenuItem
+              key={option.value}
+              className="flex items-start gap-2"
+              onSelect={() => onChange?.(option.value)}
+            >
+              <OptionIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{option.name}</span>
+                {option.description && (
+                  <span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">
+                    {option.description}
+                  </span>
+                )}
+              </span>
+              {option.value === mode.currentValue && (
+                <Check className="mt-0.5 h-4 w-4 shrink-0" />
+              )}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function sessionModeTone(value: string, name: string) {
+  const token = `${value} ${name}`.toLowerCase();
+  if (
+    token.includes("bypass") ||
+    token.includes("full") ||
+    token.includes("unrestricted") ||
+    token.includes("code")
+  ) {
+    return "full";
+  }
+  if (
+    token.includes("accept") ||
+    token.includes("auto") ||
+    token.includes("review") ||
+    token.includes("edit")
+  ) {
+    return "auto";
+  }
+  return "default";
+}
+
+function sessionModeTriggerClass(tone: ReturnType<typeof sessionModeTone>) {
+  if (tone === "full") {
+    return "bg-orange-500/10 text-orange-600 hover:bg-orange-500/15 dark:text-orange-400";
+  }
+  if (tone === "auto") {
+    return "bg-primary/10 text-primary hover:bg-primary/15";
+  }
+  return "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground";
 }
 
 function formatBytes(size: number) {
