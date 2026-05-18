@@ -151,6 +151,13 @@ pub(super) fn clean_title(value: &str) -> Option<String> {
     if compact.is_empty() {
         return None;
     }
+    let lower = compact.to_ascii_lowercase();
+    if lower.starts_with("<command-name>")
+        || lower.starts_with("<local-command")
+        || lower.starts_with("<system-reminder")
+    {
+        return None;
+    }
     let mut out = String::new();
     for ch in compact.chars().take(72) {
         out.push(ch);
@@ -169,4 +176,21 @@ pub(super) fn fallback_title(workspace: &Path, session_id: &str) -> String {
 
 pub fn short_id(session_id: &str) -> String {
     session_id.chars().take(8).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clean_title;
+
+    #[test]
+    fn clean_title_skips_control_messages() {
+        assert_eq!(
+            clean_title("<command-name>/model</command-name><command-message>x</command-message>"),
+            None
+        );
+        assert_eq!(
+            clean_title("<local-command-stdout>ok</local-command-stdout>"),
+            None
+        );
+    }
 }

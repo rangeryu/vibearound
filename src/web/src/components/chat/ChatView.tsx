@@ -602,7 +602,6 @@ export function ChatView({
     [webSettings],
   );
   const runtimeLaunchSessions = useMemo(() => {
-    const now = Math.floor(Date.now() / 1000);
     return Object.entries(runtimeSpecs).flatMap(([runtimeKey, spec]) => {
       const snapshot = runtimeSnapshots[runtimeKey];
       if (!snapshot || (!snapshot.streaming && !snapshot.resumeReplay)) return [];
@@ -623,7 +622,7 @@ export function ChatView({
           session_id: sessionId,
           title,
           workspace: workspacePath,
-          updated_at: spec.launchSession?.updated_at ?? now,
+          updated_at: spec.launchSession?.updated_at ?? snapshot.resumeReplay?.updatedAt ?? 0,
           short_id: spec.launchSession?.short_id ?? sessionId.slice(0, 8),
           archived: false,
         } satisfies LaunchSessionInfo,
