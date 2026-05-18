@@ -537,6 +537,14 @@ async fn apply_web_session_mode(state: &AppState, route: &RouteKey, mode_id: &st
         .await;
         return;
     };
+    if canonical == "default" {
+        state
+            .channel_hub
+            .conversation_manager()
+            .clear_desired_session_mode(route)
+            .await;
+        return;
+    }
     if let Err(error) = state
         .channel_hub
         .conversation_manager()

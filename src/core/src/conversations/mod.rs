@@ -163,6 +163,13 @@ impl ConversationManager {
         conv.set_desired_session_mode(mode_id).await
     }
 
+    /// Clear the web-chat preferred mode override for this route. This does
+    /// not call ACP: "default" means the host stops forcing a permission mode.
+    pub async fn clear_desired_session_mode(&self, route: &RouteKey) {
+        let conv = self.get_or_create(route.clone());
+        conv.clear_desired_session_mode().await;
+    }
+
     /// Get cached available agent commands for a route.
     pub async fn list_agent_commands(&self, route: &RouteKey) -> serde_json::Value {
         match self.get(route) {

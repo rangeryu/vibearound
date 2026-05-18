@@ -318,6 +318,11 @@ impl Conversation {
         Ok(())
     }
 
+    pub async fn clear_desired_session_mode(&self) {
+        *self.desired_session_mode.lock().await = None;
+        *self.applied_session_mode.lock().await = None;
+    }
+
     async fn apply_desired_session_mode(&self, agent: &Arc<Agent>, session_id: &str) {
         let Some(mode_id) = self.desired_session_mode.lock().await.clone() else {
             return;
