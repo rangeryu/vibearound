@@ -22,6 +22,16 @@ VibeAround 是一个面向本地 AI 编程 Agent 的桌面中枢。它把 Claude
 
 核心想法很简单：Agent 仍然在你的电脑上运行，但你可以从当下最顺手的入口触达它。
 
+## 界面截图
+
+| 模型配置 | 频道插件 |
+|---|---|
+| <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-profiles.webp" alt="VibeAround 模型配置" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-channels.webp" alt="VibeAround 频道插件" width="100%" /> |
+
+| 启动本地 Agent | 查看代码变更 | 生成视觉素材 |
+|---|---|---|
+| <img src="docs/assets/screenshots/web-chat-start.jpg" alt="VibeAround Web Chat 工作区启动页" width="100%" /> | <img src="docs/assets/screenshots/web-chat-diff.jpg" alt="VibeAround Web Chat 代码 diff 对话" width="100%" /> | <img src="docs/assets/screenshots/web-chat-imagegen.jpg" alt="VibeAround Web Chat 图片生成会话" width="100%" /> |
+
 ## 为什么需要 VibeAround
 
 本地编程 Agent 很强，但通常被困在某一个终端窗口里。VibeAround 给它们增加了稳定的入口：
@@ -44,16 +54,6 @@ VibeAround 是一个面向本地 AI 编程 Agent 的桌面中枢。它把 Claude
 | Web Terminal | 浏览器里的本地 PTY 终端，支持移动端常用控制，也可附加 tmux |
 | IM 频道 | 从 Telegram、飞书/Lark、Discord、Slack、微信、钉钉、企业微信、QQ Bot 私聊本地 Agent |
 | 本地 API proxy | 按 Profile 生成 loopback endpoint，用于模型路由和 API 形态转换 |
-
-## 界面截图
-
-| 模型配置 | 频道插件 |
-|---|---|
-| <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-profiles.webp" alt="VibeAround 模型配置" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/cn-channels.webp" alt="VibeAround 频道插件" width="100%" /> |
-
-| 启动本地 Agent | 查看代码变更 | 生成视觉素材 |
-|---|---|---|
-| <img src="docs/assets/screenshots/web-chat-start.jpg" alt="VibeAround Web Chat 工作区启动页" width="100%" /> | <img src="docs/assets/screenshots/web-chat-diff.jpg" alt="VibeAround Web Chat 代码 diff 对话" width="100%" /> | <img src="docs/assets/screenshots/web-chat-imagegen.jpg" alt="VibeAround Web Chat 图片生成会话" width="100%" /> |
 
 ## 可以做什么
 
