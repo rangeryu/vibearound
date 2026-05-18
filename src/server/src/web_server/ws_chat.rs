@@ -97,6 +97,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             )
                             .await;
                             if let Some(route) = input_route(&input) {
+                                state.web_channel.mark_route_active(&route.chat_id);
                                 remember_web_route_agent(&state, &route, input_agent(&input)).await;
                                 match session_intent {
                                     Some(WebChatSessionIntent::Resume {
@@ -135,6 +136,13 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                         }
                         WebChatInput::SetMode { mode_id } => {
                             apply_web_session_mode(&state, &active_route, &mode_id).await;
+                            if let Some(deadline) = state.web_channel.bump_idle_route(&active_route)
+                            {
+                                state.web_channel.schedule_idle_close(
+                                    state.channel_hub.conversation_manager(),
+                                    deadline,
+                                );
+                            }
                         }
                         WebChatInput::Stop(input) => {
                             abort_direct_resume_task(
@@ -144,11 +152,17 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             )
                             .await;
                             state.channel_hub.handle_input(input);
+                            let deadline = state.web_channel.mark_route_idle(&active_route);
+                            state.web_channel.schedule_idle_close(
+                                state.channel_hub.conversation_manager(),
+                                deadline,
+                            );
                         }
                         WebChatInput::PermissionResponse {
                             request_id,
                             response,
                         } => {
+                            state.web_channel.clear_pending_permission(&request_id);
                             if let Err(error) =
                                 state
                                     .channel_hub
@@ -195,9 +209,18 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                         route: active_route.clone(),
                                         session_id,
                                     });
+                                    if let Some(deadline) =
+                                        state.web_channel.bump_idle_route(&active_route)
+                                    {
+                                        state.web_channel.schedule_idle_close(
+                                            state.channel_hub.conversation_manager(),
+                                            deadline,
+                                        );
+                                    }
                                     continue;
                                 }
                             }
+                            state.web_channel.mark_route_active(&active_route.chat_id);
                             let task_state = state.clone();
                             let task_route = active_route.clone();
                             direct_resume_task = Some(tokio::spawn(async move {
@@ -210,6 +233,11 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                     cwd,
                                 )
                                 .await;
+                                let deadline = task_state.web_channel.mark_route_idle(&task_route);
+                                task_state.web_channel.schedule_idle_close(
+                                    task_state.channel_hub.conversation_manager(),
+                                    deadline,
+                                );
                             }));
                         }
                     }
