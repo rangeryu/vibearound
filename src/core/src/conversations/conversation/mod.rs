@@ -60,6 +60,10 @@ pub struct Conversation {
     agent_commands: Mutex<serde_json::Value>,
     /// Last IM session ID written to the append-only startup index.
     logged_session_id: Mutex<Option<String>>,
+    /// Preferred permission mode for web/chat routes. Applied after a
+    /// session exists and before the next prompt is sent.
+    desired_session_mode: Mutex<Option<String>>,
+    applied_session_mode: Mutex<Option<(String, String)>>,
     // --- Handover state (consumed once on next prompt) ---
     handover_resume_session_id: Mutex<Option<String>>,
     handover_cwd: Mutex<Option<String>>,
@@ -94,6 +98,8 @@ impl Conversation {
             event_tx,
             agent_commands: Mutex::new(serde_json::Value::Array(vec![])),
             logged_session_id: Mutex::new(None),
+            desired_session_mode: Mutex::new(None),
+            applied_session_mode: Mutex::new(None),
             handover_resume_session_id: Mutex::new(None),
             handover_cwd: Mutex::new(None),
             suppress_replay: Mutex::new(None),
@@ -209,6 +215,7 @@ impl Conversation {
                 })?;
 
             let session_id = self.ensure_session(&agent).await?;
+            self.apply_desired_session_mode(&agent, &session_id).await;
 
             // Move cached media files to session-scoped workspace path and update URIs
             let agent_kind = self
@@ -292,6 +299,53 @@ impl Conversation {
         let request = acp::SetSessionModeRequest::new(session_id, mode_id);
         agent.set_session_mode(request).await?;
         Ok(())
+    }
+
+    /// Remember the preferred mode for this route and apply it immediately
+    /// when an active session is already available.
+    pub async fn set_desired_session_mode(&self, mode_id: String) -> acp::Result<()> {
+        *self.desired_session_mode.lock().await = Some(mode_id.clone());
+        *self.applied_session_mode.lock().await = None;
+
+        let agent = self.agent.lock().await.clone();
+        let session_id = self.session_id.lock().await.clone();
+        let (Some(agent), Some(session_id)) = (agent, session_id) else {
+            return Ok(());
+        };
+        let request = acp::SetSessionModeRequest::new(session_id.clone(), mode_id.clone());
+        agent.set_session_mode(request).await?;
+        *self.applied_session_mode.lock().await = Some((session_id, mode_id));
+        Ok(())
+    }
+
+    async fn apply_desired_session_mode(&self, agent: &Arc<Agent>, session_id: &str) {
+        let Some(mode_id) = self.desired_session_mode.lock().await.clone() else {
+            return;
+        };
+        let already_applied = self.applied_session_mode.lock().await.as_ref().is_some_and(
+            |(applied_session, applied_mode)| {
+                applied_session == session_id && applied_mode == &mode_id
+            },
+        );
+        if already_applied {
+            return;
+        }
+
+        let request = acp::SetSessionModeRequest::new(session_id.to_string(), mode_id.clone());
+        match agent.set_session_mode(request).await {
+            Ok(_) => {
+                *self.applied_session_mode.lock().await = Some((session_id.to_string(), mode_id));
+            }
+            Err(error) => {
+                tracing::warn!(
+                    route = %self.route,
+                    session_id = %session_id,
+                    mode_id = %mode_id,
+                    error = %error,
+                    "failed to apply preferred session mode"
+                );
+            }
+        }
     }
 
     /// Close this route — kill agent, drain queue, clear all state.
@@ -396,6 +450,7 @@ impl Conversation {
     pub async fn reset_session(&self) {
         *self.session_id.lock().await = None;
         *self.logged_session_id.lock().await = None;
+        *self.applied_session_mode.lock().await = None;
         let _ = self.change_tx.send(());
     }
 

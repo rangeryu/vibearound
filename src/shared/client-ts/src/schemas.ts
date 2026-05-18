@@ -163,6 +163,7 @@ export const WebVerboseSettingsSchema = z.object({
   show_tool_use: z.boolean(),
   show_archived: z.boolean(),
   send_with_modifier_enter: z.boolean(),
+  permission_mode: z.enum(["default", "acceptEdits", "bypassPermissions", "dontAsk"]),
 });
 export type WebVerboseSettings = z.infer<typeof WebVerboseSettingsSchema>;
 

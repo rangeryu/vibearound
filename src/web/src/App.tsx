@@ -30,7 +30,15 @@ const DEFAULT_WEB_SETTINGS: WebVerboseSettings = {
   show_tool_use: true,
   show_archived: false,
   send_with_modifier_enter: false,
+  permission_mode: "default",
 };
+
+const WEB_PERMISSION_MODES = new Set<WebVerboseSettings["permission_mode"]>([
+  "default",
+  "acceptEdits",
+  "bypassPermissions",
+  "dontAsk",
+]);
 
 function readStoredWebSettings(): WebVerboseSettings {
   if (typeof window === "undefined") return DEFAULT_WEB_SETTINGS;
@@ -57,6 +65,10 @@ function readStoredWebSettings(): WebVerboseSettings {
         typeof parsed.send_with_modifier_enter === "boolean"
           ? parsed.send_with_modifier_enter
           : DEFAULT_WEB_SETTINGS.send_with_modifier_enter,
+      permission_mode:
+        parsed.permission_mode && WEB_PERMISSION_MODES.has(parsed.permission_mode)
+          ? parsed.permission_mode
+          : DEFAULT_WEB_SETTINGS.permission_mode,
     };
   } catch {
     return DEFAULT_WEB_SETTINGS;

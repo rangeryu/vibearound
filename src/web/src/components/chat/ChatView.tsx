@@ -109,6 +109,7 @@ interface ChatRuntimeActions {
   sendMessage: ReturnType<typeof useWebChatConnection>["sendMessage"];
   resumeSession: ReturnType<typeof useWebChatConnection>["resumeSession"];
   clearConversationView: ReturnType<typeof useWebChatConnection>["clearConversationView"];
+  setSessionMode: ReturnType<typeof useWebChatConnection>["setSessionMode"];
   stopStreaming: ReturnType<typeof useWebChatConnection>["stopStreaming"];
   sendPermissionResponse: ReturnType<typeof useWebChatConnection>["sendPermissionResponse"];
   cancelPermissionRequest: ReturnType<typeof useWebChatConnection>["cancelPermissionRequest"];
@@ -323,12 +324,14 @@ function mergeSessionGroupUpdates(
 function ChatRuntimeHost({
   runtimeKey,
   initialResume,
+  permissionMode,
   onSnapshot,
   onActions,
   onAgentSelected,
 }: {
   runtimeKey: string;
   initialResume?: ChatRuntimeSpec["initialResume"];
+  permissionMode: WebVerboseSettings["permission_mode"];
   onSnapshot: (runtimeKey: string, snapshot: ChatRuntimeSnapshot) => void;
   onActions: (runtimeKey: string, actions: ChatRuntimeActions | null) => void;
   onAgentSelected: (
@@ -372,6 +375,7 @@ function ChatRuntimeHost({
       sendMessage: connection.sendMessage,
       resumeSession: connection.resumeSession,
       clearConversationView: connection.clearConversationView,
+      setSessionMode: connection.setSessionMode,
       stopStreaming: connection.stopStreaming,
       sendPermissionResponse: connection.sendPermissionResponse,
       cancelPermissionRequest: connection.cancelPermissionRequest,
@@ -383,9 +387,20 @@ function ChatRuntimeHost({
     connection.resumeSession,
     connection.sendMessage,
     connection.sendPermissionResponse,
+    connection.setSessionMode,
     connection.stopStreaming,
     onActions,
     runtimeKey,
+  ]);
+
+  useEffect(() => {
+    if (!connection.connected || !connection.meta.sessionId) return;
+    connection.setSessionMode(permissionMode);
+  }, [
+    connection.connected,
+    connection.meta.sessionId,
+    connection.setSessionMode,
+    permissionMode,
   ]);
 
   useEffect(() => {
@@ -1282,6 +1297,7 @@ export function ChatView({
       workspacePath: selectedWorkspace?.path,
       sessionSelection,
       launchSession: selectedLaunchSession,
+      permissionMode: webSettings.permission_mode,
     });
     if (!sent) return;
 
@@ -1319,6 +1335,7 @@ export function ChatView({
     sendMessage,
     sessionSelection,
     t,
+    webSettings.permission_mode,
   ]);
 
   return (
@@ -1328,6 +1345,7 @@ export function ChatView({
           key={runtimeKey}
           runtimeKey={runtimeKey}
           initialResume={runtimeSpecs[runtimeKey]?.initialResume}
+          permissionMode={webSettings.permission_mode}
           onSnapshot={handleRuntimeSnapshot}
           onActions={handleRuntimeActions}
           onAgentSelected={handleSocketAgentSelected}

@@ -151,6 +151,18 @@ impl ConversationManager {
         conv.set_session_mode(mode_id).await
     }
 
+    /// Set the preferred permission mode for this route. If a session is
+    /// already active, apply it immediately; otherwise the next prompt applies
+    /// it after session creation and before forwarding user content.
+    pub async fn set_desired_session_mode(
+        &self,
+        route: &RouteKey,
+        mode_id: String,
+    ) -> acp::Result<()> {
+        let conv = self.get_or_create(route.clone());
+        conv.set_desired_session_mode(mode_id).await
+    }
+
     /// Get cached available agent commands for a route.
     pub async fn list_agent_commands(&self, route: &RouteKey) -> serde_json::Value {
         match self.get(route) {

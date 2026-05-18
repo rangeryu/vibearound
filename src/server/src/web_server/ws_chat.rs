@@ -88,6 +88,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             input,
                             profile,
                             session_intent,
+                            session_mode,
                         } => {
                             abort_direct_resume_task(
                                 &mut direct_resume_task,
@@ -126,8 +127,14 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                         .await;
                                     }
                                 }
+                                if let Some(mode_id) = session_mode {
+                                    apply_web_session_mode(&state, &route, &mode_id).await;
+                                }
                             }
                             state.channel_hub.handle_input(input);
+                        }
+                        WebChatInput::SetMode { mode_id } => {
+                            apply_web_session_mode(&state, &active_route, &mode_id).await;
                         }
                         WebChatInput::Stop(input) => {
                             abort_direct_resume_task(
@@ -476,6 +483,47 @@ async fn send_web_system_text(state: &AppState, route: &RouteKey, text: &str) {
         .await;
 }
 
+fn canonical_web_session_mode(mode_id: &str) -> Option<&'static str> {
+    match mode_id.trim() {
+        "default" => Some("default"),
+        "plan" => Some("plan"),
+        "acceptEdits" | "accept_edits" | "accept-edits" | "accept" => Some("acceptEdits"),
+        "bypassPermissions" | "bypass_permissions" | "bypass-permissions" | "bypass" => {
+            Some("bypassPermissions")
+        }
+        "dontAsk" | "dont_ask" | "dont-ask" | "dontask" => Some("dontAsk"),
+        _ => None,
+    }
+}
+
+async fn apply_web_session_mode(state: &AppState, route: &RouteKey, mode_id: &str) {
+    let Some(canonical) = canonical_web_session_mode(mode_id) else {
+        send_web_system_text(
+            state,
+            route,
+            &format!(
+                "❌ Unknown mode `{}`. Valid: default, plan, acceptEdits, bypassPermissions, dontAsk.",
+                mode_id
+            ),
+        )
+        .await;
+        return;
+    };
+    if let Err(error) = state
+        .channel_hub
+        .conversation_manager()
+        .set_desired_session_mode(route, canonical.to_string())
+        .await
+    {
+        send_web_system_text(
+            state,
+            route,
+            &format!("❌ Could not switch mode to `{}`: {}.", canonical, error),
+        )
+        .await;
+    }
+}
+
 async fn send_event<S>(ws_tx: &mut S, event: &ChatEvent) -> Result<(), ()>
 where
     S: SinkExt<Message, Error = axum::Error> + Unpin,
@@ -495,6 +543,10 @@ enum WebChatInput {
         input: ChannelInput,
         profile: Option<String>,
         session_intent: Option<WebChatSessionIntent>,
+        session_mode: Option<String>,
+    },
+    SetMode {
+        mode_id: String,
     },
     Stop(ChannelInput),
     PermissionResponse {
@@ -541,6 +593,7 @@ fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
                     let agent = parse_web_agent(&v);
                     let session_intent = parse_web_session_intent(&v, agent.clone());
                     let profile = parse_web_profile(&v);
+                    let session_mode = parse_web_session_mode(&v);
                     Some(WebChatInput::Message {
                         input: ChannelInput::Message {
                             envelope: ChannelEnvelope {
@@ -556,7 +609,12 @@ fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
                         },
                         profile,
                         session_intent,
+                        session_mode,
                     })
+                }
+                "set_mode" => {
+                    let mode_id = string_field(&v, &["modeId", "mode_id", "permissionMode"])?;
+                    Some(WebChatInput::SetMode { mode_id })
                 }
                 "resume_session" => {
                     let agent = parse_web_agent(&v);
@@ -623,6 +681,7 @@ fn parse_web_chat_input(chat_id: &str, text: &str) -> Option<WebChatInput> {
                     },
                     profile: None,
                     session_intent: None,
+                    session_mode: None,
                 })
             }
         }
@@ -697,6 +756,10 @@ fn parse_web_profile(value: &serde_json::Value) -> Option<String> {
         .map(str::trim)
         .filter(|x| !x.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn parse_web_session_mode(value: &serde_json::Value) -> Option<String> {
+    string_field(value, &["permissionMode", "modeId", "mode_id"])
 }
 
 fn parse_web_session_intent(
@@ -858,6 +921,7 @@ mod tests {
                     session_id,
                     cwd: Some(cwd),
                 }),
+            session_mode: None,
         } = input
         else {
             panic!("expected resume message");
@@ -903,6 +967,7 @@ mod tests {
 
         let WebChatInput::Message {
             session_intent: Some(WebChatSessionIntent::New { cwd: None }),
+            session_mode: None,
             ..
         } = input
         else {
@@ -920,6 +985,7 @@ mod tests {
 
         let WebChatInput::Message {
             session_intent: Some(WebChatSessionIntent::New { cwd: Some(cwd) }),
+            session_mode: None,
             ..
         } = input
         else {
@@ -939,6 +1005,7 @@ mod tests {
 
         let WebChatInput::Message {
             profile: Some(profile),
+            session_mode: None,
             ..
         } = input
         else {
@@ -946,6 +1013,44 @@ mod tests {
         };
 
         assert_eq!(profile, "deepseek");
+    }
+
+    #[test]
+    fn parses_message_permission_mode() {
+        let input = parse_web_chat_input(
+            "chat-1",
+            r#"{"type":"message","text":"hello","permissionMode":"acceptEdits"}"#,
+        )
+        .expect("message input");
+
+        let WebChatInput::Message {
+            session_mode: Some(mode_id),
+            ..
+        } = input
+        else {
+            panic!("expected message mode");
+        };
+
+        assert_eq!(mode_id, "acceptEdits");
+    }
+
+    #[test]
+    fn parses_set_mode_message() {
+        let input = parse_web_chat_input(
+            "chat-1",
+            r#"{"type":"set_mode","modeId":"bypassPermissions"}"#,
+        )
+        .expect("set mode input");
+
+        let WebChatInput::SetMode { mode_id } = input else {
+            panic!("expected set mode");
+        };
+
+        assert_eq!(mode_id, "bypassPermissions");
+        assert_eq!(
+            canonical_web_session_mode("bypass-permissions"),
+            Some("bypassPermissions"),
+        );
     }
 
     #[test]
@@ -966,6 +1071,7 @@ mod tests {
                             ..
                         },
                 },
+            session_mode: None,
             ..
         } = input
         else {

@@ -56,6 +56,7 @@ interface SendChatMessageRequest {
   agentId: string;
   profileId?: string;
   workspacePath?: string;
+  permissionMode?: string;
   sessionSelection: ChatSessionSelection;
   launchSession?: LaunchSessionInfo;
 }
@@ -488,6 +489,7 @@ export function useWebChatConnection({
       agentId,
       profileId,
       workspacePath,
+      permissionMode,
       sessionSelection,
       launchSession,
     }: SendChatMessageRequest) => {
@@ -532,6 +534,9 @@ export function useWebChatConnection({
         if (profileId !== undefined) {
           payload.profileId = profileId;
         }
+        if (permissionMode) {
+          payload.permissionMode = permissionMode;
+        }
         if (sessionSelection.kind === "new") {
           payload.sessionAction = "new";
           if (workspacePath) {
@@ -554,6 +559,18 @@ export function useWebChatConnection({
     },
     [clearReplayCacheContext],
   );
+
+  const setSessionMode = useCallback((modeId: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    try {
+      ws.send(JSON.stringify({ type: "set_mode", modeId }));
+      return true;
+    } catch (error) {
+      console.warn("[ChatView] failed to set session mode:", error);
+      return false;
+    }
+  }, []);
 
   const clearConversationView = useCallback((options?: {
     abortReplay?: boolean;
@@ -723,6 +740,7 @@ export function useWebChatConnection({
     sendMessage,
     resumeSession,
     clearConversationView,
+    setSessionMode,
     stopStreaming,
     sendPermissionResponse,
     cancelPermissionRequest,

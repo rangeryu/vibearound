@@ -289,6 +289,7 @@ impl Conversation {
         *self.busy.lock().await = false;
         *self.workspace.lock().await = None;
         *self.logged_session_id.lock().await = None;
+        *self.applied_session_mode.lock().await = None;
         *self.handover_resume_session_id.lock().await = None;
         *self.handover_cwd.lock().await = None;
         *self.suppress_replay.lock().await = None;
