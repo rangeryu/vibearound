@@ -22,6 +22,16 @@ VibeAround is a desktop hub for local AI coding agents. It keeps Claude Code, Co
 
 The core idea is simple: keep the agent running on your machine, but let you reach it from the surface that makes sense in the moment.
 
+## Screenshots
+
+| Model profiles | Channel plugins |
+|---|---|
+| <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/en-profiles.webp" alt="VibeAround model profiles" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/en-channels.webp" alt="VibeAround channel plugins" width="100%" /> |
+
+| Start a local agent | Review code changes | Generate visual assets |
+|---|---|---|
+| <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.2/screenshots/web-chat-start.webp" alt="VibeAround web chat workspace launcher" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.2/screenshots/web-chat-diff.webp" alt="VibeAround web chat code review with diff" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.2/screenshots/web-chat-imagegen.webp" alt="VibeAround web chat image generation session" width="100%" /> |
+
 ## Why VibeAround
 
 Local coding agents are powerful, but they are usually trapped inside one terminal tab. VibeAround gives them durable doors:
@@ -44,16 +54,6 @@ Local coding agents are powerful, but they are usually trapped inside one termin
 | Web Terminal | A browser terminal for local PTY sessions, with mobile-friendly controls and optional tmux attachment |
 | Messaging channels | DM your local agents from Telegram, Feishu/Lark, Discord, Slack, WeChat, DingTalk, WeCom, or QQ Bot |
 | Local API proxy | Profile-specific loopback endpoints for model routing and API-shape translation |
-
-## Screenshots
-
-| Model profiles | Channel plugins |
-|---|---|
-| <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/en-profiles.webp" alt="VibeAround model profiles" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.5.12/screenshots/en-channels.webp" alt="VibeAround channel plugins" width="100%" /> |
-
-| Start a local agent | Review code changes | Generate visual assets |
-|---|---|---|
-| <img src="docs/assets/screenshots/web-chat-start.jpg" alt="VibeAround web chat workspace launcher" width="100%" /> | <img src="docs/assets/screenshots/web-chat-diff.jpg" alt="VibeAround web chat code review with diff" width="100%" /> | <img src="docs/assets/screenshots/web-chat-imagegen.jpg" alt="VibeAround web chat image generation session" width="100%" /> |
 
 ## What You Can Do
 
