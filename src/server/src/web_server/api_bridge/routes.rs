@@ -5,7 +5,7 @@ use axum::Json;
 use serde_json::Value;
 
 use super::super::AppState;
-use super::{proxy_handler, ProxyProtocol};
+use super::{bridge_handler, BridgeProtocol};
 
 pub async fn legacy_responses_handler(
     State(state): State<AppState>,
@@ -13,13 +13,13 @@ pub async fn legacy_responses_handler(
     headers: HeaderMap,
     Json(original_request): Json<Value>,
 ) -> Response {
-    proxy_handler(
+    bridge_handler(
         state,
         profile_id,
         None,
         None,
         target_api_type,
-        ProxyProtocol::OpenAiResponses,
+        BridgeProtocol::OpenAiResponses,
         headers,
         original_request,
     )
@@ -33,13 +33,13 @@ pub async fn local_responses_handler(
     Json(original_request): Json<Value>,
 ) -> Response {
     let route_scope = scope.clone();
-    proxy_handler(
+    bridge_handler(
         state,
         profile_id,
         Some(route_scope),
         Some(scope),
         target_api_type,
-        ProxyProtocol::OpenAiResponses,
+        BridgeProtocol::OpenAiResponses,
         headers,
         original_request,
     )
@@ -52,13 +52,13 @@ pub async fn legacy_chat_completions_handler(
     headers: HeaderMap,
     Json(original_request): Json<Value>,
 ) -> Response {
-    proxy_handler(
+    bridge_handler(
         state,
         profile_id,
         None,
         None,
         target_api_type,
-        ProxyProtocol::OpenAiChat,
+        BridgeProtocol::OpenAiChat,
         headers,
         original_request,
     )
@@ -72,13 +72,13 @@ pub async fn local_chat_completions_handler(
     Json(original_request): Json<Value>,
 ) -> Response {
     let route_scope = scope.clone();
-    proxy_handler(
+    bridge_handler(
         state,
         profile_id,
         Some(route_scope),
         Some(scope),
         target_api_type,
-        ProxyProtocol::OpenAiChat,
+        BridgeProtocol::OpenAiChat,
         headers,
         original_request,
     )
@@ -91,13 +91,13 @@ pub async fn legacy_messages_handler(
     headers: HeaderMap,
     Json(original_request): Json<Value>,
 ) -> Response {
-    proxy_handler(
+    bridge_handler(
         state,
         profile_id,
         None,
         None,
         target_api_type,
-        ProxyProtocol::AnthropicMessages,
+        BridgeProtocol::AnthropicMessages,
         headers,
         original_request,
     )
@@ -121,18 +121,18 @@ pub async fn legacy_gemini_generate_content_handler(
             "Gemini route must end with {model}:generateContent or {model}:streamGenerateContent",
         );
     };
-    va_ai_api_proxy::translator::gemini_generate_content::attach_route_metadata(
+    va_ai_api_bridge::translator::gemini_generate_content::attach_route_metadata(
         &mut original_request,
         model,
         action == "streamGenerateContent",
     );
-    proxy_handler(
+    bridge_handler(
         state,
         profile_id,
         None,
         None,
         target_api_type,
-        ProxyProtocol::GeminiGenerateContent,
+        BridgeProtocol::GeminiGenerateContent,
         headers,
         original_request,
     )
@@ -146,13 +146,13 @@ pub async fn local_messages_handler(
     Json(original_request): Json<Value>,
 ) -> Response {
     let route_scope = scope.clone();
-    proxy_handler(
+    bridge_handler(
         state,
         profile_id,
         Some(route_scope),
         Some(scope),
         target_api_type,
-        ProxyProtocol::AnthropicMessages,
+        BridgeProtocol::AnthropicMessages,
         headers,
         original_request,
     )
@@ -177,19 +177,19 @@ pub async fn local_gemini_generate_content_handler(
             "Gemini route must end with {model}:generateContent or {model}:streamGenerateContent",
         );
     };
-    va_ai_api_proxy::translator::gemini_generate_content::attach_route_metadata(
+    va_ai_api_bridge::translator::gemini_generate_content::attach_route_metadata(
         &mut original_request,
         model,
         action == "streamGenerateContent",
     );
     let route_scope = scope.clone();
-    proxy_handler(
+    bridge_handler(
         state,
         profile_id,
         Some(route_scope),
         Some(scope),
         target_api_type,
-        ProxyProtocol::GeminiGenerateContent,
+        BridgeProtocol::GeminiGenerateContent,
         headers,
         original_request,
     )

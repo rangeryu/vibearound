@@ -67,6 +67,9 @@ demo*/
 # Plugins (managed separately, not committed to main repo)
 src/plugins/
 
+# SDKs (managed separately, not committed to main repo)
+src/sdks/
+
 # GitHub Wiki (独立仓库，本地编辑用)
 wiki/
 

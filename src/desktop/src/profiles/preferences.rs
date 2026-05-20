@@ -44,10 +44,10 @@ pub struct LauncherPreferences {
     /// Back-compat alias for older UI code. New writes go to agents.json.
     pub default_profiles: BTreeMap<String, String>,
     /// Global policy for wrapping OpenAI-compatible profile launches through
-    /// VibeAround's local compatibility proxy.
-    pub compatibility_proxy: terminal::CompatibilityProxyMode,
+    /// VibeAround's local compatibility bridge.
+    pub compatibility_bridge: terminal::CompatibilityBridgeMode,
     /// Per-profile connection choices for launch targets that can run via
-    /// the local API proxy.
+    /// the local API bridge.
     pub profile_connections: agent_state::ProfileConnectionPreferences,
 }
 
@@ -105,7 +105,7 @@ pub(super) fn launcher_preferences() -> LauncherPreferences {
         default_profile_id,
         enabled_agents: cfg.enabled_agents.clone(),
         default_profiles,
-        compatibility_proxy: terminal::read_compatibility_proxy_preference(),
+        compatibility_bridge: terminal::read_compatibility_bridge_preference(),
         profile_connections: merged_profile_connections(&agent_prefs),
     }
 }

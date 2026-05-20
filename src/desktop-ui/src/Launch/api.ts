@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   CatalogEntry,
-  CompatibilityProxyMode,
+  CompatibilityBridgeMode,
   AgentLaunchPreference,
   ConnectionAgentId,
   ProfileDef,
@@ -97,7 +97,7 @@ export interface LauncherPreferences {
   defaultProfileId?: string | null;
   enabledAgents: string[];
   defaultProfiles: Record<string, string>;
-  compatibilityProxy: CompatibilityProxyMode;
+  compatibilityBridge: CompatibilityBridgeMode;
   profileConnections: ProfileConnections;
 }
 
@@ -165,10 +165,10 @@ export function reorderLauncherWorkspaces(
   return invoke<void>("launcher_reorder_workspaces", { workspacePaths });
 }
 
-export function setLauncherCompatibilityProxy(
-  mode: CompatibilityProxyMode,
+export function setLauncherCompatibilityBridge(
+  mode: CompatibilityBridgeMode,
 ): Promise<void> {
-  return invoke<void>("launcher_set_compatibility_proxy", { mode });
+  return invoke<void>("launcher_set_compatibility_bridge", { mode });
 }
 
 export function setProfileConnection(

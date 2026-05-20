@@ -53,7 +53,7 @@ VibeAround 是一个面向本地 AI 编程 Agent 的桌面中枢。它把 Claude
 | Web Chat | 多 Agent 对话、恢复会话、文件/图片/文档附件、归档会话、显示思考/工具、发送快捷键 |
 | Web Terminal | 浏览器里的本地 PTY 终端，支持移动端常用控制，也可附加 tmux |
 | IM 频道 | 从 Telegram、飞书/Lark、Discord、Slack、微信、钉钉、企业微信、QQ Bot 私聊本地 Agent |
-| 本地 API proxy | 按 Profile 生成 loopback endpoint，用于模型路由和 API 形态转换 |
+| 本地 API bridge | 按 Profile 生成 loopback endpoint，用于模型路由和 API 形态转换 |
 
 ## 可以做什么
 
@@ -61,7 +61,7 @@ VibeAround 是一个面向本地 AI 编程 Agent 的桌面中枢。它把 Claude
 
 直接启动 Claude Code、Codex CLI、Gemini CLI、OpenCode 等 Agent，或通过保存的 provider profile 启动。多个 Agent、多个 Profile 可以并行存在。
 
-### 用一个代理接入多种模型
+### 用 API 转接接入多种模型
 
 通过 Provider Profile，把本地 Agent CLI 连接到 DeepSeek、阿里云百炼、Moonshot/Kimi、MiniMax、Z.AI/GLM、Google Gemini、OpenRouter、Azure OpenAI、官方 API 或自定义兼容 endpoint。
 
@@ -99,7 +99,7 @@ macOS 当前发布 Apple Silicon 版本。Windows 和 Linux 桌面包由 GitHub 
 
 Agent 通过 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 在 stdio 上通信。需要 npm 分发 bridge 时，VibeAround 会按需安装。
 
-| Agent | IM 对话 | 会话接力 | Profile 启动 | 手动 proxy 配置 |
+| Agent | IM 对话 | 会话接力 | Profile 启动 | 手动 bridge 配置 |
 |---|---|---|---|---|
 | Claude Code | 支持 | 支持 | 支持 | 支持 |
 | Codex CLI | 支持 | 支持 | 支持 | 支持 |
@@ -111,21 +111,21 @@ Agent 通过 [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) 在
 
 ## Model Providers 与 Proxy 路由
 
-Provider Profile 让本地 Agent 可以连接官方 API、OpenAI-compatible endpoint 或经过转换的 proxy route，而不用手动改 CLI 配置文件。
+Provider Profile 让本地 Agent 可以连接官方 API、OpenAI-compatible endpoint 或经过转换的 bridge route，而不用手动改 CLI 配置文件。
 
 | Provider | Profile 支持 |
 |---|---|
-| DeepSeek | 内置 endpoint 和 proxy route |
+| DeepSeek | 内置 endpoint 和 bridge route |
 | 阿里云百炼 | 内置 Coding Plan 和 Token Plan endpoint |
-| Moonshot / Kimi | 内置 OpenAI-compatible 和 proxy route |
-| MiniMax | 内置 OpenAI-compatible 和 proxy route |
-| Z.AI / GLM | 内置 endpoint 和 proxy route |
+| Moonshot / Kimi | 内置 OpenAI-compatible 和 bridge route |
+| MiniMax | 内置 OpenAI-compatible 和 bridge route |
+| Z.AI / GLM | 内置 endpoint 和 bridge route |
 | Google Gemini | 内置 Gemini API profile |
 | OpenRouter | 内置 OpenRouter profile |
 | Azure OpenAI | 内置 Azure profile |
 | Custom endpoint | 自带兼容 base URL |
 
-VibeAround 的本地 API proxy 由 [va-ai-api-proxy](https://github.com/jazzenchen/va-ai-api-proxy) 驱动，重点打通常见 Agent API 形态：
+VibeAround 的本地 API bridge 由 [va-ai-api-bridge](https://github.com/jazzenchen/va-ai-api-bridge) 驱动，昵称是 `va-aab`，重点打通常见 Agent API 形态：
 
 | API 形态 | 常见 endpoint |
 |---|---|
@@ -170,8 +170,6 @@ VibeAround 的本地 API proxy 由 [va-ai-api-proxy](https://github.com/jazzench
 ## 本地开发
 
 ```bash
-# 拉取本地 API 转换需要的 va-ai-api-proxy submodule
-git submodule update --init --recursive
 cd src
 bun install
 bun run prebuild
@@ -180,7 +178,7 @@ bun run prebuild
 bun run dev
 ```
 
-如果 clone 时没有使用 `--recurse-submodules`，第一行会拉取 `src/va-ai-api-proxy`，它提供 VibeAround 的 AI API 转换能力。
+AI API bridge SDK（`va-aab`）作为独立开源 Rust crate 维护。本地联调时可以把 SDK checkout 放在 `src/sdks/`；第一次 crates.io release 之后，应用应消费发布后的 crate，而不是 submodule 或 vendored checkout。
 
 环境要求：Rust 1.82+、推荐 Node.js 24 LTS、Bun 1.3+。macOS 还需要执行 `xcode-select --install`；Linux 需要安装发行版对应的 WebKitGTK/Tauri 系统依赖。
 

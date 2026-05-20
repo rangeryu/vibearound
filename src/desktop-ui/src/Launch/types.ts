@@ -6,7 +6,7 @@
  */
 
 export type AuthMode = "api_key" | "oauth_via_cli";
-export type CompatibilityProxyMode = "auto" | "on" | "off";
+export type CompatibilityBridgeMode = "auto" | "on" | "off";
 export type ConnectionAgentId = "claude" | "codex" | "gemini" | "opencode";
 
 export interface ProfileSummary {
@@ -36,10 +36,10 @@ export interface LaunchTargetSummary {
 
 export interface ProfileConnectionPreference {
   selectedApiType?: string | null;
-  proxy?: Record<string, ProfileProxyPreference | undefined> | null;
+  bridge?: Record<string, ProfileBridgePreference | undefined> | null;
 }
 
-export interface ProfileProxyPreference {
+export interface ProfileBridgePreference {
   enabled?: boolean | null;
   targetApiType?: string | null;
   upstreamModel?: string | null;

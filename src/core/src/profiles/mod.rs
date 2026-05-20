@@ -6,11 +6,11 @@
 //! schema/catalog/rendering path so IM-started agents can use the same
 //! profiles.
 
+mod bridge_launch;
 pub mod catalog;
 pub mod codex_metadata;
 pub mod connections;
 pub mod headers;
-mod proxy_launch;
 pub mod render;
 pub mod runtime;
 pub mod schema;

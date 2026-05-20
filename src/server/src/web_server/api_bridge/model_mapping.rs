@@ -2,44 +2,44 @@ use common::agent_state;
 use common::profiles::{catalog, schema::ProfileDef};
 
 #[derive(Debug, Clone)]
-pub(super) struct ProxyModelMapping {
+pub(super) struct BridgeModelMapping {
     pub(super) upstream_model: String,
     pub(super) agent_model: String,
 }
 
-pub(super) fn proxy_route_preference(
+pub(super) fn bridge_route_preference(
     profile: &ProfileDef,
     route_scope: Option<&str>,
     client_api_type: &str,
     target_api_type: &str,
-) -> Option<agent_state::ProfileProxyPreference> {
+) -> Option<agent_state::ProfileBridgePreference> {
     let agent_id = agent_id_from_scope(route_scope?, client_api_type)?;
     let prefs = agent_state::read_prefs();
     let preference = prefs.profile_connections.get(&profile.id)?.get(agent_id)?;
-    let proxy = preference.proxy.get(client_api_type)?;
-    if !proxy.enabled {
+    let bridge = preference.bridge.get(client_api_type)?;
+    if !bridge.enabled {
         return None;
     }
-    let configured_target = proxy.target_api_type.as_deref().unwrap_or(target_api_type);
+    let configured_target = bridge.target_api_type.as_deref().unwrap_or(target_api_type);
     if configured_target != target_api_type {
         return None;
     }
-    Some(proxy.clone())
+    Some(bridge.clone())
 }
 
-pub(super) fn proxy_model_mapping(
+pub(super) fn bridge_model_mapping(
     profile: &ProfileDef,
-    proxy: Option<&agent_state::ProfileProxyPreference>,
+    bridge: Option<&agent_state::ProfileBridgePreference>,
     target_api_type: &str,
-) -> Option<ProxyModelMapping> {
-    let proxy = proxy?;
-    let requested_upstream_model = clean_model_id(proxy.upstream_model.as_deref())
+) -> Option<BridgeModelMapping> {
+    let bridge = bridge?;
+    let requested_upstream_model = clean_model_id(bridge.upstream_model.as_deref())
         .or_else(|| default_model(profile, target_api_type))?;
     let upstream_model = canonical_model(profile, target_api_type, &requested_upstream_model)
         .unwrap_or_else(|| requested_upstream_model.clone());
     let agent_model =
-        clean_model_id(proxy.fake_model_id.as_deref()).unwrap_or(requested_upstream_model);
-    Some(ProxyModelMapping {
+        clean_model_id(bridge.fake_model_id.as_deref()).unwrap_or(requested_upstream_model);
+    Some(BridgeModelMapping {
         upstream_model,
         agent_model,
     })
@@ -100,7 +100,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn proxy_mapping_canonicalizes_gemini_alias_for_upstream() {
+    fn bridge_mapping_canonicalizes_gemini_alias_for_upstream() {
         let profile = ProfileDef {
             id: "gemini-test".to_string(),
             label: "Gemini Test".to_string(),
@@ -122,7 +122,7 @@ mod tests {
             .collect(),
             provider_settings: Default::default(),
         };
-        let proxy = agent_state::ProfileProxyPreference {
+        let bridge = agent_state::ProfileBridgePreference {
             enabled: true,
             target_api_type: Some("openai-chat".to_string()),
             upstream_model: Some("gemini-3.1-pro".to_string()),
@@ -130,7 +130,7 @@ mod tests {
             headers: BTreeMap::new(),
         };
 
-        let mapping = proxy_model_mapping(&profile, Some(&proxy), "openai-chat")
+        let mapping = bridge_model_mapping(&profile, Some(&bridge), "openai-chat")
             .expect("mapping should resolve");
 
         assert_eq!(mapping.upstream_model, "gemini-3.1-pro-preview");

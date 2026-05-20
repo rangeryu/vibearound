@@ -2,7 +2,7 @@
 
 pub mod agent_hooks;
 pub mod api_types;
-pub mod openai_proxy;
+pub mod openai_bridge;
 mod web_server;
 
 pub use web_server::run_web_server;

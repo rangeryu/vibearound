@@ -1,7 +1,7 @@
 use common::profiles::catalog::{self, ContentCapabilities, EndpointDef};
 use common::profiles::schema::ProfileDef;
 use serde_json::Value;
-use va_ai_api_proxy::{ContentBlock, UniversalItem, UniversalRequest};
+use va_ai_api_bridge::{ContentBlock, UniversalItem, UniversalRequest};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct ContentUsage {
@@ -264,7 +264,7 @@ mod tests {
 
     use common::profiles::schema::{ApiTypeOverrides, AuthMode, ProviderSettings};
     use serde_json::json;
-    use va_ai_api_proxy::Role;
+    use va_ai_api_bridge::Role;
 
     use super::*;
 

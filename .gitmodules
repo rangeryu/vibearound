@@ -1,4 +1,0 @@
-[submodule "src/va-ai-api-proxy"]
-	path = src/va-ai-api-proxy
-	url = https://github.com/jazzenchen/va-ai-api-proxy.git
-	branch = main

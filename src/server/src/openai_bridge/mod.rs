@@ -1,4 +1,4 @@
-//! OpenAI-compatible proxy translation helpers.
+//! OpenAI-compatible bridge translation helpers.
 //!
 //! This module owns the protocol shape conversion for providers that only
 //! expose Chat Completions while a launched client expects the Responses API.
@@ -13,6 +13,6 @@ mod responses_to_chat;
 mod sse;
 
 pub use chat_to_responses::{chat_completion_to_response, ChatToResponsesStream};
-pub use error::{ProxyTransformError, Result};
+pub use error::{BridgeTransformError, Result};
 pub use responses_to_chat::responses_to_chat_request;
 pub use sse::{encode_sse_event, ResponseStreamEvent};

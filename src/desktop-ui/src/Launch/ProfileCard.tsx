@@ -190,13 +190,13 @@ export function ProfileCard({
               connection.status !== "unsupported" &&
               defaultAgent === target.id && defaultProfiles[target.id] === profile.id;
             const statusText =
-              connection.status === "via_proxy"
+              connection.status === "via_bridge"
                 ? t("via API bridge")
                 : connection.status === "native"
                   ? apiTypeBadge(target.apiType)
                   : t("unsupported");
             const title =
-              connection.status === "via_proxy" && connection.selected.targetApiType
+              connection.status === "via_bridge" && connection.selected.targetApiType
                 ? t("{{agent}} connects through the API bridge to {{provider}} {{apiType}}", {
                     agent: target.label,
                     provider: profile.providerLabel,
@@ -259,7 +259,7 @@ export function ProfileCard({
                       >
                         · {statusText}
                       </Badge>
-                      {connection.status === "via_proxy" && <Plug className="w-3 h-3" />}
+                      {connection.status === "via_bridge" && <Plug className="w-3 h-3" />}
                       {isDefault && <Star className="w-3 h-3 fill-current" />}
                       {warning && <AlertTriangle className="w-3 h-3 text-amber-500" />}
                     </Button>
