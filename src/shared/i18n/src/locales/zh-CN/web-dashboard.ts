@@ -78,7 +78,7 @@ export const zhCNWebDashboard: Record<string, string> = {
   "Error: {{error}}": "错误：{{error}}",
   "{{agent}} / Direct": "{{agent}} / 直连",
   "{{agent}} / {{profile}}": "{{agent}} / {{profile}}",
-  "{{profile}} (proxy)": "{{profile}}（代理）",
+  "{{profile}} (API bridge)": "{{profile}}（API 转接）",
   "Launch without profile": "不使用配置启动",
   "Message {{agent}}…": "给 {{agent}} 发消息…",
   "Ask {{agent}} anything…": "问 {{agent}} 任何问题…",

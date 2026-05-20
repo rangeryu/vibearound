@@ -321,7 +321,7 @@ export function ProfileActionsMenu({
             onSelect={() => onConnectionSettings(profile)}
           >
             <Plug className="h-3 w-3" />
-            {t("Proxy")}
+            {t("API bridge")}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
@@ -395,7 +395,7 @@ export function ProxyBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
       <Plug className="h-3 w-3" />
-      {t("Proxy on")}
+      {t("API bridge on")}
     </span>
   );
 }

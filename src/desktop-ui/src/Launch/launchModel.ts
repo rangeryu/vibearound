@@ -169,7 +169,7 @@ export function profileAvailability(
     if (resolved.targetOptions.length > 0) {
       return {
         launchable: false,
-        reason: t('Enable proxy for "{{profile}}" to launch {{agent}} with {{api}}', {
+        reason: t('Enable API bridge for "{{profile}}" to launch {{agent}} with {{api}}', {
           profile: profile.label,
           agent: agentLabel(agentId),
           api: apiTypeProtocolDisplayLabel(resolved.selectedApiType),
@@ -232,7 +232,7 @@ export function profileSummary(
         title: profile.label,
         detail: profile.providerLabel,
         proxy: false,
-        route: t("{{clientApi}} -> {{targetApi}} (proxy off)", {
+        route: t("{{clientApi}} -> {{targetApi}} (API bridge off)", {
           clientApi: apiTypeProtocolDisplayLabel(resolved.selectedApiType),
           targetApi: apiTypeRouteDisplayLabel(resolved.selected.targetApiType),
         }),
