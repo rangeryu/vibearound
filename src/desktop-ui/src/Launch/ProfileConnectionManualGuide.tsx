@@ -211,14 +211,14 @@ export function ManualSettingDialog({
               ) : isOpenCode ? (
                 <>
                   <li>{t("Open the OpenCode config file, then add or merge this provider block.")}</li>
-                  <li>{t("Use any non-empty API key value when the local proxy is already running with a saved profile key.")}</li>
+                  <li>{t("Use any non-empty API key value when the local API bridge is already running with a saved profile key.")}</li>
                 </>
               ) : isGemini ? (
                 <>
                   <li>{t("Open the Gemini CLI settings file and make sure selectedType is gemini-api-key.")}</li>
                   <li>{t("Open the Gemini CLI env file, then add or update these variables.")}</li>
                   <li>{t("If Gemini keeps using OAuth, run /auth in Gemini CLI and choose Gemini API key.")}</li>
-                  <li>{t("Use any non-empty API key value when the local proxy is already running with a saved profile key.")}</li>
+                  <li>{t("Use any non-empty API key value when the local API bridge is already running with a saved profile key.")}</li>
                 </>
               ) : (
                 <>

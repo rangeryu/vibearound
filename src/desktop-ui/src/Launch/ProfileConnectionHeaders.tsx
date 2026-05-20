@@ -91,7 +91,7 @@ export function HeaderSettingDialog({
         <DialogHeader>
           <DialogTitle>{t("Headers")}</DialogTitle>
           <DialogDescription className="sr-only">
-            {t("Configure proxy headers.")}
+            {t("Configure API bridge headers.")}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 px-4 pb-1">

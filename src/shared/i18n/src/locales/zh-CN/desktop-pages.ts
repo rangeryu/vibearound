@@ -1,6 +1,6 @@
 export const zhCNDesktopPages: Record<string, string> = {
-  "Active dev-server proxies and markdown previews. Owner links are permanent; share links rotate every {{minutes}} minutes.":
-    "活跃的开发服务器代理和 Markdown 预览。Owner 链接长期有效，分享链接每 {{minutes}} 分钟轮换一次。",
+  "Active dev-server previews and markdown previews. Owner links are permanent; share links rotate every {{minutes}} minutes.":
+    "活跃的开发服务器预览和 Markdown 预览。Owner 链接长期有效，分享链接每 {{minutes}} 分钟轮换一次。",
   "No active previews. Ask your coding agent to run preview or md_preview.":
     "没有活跃预览。让你的 Coding Agent 运行 preview 或 md_preview。",
   Local: "本地",

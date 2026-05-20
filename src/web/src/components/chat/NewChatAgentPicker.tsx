@@ -155,7 +155,7 @@ export function NewChatAgentPicker({
                   />
                   <span className="min-w-0 flex-1 truncate">
                     {usesProxy
-                      ? t("{{profile}} (proxy)", { profile: profile.label })
+                      ? t("{{profile}} (API bridge)", { profile: profile.label })
                       : profile.label}
                   </span>
                 </button>

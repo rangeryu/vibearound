@@ -191,13 +191,13 @@ export function ProfileCard({
               defaultAgent === target.id && defaultProfiles[target.id] === profile.id;
             const statusText =
               connection.status === "via_proxy"
-                ? t("via proxy")
+                ? t("via API bridge")
                 : connection.status === "native"
                   ? apiTypeBadge(target.apiType)
                   : t("unsupported");
             const title =
               connection.status === "via_proxy" && connection.selected.targetApiType
-                ? t("{{agent}} routes through proxy to {{provider}} {{apiType}}", {
+                ? t("{{agent}} connects through the API bridge to {{provider}} {{apiType}}", {
                     agent: target.label,
                     provider: profile.providerLabel,
                     apiType: apiTypeProtocolLabel(connection.selected.targetApiType),

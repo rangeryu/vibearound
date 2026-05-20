@@ -130,7 +130,7 @@ export function AddCliDropdown({
                         <span className="min-w-0 flex-1 truncate">{profile.label}</span>
                         {target.proxy_target_api_type && (
                           <span className="shrink-0 text-muted-foreground/70">
-                            {t("Proxy")}
+                            {t("API bridge")}
                           </span>
                         )}
                       </DropdownMenuItem>
@@ -154,7 +154,7 @@ export function AddCliDropdown({
                       <span className="min-w-0 flex-1 truncate">{profile.label}</span>
                       {target.proxy_target_api_type && (
                         <span className="shrink-0 text-muted-foreground/70">
-                          {t("Proxy")}
+                          {t("API bridge")}
                         </span>
                       )}
                     </DropdownMenuItem>

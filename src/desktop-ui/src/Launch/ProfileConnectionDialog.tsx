@@ -165,7 +165,7 @@ export function ProfileConnectionDialog({
               connection.selected;
             const statusLabel =
               connection.status === "via_proxy"
-                ? t("Via proxy")
+                ? t("Via API bridge")
                 : connection.status === "native"
                   ? t("Native")
                   : t("Unsupported");
@@ -286,7 +286,7 @@ export function ProfileConnectionDialog({
                     </Select>
                   )}
                   <label className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
-                    {t("Enable proxy")}
+                    {t("Enable API bridge")}
                     <Switch
                       checked={selectedProxyEnabled}
                       disabled={!selectedCanProxy || saving}
@@ -343,7 +343,7 @@ export function ProfileConnectionDialog({
                           <div className="grid gap-2">
                             <div className="flex items-center gap-2">
                               <Plug className="h-3.5 w-3.5 text-primary" />
-                              <div className="text-[11px] font-medium">{t("Proxy target")}</div>
+                              <div className="text-[11px] font-medium">{t("Target API")}</div>
                               <div className="ml-auto">
                                 <HeaderSummaryButton
                                   defaultHeaders={profile.apiTypeHeaders[proxyTarget] ?? {}}
@@ -433,7 +433,7 @@ export function ProfileConnectionDialog({
                                 />
                               </label>
                               <label className="grid min-w-0 gap-1 text-[11px] text-muted-foreground">
-                                <span>{t("Proxy model")}</span>
+                                <span>{t("Target model")}</span>
                                 <Select
                                   value={upstreamModel}
                                   disabled={saving}
@@ -479,7 +479,7 @@ export function ProfileConnectionDialog({
                             </div>
                             <div className="font-mono text-[11px] leading-5 text-primary">
                               {apiTypeProtocolDisplayLabel(client.apiType)} -&gt;{" "}
-                              {t("Proxy")} -&gt; {profile.providerLabel}{" "}
+                              {t("API bridge")} -&gt; {profile.providerLabel}{" "}
                               {apiTypeRouteDisplayLabel(proxyTarget)}
                               {upstreamModel ? ` · ${upstreamModel}` : ""}
                               {fakeModelId ? ` ${t("as")} ${fakeModelId}` : ""}

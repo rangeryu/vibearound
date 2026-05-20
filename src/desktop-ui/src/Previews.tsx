@@ -64,7 +64,7 @@ export function Previews() {
       <PageHeader
         icon={<Eye className="w-4 h-4 text-primary" />}
         title={t("Previews")}
-        description={t("Active dev-server proxies and markdown previews. Owner links are permanent; share links rotate every {{minutes}} minutes.", {
+        description={t("Active dev-server previews and markdown previews. Owner links are permanent; share links rotate every {{minutes}} minutes.", {
           minutes: PREVIEW_SHARE_TTL_MINUTES,
         })}
         actions={(

@@ -148,7 +148,7 @@ export function ChatLaunchSelector({
                   >
                     <span className="truncate">
                       {usesProxy
-                        ? t("{{profile}} (proxy)", { profile: profile.label })
+                        ? t("{{profile}} (API bridge)", { profile: profile.label })
                         : profile.label}
                     </span>
                     {currentAgentId === agent.id && activeProfileId === profile.id && (

@@ -12,8 +12,8 @@ export const zhCNOnboarding: Record<string, string> = {
   "Launch Claude, Codex, and other CLIs quickly":
     "快速启动 Claude、Codex 等 CLI",
   "Use multiple provider profiles": "使用多个服务商配置",
-  "Route clients through the local API proxy":
-    "通过本地 API proxy 转发客户端请求",
+  "Route clients through the local API bridge":
+    "通过本地 API 转接连接客户端请求",
   "IM integration": "IM 对接",
   "Connect messaging platforms and bot plugins": "连接消息平台和 bot 插件",
   "Start and continue coding sessions from your phone":

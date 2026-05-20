@@ -51,7 +51,7 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
   const title = prefs
     ? [
         t("Terminal: {{terminal}}", { terminal: currentTerminal?.label ?? t("Terminal") }),
-        t("API proxy: {{mode}}", { mode: t(PROXY_LABELS[prefs.compatibilityProxy]) }),
+        t("API bridge: {{mode}}", { mode: t(PROXY_LABELS[prefs.compatibilityProxy]) }),
       ].join("\n")
     : t("Launch settings");
 
@@ -145,7 +145,7 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="flex items-center gap-2 text-[11px] font-medium">
             <Network className="w-3 h-3" />
-            {t("API proxy")}
+            {t("API bridge")}
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={prefs.compatibilityProxy}
