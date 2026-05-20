@@ -178,7 +178,7 @@ bun run prebuild
 bun run dev
 ```
 
-The AI API bridge SDK (`va-aab`) is maintained as a separate open-source Rust crate. Local SDK checkouts can live under `src/sdks/` for development, but the app consumes the published crate rather than a submodule.
+The AI API bridge SDK (`va-aab`) is maintained as a separate open-source Rust crate. Local SDK checkouts can live under `src/sdks/` for development; after the first crates.io release, the app should consume the published crate rather than a submodule or vendored checkout.
 
 Prerequisites: Rust 1.82+, Node.js 24 LTS recommended, Bun 1.3+. On macOS, also run `xcode-select --install`; on Linux, install the WebKitGTK/Tauri system dependencies for your distro.
 

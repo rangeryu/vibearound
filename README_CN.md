@@ -178,7 +178,7 @@ bun run prebuild
 bun run dev
 ```
 
-AI API bridge SDK（`va-aab`）作为独立开源 Rust crate 维护。本地联调时可以把 SDK checkout 放在 `src/sdks/`，但应用默认消费发布后的 crate，不再依赖 submodule。
+AI API bridge SDK（`va-aab`）作为独立开源 Rust crate 维护。本地联调时可以把 SDK checkout 放在 `src/sdks/`；第一次 crates.io release 之后，应用应消费发布后的 crate，而不是 submodule 或 vendored checkout。
 
 环境要求：Rust 1.82+、推荐 Node.js 24 LTS、Bun 1.3+。macOS 还需要执行 `xcode-select --install`；Linux 需要安装发行版对应的 WebKitGTK/Tauri 系统依赖。
 
