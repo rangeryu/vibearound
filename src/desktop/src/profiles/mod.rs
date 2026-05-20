@@ -256,10 +256,13 @@ pub fn launcher_reorder_workspaces(
 }
 
 #[tauri::command]
-pub fn launcher_set_compatibility_proxy(app: tauri::AppHandle, mode: String) -> Result<(), String> {
-    let mode = terminal::CompatibilityProxyMode::from_id(&mode)
-        .ok_or_else(|| format!("unknown compatibility proxy mode: '{mode}'"))?;
-    terminal::write_compatibility_proxy_preference(mode).map_err(|e| e.to_string())?;
+pub fn launcher_set_compatibility_bridge(
+    app: tauri::AppHandle,
+    mode: String,
+) -> Result<(), String> {
+    let mode = terminal::CompatibilityBridgeMode::from_id(&mode)
+        .ok_or_else(|| format!("unknown compatibility bridge mode: '{mode}'"))?;
+    terminal::write_compatibility_bridge_preference(mode).map_err(|e| e.to_string())?;
     emit_launch_config_changed(&app);
     Ok(())
 }

@@ -39,7 +39,7 @@ pub enum TerminalChoice {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CompatibilityProxyMode {
+pub enum CompatibilityBridgeMode {
     Auto,
     On,
     Off,
@@ -48,8 +48,8 @@ pub enum CompatibilityProxyMode {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileConnectionPreference {
-    #[serde(default)]
-    pub proxy_enabled: bool,
+    #[serde(default, alias = "proxyEnabled")]
+    pub bridge_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_api_type: Option<String>,
 }
@@ -57,9 +57,9 @@ pub struct ProfileConnectionPreference {
 pub type ProfileConnectionPreferences =
     BTreeMap<String, BTreeMap<String, ProfileConnectionPreference>>;
 
-impl CompatibilityProxyMode {
+impl CompatibilityBridgeMode {
     #[cfg(test)]
-    pub const ALL: &'static [CompatibilityProxyMode] = &[Self::Auto, Self::On, Self::Off];
+    pub const ALL: &'static [CompatibilityBridgeMode] = &[Self::Auto, Self::On, Self::Off];
 
     #[cfg(test)]
     pub fn id(self) -> &'static str {
@@ -246,8 +246,8 @@ struct LauncherPrefsFile {
     terminal: Option<String>,
     #[serde(default)]
     workspace: Option<PathBuf>,
-    #[serde(default)]
-    compatibility_proxy: Option<CompatibilityProxyMode>,
+    #[serde(default, alias = "compatibilityProxy")]
+    compatibility_bridge: Option<CompatibilityBridgeMode>,
     #[serde(default)]
     profile_connections: ProfileConnectionPreferences,
 }
@@ -285,15 +285,15 @@ pub fn write_workspace_preference(path: PathBuf) -> anyhow::Result<()> {
     write_prefs_file(&prefs)
 }
 
-pub fn read_compatibility_proxy_preference() -> CompatibilityProxyMode {
+pub fn read_compatibility_bridge_preference() -> CompatibilityBridgeMode {
     read_prefs_file()
-        .compatibility_proxy
-        .unwrap_or(CompatibilityProxyMode::Auto)
+        .compatibility_bridge
+        .unwrap_or(CompatibilityBridgeMode::Auto)
 }
 
-pub fn write_compatibility_proxy_preference(mode: CompatibilityProxyMode) -> anyhow::Result<()> {
+pub fn write_compatibility_bridge_preference(mode: CompatibilityBridgeMode) -> anyhow::Result<()> {
     let mut prefs = read_prefs_file();
-    prefs.compatibility_proxy = Some(mode);
+    prefs.compatibility_bridge = Some(mode);
     write_prefs_file(&prefs)
 }
 
@@ -417,9 +417,9 @@ mod tests {
     }
 
     #[test]
-    fn compatibility_proxy_mode_ids_roundtrip() {
-        for mode in CompatibilityProxyMode::ALL {
-            assert_eq!(CompatibilityProxyMode::from_id(mode.id()), Some(*mode));
+    fn compatibility_bridge_mode_ids_roundtrip() {
+        for mode in CompatibilityBridgeMode::ALL {
+            assert_eq!(CompatibilityBridgeMode::from_id(mode.id()), Some(*mode));
         }
     }
 }

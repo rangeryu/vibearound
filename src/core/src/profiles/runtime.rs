@@ -60,15 +60,15 @@ pub fn render_for_agent_route(
     launch_id: &str,
     route: &ProfileAgentRoute,
 ) -> anyhow::Result<RenderedProfile> {
-    match route.proxy_target_api_type.as_deref() {
-        Some(target_api_type) => super::proxy_launch::render_proxy_launch(
+    match route.bridge_target_api_type.as_deref() {
+        Some(target_api_type) => super::bridge_launch::render_bridge_launch(
             profile,
             launch_target,
             launch_id,
             &route.client_api_type,
             target_api_type,
-            route.proxy_upstream_model.as_deref(),
-            route.proxy_fake_model_id.as_deref(),
+            route.bridge_upstream_model.as_deref(),
+            route.bridge_fake_model_id.as_deref(),
         ),
         None => render_for_launch_api_type(profile, launch_target, &route.client_api_type),
     }

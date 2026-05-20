@@ -8,11 +8,11 @@ use common::profiles::schema::ProfileDef;
 use serde_json::Value;
 use va_ai_api_bridge::UniversalEvent;
 
-use self::dashscope::DashScopeProxyAdapter;
-use self::deepseek::DeepSeekProxyAdapter;
-use self::kimi::KimiProxyAdapter;
-use self::minimax::MiniMaxProxyAdapter;
-use self::zai::ZaiProxyAdapter;
+use self::dashscope::DashScopeBridgeAdapter;
+use self::deepseek::DeepSeekBridgeAdapter;
+use self::kimi::KimiBridgeAdapter;
+use self::minimax::MiniMaxBridgeAdapter;
+use self::zai::ZaiBridgeAdapter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderRequestSource {
@@ -32,28 +32,28 @@ impl ProviderRequestSource {
 }
 
 #[derive(Debug, Clone)]
-pub enum ProviderProxyAdapter {
+pub enum ProviderBridgeAdapter {
     None,
-    DeepSeek(DeepSeekProxyAdapter),
-    Kimi(KimiProxyAdapter),
-    MiniMax(MiniMaxProxyAdapter),
-    DashScope(DashScopeProxyAdapter),
-    Zai(ZaiProxyAdapter),
+    DeepSeek(DeepSeekBridgeAdapter),
+    Kimi(KimiBridgeAdapter),
+    MiniMax(MiniMaxBridgeAdapter),
+    DashScope(DashScopeBridgeAdapter),
+    Zai(ZaiBridgeAdapter),
 }
 
-impl ProviderProxyAdapter {
+impl ProviderBridgeAdapter {
     pub fn for_profile(profile: &ProfileDef, target_api_type: &str) -> Self {
         match profile.provider.as_str() {
-            "deepseek" => Self::DeepSeek(DeepSeekProxyAdapter::new(
+            "deepseek" => Self::DeepSeek(DeepSeekBridgeAdapter::new(
                 profile.provider_settings.deepseek.clone(),
             )),
-            "kimi" => Self::Kimi(KimiProxyAdapter::default()),
+            "kimi" => Self::Kimi(KimiBridgeAdapter::default()),
             "moonshot" if is_moonshot_kimi_coding(profile, target_api_type) => {
-                Self::Kimi(KimiProxyAdapter::default())
+                Self::Kimi(KimiBridgeAdapter::default())
             }
-            "minimax" => Self::MiniMax(MiniMaxProxyAdapter::default()),
-            "dashscope" | "qwen" => Self::DashScope(DashScopeProxyAdapter::new(profile)),
-            "zai" => Self::Zai(ZaiProxyAdapter::new(profile)),
+            "minimax" => Self::MiniMax(MiniMaxBridgeAdapter::default()),
+            "dashscope" | "qwen" => Self::DashScope(DashScopeBridgeAdapter::new(profile)),
+            "zai" => Self::Zai(ZaiBridgeAdapter::new(profile)),
             _ => Self::None,
         }
     }

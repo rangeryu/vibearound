@@ -4,11 +4,11 @@ use serde_json::{Number, Value};
 use va_ai_api_bridge::{ContentBlock, UniversalEvent};
 
 #[derive(Debug, Clone, Default)]
-pub struct MiniMaxProxyAdapter {
+pub struct MiniMaxBridgeAdapter {
     think_tags: MiniMaxThinkTagSplitter,
 }
 
-impl MiniMaxProxyAdapter {
+impl MiniMaxBridgeAdapter {
     pub fn prepare_chat_request(&mut self, chat_request: &mut Value) {
         let Some(object) = chat_request.as_object_mut() else {
             return;
@@ -428,7 +428,7 @@ mod tests {
 
     #[test]
     fn clamps_minimax_chat_settings_to_supported_ranges() {
-        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut adapter = MiniMaxBridgeAdapter::default();
         let mut request = json!({
             "model": "MiniMax-M2.7",
             "messages": [],
@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn folds_system_messages_into_one_leading_message() {
-        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut adapter = MiniMaxBridgeAdapter::default();
         let mut request = json!({
             "model": "MiniMax-M2.7",
             "messages": [
@@ -474,7 +474,7 @@ mod tests {
 
     #[test]
     fn leaves_valid_minimax_chat_settings_unchanged() {
-        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut adapter = MiniMaxBridgeAdapter::default();
         let mut request = json!({
             "model": "MiniMax-M2.7",
             "messages": [],
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn converts_minimax_think_tags_to_reasoning_events() {
-        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut adapter = MiniMaxBridgeAdapter::default();
         let mut events = vec![
             text_start(0),
             UniversalEvent::TextDelta {
@@ -529,7 +529,7 @@ mod tests {
 
     #[test]
     fn handles_minimax_think_tags_split_across_stream_chunks() {
-        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut adapter = MiniMaxBridgeAdapter::default();
         let mut events = vec![
             text_start(0),
             UniversalEvent::TextDelta {
@@ -555,7 +555,7 @@ mod tests {
 
     #[test]
     fn preserves_plain_minimax_text_that_only_looks_like_partial_tag() {
-        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut adapter = MiniMaxBridgeAdapter::default();
         let mut events = vec![
             text_start(0),
             UniversalEvent::TextDelta {
@@ -577,7 +577,7 @@ mod tests {
 
     #[test]
     fn parses_final_text_block_when_no_delta_was_seen() {
-        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut adapter = MiniMaxBridgeAdapter::default();
         let mut events = vec![
             text_start(0),
             UniversalEvent::ContentDone {
@@ -597,7 +597,7 @@ mod tests {
 
     #[test]
     fn remaps_following_content_blocks_after_splitting_think_tags() {
-        let mut adapter = MiniMaxProxyAdapter::default();
+        let mut adapter = MiniMaxBridgeAdapter::default();
         let tool_block = ContentBlock::ToolCall {
             id: "call_1".to_string(),
             name: "lookup".to_string(),

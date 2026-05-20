@@ -12,8 +12,8 @@ struct LegacyLauncherPrefsFile {
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LegacyProfileConnectionPreference {
-    #[serde(default)]
-    proxy_enabled: bool,
+    #[serde(default, alias = "proxyEnabled")]
+    bridge_enabled: bool,
     #[serde(default)]
     target_api_type: Option<String>,
 }
@@ -40,12 +40,12 @@ pub(super) fn profile_connections() -> agent_state::ProfileConnectionPreferences
             let Some(selected_api_type) = default_client_api_type(&agent_id) else {
                 continue;
             };
-            let mut proxy = BTreeMap::new();
-            if preference.proxy_enabled || preference.target_api_type.is_some() {
-                proxy.insert(
+            let mut bridge = BTreeMap::new();
+            if preference.bridge_enabled || preference.target_api_type.is_some() {
+                bridge.insert(
                     selected_api_type.to_string(),
-                    agent_state::ProfileProxyPreference {
-                        enabled: preference.proxy_enabled,
+                    agent_state::ProfileBridgePreference {
+                        enabled: preference.bridge_enabled,
                         target_api_type: preference.target_api_type,
                         upstream_model: None,
                         fake_model_id: None,
@@ -57,7 +57,7 @@ pub(super) fn profile_connections() -> agent_state::ProfileConnectionPreferences
                 agent_id,
                 agent_state::ProfileConnectionPreference {
                     selected_api_type: Some(selected_api_type.to_string()),
-                    proxy,
+                    bridge,
                 },
             );
         }

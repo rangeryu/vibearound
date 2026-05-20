@@ -4,7 +4,7 @@
 
 mod agent_hooks;
 mod api;
-mod api_proxy;
+mod api_bridge;
 mod auth;
 mod mcp;
 mod pair;
@@ -32,7 +32,7 @@ use common::tunnels::TunnelManager;
 
 use self::auth::{require_auth, AuthState};
 
-const LOCAL_PROXY_BODY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
+const LOCAL_BRIDGE_BODY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 
 /// Client sends this as JSON over Text frame to resize the PTY (e.g. after xterm-addon-fit).
 #[derive(serde::Deserialize)]
@@ -64,7 +64,7 @@ pub(crate) struct AppState {
     /// loopback URLs use this instead of reaching into a services
     /// facade.
     port: u16,
-    /// Shared HTTP client for preview proxy (connection pooling).
+    /// Shared HTTP client for preview proxy and API bridge forwarding.
     preview_client: reqwest::Client,
     /// Codex/agent lifecycle events received from bundled hook helpers.
     hook_registry: Arc<AgentHookRegistry>,
@@ -120,7 +120,7 @@ async fn spa_fallback_handler(
             axum::Json(serde_json::json!({
                 "error": {
                     "message": "API route not found",
-                    "type": "vibearound_proxy_error",
+                    "type": "vibearound_bridge_error",
                 }
             })),
         )
@@ -131,7 +131,7 @@ async fn spa_fallback_handler(
 }
 
 fn is_dashboard_api_path(path: &str) -> bool {
-    ["/va/local-api/", "/local-api/", "/va/proxy/", "/proxy/"]
+    ["/va/local-api/", "/local-api/", "/va/bridge/", "/bridge/"]
         .into_iter()
         .any(|prefix| path.starts_with(prefix))
 }
@@ -210,7 +210,7 @@ pub async fn run_web_server(
         .route(
             "/api/chat/uploads",
             post(api::upload_chat_file_handler)
-                .layer(DefaultBodyLimit::max(LOCAL_PROXY_BODY_LIMIT_BYTES)),
+                .layer(DefaultBodyLimit::max(LOCAL_BRIDGE_BODY_LIMIT_BYTES)),
         )
         .route(
             "/api/chat/files/download",
@@ -270,45 +270,45 @@ pub async fn run_web_server(
     // Preview routes are also un-authed — the 8-char slug itself acts as a
     // short-lived authentication token (10-min TTL, cryptographically random;
     // single source of truth: `common::previews::SHARE_TTL_SECS`).
-    let proxy_routes = Router::new()
+    let bridge_routes = Router::new()
         .route(
-            "/proxy/{profile_id}/{target_api_type}/v1/responses",
-            post(api_proxy::legacy_responses_handler),
+            "/bridge/{profile_id}/{target_api_type}/v1/responses",
+            post(api_bridge::legacy_responses_handler),
         )
         .route(
-            "/proxy/{profile_id}/{target_api_type}/v1/chat/completions",
-            post(api_proxy::legacy_chat_completions_handler),
+            "/bridge/{profile_id}/{target_api_type}/v1/chat/completions",
+            post(api_bridge::legacy_chat_completions_handler),
         )
         .route(
-            "/proxy/{profile_id}/{target_api_type}/v1/messages",
-            post(api_proxy::legacy_messages_handler),
+            "/bridge/{profile_id}/{target_api_type}/v1/messages",
+            post(api_bridge::legacy_messages_handler),
         )
         .route(
-            "/proxy/{profile_id}/{target_api_type}/{version}/models/{model_action}",
-            post(api_proxy::legacy_gemini_generate_content_handler),
+            "/bridge/{profile_id}/{target_api_type}/{version}/models/{model_action}",
+            post(api_bridge::legacy_gemini_generate_content_handler),
         )
         // Stable local API base for configured clients. `scope` selects the
-        // route/profile preference; it is not a proxy session identifier.
+        // route/profile preference; it is not a bridge session identifier.
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/v1/responses",
-            post(api_proxy::local_responses_handler),
+            post(api_bridge::local_responses_handler),
         )
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/v1/chat/completions",
-            post(api_proxy::local_chat_completions_handler),
+            post(api_bridge::local_chat_completions_handler),
         )
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/v1/messages",
-            post(api_proxy::local_messages_handler),
+            post(api_bridge::local_messages_handler),
         )
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/{version}/models/{model_action}",
-            post(api_proxy::local_gemini_generate_content_handler),
+            post(api_bridge::local_gemini_generate_content_handler),
         )
-        .layer(DefaultBodyLimit::max(LOCAL_PROXY_BODY_LIMIT_BYTES));
+        .layer(DefaultBodyLimit::max(LOCAL_BRIDGE_BODY_LIMIT_BYTES));
 
     let public = Router::new()
-        .merge(proxy_routes)
+        .merge(bridge_routes)
         .route(
             "/internal/agent-hooks/codex",
             post(agent_hooks::codex_hook_handler),
@@ -411,7 +411,7 @@ mod tests {
             "/local-api/deepseek/scope/extra/openai-chat/v1/responses"
         ));
         assert!(is_dashboard_api_path(
-            "/va/proxy/profile/openai-chat/v1/responses"
+            "/va/bridge/profile/openai-chat/v1/responses"
         ));
         assert!(!is_dashboard_api_path("/va/"));
         assert!(!is_dashboard_api_path("/va/assets/index.css"));

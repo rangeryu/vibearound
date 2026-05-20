@@ -24,7 +24,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   AgentRailButton,
   DefaultBadge,
-  ProxyBadge,
+  BridgeBadge,
   SelectorTile,
   TooltipButton,
 } from "./LaunchBuilderPrimitives";
@@ -67,7 +67,7 @@ import {
   currentWorkspace,
   isGlobalDefaultDirect,
   isGlobalDefaultProfile,
-  isProxyAgent,
+  isBridgeAgent,
   isSelectionLaunchable,
   isSortableWorkspace,
   mergeOrderedSubset,
@@ -368,7 +368,7 @@ export function AgentLaunchBuilder({
   }
 
   async function chooseProfileApiType(profile: ProfileSummary, apiType: string) {
-    if (!viewPrefs || !isProxyAgent(agentId)) return;
+    if (!viewPrefs || !isBridgeAgent(agentId)) return;
     const current = viewPrefs.profileConnections[profile.id]?.[agentId] ?? {};
     onError(null);
     try {
@@ -587,7 +587,7 @@ export function AgentLaunchBuilder({
     : {
         title: t("Direct"),
         detail: t("Use existing CLI login"),
-        proxy: false,
+        bridge: false,
         route: t("Native CLI login"),
       };
   const profileIsGlobalDefault =
@@ -684,7 +684,7 @@ export function AgentLaunchBuilder({
                 detail={selectedProfileSummary.route}
                 badges={
                   <>
-                    {selectedProfileSummary.proxy && <ProxyBadge />}
+                    {selectedProfileSummary.bridge && <BridgeBadge />}
                     {profileIsGlobalDefault && <DefaultBadge />}
                   </>
                 }

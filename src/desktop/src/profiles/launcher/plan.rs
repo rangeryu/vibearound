@@ -2,14 +2,14 @@
 //!
 //! This module decides what should be launched. Platform modules only execute
 //! the final plan, which keeps terminal-specific code away from profile,
-//! proxy, and resume routing decisions.
+//! bridge, and resume routing decisions.
 
 use ::common::{profiles, resources};
 use anyhow::anyhow;
 use profiles::ProfileDef;
 
 use super::common::LaunchPlan;
-use super::{codex, proxy};
+use super::{bridge, codex};
 
 enum LaunchTarget<'a> {
     Profile {
@@ -73,7 +73,7 @@ impl<'a> LaunchPlanBuilder<'a> {
         profile: &ProfileDef,
         launch_target: &str,
     ) -> anyhow::Result<LaunchPlan> {
-        let mut rendered = proxy::render_for_launch(profile, launch_target, &self.launch_id)?;
+        let mut rendered = bridge::render_for_launch(profile, launch_target, &self.launch_id)?;
         codex::apply_session_hooks(profile, launch_target, &self.launch_id, &mut rendered)?;
 
         match self.session_id {

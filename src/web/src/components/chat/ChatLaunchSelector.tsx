@@ -65,7 +65,7 @@ export function ChatLaunchSelector({
   const launchProfilesForAgent = (agentId: string) =>
     profiles.flatMap((profile) => {
       const target = profile.launch_targets.find((target) => target.id === agentId);
-      return target ? [{ profile, usesProxy: Boolean(target.proxy_target_api_type) }] : [];
+      return target ? [{ profile, usesBridge: Boolean(target.bridge_target_api_type) }] : [];
     });
 
   const chooseLaunch = (agentId: string, profileId?: string) => {
@@ -140,14 +140,14 @@ export function ChatLaunchSelector({
                 {agent.name}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="min-w-[220px] max-w-[22rem] p-0.5 text-xs">
-                {entries.map(({ profile, usesProxy }) => (
+                {entries.map(({ profile, usesBridge }) => (
                   <DropdownMenuItem
                     key={profile.id}
                     onClick={() => chooseLaunch(agent.id, profile.id)}
                     className={`flex items-center justify-between gap-2 ${COMPACT_MENU_ITEM}`}
                   >
                     <span className="truncate">
-                      {usesProxy
+                      {usesBridge
                         ? t("{{profile}} (API bridge)", { profile: profile.label })
                         : profile.label}
                     </span>

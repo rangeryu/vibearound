@@ -100,7 +100,7 @@ export function HeaderSettingDialog({
             {apiTypeProtocolDisplayLabel(setting.clientApiType)} -&gt;{" "}
             {apiTypeRouteDisplayLabel(setting.targetApiType)}
           </div>
-          <ProxyHeadersField
+          <BridgeHeadersField
             defaultHeaders={setting.defaultHeaders}
             rows={rows}
             onChange={setRows}
@@ -119,7 +119,7 @@ export function HeaderSettingDialog({
   );
 }
 
-function ProxyHeadersField({
+function BridgeHeadersField({
   defaultHeaders,
   rows,
   onChange,

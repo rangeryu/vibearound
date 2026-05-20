@@ -4,11 +4,11 @@ use serde_json::Value;
 mod content;
 
 #[derive(Debug, Clone)]
-pub struct DashScopeProxyAdapter {
+pub struct DashScopeBridgeAdapter {
     thinking_enabled: bool,
 }
 
-impl DashScopeProxyAdapter {
+impl DashScopeBridgeAdapter {
     pub fn new(profile: &ProfileDef) -> Self {
         let thinking_enabled = profile
             .overrides
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn maps_reasoning_effort_to_dashscope_enable_thinking_for_reasoning_models() {
         let profile = profile();
-        let mut adapter = DashScopeProxyAdapter::new(&profile);
+        let mut adapter = DashScopeBridgeAdapter::new(&profile);
         let mut chat_request = json!({ "model": "qwen3.5-plus", "messages": [] });
 
         adapter.prepare_chat_request(
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn leaves_non_reasoning_qwen_models_without_enable_thinking() {
         let profile = profile();
-        let mut adapter = DashScopeProxyAdapter::new(&profile);
+        let mut adapter = DashScopeBridgeAdapter::new(&profile);
         let mut chat_request = json!({ "model": "qwen3-coder-plus", "messages": [] });
 
         adapter.prepare_chat_request(
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn maps_reasoning_effort_to_dashscope_partner_reasoning_models() {
         let profile = profile();
-        let mut adapter = DashScopeProxyAdapter::new(&profile);
+        let mut adapter = DashScopeBridgeAdapter::new(&profile);
         let mut chat_request = json!({ "model": "glm-5", "messages": [] });
 
         adapter.prepare_chat_request(

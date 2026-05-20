@@ -138,7 +138,7 @@ export function profileSupportsAgent(
   prefs: LauncherPreferences | null,
 ): boolean {
   if (!profile || !agentId) return false;
-  if (!isProxyAgent(agentId)) {
+  if (!isBridgeAgent(agentId)) {
     return profile.launchTargets.some((target) => target.id === agentId);
   }
   if (!prefs) return false;
@@ -160,7 +160,7 @@ export function profileAvailability(
     return { launchable: true };
   }
 
-  if (isProxyAgent(agentId)) {
+  if (isBridgeAgent(agentId)) {
     const resolved = resolveProfileConnection(
       profile,
       prefs.profileConnections,
@@ -205,17 +205,17 @@ export function profileSummary(
   prefs: LauncherPreferences,
   t: TranslateFn,
 ) {
-  if (isProxyAgent(agentId)) {
+  if (isBridgeAgent(agentId)) {
     const resolved = resolveProfileConnection(
       profile,
       prefs.profileConnections,
       agentConnectionDef(agentId),
     );
-    if (resolved.status === "via_proxy" && resolved.selected.targetApiType) {
+    if (resolved.status === "via_bridge" && resolved.selected.targetApiType) {
       return {
         title: profile.label,
         detail: profile.providerLabel,
-        proxy: true,
+        bridge: true,
         route: `${apiTypeProtocolDisplayLabel(resolved.selectedApiType)} -> ${profile.providerLabel} ${apiTypeRouteDisplayLabel(resolved.selected.targetApiType)}`,
       };
     }
@@ -223,7 +223,7 @@ export function profileSummary(
       return {
         title: profile.label,
         detail: profile.providerLabel,
-        proxy: false,
+        bridge: false,
         route: `${profile.providerLabel} -> ${agentLabel(agentId)} ${apiTypeProtocolDisplayLabel(resolved.selectedApiType)}`,
       };
     }
@@ -231,7 +231,7 @@ export function profileSummary(
       return {
         title: profile.label,
         detail: profile.providerLabel,
-        proxy: false,
+        bridge: false,
         route: t("{{clientApi}} -> {{targetApi}} (API bridge off)", {
           clientApi: apiTypeProtocolDisplayLabel(resolved.selectedApiType),
           targetApi: apiTypeRouteDisplayLabel(resolved.selected.targetApiType),
@@ -243,7 +243,7 @@ export function profileSummary(
   return {
     title: profile.label,
     detail: profile.providerLabel,
-    proxy: false,
+    bridge: false,
     route: target
       ? `${profile.providerLabel} -> ${agentLabel(agentId)} ${target.apiType}`
       : profile.providerLabel,
@@ -267,7 +267,7 @@ export function agentConnectionDef(agentId: string): ConnectionAgentDef {
   );
 }
 
-export function isProxyAgent(agentId: string): agentId is ConnectionAgentId {
+export function isBridgeAgent(agentId: string): agentId is ConnectionAgentId {
   return PROXY_AGENTS.has(agentId);
 }
 

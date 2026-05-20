@@ -4,17 +4,17 @@ use va_ai_api_bridge::{
     OpenAiChatTranslator, OpenAiResponsesTranslator, UniversalEvent, WireEvent, WireTranslator,
 };
 
-use crate::openai_proxy::providers::ProviderRequestSource;
+use crate::openai_bridge::providers::ProviderRequestSource;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::web_server) enum ProxyProtocol {
+pub(in crate::web_server) enum BridgeProtocol {
     OpenAiResponses,
     OpenAiChat,
     AnthropicMessages,
     GeminiGenerateContent,
 }
 
-impl ProxyProtocol {
+impl BridgeProtocol {
     pub(super) fn from_api_type(api_type: &str) -> Option<Self> {
         match api_type {
             "openai-responses" => Some(Self::OpenAiResponses),

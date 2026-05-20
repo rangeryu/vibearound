@@ -14,7 +14,7 @@ import type { ConnectionAgentId, ProfileSummary } from "./types";
 
 export const PLACEHOLDER_API_KEY = "anything-non-empty";
 
-export interface ManualProxyConfig {
+export interface ManualBridgeConfig {
   baseUrl: string;
   model: string;
   copyKey: string;
@@ -29,13 +29,13 @@ export interface ManualSetting {
   snippet: string;
 }
 
-export function manualProxyConfig(
+export function manualBridgeConfig(
   profileId: string,
   agentId: ConnectionAgentId,
   clientApiType: string,
   targetApiType: string,
   model: string | undefined,
-): ManualProxyConfig {
+): ManualBridgeConfig {
   const path = [
     "local-api",
     encodeURIComponent(profileId),
@@ -56,7 +56,7 @@ export function buildManualSetting(
   agentLabel: string,
   clientApiType: string,
   targetApiType: string,
-  manualConfig: ManualProxyConfig,
+  manualConfig: ManualBridgeConfig,
 ): ManualSetting {
   const model = manualConfig.model || "<model-id>";
   if (agentId === "codex") {

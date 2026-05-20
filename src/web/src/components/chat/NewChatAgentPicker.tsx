@@ -21,7 +21,7 @@ interface NewChatAgentPickerProps {
 function launchProfilesForAgent(profiles: ProfileLaunchOption[], agentId: string) {
   return profiles.flatMap((profile) => {
     const target = profile.launch_targets.find((target) => target.id === agentId);
-    return target ? [{ profile, usesProxy: Boolean(target.proxy_target_api_type) }] : [];
+    return target ? [{ profile, usesBridge: Boolean(target.bridge_target_api_type) }] : [];
   });
 }
 
@@ -132,7 +132,7 @@ export function NewChatAgentPicker({
                 />
                 <span className="min-w-0 flex-1 truncate">{t("Direct")}</span>
               </button>
-              {selectedAgentProfiles.map(({ profile, usesProxy }) => (
+              {selectedAgentProfiles.map(({ profile, usesBridge }) => (
                 <button
                   key={profile.id}
                   type="button"
@@ -154,7 +154,7 @@ export function NewChatAgentPicker({
                     className="h-4 w-4"
                   />
                   <span className="min-w-0 flex-1 truncate">
-                    {usesProxy
+                    {usesBridge
                       ? t("{{profile}} (API bridge)", { profile: profile.label })
                       : profile.label}
                   </span>

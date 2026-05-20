@@ -104,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_headers_that_are_normally_managed_by_proxy() {
+    fn preserves_headers_that_are_normally_managed_by_bridge() {
         let catalog = BTreeMap::new();
         let custom = [("Authorization".to_string(), "Bearer token".to_string())]
             .into_iter()

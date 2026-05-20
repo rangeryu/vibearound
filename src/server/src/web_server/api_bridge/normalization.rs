@@ -1,16 +1,16 @@
 use serde_json::{Map, Value};
 
-use super::ProxyProtocol;
+use super::BridgeProtocol;
 
 pub(super) fn normalize_target_request(
     request: &mut Value,
-    protocol: ProxyProtocol,
+    protocol: BridgeProtocol,
 ) -> Result<(), String> {
     match protocol {
-        ProxyProtocol::AnthropicMessages => normalize_anthropic_messages_request(request),
-        ProxyProtocol::OpenAiChat => normalize_openai_chat_request(request),
-        ProxyProtocol::OpenAiResponses => Ok(()),
-        ProxyProtocol::GeminiGenerateContent => {
+        BridgeProtocol::AnthropicMessages => normalize_anthropic_messages_request(request),
+        BridgeProtocol::OpenAiChat => normalize_openai_chat_request(request),
+        BridgeProtocol::OpenAiResponses => Ok(()),
+        BridgeProtocol::GeminiGenerateContent => {
             va_ai_api_bridge::translator::gemini_generate_content::strip_route_metadata(request);
             Ok(())
         }
@@ -187,7 +187,7 @@ mod tests {
             }]
         });
 
-        normalize_target_request(&mut request, ProxyProtocol::OpenAiChat).unwrap();
+        normalize_target_request(&mut request, BridgeProtocol::OpenAiChat).unwrap();
 
         let content = request["messages"][0]["content"].as_array().unwrap();
         assert_eq!(content[0], json!({ "type": "text", "text": "describe" }));
@@ -216,7 +216,7 @@ mod tests {
             }]
         });
 
-        normalize_target_request(&mut request, ProxyProtocol::OpenAiChat).unwrap();
+        normalize_target_request(&mut request, BridgeProtocol::OpenAiChat).unwrap();
 
         assert_eq!(
             request["messages"][0]["content"][0],
@@ -239,7 +239,7 @@ mod tests {
             }]
         });
 
-        let error = normalize_target_request(&mut request, ProxyProtocol::OpenAiChat).unwrap_err();
+        let error = normalize_target_request(&mut request, BridgeProtocol::OpenAiChat).unwrap_err();
 
         assert!(error.contains("file_id"));
     }

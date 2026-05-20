@@ -27,7 +27,7 @@ import {
   apiTypeProtocolLabel,
   apiTypeRouteLabel,
   emptyConnectionDraft,
-  recommendedProxyTarget,
+  recommendedBridgeTarget,
   resolveProfileConnection,
 } from "./connections";
 import {
@@ -40,7 +40,7 @@ import {
   ManualValueRow,
   PLACEHOLDER_API_KEY,
   buildManualSetting,
-  manualProxyConfig,
+  manualBridgeConfig,
   type ManualSetting,
 } from "./ProfileConnectionManualGuide";
 import type {
@@ -112,17 +112,17 @@ export function ProfileConnectionDialog({
     }
   }
 
-  function updateProxyHeaders(setting: HeaderSetting, headers: Record<string, string>) {
+  function updateBridgeHeaders(setting: HeaderSetting, headers: Record<string, string>) {
     setDraft((prev) => ({
       ...prev,
       [setting.agentId]: {
         ...prev[setting.agentId],
         selectedApiType:
           prev[setting.agentId].selectedApiType ?? setting.clientApiType,
-        proxy: {
-          ...(prev[setting.agentId].proxy ?? {}),
+        bridge: {
+          ...(prev[setting.agentId].bridge ?? {}),
           [setting.clientApiType]: {
-            ...(prev[setting.agentId].proxy?.[setting.clientApiType] ?? {}),
+            ...(prev[setting.agentId].bridge?.[setting.clientApiType] ?? {}),
             enabled: true,
             targetApiType: setting.targetApiType,
             headers,
@@ -164,42 +164,42 @@ export function ProfileConnectionDialog({
               connection.clientApiTypes.find((item) => item.apiType === selectedApiType) ??
               connection.selected;
             const statusLabel =
-              connection.status === "via_proxy"
+              connection.status === "via_bridge"
                 ? t("Via API bridge")
                 : connection.status === "native"
                   ? t("Native")
                   : t("Unsupported");
-            const selectedCurrentProxy = current.proxy?.[selectedApiType] ?? {};
-            const selectedProxyTarget =
-              selectedCurrentProxy.targetApiType &&
-              selectedConnection.targetOptions.includes(selectedCurrentProxy.targetApiType)
-                ? selectedCurrentProxy.targetApiType
-                : recommendedProxyTarget(profile, agent.id, selectedApiType);
+            const selectedCurrentBridge = current.bridge?.[selectedApiType] ?? {};
+            const selectedBridgeTarget =
+              selectedCurrentBridge.targetApiType &&
+              selectedConnection.targetOptions.includes(selectedCurrentBridge.targetApiType)
+                ? selectedCurrentBridge.targetApiType
+                : recommendedBridgeTarget(profile, agent.id, selectedApiType);
             const selectedUpstreamModel =
-              cleanModelId(selectedCurrentProxy.upstreamModel) ||
-              (selectedProxyTarget ? profile.apiTypeModels[selectedProxyTarget] : "") ||
+              cleanModelId(selectedCurrentBridge.upstreamModel) ||
+              (selectedBridgeTarget ? profile.apiTypeModels[selectedBridgeTarget] : "") ||
               "";
-            const selectedCanProxy = selectedConnection.targetOptions.length > 0;
-            const selectedProxyEnabled = Boolean(
-              selectedCurrentProxy.enabled && selectedCanProxy,
+            const selectedCanBridge = selectedConnection.targetOptions.length > 0;
+            const selectedBridgeEnabled = Boolean(
+              selectedCurrentBridge.enabled && selectedCanBridge,
             );
-            const handleSelectedProxyToggle = (checked: boolean) => {
+            const handleSelectedBridgeToggle = (checked: boolean) => {
               setDraft((prev) => ({
                 ...prev,
                 [agent.id]: {
                   ...prev[agent.id],
                   selectedApiType:
                     prev[agent.id].selectedApiType ?? selectedApiType,
-                  proxy: {
-                    ...(prev[agent.id].proxy ?? {}),
+                  bridge: {
+                    ...(prev[agent.id].bridge ?? {}),
                     [selectedApiType]: {
-                      ...(prev[agent.id].proxy?.[selectedApiType] ?? {}),
+                      ...(prev[agent.id].bridge?.[selectedApiType] ?? {}),
                       enabled: checked,
                       targetApiType:
-                        prev[agent.id].proxy?.[selectedApiType]?.targetApiType ??
-                        selectedProxyTarget,
+                        prev[agent.id].bridge?.[selectedApiType]?.targetApiType ??
+                        selectedBridgeTarget,
                       upstreamModel:
-                        prev[agent.id].proxy?.[selectedApiType]?.upstreamModel ??
+                        prev[agent.id].bridge?.[selectedApiType]?.upstreamModel ??
                         selectedUpstreamModel,
                     },
                   },
@@ -226,7 +226,7 @@ export function ProfileConnectionDialog({
                       <Badge
                         variant={connection.status === "unsupported" ? "muted" : "default"}
                         className={
-                          connection.status === "via_proxy"
+                          connection.status === "via_bridge"
                             ? "bg-primary/10 text-primary"
                             : undefined
                         }
@@ -253,7 +253,7 @@ export function ProfileConnectionDialog({
                       <span className="font-mono text-foreground/80">
                         {selectedConnection.native
                           ? `${profile.providerLabel} · ${apiTypeProtocolDisplayLabel(selectedApiType)}`
-                          : selectedConnection.proxyEnabled && selectedConnection.targetApiType
+                          : selectedConnection.bridgeEnabled && selectedConnection.targetApiType
                             ? `${apiTypeProtocolDisplayLabel(selectedApiType)} -> ${profile.providerLabel} ${apiTypeRouteDisplayLabel(selectedConnection.targetApiType)}`
                           : t("Unsupported")}
                       </span>
@@ -288,45 +288,45 @@ export function ProfileConnectionDialog({
                   <label className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
                     {t("Enable API bridge")}
                     <Switch
-                      checked={selectedProxyEnabled}
-                      disabled={!selectedCanProxy || saving}
-                      onCheckedChange={handleSelectedProxyToggle}
+                      checked={selectedBridgeEnabled}
+                      disabled={!selectedCanBridge || saving}
+                      onCheckedChange={handleSelectedBridgeToggle}
                     />
                   </label>
                 </div>
 
                 <div className="mt-3 grid gap-2 border-t border-border/70 pt-3">
                   {connection.clientApiTypes.map((client) => {
-                    const currentProxy = current.proxy?.[client.apiType] ?? {};
-                    const proxyTarget =
-                      currentProxy.targetApiType &&
-                      client.targetOptions.includes(currentProxy.targetApiType)
-                        ? currentProxy.targetApiType
-                        : recommendedProxyTarget(profile, agent.id, client.apiType);
+                    const currentBridge = current.bridge?.[client.apiType] ?? {};
+                    const bridgeTarget =
+                      currentBridge.targetApiType &&
+                      client.targetOptions.includes(currentBridge.targetApiType)
+                        ? currentBridge.targetApiType
+                        : recommendedBridgeTarget(profile, agent.id, client.apiType);
                     const upstreamModel =
-                      cleanModelId(currentProxy.upstreamModel) ||
-                      (proxyTarget ? profile.apiTypeModels[proxyTarget] : "") ||
+                      cleanModelId(currentBridge.upstreamModel) ||
+                      (bridgeTarget ? profile.apiTypeModels[bridgeTarget] : "") ||
                       "";
-                    const fakeModelId = cleanModelId(currentProxy.fakeModelId);
+                    const fakeModelId = cleanModelId(currentBridge.fakeModelId);
                     const agentModel = fakeModelId || upstreamModel;
-                    const upstreamModelOptions = proxyModelOptions(
+                    const upstreamModelOptions = bridgeModelOptions(
                       profile,
-                      proxyTarget,
+                      bridgeTarget,
                       upstreamModel,
                     );
-                    const canProxy = client.targetOptions.length > 0;
-                    const proxyEnabled = Boolean(currentProxy.enabled && canProxy);
+                    const canBridge = client.targetOptions.length > 0;
+                    const bridgeEnabled = Boolean(currentBridge.enabled && canBridge);
                     const manualConfig =
-                      canProxy && proxyTarget && agentModel
-                        ? manualProxyConfig(
+                      canBridge && bridgeTarget && agentModel
+                        ? manualBridgeConfig(
                             profile.id,
                             agent.id,
                             client.apiType,
-                            proxyTarget,
+                            bridgeTarget,
                             agentModel,
                           )
                         : null;
-                    if (!proxyEnabled || !canProxy || !proxyTarget) {
+                    if (!bridgeEnabled || !canBridge || !bridgeTarget) {
                       return null;
                     }
 
@@ -339,30 +339,30 @@ export function ProfileConnectionDialog({
                             : "border-border/70 bg-muted/20"
                         }`}
                       >
-                        {proxyEnabled && canProxy && proxyTarget && (
+                        {bridgeEnabled && canBridge && bridgeTarget && (
                           <div className="grid gap-2">
                             <div className="flex items-center gap-2">
                               <Plug className="h-3.5 w-3.5 text-primary" />
                               <div className="text-[11px] font-medium">{t("Target API")}</div>
                               <div className="ml-auto">
                                 <HeaderSummaryButton
-                                  defaultHeaders={profile.apiTypeHeaders[proxyTarget] ?? {}}
-                                  headers={currentProxy.headers ?? {}}
+                                  defaultHeaders={profile.apiTypeHeaders[bridgeTarget] ?? {}}
+                                  headers={currentBridge.headers ?? {}}
                                   disabled={saving}
                                   onClick={() =>
                                     setHeaderSetting({
                                       agentId: agent.id,
                                       agentLabel: agent.label,
                                       clientApiType: client.apiType,
-                                      targetApiType: proxyTarget,
-                                      defaultHeaders: profile.apiTypeHeaders[proxyTarget] ?? {},
-                                      headers: currentProxy.headers ?? {},
+                                      targetApiType: bridgeTarget,
+                                      defaultHeaders: profile.apiTypeHeaders[bridgeTarget] ?? {},
+                                      headers: currentBridge.headers ?? {},
                                     })
                                   }
                                 />
                               </div>
                               <Select
-                                value={proxyTarget}
+                                value={bridgeTarget}
                                 onValueChange={(value) => {
                                   const nextModel = profile.apiTypeModels[value] ?? "";
                                   setDraft((prev) => ({
@@ -371,10 +371,10 @@ export function ProfileConnectionDialog({
                                       ...prev[agent.id],
                                       selectedApiType:
                                         prev[agent.id].selectedApiType ?? client.apiType,
-                                      proxy: {
-                                        ...(prev[agent.id].proxy ?? {}),
+                                      bridge: {
+                                        ...(prev[agent.id].bridge ?? {}),
                                         [client.apiType]: {
-                                          ...(prev[agent.id].proxy?.[client.apiType] ?? {}),
+                                          ...(prev[agent.id].bridge?.[client.apiType] ?? {}),
                                           enabled: true,
                                           targetApiType: value,
                                           upstreamModel: nextModel,
@@ -417,12 +417,12 @@ export function ProfileConnectionDialog({
                                         ...prev[agent.id],
                                         selectedApiType:
                                           prev[agent.id].selectedApiType ?? client.apiType,
-                                        proxy: {
-                                          ...(prev[agent.id].proxy ?? {}),
+                                        bridge: {
+                                          ...(prev[agent.id].bridge ?? {}),
                                           [client.apiType]: {
-                                            ...(prev[agent.id].proxy?.[client.apiType] ?? {}),
+                                            ...(prev[agent.id].bridge?.[client.apiType] ?? {}),
                                             enabled: true,
-                                            targetApiType: proxyTarget,
+                                            targetApiType: bridgeTarget,
                                             upstreamModel,
                                             fakeModelId: value,
                                           },
@@ -444,12 +444,12 @@ export function ProfileConnectionDialog({
                                         ...prev[agent.id],
                                         selectedApiType:
                                           prev[agent.id].selectedApiType ?? client.apiType,
-                                        proxy: {
-                                          ...(prev[agent.id].proxy ?? {}),
+                                        bridge: {
+                                          ...(prev[agent.id].bridge ?? {}),
                                           [client.apiType]: {
-                                            ...(prev[agent.id].proxy?.[client.apiType] ?? {}),
+                                            ...(prev[agent.id].bridge?.[client.apiType] ?? {}),
                                             enabled: true,
-                                            targetApiType: proxyTarget,
+                                            targetApiType: bridgeTarget,
                                             upstreamModel: value,
                                           },
                                         },
@@ -480,7 +480,7 @@ export function ProfileConnectionDialog({
                             <div className="font-mono text-[11px] leading-5 text-primary">
                               {apiTypeProtocolDisplayLabel(client.apiType)} -&gt;{" "}
                               {t("API bridge")} -&gt; {profile.providerLabel}{" "}
-                              {apiTypeRouteDisplayLabel(proxyTarget)}
+                              {apiTypeRouteDisplayLabel(bridgeTarget)}
                               {upstreamModel ? ` · ${upstreamModel}` : ""}
                               {fakeModelId ? ` ${t("as")} ${fakeModelId}` : ""}
                             </div>
@@ -502,7 +502,7 @@ export function ProfileConnectionDialog({
                                           agent.id,
                                           agent.label,
                                           client.apiType,
-                                          proxyTarget,
+                                          bridgeTarget,
                                           manualConfig,
                                         ),
                                       )
@@ -585,7 +585,7 @@ export function ProfileConnectionDialog({
       <HeaderSettingDialog
         setting={headerSetting}
         onSave={(headers) => {
-          updateProxyHeaders(headerSetting, headers);
+          updateBridgeHeaders(headerSetting, headers);
           setHeaderSetting(null);
         }}
         onClose={() => setHeaderSetting(null)}
@@ -620,7 +620,7 @@ function cleanModelId(value: string | null | undefined): string {
   return value?.trim() ?? "";
 }
 
-function proxyModelOptions(
+function bridgeModelOptions(
   profile: ProfileSummary,
   targetApiType: string | null,
   currentModel: string,

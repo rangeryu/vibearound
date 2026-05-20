@@ -27,10 +27,10 @@ pub struct ProfileSummary {
     pub api_type_warnings: BTreeMap<String, String>,
     /// `api_type -> model id`, sanitized for manual client setup.
     pub api_type_models: BTreeMap<String, String>,
-    /// `api_type -> catalog model options`, used by proxy route model selection.
+    /// `api_type -> catalog model options`, used by bridge route model selection.
     pub api_type_model_options: BTreeMap<String, Vec<catalog::ModelDef>>,
     /// `api_type -> provider catalog headers`, displayed as immutable defaults
-    /// in proxy route settings.
+    /// in bridge route settings.
     pub api_type_headers: BTreeMap<String, BTreeMap<String, String>>,
 }
 

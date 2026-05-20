@@ -376,8 +376,8 @@ fn materialize_profile_for_agent(
     let launch_id = uuid::Uuid::new_v4().to_string();
     let rendered =
         profiles::runtime::render_for_agent_route(&profile, agent_id, &launch_id, &route)?;
-    if route.proxy_target_api_type.is_some() {
-        write_proxy_launch_metadata(
+    if route.bridge_target_api_type.is_some() {
+        write_bridge_launch_metadata(
             &launch_id,
             &profile.id,
             agent_id,
@@ -395,7 +395,7 @@ fn materialize_profile_for_agent(
     Ok(AppliedProfile { env, command_args })
 }
 
-fn write_proxy_launch_metadata(
+fn write_bridge_launch_metadata(
     launch_id: &str,
     profile_id: &str,
     agent_id: &str,
@@ -403,7 +403,7 @@ fn write_proxy_launch_metadata(
     channel_route: &crate::routing::RouteKey,
     route: &profiles::connections::ProfileAgentRoute,
 ) -> anyhow::Result<()> {
-    let dir = config::data_dir().join("api-proxy").join("launches");
+    let dir = config::data_dir().join("api-bridge").join("launches");
     std::fs::create_dir_all(&dir)?;
     let body = serde_json::json!({
         "schemaVersion": 1,
@@ -418,7 +418,7 @@ fn write_proxy_launch_metadata(
         "channelKind": channel_route.channel_kind,
         "chatId": channel_route.chat_id,
         "clientProtocol": route.client_api_type,
-        "upstreamProtocol": route.proxy_target_api_type,
+        "upstreamProtocol": route.bridge_target_api_type,
     });
     let path = dir.join(format!("{launch_id}.json"));
     std::fs::write(path, serde_json::to_vec_pretty(&body)?)?;

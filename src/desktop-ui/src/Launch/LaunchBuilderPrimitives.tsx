@@ -289,13 +289,13 @@ export function TooltipButton({
 
 export function ProfileActionsMenu({
   profile,
-  proxyAvailable,
+  bridgeAvailable,
   onConnectionSettings,
   onEditProfile,
   onDeleteProfile,
 }: {
   profile: ProfileSummary;
-  proxyAvailable: boolean;
+  bridgeAvailable: boolean;
   onConnectionSettings: (profile: ProfileSummary) => void;
   onEditProfile: (profile: ProfileSummary) => void;
   onDeleteProfile: (profile: ProfileSummary) => void;
@@ -315,7 +315,7 @@ export function ProfileActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
-        {proxyAvailable && (
+        {bridgeAvailable && (
           <DropdownMenuItem
             className="text-xs"
             onSelect={() => onConnectionSettings(profile)}
@@ -390,7 +390,7 @@ export function DefaultBadge() {
   );
 }
 
-export function ProxyBadge() {
+export function BridgeBadge() {
   const { t } = useI18n();
   return (
     <span className="inline-flex items-center gap-1 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
