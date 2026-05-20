@@ -20,5 +20,18 @@
     "plugin:telegram:build": "node scripts/plugin-runner.mjs build telegram",
     "plugin:weixin-openclaw-bridge:build": "node scripts/plugin-runner.mjs build weixin-openclaw-bridge"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "overrides": {
+    "@hono/node-server": "1.19.13",
+    "brace-expansion": "5.0.6",
+    "express-rate-limit": "8.5.2",
+    "fast-uri": "3.1.2",
+    "hono": "4.12.19",
+    "ip-address": "10.2.0",
+    "minimatch": "10.2.5",
+    "path-to-regexp": "8.4.2",
+    "picomatch": "4.0.4",
+    "postcss": "8.5.14",
+    "rollup": "4.60.4"
+  }
 }

@@ -1,7 +1,7 @@
 {
   "name": "@vibearound/tauri",
   "private": true,
-  "version": "0.6.2",
+  "version": "0.6.3",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
@@ -9,6 +9,6 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "@tauri-apps/cli": "^2.10.0"
+    "@tauri-apps/cli": "^2.11.2"
   }
 }

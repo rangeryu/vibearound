@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
-use va_ai_api_proxy::{ContentBlock, Extensions, FinishReason, UniversalEvent};
+use va_ai_api_bridge::{ContentBlock, Extensions, FinishReason, UniversalEvent};
 
 const TOOL_CALLS_SECTION_BEGIN: &str = "<|tool_calls_section_begin|>";
 const TOOL_CALLS_SECTION_END: &str = "<|tool_calls_section_end|>";
@@ -10,7 +10,7 @@ const TOOL_CALL_ARGUMENT_BEGIN: &str = "<|tool_call_argument_begin|>";
 const TOOL_CALL_END: &str = "<|tool_call_end|>";
 
 #[derive(Debug, Clone, Default)]
-pub struct KimiProxyAdapter {
+pub struct KimiBridgeAdapter {
     pending_text: BTreeMap<usize, PendingTextBlock>,
     saw_tool_call: bool,
 }
@@ -28,7 +28,7 @@ struct KimiTaggedToolCall {
     arguments: Value,
 }
 
-impl KimiProxyAdapter {
+impl KimiBridgeAdapter {
     pub fn prepare_anthropic_request(&mut self, request: &mut Value) {
         let Some(object) = request.as_object_mut() else {
             return;
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn disables_kimi_thinking_for_anthropic_requests() {
-        let mut adapter = KimiProxyAdapter::default();
+        let mut adapter = KimiBridgeAdapter::default();
         let mut request = json!({ "model": "kimi-for-coding", "messages": [] });
 
         adapter.prepare_anthropic_request(&mut request);
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn normalizes_legacy_kimi_coding_model_aliases() {
         for model in ["kimi-code", "k2p5"] {
-            let mut adapter = KimiProxyAdapter::default();
+            let mut adapter = KimiBridgeAdapter::default();
             let mut request = json!({ "model": model, "messages": [] });
 
             adapter.prepare_anthropic_request(&mut request);
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn rewrites_tagged_tool_calls_into_structured_events() {
-        let mut adapter = KimiProxyAdapter::default();
+        let mut adapter = KimiBridgeAdapter::default();
         let mut events = vec![
             UniversalEvent::ContentStart {
                 index: 0,

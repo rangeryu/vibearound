@@ -1,13 +1,19 @@
 {
   "system_commands": [
+    { "name": "status", "description": "Show current agent, profile, workspace, session, and mode" },
+    { "name": "workspace", "args": "[--list|id|name]", "description": "List or select workspace before the agent starts" },
+    { "name": "agent", "args": "--list", "description": "List available agent launch targets" },
+    { "name": "agent", "args": "--switch <agent[+profile]>", "description": "Switch agent launch target" },
+    { "name": "agent", "args": "--help", "description": "Show current agent commands" },
+    { "name": "switch", "args": "<agent[+profile]>", "description": "Switch agent launch target" },
     { "name": "new", "description": "Reset session" },
-    { "name": "switch", "args": "<agent>", "description": "Switch agent (claude, gemini, codex, opencode, cursor, kiro, qwen-code)" },
+    { "name": "mode", "args": "<default|plan|acceptEdits|bypassPermissions|dontAsk>", "description": "Set session permission mode" },
+    { "name": "plan", "description": "Switch to plan mode" },
     { "name": "profile", "args": "<profile>", "description": "Switch profile" },
-    { "name": "close", "description": "Close conversation" },
-    { "name": "agent", "description": "Show agent commands" },
     { "name": "pair", "args": "<code>", "description": "Pair a browser with this VibeAround instance" },
-    { "name": "pickup", "args": "<session_id> <cwd>", "description": "Resume a coding agent session here" },
+    { "name": "pickup", "args": "<code>", "description": "Resume a coding agent session here" },
     { "name": "handover", "description": "Export session to a coding agent CLI" },
+    { "name": "close", "description": "Close conversation" },
     { "name": "help", "description": "Show this list" }
   ]
 }

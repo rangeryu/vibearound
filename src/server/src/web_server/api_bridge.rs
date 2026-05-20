@@ -14,14 +14,14 @@ mod routes;
 mod stream;
 mod upstream;
 
-use crate::openai_proxy::providers::ProviderProxyAdapter;
+use crate::openai_bridge::providers::ProviderBridgeAdapter;
 
 use completion::translated_completion_response;
 use content_policy::validate_request_content;
-use model_mapping::{proxy_model_mapping, proxy_route_preference};
+use model_mapping::{bridge_model_mapping, bridge_route_preference};
 use normalization::normalize_target_request;
 use passthrough::{buffered_passthrough_response, passthrough_response};
-pub(super) use protocol::ProxyProtocol;
+pub(super) use protocol::BridgeProtocol;
 pub use routes::{
     legacy_chat_completions_handler, legacy_gemini_generate_content_handler,
     legacy_messages_handler, legacy_responses_handler, local_chat_completions_handler,
@@ -32,13 +32,13 @@ use upstream::{apply_upstream_auth, redacted_url, upstream_endpoint, upstream_er
 
 use super::AppState;
 
-pub(super) async fn proxy_handler(
+pub(super) async fn bridge_handler(
     state: AppState,
     profile_id: String,
     route_scope: Option<String>,
     manual_scope: Option<String>,
     target_api_type: String,
-    client_protocol: ProxyProtocol,
+    client_protocol: BridgeProtocol,
     headers: HeaderMap,
     original_request: Value,
 ) -> Response {
@@ -46,15 +46,15 @@ pub(super) async fn proxy_handler(
         Ok(endpoint) => endpoint,
         Err((status, message)) => return json_error(status, &message),
     };
-    let proxy_preference = proxy_route_preference(
+    let bridge_preference = bridge_route_preference(
         &upstream.profile,
         route_scope.as_deref(),
         client_protocol.api_type(),
         &target_api_type,
     );
-    let model_mapping = proxy_model_mapping(
+    let model_mapping = bridge_model_mapping(
         &upstream.profile,
-        proxy_preference.as_ref(),
+        bridge_preference.as_ref(),
         &target_api_type,
     );
     if let Some(scope) = manual_scope.as_deref() {
@@ -63,7 +63,7 @@ pub(super) async fn proxy_handler(
         }
     }
     let mut provider_adapter =
-        ProviderProxyAdapter::for_profile(&upstream.profile, &target_api_type);
+        ProviderBridgeAdapter::for_profile(&upstream.profile, &target_api_type);
     let manual_profile_api_key = manual_scope
         .as_ref()
         .and_then(|_| upstream.profile.credentials.get("api_key").cloned());
@@ -78,13 +78,13 @@ pub(super) async fn proxy_handler(
         if let Err(message) = normalize_target_request(&mut agent_request, upstream.protocol) {
             return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
         }
-        if upstream.protocol == ProxyProtocol::OpenAiChat {
+        if upstream.protocol == BridgeProtocol::OpenAiChat {
             provider_adapter.prepare_chat_request(
                 client_protocol.provider_request_source(),
                 &original_agent_request,
                 &mut agent_request,
             );
-        } else if upstream.protocol == ProxyProtocol::AnthropicMessages {
+        } else if upstream.protocol == BridgeProtocol::AnthropicMessages {
             provider_adapter.prepare_anthropic_request(&mut agent_request);
         }
         if let Ok(mut validation_request) = upstream
@@ -109,13 +109,13 @@ pub(super) async fn proxy_handler(
             Err(e) => {
                 return json_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    &format!("failed to serialize proxy request: {e}"),
+                    &format!("failed to serialize bridge request: {e}"),
                 );
             }
         };
         let upstream_headers = match merged_upstream_headers(
             &upstream.headers,
-            proxy_preference
+            bridge_preference
                 .as_ref()
                 .map(|preference| &preference.headers),
         ) {
@@ -140,14 +140,14 @@ pub(super) async fn proxy_handler(
         };
 
         tracing::info!(
-            target: "server::web_server::api_proxy",
+            target: "server::web_server::api_bridge",
             profile_id = %profile_id,
             route_scope = ?route_scope,
             manual_scope = ?manual_scope,
             target_api_type = %target_api_type,
             upstream = %redacted_url(&upstream.url),
             stream = stream,
-            "API proxy passthrough forwarding request"
+            "API bridge passthrough forwarding request"
         );
 
         let response = match request.send().await {
@@ -155,7 +155,7 @@ pub(super) async fn proxy_handler(
             Err(e) => {
                 return json_error(
                     StatusCode::BAD_GATEWAY,
-                    &format!("failed to reach upstream proxy endpoint: {e}"),
+                    &format!("failed to reach upstream bridge endpoint: {e}"),
                 );
             }
         };
@@ -182,13 +182,13 @@ pub(super) async fn proxy_handler(
     if let Err(message) = normalize_target_request(&mut upstream_request, upstream.protocol) {
         return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
     }
-    if upstream.protocol == ProxyProtocol::OpenAiChat {
+    if upstream.protocol == BridgeProtocol::OpenAiChat {
         provider_adapter.prepare_chat_request(
             client_protocol.provider_request_source(),
             &agent_request,
             &mut upstream_request,
         );
-    } else if upstream.protocol == ProxyProtocol::AnthropicMessages {
+    } else if upstream.protocol == BridgeProtocol::AnthropicMessages {
         provider_adapter.prepare_anthropic_request(&mut upstream_request);
     }
     if let Ok(validation_request) = upstream
@@ -210,14 +210,14 @@ pub(super) async fn proxy_handler(
         Err(e) => {
             return json_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("failed to serialize proxy request: {e}"),
+                &format!("failed to serialize bridge request: {e}"),
             );
         }
     };
 
     let upstream_headers = match merged_upstream_headers(
         &upstream.headers,
-        proxy_preference
+        bridge_preference
             .as_ref()
             .map(|preference| &preference.headers),
     ) {
@@ -243,16 +243,16 @@ pub(super) async fn proxy_handler(
     };
 
     tracing::info!(
-        target: "server::web_server::api_proxy",
+        target: "server::web_server::api_bridge",
         profile_id = %profile_id,
         route_scope = ?route_scope,
         manual_scope = ?manual_scope,
         target_api_type = %target_api_type,
         upstream = %redacted_url(&upstream.url),
-        proxy_model = ?model_mapping.as_ref().map(|mapping| mapping.upstream_model.as_str()),
+        bridge_model = ?model_mapping.as_ref().map(|mapping| mapping.upstream_model.as_str()),
         agent_model = ?model_mapping.as_ref().map(|mapping| mapping.agent_model.as_str()),
         stream = stream,
-        "API proxy forwarding request"
+        "API bridge forwarding request"
     );
 
     let response = match request.send().await {
@@ -260,7 +260,7 @@ pub(super) async fn proxy_handler(
         Err(e) => {
             return json_error(
                 StatusCode::BAD_GATEWAY,
-                &format!("failed to reach upstream proxy endpoint: {e}"),
+                &format!("failed to reach upstream bridge endpoint: {e}"),
             );
         }
     };
@@ -293,13 +293,13 @@ fn validate_manual_scope(scope: &str) -> Result<(), Response> {
     if scope.is_empty() {
         return Err(json_error(
             StatusCode::BAD_REQUEST,
-            "manual proxy scope must not be empty",
+            "manual bridge scope must not be empty",
         ));
     }
     if scope.len() > 128 || !scope.chars().all(is_manual_scope_char) {
         return Err(json_error(
             StatusCode::BAD_REQUEST,
-            "manual proxy scope must be 1-128 characters and contain only ASCII letters, digits, '.', '_' or '-'",
+            "manual bridge scope must be 1-128 characters and contain only ASCII letters, digits, '.', '_' or '-'",
         ));
     }
     Ok(())
@@ -321,7 +321,7 @@ fn json_error(status: StatusCode, message: &str) -> Response {
         Json(json!({
             "error": {
                 "message": message,
-                "type": "vibearound_proxy_error",
+                "type": "vibearound_bridge_error",
             }
         })),
     )
@@ -333,12 +333,12 @@ mod tests {
     use super::validate_manual_scope;
 
     #[test]
-    fn accepts_manual_proxy_scope() {
+    fn accepts_manual_bridge_scope() {
         validate_manual_scope("codex.project_1").unwrap();
     }
 
     #[test]
-    fn rejects_invalid_manual_proxy_scope() {
+    fn rejects_invalid_manual_bridge_scope() {
         assert!(validate_manual_scope("").is_err());
         assert!(validate_manual_scope("codex/project").is_err());
         assert!(validate_manual_scope("codex project").is_err());

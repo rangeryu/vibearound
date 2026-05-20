@@ -45,27 +45,27 @@ pub struct ProfileConnectionPreference {
     /// The client-side API shape the agent should use for this profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_api_type: Option<String>,
-    /// Per client API shape proxy settings. The key is the selected/client
+    /// Per client API shape bridge settings. The key is the selected/client
     /// API type, and `target_api_type` is the profile/provider API type.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub proxy: BTreeMap<String, ProfileProxyPreference>,
+    #[serde(default, alias = "proxy", skip_serializing_if = "BTreeMap::is_empty")]
+    pub bridge: BTreeMap<String, ProfileBridgePreference>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProfileProxyPreference {
+pub struct ProfileBridgePreference {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_api_type: Option<String>,
-    /// The real upstream model this proxy route should run.
+    /// The real upstream model this bridge route should run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream_model: Option<String>,
-    /// Optional model id exposed to the agent. The proxy maps it back to
+    /// Optional model id exposed to the agent. The bridge maps it back to
     /// `upstream_model` before calling the provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fake_model_id: Option<String>,
-    /// Extra provider headers for this proxy route. Catalog default headers
+    /// Extra provider headers for this bridge route. Catalog default headers
     /// remain owned by the provider catalog and cannot be overridden here.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,
@@ -313,27 +313,27 @@ fn connection_preference_is_empty(preference: &ProfileConnectionPreference) -> b
         .map(str::trim)
         .unwrap_or_default()
         .is_empty()
-        && preference.proxy.values().all(|proxy| {
-            !proxy.enabled
-                && proxy
+        && preference.bridge.values().all(|bridge| {
+            !bridge.enabled
+                && bridge
                     .target_api_type
                     .as_deref()
                     .map(str::trim)
                     .unwrap_or_default()
                     .is_empty()
-                && proxy
+                && bridge
                     .upstream_model
                     .as_deref()
                     .map(str::trim)
                     .unwrap_or_default()
                     .is_empty()
-                && proxy
+                && bridge
                     .fake_model_id
                     .as_deref()
                     .map(str::trim)
                     .unwrap_or_default()
                     .is_empty()
-                && (!proxy.enabled || proxy.headers.is_empty())
+                && (!bridge.enabled || bridge.headers.is_empty())
         })
 }
 

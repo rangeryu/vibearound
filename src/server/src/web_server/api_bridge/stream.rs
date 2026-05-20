@@ -8,20 +8,20 @@ use axum::response::Response;
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
-use va_ai_api_proxy::{DecodeState, EncodeState, UniversalEvent, WireEvent};
+use va_ai_api_bridge::{DecodeState, EncodeState, UniversalEvent, WireEvent};
 
-use crate::openai_proxy::providers::ProviderProxyAdapter;
+use crate::openai_bridge::providers::ProviderBridgeAdapter;
 
-use super::{json_error, ProxyProtocol};
+use super::{json_error, BridgeProtocol};
 
 type UpstreamByteStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static>>;
 
 pub(super) fn translated_stream_response(
     upstream: reqwest::Response,
-    upstream_protocol: ProxyProtocol,
-    agent_protocol: ProxyProtocol,
-    provider_adapter: ProviderProxyAdapter,
+    upstream_protocol: BridgeProtocol,
+    agent_protocol: BridgeProtocol,
+    provider_adapter: ProviderBridgeAdapter,
     agent_model: Option<String>,
 ) -> Response {
     let stream = map_sse_stream(
@@ -39,16 +39,16 @@ pub(super) fn translated_stream_response(
         .unwrap_or_else(|_| {
             json_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to build proxy stream response",
+                "failed to build bridge stream response",
             )
         })
 }
 
 fn map_sse_stream(
     upstream: reqwest::Response,
-    upstream_protocol: ProxyProtocol,
-    agent_protocol: ProxyProtocol,
-    provider_adapter: ProviderProxyAdapter,
+    upstream_protocol: BridgeProtocol,
+    agent_protocol: BridgeProtocol,
+    provider_adapter: ProviderBridgeAdapter,
     agent_model: Option<String>,
 ) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + 'static {
     let state = SseMapState {
@@ -93,9 +93,9 @@ fn map_sse_stream(
 
 struct SseMapState {
     upstream: UpstreamByteStream,
-    upstream_protocol: ProxyProtocol,
-    agent_protocol: ProxyProtocol,
-    provider_adapter: ProviderProxyAdapter,
+    upstream_protocol: BridgeProtocol,
+    agent_protocol: BridgeProtocol,
+    provider_adapter: ProviderBridgeAdapter,
     agent_model: Option<String>,
     decode_state: DecodeState,
     encode_state: EncodeState,

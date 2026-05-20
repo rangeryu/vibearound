@@ -12,6 +12,8 @@ pub use plugin_install::{
     // Re-export Tauri macro-generated handler identifiers so generate_handler! works
     // when commands are referenced as `onboarding::install_plugin`.
     __cmd__install_plugin,
+    __tauri_command_name_check_plugin_status,
+    __tauri_command_name_install_plugin,
     check_plugin_status,
     install_plugin,
 };

@@ -339,8 +339,8 @@ export function FormBody({
       )}
 
       {provider.id === "deepseek" && selectedApiTypes.includes("openai-chat") && (
-        <FormSection title={t("DeepSeek proxy")}>
-          <DeepSeekProxySettingsField
+        <FormSection title={t("DeepSeek API bridge")}>
+          <DeepSeekBridgeSettingsField
             settings={providerSettings}
             onChange={setProviderSettings}
           />
@@ -361,7 +361,7 @@ export function FormBody({
   );
 }
 
-function DeepSeekProxySettingsField({
+function DeepSeekBridgeSettingsField({
   settings,
   onChange,
 }: {

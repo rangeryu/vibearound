@@ -1,13 +1,13 @@
 //! Terminal launcher planning.
 //!
 //! This module owns profile/direct launch planning. Concern-specific modules
-//! render profile/proxy/Codex details; platform modules execute the final plan
+//! render profile/bridge/Codex details; platform modules execute the final plan
 //! in the user's selected terminal.
 
+mod bridge;
 mod codex;
 mod common;
 mod plan;
-mod proxy;
 
 #[cfg(target_os = "macos")]
 #[path = "launcher/macos.rs"]

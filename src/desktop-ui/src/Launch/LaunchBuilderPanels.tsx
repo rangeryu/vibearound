@@ -32,7 +32,7 @@ import {
   canDeleteWorkspace,
   isGlobalDefaultDirect,
   isGlobalDefaultProfile,
-  isProxyAgent,
+  isBridgeAgent,
   isSortableWorkspace,
   profileAvailability,
   profileSummary,
@@ -45,7 +45,7 @@ import {
   DisabledMoreButton,
   DragHandle,
   ProfileActionsMenu,
-  ProxyBadge,
+  BridgeBadge,
   SelectableItemCard,
   SortableItem,
   TooltipButton,
@@ -168,7 +168,7 @@ export function ProfilePanel({
                   profile.id,
                 );
                 const connection =
-                  isProxyAgent(agentId)
+                  isBridgeAgent(agentId)
                     ? resolveProfileConnection(
                         profile,
                         prefs.profileConnections,
@@ -215,7 +215,7 @@ export function ProfilePanel({
                           {profile.label}
                         </span>
                         {globalDefaultForProfile && <DefaultBadge />}
-                        {summary.proxy && <ProxyBadge />}
+                        {summary.bridge && <BridgeBadge />}
                       </div>
                       <div className="truncate text-[11px] text-muted-foreground">
                         {availability.launchable
@@ -277,9 +277,9 @@ export function ProfilePanel({
                       )}
                       <ProfileActionsMenu
                         profile={profile}
-                        proxyAvailable={isProxyAgent(agentId)}
+                        bridgeAvailable={isBridgeAgent(agentId)}
                         onConnectionSettings={(profile) => {
-                          if (isProxyAgent(agentId)) {
+                          if (isBridgeAgent(agentId)) {
                             onConnectionSettings(profile, agentId);
                           }
                         }}

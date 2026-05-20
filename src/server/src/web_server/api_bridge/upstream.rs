@@ -7,11 +7,11 @@ use std::collections::BTreeMap;
 use common::profiles::schema::ProfileDef;
 use common::profiles::{catalog, normalize_legacy_profile_and_persist, schema};
 
-use super::{json_error, ProxyProtocol};
+use super::{json_error, BridgeProtocol};
 
 pub(super) struct UpstreamEndpoint {
     pub(super) url: String,
-    pub(super) protocol: ProxyProtocol,
+    pub(super) protocol: BridgeProtocol,
     pub(super) profile: ProfileDef,
     pub(super) headers: BTreeMap<String, String>,
     pub(super) auth_header: bool,
@@ -21,10 +21,10 @@ pub(super) fn upstream_endpoint(
     profile_id: &str,
     target_api_type: &str,
 ) -> Result<UpstreamEndpoint, (StatusCode, String)> {
-    let protocol = ProxyProtocol::from_api_type(target_api_type).ok_or_else(|| {
+    let protocol = BridgeProtocol::from_api_type(target_api_type).ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
-            format!("unsupported proxy target api kind '{target_api_type}'"),
+            format!("unsupported bridge target api kind '{target_api_type}'"),
         )
     })?;
     let profile = schema::load(profile_id)
@@ -86,28 +86,28 @@ pub(super) fn upstream_endpoint(
             ),
         ));
     }
-    if protocol == ProxyProtocol::GeminiGenerateContent {
+    if protocol == BridgeProtocol::GeminiGenerateContent {
         return Err((
             StatusCode::BAD_REQUEST,
             concat!(
                 "Gemini GenerateContent is supported as a client protocol only; ",
-                "choose an OpenAI-compatible Gemini endpoint as the proxy target"
+                "choose an OpenAI-compatible Gemini endpoint as the bridge target"
             )
             .to_string(),
         ));
     }
 
     let url = match protocol {
-        ProxyProtocol::OpenAiResponses => {
+        BridgeProtocol::OpenAiResponses => {
             join_protocol_endpoint(base_url, "responses", endpoint.append_v1_path)
         }
-        ProxyProtocol::OpenAiChat => {
+        BridgeProtocol::OpenAiChat => {
             join_protocol_endpoint(base_url, "chat/completions", endpoint.append_v1_path)
         }
-        ProxyProtocol::AnthropicMessages => {
+        BridgeProtocol::AnthropicMessages => {
             join_protocol_endpoint(base_url, "messages", endpoint.append_v1_path)
         }
-        ProxyProtocol::GeminiGenerateContent => unreachable!("Gemini target is rejected above"),
+        BridgeProtocol::GeminiGenerateContent => unreachable!("Gemini target is rejected above"),
     };
     Ok(UpstreamEndpoint {
         url,
@@ -128,7 +128,7 @@ fn join_protocol_endpoint(base_url: &str, endpoint: &str, append_v1_path: bool) 
 
 pub(super) fn apply_upstream_auth(
     request: reqwest::RequestBuilder,
-    protocol: ProxyProtocol,
+    protocol: BridgeProtocol,
     auth_header: bool,
     headers: &InboundHeaderMap,
     profile_api_key: Option<&str>,
@@ -152,7 +152,7 @@ pub(super) fn apply_upstream_auth(
             ));
         };
         let request = request.header(reqwest::header::AUTHORIZATION, auth);
-        if protocol == ProxyProtocol::AnthropicMessages {
+        if protocol == BridgeProtocol::AnthropicMessages {
             let anthropic_version = headers
                 .get("anthropic-version")
                 .and_then(|value| value.to_str().ok())
@@ -168,7 +168,7 @@ pub(super) fn apply_upstream_auth(
             "missing x-api-key or Authorization header",
         ));
     };
-    let mut request = if protocol == ProxyProtocol::GeminiGenerateContent {
+    let mut request = if protocol == BridgeProtocol::GeminiGenerateContent {
         request.header("x-goog-api-key", api_key)
     } else {
         request.header("x-api-key", api_key)
@@ -247,7 +247,7 @@ pub(super) fn redacted_url(url: &str) -> String {
 mod tests {
     use axum::http::{header, HeaderMap, HeaderValue};
 
-    use super::{apply_upstream_auth, join_protocol_endpoint, ProxyProtocol};
+    use super::{apply_upstream_auth, join_protocol_endpoint, BridgeProtocol};
 
     #[test]
     fn joins_default_v1_for_host_root_endpoints() {
@@ -279,7 +279,7 @@ mod tests {
 
         let request = apply_upstream_auth(
             reqwest::Client::new().post("http://127.0.0.1/v1/chat/completions"),
-            ProxyProtocol::OpenAiChat,
+            BridgeProtocol::OpenAiChat,
             false,
             &headers,
             Some("sk-profile"),
@@ -308,7 +308,7 @@ mod tests {
 
         let request = apply_upstream_auth(
             reqwest::Client::new().post("http://127.0.0.1/v1/messages"),
-            ProxyProtocol::AnthropicMessages,
+            BridgeProtocol::AnthropicMessages,
             false,
             &headers,
             Some("sk-profile"),
@@ -337,7 +337,7 @@ mod tests {
 
         let request = apply_upstream_auth(
             reqwest::Client::new().post("http://127.0.0.1/v1/messages"),
-            ProxyProtocol::AnthropicMessages,
+            BridgeProtocol::AnthropicMessages,
             true,
             &headers,
             Some("sk-profile"),

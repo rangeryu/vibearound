@@ -4,13 +4,13 @@ use std::hash::{Hash, Hasher};
 use common::profiles::schema::DeepSeekProviderSettings;
 use serde_json::{json, Map, Value};
 
-use crate::openai_proxy::reasoning_blob::decode_reasoning_content;
+use crate::openai_bridge::reasoning_blob::decode_reasoning_content;
 
 use super::ProviderRequestSource;
 
 const MISSING_REASONING_CONTENT_FALLBACK: &str =
-    "Previous DeepSeek reasoning content is unavailable from the local proxy.";
-const MISSING_TOOL_OUTPUT_FALLBACK: &str = "Tool output unavailable from the local proxy.";
+    "Previous DeepSeek reasoning content is unavailable from the local bridge.";
+const MISSING_TOOL_OUTPUT_FALLBACK: &str = "Tool output unavailable from the local bridge.";
 
 #[derive(Debug, Default)]
 struct RequestReasoning {
@@ -118,11 +118,11 @@ impl ReasoningReplayAccumulator {
 }
 
 #[derive(Debug, Clone)]
-pub struct DeepSeekProxyAdapter {
+pub struct DeepSeekBridgeAdapter {
     settings: DeepSeekProviderSettings,
 }
 
-impl DeepSeekProxyAdapter {
+impl DeepSeekBridgeAdapter {
     pub fn new(settings: DeepSeekProviderSettings) -> Self {
         Self { settings }
     }
@@ -790,10 +790,10 @@ mod tests {
     use common::profiles::schema::DeepSeekProviderSettings;
     use serde_json::json;
 
-    use crate::openai_proxy::providers::ProviderRequestSource;
-    use crate::openai_proxy::reasoning_blob::encode_reasoning_content;
+    use crate::openai_bridge::providers::ProviderRequestSource;
+    use crate::openai_bridge::reasoning_blob::encode_reasoning_content;
 
-    use super::DeepSeekProxyAdapter;
+    use super::DeepSeekBridgeAdapter;
 
     #[test]
     fn default_settings_disable_thinking_for_existing_profiles() {
@@ -1360,8 +1360,8 @@ mod tests {
         }
     }
 
-    fn new_adapter(profile_id: &str, settings: DeepSeekProviderSettings) -> DeepSeekProxyAdapter {
+    fn new_adapter(profile_id: &str, settings: DeepSeekProviderSettings) -> DeepSeekBridgeAdapter {
         let _ = profile_id;
-        DeepSeekProxyAdapter::new(settings)
+        DeepSeekBridgeAdapter::new(settings)
     }
 }

@@ -71,7 +71,7 @@ pub struct ProfileLaunchTarget {
     pub id: String,
     pub label: String,
     pub api_type: String,
-    pub proxy_target_api_type: Option<String>,
+    pub bridge_target_api_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

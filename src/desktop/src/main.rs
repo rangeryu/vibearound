@@ -232,7 +232,7 @@ fn main() {
             profiles::launcher_set_workspace,
             profiles::launcher_remove_workspace,
             profiles::launcher_reorder_workspaces,
-            profiles::launcher_set_compatibility_proxy,
+            profiles::launcher_set_compatibility_bridge,
             profiles::launcher_set_profile_connection,
         ])
         .setup({

@@ -61,7 +61,7 @@ impl UiLocale {
                 TrayText::LaunchWithoutProfile => "不使用 Profile 启动",
                 TrayText::OpenDashboard => "打开 Dashboard",
                 TrayText::OpenTunnel => "打开隧道",
-                TrayText::Proxy => "代理",
+                TrayText::Bridge => "代理",
                 TrayText::Quit => "退出",
             },
         }
@@ -75,7 +75,7 @@ enum TrayText {
     LaunchWithoutProfile,
     OpenDashboard,
     OpenTunnel,
-    Proxy,
+    Bridge,
     Quit,
 }
 
@@ -87,7 +87,7 @@ impl TrayText {
             Self::LaunchWithoutProfile => "Launch Without Profile",
             Self::OpenDashboard => "Open Dashboard",
             Self::OpenTunnel => "Open Tunnel",
-            Self::Proxy => "proxy",
+            Self::Bridge => "bridge",
             Self::Quit => "Quit",
         }
     }
@@ -296,7 +296,7 @@ struct AgentProfileMenuGroup {
 struct AgentProfileMenuEntry {
     profile_id: String,
     label: String,
-    uses_proxy_label: bool,
+    uses_bridge_label: bool,
 }
 
 fn build_agent_profile_submenus<R: Runtime>(
@@ -366,7 +366,7 @@ fn agent_profile_menu_groups(
             group.entries.push(AgentProfileMenuEntry {
                 profile_id: profile.id.clone(),
                 label: profile_label.clone(),
-                uses_proxy_label: target_uses_proxy_label(&target),
+                uses_bridge_label: target_uses_bridge_label(&target),
             });
         }
     }
@@ -387,13 +387,13 @@ fn ordered_agent_profile_menu_groups(
     out
 }
 
-fn target_uses_proxy_label(target: &common::profiles::connections::ProfileLaunchTarget) -> bool {
-    target.proxy_target_api_type.is_some()
+fn target_uses_bridge_label(target: &common::profiles::connections::ProfileLaunchTarget) -> bool {
+    target.bridge_target_api_type.is_some()
 }
 
 fn profile_entry_menu_label(entry: &AgentProfileMenuEntry, locale: UiLocale) -> String {
-    if entry.uses_proxy_label {
-        format!("{} ({})", entry.label, locale.text(TrayText::Proxy))
+    if entry.uses_bridge_label {
+        format!("{} ({})", entry.label, locale.text(TrayText::Bridge))
     } else {
         entry.label.clone()
     }
@@ -522,40 +522,40 @@ mod tests {
     }
 
     #[test]
-    fn proxy_launch_targets_use_proxy_label() {
+    fn bridge_launch_targets_use_bridge_label() {
         let target = ProfileLaunchTarget {
             id: "codex",
             label: "Codex",
             api_type: "openai-responses".to_string(),
-            proxy_target_api_type: Some("anthropic".to_string()),
+            bridge_target_api_type: Some("anthropic".to_string()),
         };
 
-        assert!(target_uses_proxy_label(&target));
+        assert!(target_uses_bridge_label(&target));
     }
 
     #[test]
-    fn native_launch_targets_do_not_use_proxy_label() {
+    fn native_launch_targets_do_not_use_bridge_label() {
         let target = ProfileLaunchTarget {
             id: "gemini",
             label: "Gemini CLI",
             api_type: "gemini".to_string(),
-            proxy_target_api_type: None,
+            bridge_target_api_type: None,
         };
 
-        assert!(!target_uses_proxy_label(&target));
+        assert!(!target_uses_bridge_label(&target));
     }
 
     #[test]
-    fn profile_entry_label_marks_proxy_routes() {
+    fn profile_entry_label_marks_bridge_routes() {
         let entry = AgentProfileMenuEntry {
             profile_id: "deepseek".to_string(),
             label: "DeepSeek".to_string(),
-            uses_proxy_label: true,
+            uses_bridge_label: true,
         };
 
         assert_eq!(
             profile_entry_menu_label(&entry, UiLocale::En),
-            "DeepSeek (proxy)"
+            "DeepSeek (bridge)"
         );
         assert_eq!(
             profile_entry_menu_label(&entry, UiLocale::ZhCn),
@@ -583,9 +583,9 @@ mod tests {
                 "codex".to_string(),
                 common::agent_state::ProfileConnectionPreference {
                     selected_api_type: Some("openai-responses".to_string()),
-                    proxy: [(
+                    bridge: [(
                         "openai-responses".to_string(),
-                        common::agent_state::ProfileProxyPreference {
+                        common::agent_state::ProfileBridgePreference {
                             enabled: true,
                             target_api_type: Some("anthropic".to_string()),
                             ..Default::default()
@@ -610,8 +610,8 @@ mod tests {
         assert_eq!(codex.label, "Codex");
         assert_eq!(codex.entries.len(), 2);
         assert_eq!(codex.entries[0].profile_id, "anthropic-profile");
-        assert!(codex.entries[0].uses_proxy_label);
+        assert!(codex.entries[0].uses_bridge_label);
         assert_eq!(codex.entries[1].profile_id, "openai-profile");
-        assert!(!codex.entries[1].uses_proxy_label);
+        assert!(!codex.entries[1].uses_bridge_label);
     }
 }

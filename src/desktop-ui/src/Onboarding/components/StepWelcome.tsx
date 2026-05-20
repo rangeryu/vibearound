@@ -23,7 +23,7 @@ const GOAL_CARDS: Array<{
     details: [
       "Launch Claude, Codex, and other CLIs quickly",
       "Use multiple provider profiles",
-      "Route clients through the local API proxy",
+      "Route clients through the local API bridge",
     ],
   },
   {

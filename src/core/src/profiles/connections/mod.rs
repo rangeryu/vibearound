@@ -3,7 +3,7 @@
 //!
 //! A profile's raw `api_types` tell us which provider protocols it exposes.
 //! A launch target also depends on per-profile agent preferences: which client
-//! protocol the agent should speak and whether VibeAround should proxy that
+//! protocol the agent should speak and whether VibeAround should bridge that
 //! client protocol to another provider protocol.
 
 use std::collections::BTreeMap;
@@ -17,9 +17,9 @@ use super::schema::ProfileDef;
 #[derive(Debug, Clone)]
 pub struct ProfileAgentRoute {
     pub client_api_type: String,
-    pub proxy_target_api_type: Option<String>,
-    pub proxy_upstream_model: Option<String>,
-    pub proxy_fake_model_id: Option<String>,
+    pub bridge_target_api_type: Option<String>,
+    pub bridge_upstream_model: Option<String>,
+    pub bridge_fake_model_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ pub struct ProfileLaunchTarget {
     pub id: &'static str,
     pub label: &'static str,
     pub api_type: String,
-    pub proxy_target_api_type: Option<String>,
+    pub bridge_target_api_type: Option<String>,
 }
 
 pub fn sanitize_profile_connection_preference(
@@ -52,8 +52,8 @@ pub fn sanitize_profile_connection_preference(
         ));
     }
 
-    let mut proxy = BTreeMap::new();
-    for (client_api_type, proxy_preference) in preference.proxy {
+    let mut bridge = BTreeMap::new();
+    for (client_api_type, bridge_preference) in preference.bridge {
         let client_api_type = client_api_type.trim().to_string();
         if client_api_type.is_empty() {
             continue;
@@ -64,48 +64,48 @@ pub fn sanitize_profile_connection_preference(
                 agent_id, client_api_type
             ));
         }
-        let target_api_type = proxy_preference
+        let target_api_type = bridge_preference
             .target_api_type
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
-        let target_api_type = if proxy_preference.enabled {
+        let target_api_type = if bridge_preference.enabled {
             let target_api_type = target_api_type.or_else(|| {
-                recommended_proxy_target(&profile.api_types, agent_id, &client_api_type)
+                recommended_bridge_target(&profile.api_types, agent_id, &client_api_type)
             });
             let target_api_type = target_api_type.ok_or_else(|| {
                 format!(
-                    "profile '{}' has no API kind that can be used as a proxy target",
+                    "profile '{}' has no API kind that can be used as a bridge target",
                     profile.id
                 )
             })?;
-            validate_proxy_target(profile, &target_api_type)?;
+            validate_bridge_target(profile, &target_api_type)?;
             Some(target_api_type)
         } else {
-            target_api_type.filter(|api_type| validate_proxy_target(profile, api_type).is_ok())
+            target_api_type.filter(|api_type| validate_bridge_target(profile, api_type).is_ok())
         };
-        let upstream_model = proxy_preference
+        let upstream_model = bridge_preference
             .upstream_model
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
-        let fake_model_id = proxy_preference
+        let fake_model_id = bridge_preference
             .fake_model_id
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
-        let headers = if proxy_preference.enabled {
-            prune_proxy_headers(proxy_preference.headers)
+        let headers = if bridge_preference.enabled {
+            prune_bridge_headers(bridge_preference.headers)
         } else {
             BTreeMap::new()
         };
-        if proxy_preference.enabled
+        if bridge_preference.enabled
             || target_api_type.is_some()
             || upstream_model.is_some()
             || fake_model_id.is_some()
             || !headers.is_empty()
         {
-            proxy.insert(
+            bridge.insert(
                 client_api_type,
-                agent_state::ProfileProxyPreference {
-                    enabled: proxy_preference.enabled,
+                agent_state::ProfileBridgePreference {
+                    enabled: bridge_preference.enabled,
                     target_api_type,
                     upstream_model,
                     fake_model_id,
@@ -117,7 +117,7 @@ pub fn sanitize_profile_connection_preference(
 
     Ok(agent_state::ProfileConnectionPreference {
         selected_api_type: Some(selected_api_type.to_string()),
-        proxy,
+        bridge,
     })
 }
 
@@ -154,18 +154,18 @@ pub fn resolve_profile_agent_route_with_connections(
     let client_api_type = preferred_client_api_type
         .or_else(|| recommended_client_api_type(profile, agent_id).map(ToString::to_string))?;
 
-    let proxy_preference = preference.and_then(|preference| preference.proxy.get(&client_api_type));
-    if let Some(proxy_preference) = proxy_preference.filter(|proxy| proxy.enabled) {
-        let target_api_type = proxy_preference
-            .target_api_type
-            .clone()
-            .or_else(|| recommended_proxy_target(&profile.api_types, agent_id, &client_api_type))?;
-        if validate_proxy_target(profile, &target_api_type).is_ok() {
+    let bridge_preference =
+        preference.and_then(|preference| preference.bridge.get(&client_api_type));
+    if let Some(bridge_preference) = bridge_preference.filter(|bridge| bridge.enabled) {
+        let target_api_type = bridge_preference.target_api_type.clone().or_else(|| {
+            recommended_bridge_target(&profile.api_types, agent_id, &client_api_type)
+        })?;
+        if validate_bridge_target(profile, &target_api_type).is_ok() {
             return Some(ProfileAgentRoute {
                 client_api_type,
-                proxy_target_api_type: Some(target_api_type),
-                proxy_upstream_model: proxy_preference.upstream_model.clone(),
-                proxy_fake_model_id: proxy_preference.fake_model_id.clone(),
+                bridge_target_api_type: Some(target_api_type),
+                bridge_upstream_model: bridge_preference.upstream_model.clone(),
+                bridge_fake_model_id: bridge_preference.fake_model_id.clone(),
             });
         }
     }
@@ -177,9 +177,9 @@ pub fn resolve_profile_agent_route_with_connections(
     {
         return Some(ProfileAgentRoute {
             client_api_type,
-            proxy_target_api_type: None,
-            proxy_upstream_model: None,
-            proxy_fake_model_id: None,
+            bridge_target_api_type: None,
+            bridge_upstream_model: None,
+            bridge_fake_model_id: None,
         });
     }
 
@@ -206,7 +206,7 @@ pub fn launch_targets_for_profile_with_connections(
                 id: agent_id,
                 label,
                 api_type: route.client_api_type,
-                proxy_target_api_type: route.proxy_target_api_type,
+                bridge_target_api_type: route.bridge_target_api_type,
             })
         })
         .collect()
@@ -238,29 +238,29 @@ fn client_route_available(
     {
         return true;
     }
-    let Some(proxy_preference) =
-        preference.and_then(|preference| preference.proxy.get(client_api_type))
+    let Some(bridge_preference) =
+        preference.and_then(|preference| preference.bridge.get(client_api_type))
     else {
         return false;
     };
-    if !proxy_preference.enabled {
+    if !bridge_preference.enabled {
         return false;
     }
-    let Some(target_api_type) = proxy_preference
+    let Some(target_api_type) = bridge_preference
         .target_api_type
         .clone()
-        .or_else(|| recommended_proxy_target(&profile.api_types, agent_id, client_api_type))
+        .or_else(|| recommended_bridge_target(&profile.api_types, agent_id, client_api_type))
     else {
         return false;
     };
-    validate_proxy_target(profile, &target_api_type).is_ok()
+    validate_bridge_target(profile, &target_api_type).is_ok()
 }
 
-fn is_proxy_target_api_type(api_type: &str) -> bool {
+fn is_bridge_target_api_type(api_type: &str) -> bool {
     matches!(api_type, "anthropic" | "openai-responses" | "openai-chat")
 }
 
-fn recommended_proxy_target(
+fn recommended_bridge_target(
     api_types: &[String],
     agent_id: &str,
     client_api_type: &str,
@@ -281,7 +281,7 @@ fn recommended_proxy_target(
         .map(|candidate| (*candidate).to_string())
 }
 
-fn validate_proxy_target(profile: &ProfileDef, target_api_type: &str) -> Result<(), String> {
+fn validate_bridge_target(profile: &ProfileDef, target_api_type: &str) -> Result<(), String> {
     if !profile
         .api_types
         .iter()
@@ -292,16 +292,16 @@ fn validate_proxy_target(profile: &ProfileDef, target_api_type: &str) -> Result<
             profile.id, target_api_type
         ));
     }
-    if !is_proxy_target_api_type(target_api_type) {
+    if !is_bridge_target_api_type(target_api_type) {
         return Err(format!(
-            "api kind '{}' cannot be used as a proxy target",
+            "api kind '{}' cannot be used as a bridge target",
             target_api_type
         ));
     }
     Ok(())
 }
 
-fn prune_proxy_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {
+fn prune_bridge_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {
     headers
         .into_iter()
         .filter_map(|(name, value)| {

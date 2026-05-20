@@ -4,24 +4,24 @@ use chrono::Utc;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::error::{ProxyTransformError, Result};
+use super::error::{BridgeTransformError, Result};
 use super::reasoning_blob::encode_reasoning_content;
 use super::sse::ResponseStreamEvent;
 
 pub fn chat_completion_to_response(chat: Value, original_request: &Value) -> Result<Value> {
     let root = chat
         .as_object()
-        .ok_or(ProxyTransformError::ExpectedObject("Chat completion"))?;
+        .ok_or(BridgeTransformError::ExpectedObject("Chat completion"))?;
     let choice = root
         .get("choices")
         .and_then(Value::as_array)
         .and_then(|choices| choices.first())
         .and_then(Value::as_object)
-        .ok_or(ProxyTransformError::MissingField("choices[0]"))?;
+        .ok_or(BridgeTransformError::MissingField("choices[0]"))?;
     let message = choice
         .get("message")
         .and_then(Value::as_object)
-        .ok_or(ProxyTransformError::MissingField("choices[0].message"))?;
+        .ok_or(BridgeTransformError::MissingField("choices[0].message"))?;
 
     let response_id = response_id();
     let mut output = Vec::new();
@@ -185,12 +185,12 @@ impl ChatToResponsesStream {
         let choices = chunk
             .get("choices")
             .and_then(Value::as_array)
-            .ok_or(ProxyTransformError::MissingField("choices"))?;
+            .ok_or(BridgeTransformError::MissingField("choices"))?;
 
         for choice in choices {
             let choice = choice
                 .as_object()
-                .ok_or(ProxyTransformError::ExpectedObject("stream choice"))?;
+                .ok_or(BridgeTransformError::ExpectedObject("stream choice"))?;
             if let Some(delta) = choice.get("delta").and_then(Value::as_object) {
                 if let Some(reasoning_delta) =
                     delta.get("reasoning_content").and_then(Value::as_str)
@@ -274,7 +274,7 @@ impl ChatToResponsesStream {
     ) -> Result<Vec<ResponseStreamEvent>> {
         let delta = tool_call_delta
             .as_object()
-            .ok_or(ProxyTransformError::ExpectedObject(
+            .ok_or(BridgeTransformError::ExpectedObject(
                 "stream tool call delta",
             ))?;
         let index = delta
@@ -649,21 +649,21 @@ fn reasoning_item(id: String, encrypted_content: Option<String>, status: &str) -
 fn tool_call_item(tool_call: &Value) -> Result<Value> {
     let obj = tool_call
         .as_object()
-        .ok_or(ProxyTransformError::ExpectedObject("tool call"))?;
+        .ok_or(BridgeTransformError::ExpectedObject("tool call"))?;
     if obj.get("type").and_then(Value::as_str) != Some("function") {
-        return Err(ProxyTransformError::Unsupported(
+        return Err(BridgeTransformError::Unsupported(
             "only function tool calls can be mapped to Responses".to_string(),
         ));
     }
     let function = obj
         .get("function")
         .and_then(Value::as_object)
-        .ok_or(ProxyTransformError::MissingField("tool_calls[].function"))?;
+        .ok_or(BridgeTransformError::MissingField("tool_calls[].function"))?;
     let name =
         function
             .get("name")
             .and_then(Value::as_str)
-            .ok_or(ProxyTransformError::MissingField(
+            .ok_or(BridgeTransformError::MissingField(
                 "tool_calls[].function.name",
             ))?;
     let arguments = function

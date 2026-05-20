@@ -2,11 +2,11 @@ use common::profiles::schema::ProfileDef;
 use serde_json::{json, Value};
 
 #[derive(Debug, Clone)]
-pub struct ZaiProxyAdapter {
+pub struct ZaiBridgeAdapter {
     thinking_enabled: bool,
 }
 
-impl ZaiProxyAdapter {
+impl ZaiBridgeAdapter {
     pub fn new(profile: &ProfileDef) -> Self {
         let thinking_enabled = profile
             .overrides
@@ -75,7 +75,7 @@ mod tests {
             overrides: Default::default(),
             provider_settings: Default::default(),
         };
-        let mut adapter = ZaiProxyAdapter::new(&profile);
+        let mut adapter = ZaiBridgeAdapter::new(&profile);
         let mut chat_request = json!({ "model": "glm-5.1", "messages": [] });
 
         adapter.prepare_chat_request(
@@ -98,7 +98,7 @@ mod tests {
             overrides: Default::default(),
             provider_settings: Default::default(),
         };
-        let mut adapter = ZaiProxyAdapter::new(&profile);
+        let mut adapter = ZaiBridgeAdapter::new(&profile);
         let mut chat_request = json!({ "model": "glm-5.1", "messages": [] });
 
         adapter.prepare_chat_request(

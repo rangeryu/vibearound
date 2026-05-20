@@ -1,19 +1,19 @@
 use serde_json::{json, Map, Value};
 
-use super::error::{ProxyTransformError, Result};
+use super::error::{BridgeTransformError, Result};
 
 pub fn responses_to_chat_request(body: Value) -> Result<Value> {
     let root = body
         .as_object()
-        .ok_or(ProxyTransformError::ExpectedObject("Responses request"))?;
+        .ok_or(BridgeTransformError::ExpectedObject("Responses request"))?;
 
     let model = root
         .get("model")
         .cloned()
-        .ok_or(ProxyTransformError::MissingField("model"))?;
+        .ok_or(BridgeTransformError::MissingField("model"))?;
     let input = root
         .get("input")
-        .ok_or(ProxyTransformError::MissingField("input"))?;
+        .ok_or(BridgeTransformError::MissingField("input"))?;
     ensure_stateless_request(root)?;
 
     let mut messages = Vec::new();
@@ -80,7 +80,7 @@ fn ensure_stateless_request(root: &Map<String, Value>) -> Result<()> {
         .get("previous_response_id")
         .is_some_and(|value| !value.is_null())
     {
-        return Err(ProxyTransformError::Unsupported(
+        return Err(BridgeTransformError::Unsupported(
             "`previous_response_id` is not supported for Chat conversion; send full input context instead"
                 .to_string(),
         ));
@@ -90,7 +90,7 @@ fn ensure_stateless_request(root: &Map<String, Value>) -> Result<()> {
         .get("conversation")
         .is_some_and(|value| !value.is_null())
     {
-        return Err(ProxyTransformError::Unsupported(
+        return Err(BridgeTransformError::Unsupported(
             "`conversation` is not supported for Chat conversion; send full input context instead"
                 .to_string(),
         ));
@@ -115,7 +115,7 @@ fn input_to_messages(input: &Value) -> Result<Vec<Value>> {
                     })),
                     Value::Object(obj) => convert_input_item(obj, &mut messages)?,
                     _ => {
-                        return Err(ProxyTransformError::Unsupported(
+                        return Err(BridgeTransformError::Unsupported(
                             "Responses input array contains a non-object item".to_string(),
                         ));
                     }
@@ -123,7 +123,7 @@ fn input_to_messages(input: &Value) -> Result<Vec<Value>> {
             }
             Ok(messages)
         }
-        _ => Err(ProxyTransformError::Unsupported(
+        _ => Err(BridgeTransformError::Unsupported(
             "`input` must be a string or array for Chat conversion".to_string(),
         )),
     }
@@ -185,7 +185,7 @@ fn convert_input_item(item: &Map<String, Value>, messages: &mut Vec<Value>) -> R
             let name = item
                 .get("name")
                 .and_then(Value::as_str)
-                .ok_or(ProxyTransformError::MissingField("input[].name"))?;
+                .ok_or(BridgeTransformError::MissingField("input[].name"))?;
             let arguments = item
                 .get("arguments")
                 .map(value_to_string)
@@ -208,7 +208,7 @@ fn convert_input_item(item: &Map<String, Value>, messages: &mut Vec<Value>) -> R
             let call_id = item
                 .get("call_id")
                 .and_then(Value::as_str)
-                .ok_or(ProxyTransformError::MissingField("input[].call_id"))?;
+                .ok_or(BridgeTransformError::MissingField("input[].call_id"))?;
             let output = item.get("output").map(value_to_string).unwrap_or_default();
             messages.push(json!({
                 "role": "tool",
@@ -218,7 +218,7 @@ fn convert_input_item(item: &Map<String, Value>, messages: &mut Vec<Value>) -> R
             Ok(())
         }
         Some("reasoning") => Ok(()),
-        Some(other) => Err(ProxyTransformError::Unsupported(format!(
+        Some(other) => Err(BridgeTransformError::Unsupported(format!(
             "Responses input item type `{other}` cannot be represented in Chat Completions"
         ))),
     }
@@ -232,7 +232,7 @@ fn chat_compatible_role(role: &str) -> Result<&str> {
         // by downgrading developer to system for chat-only upstreams.
         "developer" => Ok("system"),
         "system" | "user" | "assistant" | "tool" => Ok(role),
-        other => Err(ProxyTransformError::Unsupported(format!(
+        other => Err(BridgeTransformError::Unsupported(format!(
             "message role `{other}` cannot be represented in Chat Completions"
         ))),
     }
@@ -245,7 +245,7 @@ fn content_to_text(content: &Value) -> Result<String> {
             let mut text = String::new();
             for part in parts {
                 let Some(obj) = part.as_object() else {
-                    return Err(ProxyTransformError::Unsupported(
+                    return Err(BridgeTransformError::Unsupported(
                         "content part must be an object".to_string(),
                     ));
                 };
@@ -256,7 +256,7 @@ fn content_to_text(content: &Value) -> Result<String> {
                         }
                     }
                     Some(other) => {
-                        return Err(ProxyTransformError::Unsupported(format!(
+                        return Err(BridgeTransformError::Unsupported(format!(
                             "content part type `{other}` cannot be represented in a text-only Chat request"
                         )));
                     }
@@ -279,13 +279,13 @@ fn convert_tools(tools: &[Value]) -> Result<Vec<Value>> {
     for tool in tools {
         let obj = tool
             .as_object()
-            .ok_or(ProxyTransformError::ExpectedObject("tool"))?;
+            .ok_or(BridgeTransformError::ExpectedObject("tool"))?;
         match obj.get("type").and_then(Value::as_str) {
             Some("function") => {
                 let name = obj
                     .get("name")
                     .and_then(Value::as_str)
-                    .ok_or(ProxyTransformError::MissingField("tools[].name"))?;
+                    .ok_or(BridgeTransformError::MissingField("tools[].name"))?;
                 let mut function = Map::new();
                 function.insert("name".to_string(), json!(name));
                 copy_fields(obj, &mut function, &["description", "parameters", "strict"]);
@@ -301,7 +301,7 @@ fn convert_tools(tools: &[Value]) -> Result<Vec<Value>> {
                 );
             }
             None => {
-                return Err(ProxyTransformError::MissingField("tools[].type"));
+                return Err(BridgeTransformError::MissingField("tools[].type"));
             }
         }
     }
@@ -316,7 +316,7 @@ fn convert_tool_choice(tool_choice: &Value) -> Result<Value> {
                 let name = obj
                     .get("name")
                     .and_then(Value::as_str)
-                    .ok_or(ProxyTransformError::MissingField("tool_choice.name"))?;
+                    .ok_or(BridgeTransformError::MissingField("tool_choice.name"))?;
                 Ok(json!({
                     "type": "function",
                     "function": { "name": name },
@@ -357,7 +357,7 @@ fn convert_text_format(text: Option<&Value>) -> Result<Option<Value>> {
                 "json_schema": Value::Object(json_schema),
             })))
         }
-        Some(other) => Err(ProxyTransformError::Unsupported(format!(
+        Some(other) => Err(BridgeTransformError::Unsupported(format!(
             "Responses text format `{other}` cannot be represented in Chat Completions"
         ))),
     }

@@ -23,7 +23,7 @@ pub(super) async fn buffered_passthrough_response(upstream: reqwest::Response) -
     builder.body(Body::from(bytes)).unwrap_or_else(|_| {
         json_error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to build buffered passthrough proxy response",
+            "failed to build buffered passthrough bridge response",
         )
     })
 }
@@ -43,7 +43,7 @@ pub(super) fn passthrough_response(upstream: reqwest::Response) -> Response<Body
     builder.body(Body::from_stream(stream)).unwrap_or_else(|_| {
         json_error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to build passthrough proxy response",
+            "failed to build passthrough bridge response",
         )
     })
 }

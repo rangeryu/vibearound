@@ -18,7 +18,7 @@ pub async fn list_profiles_handler() -> Json<Vec<crate::api_types::ProfileLaunch
                     id: target.id.to_string(),
                     label: target.label.to_string(),
                     api_type: target.api_type,
-                    proxy_target_api_type: target.proxy_target_api_type,
+                    bridge_target_api_type: target.bridge_target_api_type,
                 })
                 .collect();
             crate::api_types::ProfileLaunchOption {

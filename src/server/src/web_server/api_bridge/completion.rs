@@ -4,19 +4,19 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
-use va_ai_api_proxy::{
+use va_ai_api_bridge::{
     ContentBlock, FinishReason, UniversalEvent, UniversalItem, UniversalResponse, Usage,
 };
 
-use crate::openai_proxy::providers::ProviderProxyAdapter;
+use crate::openai_bridge::providers::ProviderBridgeAdapter;
 
-use super::{json_error, ProxyProtocol};
+use super::{json_error, BridgeProtocol};
 
 pub(super) async fn translated_completion_response(
     upstream: reqwest::Response,
-    upstream_protocol: ProxyProtocol,
-    agent_protocol: ProxyProtocol,
-    provider_adapter: &mut ProviderProxyAdapter,
+    upstream_protocol: BridgeProtocol,
+    agent_protocol: BridgeProtocol,
+    provider_adapter: &mut ProviderBridgeAdapter,
     agent_model: Option<String>,
 ) -> Response {
     let bytes = match upstream.bytes().await {
@@ -44,11 +44,11 @@ pub(super) async fn translated_completion_response(
     provider_adapter.transform_upstream_events(&mut events);
     apply_agent_model(&mut events, agent_model.as_deref());
     let body = match agent_protocol {
-        ProxyProtocol::OpenAiResponses => events_to_openai_response(&events),
-        ProxyProtocol::OpenAiChat => events_to_openai_chat_response(&events),
-        ProxyProtocol::AnthropicMessages => events_to_anthropic_response(&events),
-        ProxyProtocol::GeminiGenerateContent => {
-            va_ai_api_proxy::translator::gemini_generate_content::encode_response(&events)
+        BridgeProtocol::OpenAiResponses => events_to_openai_response(&events),
+        BridgeProtocol::OpenAiChat => events_to_openai_chat_response(&events),
+        BridgeProtocol::AnthropicMessages => events_to_anthropic_response(&events),
+        BridgeProtocol::GeminiGenerateContent => {
+            va_ai_api_bridge::translator::gemini_generate_content::encode_response(&events)
         }
     };
     Json(body).into_response()
@@ -156,12 +156,12 @@ fn stringify_json(value: &Value) -> String {
 
 fn events_to_openai_response(events: &[UniversalEvent]) -> Value {
     let parts = collect_response_parts(events);
-    let id = parts.id.unwrap_or_else(|| "resp_proxy".to_string());
+    let id = parts.id.unwrap_or_else(|| "resp_bridge".to_string());
     let mut output = Vec::new();
     if !parts.reasoning_content.is_empty() {
         output.push(json!({
             "type": "reasoning",
-            "id": "rs_proxy",
+            "id": "rs_bridge",
             "content": [{
                 "type": "reasoning_text",
                 "text": parts.reasoning_content,
@@ -171,7 +171,7 @@ fn events_to_openai_response(events: &[UniversalEvent]) -> Value {
     if !parts.text.is_empty() || parts.tool_calls.is_empty() {
         output.push(json!({
             "type": "message",
-            "id": parts.message_id.unwrap_or_else(|| "msg_proxy".to_string()),
+            "id": parts.message_id.unwrap_or_else(|| "msg_bridge".to_string()),
             "status": "completed",
             "role": "assistant",
             "content": [{
@@ -238,7 +238,7 @@ fn events_to_openai_chat_response(events: &[UniversalEvent]) -> Value {
         );
     }
     json!({
-        "id": parts.id.unwrap_or_else(|| "chatcmpl_proxy".to_string()),
+        "id": parts.id.unwrap_or_else(|| "chatcmpl_bridge".to_string()),
         "object": "chat.completion",
         "created": unix_timestamp(),
         "model": parts.model,
@@ -270,7 +270,7 @@ fn events_to_anthropic_response(events: &[UniversalEvent]) -> Value {
         }));
     }
     json!({
-        "id": parts.message_id.or(parts.id).unwrap_or_else(|| "msg_proxy".to_string()),
+        "id": parts.message_id.or(parts.id).unwrap_or_else(|| "msg_bridge".to_string()),
         "type": "message",
         "role": "assistant",
         "model": parts.model,
@@ -283,7 +283,7 @@ fn events_to_anthropic_response(events: &[UniversalEvent]) -> Value {
 
 fn tool_call_id(tool_call: &ToolCallParts) -> String {
     if tool_call.id.is_empty() {
-        "call_proxy".to_string()
+        "call_bridge".to_string()
     } else {
         tool_call.id.clone()
     }

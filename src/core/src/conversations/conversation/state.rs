@@ -19,4 +19,5 @@ pub struct ConversationState {
     pub busy: bool,
     pub failed: Option<String>,
     pub initialize: Option<acp::InitializeResponse>,
+    pub session_mode: Option<serde_json::Value>,
 }

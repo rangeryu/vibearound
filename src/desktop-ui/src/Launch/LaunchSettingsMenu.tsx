@@ -20,19 +20,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   getLauncherPreferences,
-  setLauncherCompatibilityProxy,
+  setLauncherCompatibilityBridge,
   setLauncherTerminal,
   type LauncherPreferences,
   type TerminalOption,
 } from "./api";
-import type { CompatibilityProxyMode } from "./types";
+import type { CompatibilityBridgeMode } from "./types";
 
 interface Props {
   prefs: LauncherPreferences | null;
   onChange: (prefs: LauncherPreferences) => void;
 }
 
-const PROXY_LABELS: Record<CompatibilityProxyMode, string> = {
+const PROXY_LABELS: Record<CompatibilityBridgeMode, string> = {
   auto: "Auto",
   on: "Force on",
   off: "Off",
@@ -51,7 +51,7 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
   const title = prefs
     ? [
         t("Terminal: {{terminal}}", { terminal: currentTerminal?.label ?? t("Terminal") }),
-        t("API proxy: {{mode}}", { mode: t(PROXY_LABELS[prefs.compatibilityProxy]) }),
+        t("API bridge: {{mode}}", { mode: t(PROXY_LABELS[prefs.compatibilityBridge]) }),
       ].join("\n")
     : t("Launch settings");
 
@@ -78,16 +78,16 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
     }
   }
 
-  async function pickProxy(mode: CompatibilityProxyMode) {
+  async function pickBridge(mode: CompatibilityBridgeMode) {
     if (!prefs) return;
-    if (mode === prefs.compatibilityProxy) {
+    if (mode === prefs.compatibilityBridge) {
       setOpenMenu(false);
       return;
     }
     setPending(true);
     setError(null);
     try {
-      await setLauncherCompatibilityProxy(mode);
+      await setLauncherCompatibilityBridge(mode);
       await refresh();
       setOpenMenu(false);
     } catch (e) {
@@ -145,12 +145,12 @@ export function LaunchSettingsMenu({ prefs, onChange }: Props) {
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="flex items-center gap-2 text-[11px] font-medium">
             <Network className="w-3 h-3" />
-            {t("API proxy")}
+            {t("API bridge")}
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
-            value={prefs.compatibilityProxy}
+            value={prefs.compatibilityBridge}
             onValueChange={(mode) => {
-              void pickProxy(mode as CompatibilityProxyMode);
+              void pickBridge(mode as CompatibilityBridgeMode);
             }}
           >
             <DropdownMenuRadioItem value="auto" disabled={pending} className="text-xs">

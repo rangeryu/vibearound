@@ -14,7 +14,7 @@ import type { ConnectionAgentId, ProfileSummary } from "./types";
 
 export const PLACEHOLDER_API_KEY = "anything-non-empty";
 
-export interface ManualProxyConfig {
+export interface ManualBridgeConfig {
   baseUrl: string;
   model: string;
   copyKey: string;
@@ -29,13 +29,13 @@ export interface ManualSetting {
   snippet: string;
 }
 
-export function manualProxyConfig(
+export function manualBridgeConfig(
   profileId: string,
   agentId: ConnectionAgentId,
   clientApiType: string,
   targetApiType: string,
   model: string | undefined,
-): ManualProxyConfig {
+): ManualBridgeConfig {
   const path = [
     "local-api",
     encodeURIComponent(profileId),
@@ -56,7 +56,7 @@ export function buildManualSetting(
   agentLabel: string,
   clientApiType: string,
   targetApiType: string,
-  manualConfig: ManualProxyConfig,
+  manualConfig: ManualBridgeConfig,
 ): ManualSetting {
   const model = manualConfig.model || "<model-id>";
   if (agentId === "codex") {
@@ -211,14 +211,14 @@ export function ManualSettingDialog({
               ) : isOpenCode ? (
                 <>
                   <li>{t("Open the OpenCode config file, then add or merge this provider block.")}</li>
-                  <li>{t("Use any non-empty API key value when the local proxy is already running with a saved profile key.")}</li>
+                  <li>{t("Use any non-empty API key value when the local API bridge is already running with a saved profile key.")}</li>
                 </>
               ) : isGemini ? (
                 <>
                   <li>{t("Open the Gemini CLI settings file and make sure selectedType is gemini-api-key.")}</li>
                   <li>{t("Open the Gemini CLI env file, then add or update these variables.")}</li>
                   <li>{t("If Gemini keeps using OAuth, run /auth in Gemini CLI and choose Gemini API key.")}</li>
-                  <li>{t("Use any non-empty API key value when the local proxy is already running with a saved profile key.")}</li>
+                  <li>{t("Use any non-empty API key value when the local API bridge is already running with a saved profile key.")}</li>
                 </>
               ) : (
                 <>

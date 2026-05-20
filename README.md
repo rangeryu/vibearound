@@ -30,7 +30,7 @@ The core idea is simple: keep the agent running on your machine, but let you rea
 
 | Start a local agent | Review code changes | Generate visual assets |
 |---|---|---|
-| <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.2/screenshots/web-chat-start.webp" alt="VibeAround web chat workspace launcher" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.2/screenshots/web-chat-diff.webp" alt="VibeAround web chat code review with diff" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.2/screenshots/web-chat-imagegen.webp" alt="VibeAround web chat image generation session" width="100%" /> |
+| <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.3/screenshots/web-chat-start.webp" alt="VibeAround web chat workspace launcher" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.3/screenshots/web-chat-diff.webp" alt="VibeAround web chat code review with diff" width="100%" /> | <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.3/screenshots/web-chat-imagegen.webp" alt="VibeAround web chat image generation session" width="100%" /> |
 
 ## Why VibeAround
 
@@ -39,7 +39,7 @@ Local coding agents are powerful, but they are usually trapped inside one termin
 | Need | What VibeAround adds |
 |---|---|
 | Launch agents with different model providers | Saved profiles, Agent Launch defaults, and direct launch modes |
-| Use non-native model APIs with local CLIs | A local universal proxy across OpenAI Responses, Chat Completions, Anthropic Messages, and Gemini Generate Content |
+| Use non-native model APIs with local CLIs | A local API bridge across OpenAI Responses, Chat Completions, Anthropic Messages, and Gemini Generate Content |
 | Continue work away from the terminal | Web Chat, IM channels, web terminal, and session handover |
 | Share local work safely | Short-lived preview links for dev servers, Markdown, and HTML |
 | Keep setup repeatable | Onboarding, plugin install, config sync, MCP and skill injection |
@@ -53,7 +53,7 @@ Local coding agents are powerful, but they are usually trapped inside one termin
 | Web Chat | Multi-agent chat with session resume, file/image/document attachments, archived sessions, and thinking/tool visibility settings |
 | Web Terminal | A browser terminal for local PTY sessions, with mobile-friendly controls and optional tmux attachment |
 | Messaging channels | DM your local agents from Telegram, Feishu/Lark, Discord, Slack, WeChat, DingTalk, WeCom, or QQ Bot |
-| Local API proxy | Profile-specific loopback endpoints for model routing and API-shape translation |
+| Local API bridge | Profile-specific loopback endpoints for model routing and API-shape translation |
 
 ## What You Can Do
 
@@ -61,7 +61,7 @@ Local coding agents are powerful, but they are usually trapped inside one termin
 
 Start Claude Code, Codex CLI, Gemini CLI, OpenCode, and other agents directly or through saved provider profiles. Keep multiple agents and profiles available side by side.
 
-### Route model traffic through one proxy
+### Bridge model traffic across API shapes
 
 Use provider profiles to connect local agent CLIs to DeepSeek, Alibaba DashScope, Moonshot/Kimi, MiniMax, Z.AI/GLM, Google Gemini, OpenRouter, Azure OpenAI, first-party APIs, or custom compatible endpoints.
 
@@ -85,13 +85,13 @@ Remotely control local agents from messaging apps, and hand over sessions betwee
 
 ## Download
 
-Latest release: [VibeAround v0.6.2](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.2).
+Latest release: [VibeAround v0.6.3](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.3).
 
 | Platform | Recommended download |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.6.2_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround-win-0.6.2-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.2/VibeAround_0.6.2_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.6.3_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.3/VibeAround_0.6.3_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.3/VibeAround_0.6.3_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.3/VibeAround_0.6.3_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.3/VibeAround-win-0.6.3-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.3/VibeAround_0.6.3_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.3/VibeAround_0.6.3_amd64.deb) |
 
 macOS is currently published for Apple Silicon. Windows and Linux desktop packages are produced by GitHub Actions; the macOS DMG is signed and notarized.
 
@@ -99,7 +99,7 @@ macOS is currently published for Apple Silicon. Windows and Linux desktop packag
 
 Agents communicate over stdio through [ACP (Agent Client Protocol)](https://agentclientprotocol.com/). VibeAround can install npm-distributed bridges when they are needed.
 
-| Agent | IM chat | Session handover | Profile launch | Manual proxy config |
+| Agent | IM chat | Session handover | Profile launch | Manual bridge config |
 |---|---|---|---|---|
 | Claude Code | Yes | Yes | Yes | Yes |
 | Codex CLI | Yes | Yes | Yes | Yes |
@@ -115,17 +115,17 @@ Provider profiles let you launch local agents against first-party APIs, OpenAI-c
 
 | Provider | Profile support |
 |---|---|
-| DeepSeek | Built-in endpoints and proxy routes |
+| DeepSeek | Built-in endpoints and bridge routes |
 | Alibaba DashScope | Built-in Coding Plan and Token Plan endpoints |
-| Moonshot / Kimi | Built-in OpenAI-compatible and proxy routes |
-| MiniMax | Built-in OpenAI-compatible and proxy routes |
-| Z.AI / GLM | Built-in endpoints and proxy routes |
+| Moonshot / Kimi | Built-in OpenAI-compatible and bridge routes |
+| MiniMax | Built-in OpenAI-compatible and bridge routes |
+| Z.AI / GLM | Built-in endpoints and bridge routes |
 | Google Gemini | Built-in Gemini API profile |
 | OpenRouter | Built-in OpenRouter profile |
 | Azure OpenAI | Built-in Azure profile |
 | Custom endpoint | Bring your own compatible base URL |
 
-VibeAround's local API proxy is powered by [va-ai-api-proxy](https://github.com/jazzenchen/va-ai-api-proxy). It translates between the common agent API shapes:
+VibeAround's local API bridge is powered by [va-ai-api-bridge](https://github.com/jazzenchen/va-ai-api-bridge), nicknamed `va-aab`. It translates between the common agent API shapes:
 
 | API shape | Common endpoint |
 |---|---|
@@ -170,8 +170,6 @@ For detailed setup, see the [Setup Guide](https://github.com/jazzenchen/VibeArou
 ## Develop Locally
 
 ```bash
-# Pull the va-ai-api-proxy submodule used by local API translation
-git submodule update --init --recursive
 cd src
 bun install
 bun run prebuild
@@ -180,7 +178,7 @@ bun run prebuild
 bun run dev
 ```
 
-If you cloned without `--recurse-submodules`, the first command pulls `src/va-ai-api-proxy`, which provides VibeAround's AI API translation primitives.
+The AI API bridge SDK (`va-aab`) is maintained as a separate open-source Rust crate. Local SDK checkouts can live under `src/sdks/` for development; after the first crates.io release, the app should consume the published crate rather than a submodule or vendored checkout.
 
 Prerequisites: Rust 1.82+, Node.js 24 LTS recommended, Bun 1.3+. On macOS, also run `xcode-select --install`; on Linux, install the WebKitGTK/Tauri system dependencies for your distro.
 

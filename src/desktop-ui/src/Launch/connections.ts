@@ -2,7 +2,7 @@ import type {
   ConnectionAgentId,
   ProfileConnectionPreference,
   ProfileConnections,
-  ProfileProxyPreference,
+  ProfileBridgePreference,
   ProfileSummary,
 } from "./types";
 import { apiTypeBadge } from "./types";
@@ -17,13 +17,13 @@ export interface ConnectionAgentDef {
 export interface ResolvedClientApiConnection {
   apiType: string;
   native: boolean;
-  proxyEnabled: boolean;
+  bridgeEnabled: boolean;
   targetApiType: string | null;
   upstreamModel: string | null;
   fakeModelId: string | null;
   agentModel: string | null;
   targetOptions: string[];
-  status: "native" | "via_proxy" | "unsupported";
+  status: "native" | "via_bridge" | "unsupported";
 }
 
 export interface ResolvedProfileConnection {
@@ -32,7 +32,7 @@ export interface ResolvedProfileConnection {
   selected: ResolvedClientApiConnection;
   clientApiTypes: ResolvedClientApiConnection[];
   targetOptions: string[];
-  status: "native" | "via_proxy" | "unsupported";
+  status: "native" | "via_bridge" | "unsupported";
 }
 
 export const CONNECTION_AGENTS: ConnectionAgentDef[] = [
@@ -70,7 +70,7 @@ export function resolveProfileConnection(
   agent: ConnectionAgentDef,
 ): ResolvedProfileConnection {
   const preference = connections?.[profile.id]?.[agent.id];
-  const targetOptions = proxyTargetApiTypes(profile);
+  const targetOptions = bridgeTargetApiTypes(profile);
   const selectedApiType = selectedClientApiType(profile, agent, preference);
   const clientApiTypes = agent.supportedApiTypes.map((apiType) =>
     resolveClientApiConnection(profile, agent, preference, apiType, targetOptions),
@@ -96,11 +96,11 @@ export function emptyConnectionDraft(
   return Object.fromEntries(
     CONNECTION_AGENTS.map((agent) => {
       const resolved = resolveProfileConnection(profile, connections, agent);
-      const proxy: Record<string, ProfileProxyPreference> = {};
+      const bridge: Record<string, ProfileBridgePreference> = {};
       for (const item of resolved.clientApiTypes) {
-        const current = connections?.[profile.id]?.[agent.id]?.proxy?.[item.apiType];
-        proxy[item.apiType] = {
-          enabled: item.proxyEnabled,
+        const current = connections?.[profile.id]?.[agent.id]?.bridge?.[item.apiType];
+        bridge[item.apiType] = {
+          enabled: item.bridgeEnabled,
           targetApiType:
             current?.targetApiType && item.targetOptions.includes(current.targetApiType)
               ? current.targetApiType
@@ -114,14 +114,14 @@ export function emptyConnectionDraft(
         agent.id,
         {
           selectedApiType: resolved.selectedApiType,
-          proxy,
+          bridge,
         },
       ];
     }),
   ) as Record<ConnectionAgentId, ProfileConnectionPreference>;
 }
 
-export function proxyTargetApiTypes(profile: ProfileSummary): string[] {
+export function bridgeTargetApiTypes(profile: ProfileSummary): string[] {
   return profile.apiTypes.filter((apiType) => PROXY_TARGET_API_TYPES.includes(apiType));
 }
 
@@ -135,7 +135,7 @@ export function recommendedClientApiType(
   );
 }
 
-export function recommendedProxyTarget(
+export function recommendedBridgeTarget(
   profile: ProfileSummary,
   agentId: ConnectionAgentId,
   clientApiType: string,
@@ -185,23 +185,23 @@ function resolveClientApiConnection(
   apiType: string,
   targetOptions: string[],
 ): ResolvedClientApiConnection {
-  const proxyPreference = preference?.proxy?.[apiType];
+  const bridgePreference = preference?.bridge?.[apiType];
   const targetApiType =
-    proxyPreference?.targetApiType && targetOptions.includes(proxyPreference.targetApiType)
-      ? proxyPreference.targetApiType
-      : recommendedProxyTarget(profile, agent.id, apiType);
+    bridgePreference?.targetApiType && targetOptions.includes(bridgePreference.targetApiType)
+      ? bridgePreference.targetApiType
+      : recommendedBridgeTarget(profile, agent.id, apiType);
   const native = profile.apiTypes.includes(apiType);
-  const proxyEnabled = Boolean(proxyPreference?.enabled && targetApiType);
-  const status = proxyEnabled ? "via_proxy" : native ? "native" : "unsupported";
+  const bridgeEnabled = Boolean(bridgePreference?.enabled && targetApiType);
+  const status = bridgeEnabled ? "via_bridge" : native ? "native" : "unsupported";
   const upstreamModel =
-    cleanModelId(proxyPreference?.upstreamModel) ??
+    cleanModelId(bridgePreference?.upstreamModel) ??
     (targetApiType ? cleanModelId(profile.apiTypeModels[targetApiType]) : null);
-  const fakeModelId = cleanModelId(proxyPreference?.fakeModelId);
+  const fakeModelId = cleanModelId(bridgePreference?.fakeModelId);
 
   return {
     apiType,
     native,
-    proxyEnabled,
+    bridgeEnabled,
     targetApiType,
     upstreamModel,
     fakeModelId,
@@ -228,12 +228,12 @@ function selectedClientApiType(
   if (profile.apiTypes.includes(selected)) {
     return selected;
   }
-  const proxyPreference = preference?.proxy?.[selected];
-  const proxyTarget = proxyPreference?.targetApiType;
+  const bridgePreference = preference?.bridge?.[selected];
+  const bridgeTarget = bridgePreference?.targetApiType;
   if (
-    proxyPreference?.enabled &&
-    proxyTarget &&
-    proxyTargetApiTypes(profile).includes(proxyTarget)
+    bridgePreference?.enabled &&
+    bridgeTarget &&
+    bridgeTargetApiTypes(profile).includes(bridgeTarget)
   ) {
     return selected;
   }
