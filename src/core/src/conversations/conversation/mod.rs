@@ -541,6 +541,7 @@ impl Conversation {
             busy: *self.busy.lock().await,
             failed: self.failed.lock().await.clone(),
             initialize: self.initialize.lock().await.clone(),
+            session_mode: self.session_mode.lock().await.clone(),
         }
     }
 

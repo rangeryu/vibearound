@@ -11,18 +11,30 @@ pub(crate) enum SlashAction {
     /// `/agent <rest>` — strip prefix, send rest as a slash command to the
     /// agent CLI (e.g. `/agent status` → `/status`).
     AgentPassthrough(String),
+    /// `/agent` — summarize current agent and agent namespace usage.
+    AgentSummary,
+    /// `/agent --list` — list VibeAround agent launch targets.
+    ListAgents,
+    /// `/agent --help` — list current agent's own commands.
+    ListAgentCommands,
+    /// `/agent --switch <agent>` — switch VibeAround agent launch target.
+    AgentSwitch(String),
     /// `/new` — reset session (new conversation, same agent).
     NewSession,
-    /// `/switch <agent_kind>` — switch agent.
+    /// `/switch <agent_kind>[+profile]` — switch agent launch target.
     SwitchAgent(String),
     /// `/profile <profile>` — switch profile.
     SwitchProfile(String),
+    /// `/workspace` or `/workspace --list` — list workspace choices.
+    WorkspaceList,
+    /// `/workspace <id|name>` — select workspace before agent startup.
+    WorkspaceSwitch(String),
+    /// `/status` — show VibeAround route status.
+    Status,
     /// `/close` — close route.
     Close,
     /// `/help` or `/commands` — show system command menu.
     ShowCommandMenu,
-    /// `/agent` (no args) — list available agent commands.
-    ListAgentCommands,
     /// `/pickup <agent_kind> <session_id> [cwd]` — import a session from a
     /// coding agent (Direction 1, legacy full command).
     Pickup {
@@ -102,24 +114,33 @@ pub(crate) fn parse_slash_command(text: &str) -> Option<SlashAction> {
         return Some(SlashAction::ShowCommandMenu);
     }
 
-    // /agent <rest> — passthrough to agent CLI as a slash command.
-    // Accepts: /agent status, /agent /status, /agent/status — all become "/status".
+    // /agent namespace:
+    //   /agent                 — summary
+    //   /agent --list          — VibeAround launch targets
+    //   /agent --help          — current agent commands
+    //   /agent --switch codex  — switch VibeAround launch target
+    //   /agent status          — passthrough to agent CLI as "/status"
     if let Some(rest) = trimmed.strip_prefix("/agent/") {
         let rest = rest.trim();
-        if !rest.is_empty() {
-            return Some(SlashAction::AgentPassthrough(format!("/{}", rest)));
+        if rest.is_empty() {
+            return Some(SlashAction::AgentSummary);
         }
+        return Some(parse_agent_namespace(rest).unwrap_or_else(|| {
+            SlashAction::AgentPassthrough(format!("/{}", rest.strip_prefix('/').unwrap_or(rest)))
+        }));
     }
     if let Some(rest) = trimmed.strip_prefix("/agent ") {
         let rest = rest.trim();
-        if !rest.is_empty() {
-            // Strip leading slash if present — we always add one
-            let cmd = rest.strip_prefix('/').unwrap_or(rest);
-            return Some(SlashAction::AgentPassthrough(format!("/{}", cmd)));
+        if rest.is_empty() {
+            return Some(SlashAction::AgentSummary);
         }
+        return Some(parse_agent_namespace(rest).unwrap_or_else(|| {
+            let cmd = rest.strip_prefix('/').unwrap_or(rest);
+            SlashAction::AgentPassthrough(format!("/{}", cmd))
+        }));
     }
     if trimmed == "/agent" {
-        return Some(SlashAction::ListAgentCommands);
+        return Some(SlashAction::AgentSummary);
     }
 
     let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
@@ -136,6 +157,14 @@ pub(crate) fn parse_slash_command(text: &str) -> Option<SlashAction> {
             Some(profile) if !profile.is_empty() => Some(SlashAction::SwitchProfile(profile)),
             _ => Some(SlashAction::Unknown(trimmed.to_string())),
         },
+        "/workspace" => match arg {
+            Some(arg) if arg == "--list" => Some(SlashAction::WorkspaceList),
+            Some(workspace) if !workspace.is_empty() => {
+                Some(SlashAction::WorkspaceSwitch(workspace))
+            }
+            _ => Some(SlashAction::WorkspaceList),
+        },
+        "/status" => Some(SlashAction::Status),
         "/close" => Some(SlashAction::Close),
         "/help" | "/commands" => Some(SlashAction::ShowCommandMenu),
         "/pickup" => {
@@ -177,6 +206,20 @@ pub(crate) fn parse_slash_command(text: &str) -> Option<SlashAction> {
     }
 }
 
+fn parse_agent_namespace(rest: &str) -> Option<SlashAction> {
+    match rest {
+        "--list" | "list" => Some(SlashAction::ListAgents),
+        "--help" | "help" => Some(SlashAction::ListAgentCommands),
+        "--switch" | "switch" => Some(SlashAction::Unknown("/agent --switch".to_string())),
+        _ => rest
+            .strip_prefix("--switch ")
+            .or_else(|| rest.strip_prefix("switch "))
+            .map(str::trim)
+            .filter(|target| !target.is_empty())
+            .map(|target| SlashAction::AgentSwitch(target.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +228,13 @@ mod tests {
         match parse_slash_command(text) {
             Some(SlashAction::SwitchAgent(agent)) => agent,
             _ => panic!("expected switch command"),
+        }
+    }
+
+    fn agent_switch(text: &str) -> String {
+        match parse_slash_command(text) {
+            Some(SlashAction::AgentSwitch(target)) => target,
+            _ => panic!("expected agent switch command"),
         }
     }
 
@@ -198,5 +248,45 @@ mod tests {
     fn va_switch_accepts_line_wraps() {
         assert_eq!(switch_agent("/va switch\nopencode"), "opencode");
         assert_eq!(switch_agent("/va\nswitch codex"), "codex");
+    }
+
+    #[test]
+    fn parses_agent_namespace_commands() {
+        assert!(matches!(
+            parse_slash_command("/agent --list"),
+            Some(SlashAction::ListAgents)
+        ));
+        assert!(matches!(
+            parse_slash_command("/agent --help"),
+            Some(SlashAction::ListAgentCommands)
+        ));
+        assert_eq!(
+            agent_switch("/agent --switch codex+deepseek"),
+            "codex+deepseek"
+        );
+    }
+
+    #[test]
+    fn parses_workspace_commands() {
+        assert!(matches!(
+            parse_slash_command("/workspace"),
+            Some(SlashAction::WorkspaceList)
+        ));
+        assert!(matches!(
+            parse_slash_command("/workspace --list"),
+            Some(SlashAction::WorkspaceList)
+        ));
+        match parse_slash_command("/workspace VibeAround") {
+            Some(SlashAction::WorkspaceSwitch(workspace)) => assert_eq!(workspace, "VibeAround"),
+            _ => panic!("expected workspace switch"),
+        }
+    }
+
+    #[test]
+    fn parses_status_command() {
+        assert!(matches!(
+            parse_slash_command("/status"),
+            Some(SlashAction::Status)
+        ));
     }
 }
