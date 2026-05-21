@@ -207,7 +207,7 @@ async fn handle_command(
             send_system_text(
                 plugin_host,
                 route,
-                "Commands: /switch workspace <id|path>, /switch host <agent> [profile], /pickup <code>, /new, /close. Reply with a listed number or thread id after switching workspace.",
+                "Commands: /switch workspace <id|path>, /switch host <agent> [profile], /pickup <code>, /new, /close. You can also prefix commands with /va or /vibearound. Reply with a listed number or thread id after switching workspace.",
             )
             .await;
         }
@@ -282,6 +282,8 @@ fn parse_thread_command(text: &str) -> Option<ThreadCommand> {
         return None;
     }
     let normalized = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = canonical_thread_command(&normalized);
+    let normalized = normalized.as_str();
     if normalized == "/new" {
         return Some(ThreadCommand::New);
     }
@@ -312,7 +314,24 @@ fn parse_thread_command(text: &str) -> Option<ThreadCommand> {
             });
         }
     }
-    Some(ThreadCommand::Unknown(normalized))
+    Some(ThreadCommand::Unknown(normalized.to_string()))
+}
+
+fn canonical_thread_command(normalized: &str) -> String {
+    for prefix in ["/va", "/vibearound"] {
+        if normalized == prefix {
+            return "/help".to_string();
+        }
+        let prefix_with_space = format!("{prefix} ");
+        if let Some(rest) = normalized.strip_prefix(prefix_with_space.as_str()) {
+            let rest = rest.trim();
+            if rest.starts_with('/') {
+                return rest.to_string();
+            }
+            return format!("/{rest}");
+        }
+    }
+    normalized.to_string()
 }
 
 fn first_text(content_blocks: &[acp::ContentBlock]) -> Option<String> {
@@ -368,6 +387,12 @@ mod tests {
     fn parses_new_thread_commands() {
         assert_eq!(parse_thread_command("/new"), Some(ThreadCommand::New));
         assert_eq!(parse_thread_command("/close"), Some(ThreadCommand::Close));
+        assert_eq!(parse_thread_command("/va"), Some(ThreadCommand::Help));
+        assert_eq!(parse_thread_command("/va new"), Some(ThreadCommand::New));
+        assert_eq!(
+            parse_thread_command("/vibearound switch workspace general"),
+            Some(ThreadCommand::SwitchWorkspace("general".to_string()))
+        );
         assert_eq!(
             parse_thread_command("/switch   workspace   general"),
             Some(ThreadCommand::SwitchWorkspace("general".to_string()))
