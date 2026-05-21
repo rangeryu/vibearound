@@ -33,6 +33,7 @@ pub struct ThreadRuntime {
     agent: Mutex<Option<Arc<Agent>>>,
     session_id: Mutex<Option<String>>,
     initialize: Mutex<Option<acp::InitializeResponse>>,
+    prompt_lock: Mutex<()>,
     busy: Mutex<bool>,
     failed: Mutex<Option<String>>,
     store: ThreadEventStore,
@@ -57,6 +58,7 @@ impl ThreadRuntime {
             agent: Mutex::new(None),
             session_id: Mutex::new(session_id),
             initialize: Mutex::new(None),
+            prompt_lock: Mutex::new(()),
             busy: Mutex::new(false),
             failed: Mutex::new(None),
             store,
@@ -95,6 +97,7 @@ impl ThreadRuntime {
         content_blocks: Vec<acp::ContentBlock>,
         handler: Arc<dyn AgentClientHandler>,
     ) -> acp::Result<acp::PromptResponse> {
+        let _prompt_guard = self.prompt_lock.lock().await;
         *self.busy.lock().await = true;
         *self.failed.lock().await = None;
         self.notify_change();

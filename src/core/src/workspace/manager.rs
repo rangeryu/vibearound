@@ -382,7 +382,17 @@ impl WorkspaceThreadManager {
             return Ok(Some(workspace.clone()));
         }
         let path = PathBuf::from(token);
-        Ok(projection.get_by_cwd(&path).cloned())
+        if let Some(workspace) = projection.get_by_cwd(&path) {
+            return Ok(Some(workspace.clone()));
+        }
+        if path.is_dir() {
+            let cwd = path.canonicalize().unwrap_or(path);
+            if let Some(workspace) = projection.get_by_cwd(&cwd) {
+                return Ok(Some(workspace.clone()));
+            }
+            return self.ensure_workspace_for_cwd(cwd).await.map(Some);
+        }
+        Ok(None)
     }
 
     async fn workspace(
@@ -645,5 +655,33 @@ mod tests {
                 .workspace_id,
             WorkspaceId::general()
         );
+    }
+
+    #[tokio::test]
+    async fn switch_workspace_registers_existing_directory_path() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let root = std::env::temp_dir().join(format!("vibearound-ws-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let route = RouteKey::new("slack", "chat-a");
+
+        let switch = manager
+            .switch_workspace(&route, root.to_str().unwrap())
+            .await
+            .unwrap();
+
+        let WorkspaceSwitch::Started(runtime) = switch else {
+            panic!("new workspace should start a thread immediately");
+        };
+        assert_eq!(
+            runtime.state().await.workspace,
+            root.canonicalize().unwrap()
+        );
+        assert!(manager
+            .workspace_projection()
+            .await
+            .unwrap()
+            .get_by_cwd(&root.canonicalize().unwrap())
+            .is_some());
     }
 }
