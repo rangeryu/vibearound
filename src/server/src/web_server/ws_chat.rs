@@ -1049,6 +1049,27 @@ fn output_to_chat_event(output: ChannelOutput) -> ChatEvent {
             ChatEvent::AgentReady { agent, version }
         }
         ChannelOutput::SessionReady { session_id, .. } => ChatEvent::SessionReady { session_id },
+        ChannelOutput::SessionInfo { info, .. } => ChatEvent::SystemText {
+            text: format!(
+                "Workspace: {}\nAgent: {}{}\nProfile: {}\n{}: {}",
+                info.workspace_path,
+                info.agent.name,
+                if info.agent.version.is_empty() {
+                    String::new()
+                } else {
+                    format!(" v{}", info.agent.version)
+                },
+                info.agent
+                    .profile_id
+                    .unwrap_or_else(|| "default".to_string()),
+                match info.start {
+                    common::channels::types::ChannelSessionStart::New => "New session started",
+                    common::channels::types::ChannelSessionStart::Resumed =>
+                        "Continuing from session",
+                },
+                info.session_id
+            ),
+        },
         ChannelOutput::SessionMode { session_mode, .. } => ChatEvent::SessionMode { session_mode },
         ChannelOutput::CommandMenu {
             system_commands,

@@ -7,7 +7,9 @@ use agent_client_protocol::schema as acp;
 use crate::agent::AgentClientHandler;
 use crate::channels::bridge_handler::ChannelBridgeHandler;
 use crate::channels::plugin_host::PluginHost;
-use crate::channels::types::ChannelOutput;
+use crate::channels::types::{
+    ChannelOutput, ChannelSessionAgent, ChannelSessionInfo, ChannelSessionStart,
+};
 use crate::routing::RouteKey;
 use crate::workspace::context_transfer;
 use crate::workspace::manager::{PendingThreadSelection, ThreadChoice, WorkspaceSwitch};
@@ -266,35 +268,58 @@ pub async fn start_runtime_and_notify(
     let handler = bridge_handler(workspace_threads, plugin_host, &before);
     let session_id = runtime.start(route, handler).await?;
     let after = runtime.state().await;
+    let session_was_resumed = before.session_id.as_deref() == Some(session_id.as_str());
 
+    let agent_info = after
+        .initialize
+        .as_ref()
+        .and_then(|initialize| initialize.agent_info.as_ref());
+    let agent = agent_info
+        .map(|info| info.title.clone().unwrap_or_else(|| info.name.clone()))
+        .unwrap_or_else(|| after.host_binding.agent_id.clone());
+    let version = agent_info
+        .map(|info| info.version.clone())
+        .unwrap_or_default();
     if before.initialize.is_none() {
-        let agent_info = after
-            .initialize
-            .as_ref()
-            .and_then(|initialize| initialize.agent_info.as_ref());
-        let agent = agent_info
-            .map(|info| info.title.clone().unwrap_or_else(|| info.name.clone()))
-            .unwrap_or_else(|| after.host_binding.agent_id.clone());
-        let version = agent_info
-            .map(|info| info.version.clone())
-            .unwrap_or_default();
         plugin_host
             .send_output(ChannelOutput::AgentReady {
                 route: route.clone(),
-                agent,
-                version,
+                agent: agent.clone(),
+                version: version.clone(),
             })
             .await;
     }
 
-    if force_session_ready
+    let should_send_session_ready = force_session_ready
         || before.initialize.is_none()
-        || before.session_id.as_deref() != Some(session_id.as_str())
-    {
+        || before.session_id.as_deref() != Some(session_id.as_str());
+    if should_send_session_ready {
         plugin_host
             .send_output(ChannelOutput::SessionReady {
                 route: route.clone(),
-                session_id,
+                session_id: session_id.clone(),
+            })
+            .await;
+        plugin_host
+            .send_output(ChannelOutput::SessionInfo {
+                route: route.clone(),
+                info: ChannelSessionInfo {
+                    workspace_id: after.workspace_id.to_string(),
+                    workspace_path: after.workspace.to_string_lossy().into_owned(),
+                    thread_id: after.thread_id.to_string(),
+                    agent: ChannelSessionAgent {
+                        id: after.host_binding.agent_id.clone(),
+                        name: agent,
+                        version,
+                        profile_id: after.host_binding.profile_id.clone(),
+                    },
+                    session_id,
+                    start: if session_was_resumed {
+                        ChannelSessionStart::Resumed
+                    } else {
+                        ChannelSessionStart::New
+                    },
+                },
             })
             .await;
     }

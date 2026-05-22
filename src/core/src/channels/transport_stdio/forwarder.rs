@@ -6,6 +6,7 @@
 //! - `SystemText`         → `ext_notification("va/system_text", ...)`
 //! - `AgentReady`         → `ext_notification("va/agent_ready", ...)`
 //! - `SessionReady`       → `ext_notification("va/session_ready", ...)`
+//! - `SessionInfo`        → `ext_notification("va/session_info", ...)`
 //! - `CommandMenu`        → `ext_notification("va/command_menu", ...)`
 //! - `PromptDone`         → no-op for stdio plugins (their `prompt()` call already resolves)
 //! - `PermissionRequest`  → real `request_permission` call; response is
@@ -90,6 +91,18 @@ pub(super) async fn forward_output_to_plugin(
                 &serde_json::json!({
                     "chatId": route.chat_id,
                     "sessionId": session_id,
+                }),
+            )
+            .await;
+        }
+        ChannelOutput::SessionInfo { route, info } => {
+            send_ext_notification(
+                conn,
+                channel_kind,
+                "va/session_info",
+                &serde_json::json!({
+                    "chatId": route.chat_id,
+                    "info": info,
                 }),
             )
             .await;
