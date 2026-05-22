@@ -25,6 +25,7 @@ use super::plugin_host::PluginHost;
 use super::types::{ChannelInput, ChannelOutput};
 
 pub(crate) use handler::handle_prompt;
+pub use handler::start_runtime_and_notify;
 
 /// Dispatch a single `ChannelInput` to the right subsystem. Used by both the
 /// stdio plugin transport and the legacy web-chat channel-input thread.

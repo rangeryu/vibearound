@@ -34,7 +34,7 @@ pub(crate) async fn handle_prompt(
         .await
         .map_err(internal_error)?
     {
-        start_runtime_and_notify(&runtime, plugin_host, &route).await?;
+        start_runtime_and_notify(&runtime, plugin_host, &route, true).await?;
         send_system_text(
             plugin_host,
             &route,
@@ -52,7 +52,7 @@ pub(crate) async fn handle_prompt(
         .resolve_route_runtime(&route)
         .await
         .map_err(internal_error)?;
-    start_runtime_and_notify(&runtime, plugin_host, &route).await?;
+    start_runtime_and_notify(&runtime, plugin_host, &route, false).await?;
     let handler: Arc<dyn AgentClientHandler> = Arc::new(ChannelBridgeHandler::for_thread(
         Arc::clone(plugin_host),
         route.clone(),
@@ -74,7 +74,7 @@ async fn handle_command(
                 .create_thread_in_current_workspace(route)
                 .await
                 .map_err(internal_error)?;
-            start_runtime_and_notify(&runtime, plugin_host, route).await?;
+            start_runtime_and_notify(&runtime, plugin_host, route, true).await?;
             send_system_text(
                 plugin_host,
                 route,
@@ -110,7 +110,7 @@ async fn handle_command(
                 )
                 .await
                 .map_err(internal_error)?;
-            start_runtime_and_notify(&runtime, plugin_host, route).await?;
+            start_runtime_and_notify(&runtime, plugin_host, route, true).await?;
             send_system_text(
                 plugin_host,
                 route,
@@ -125,7 +125,7 @@ async fn handle_command(
                 .map_err(internal_error)?
             {
                 WorkspaceSwitch::Started(runtime) => {
-                    start_runtime_and_notify(&runtime, plugin_host, route).await?;
+                    start_runtime_and_notify(&runtime, plugin_host, route, true).await?;
                     send_system_text(
                         plugin_host,
                         route,
@@ -187,7 +187,7 @@ async fn handle_command(
             runtime
                 .switch_host(target.clone(), package.is_some())
                 .await?;
-            start_runtime_and_notify(&runtime, plugin_host, route).await?;
+            start_runtime_and_notify(&runtime, plugin_host, route, true).await?;
             if let Some(package) = package {
                 let blocks =
                     context_transfer::bootstrap_prompt(&package).map_err(internal_error)?;
@@ -218,10 +218,11 @@ async fn handle_command(
     Ok(acp::PromptResponse::new(acp::StopReason::EndTurn))
 }
 
-async fn start_runtime_and_notify(
+pub async fn start_runtime_and_notify(
     runtime: &Arc<ThreadRuntime>,
     plugin_host: &Arc<PluginHost>,
     route: &RouteKey,
+    force_session_ready: bool,
 ) -> acp::Result<()> {
     let before = runtime.state().await;
     let handler: Arc<dyn AgentClientHandler> = Arc::new(ChannelBridgeHandler::for_thread(
@@ -251,7 +252,10 @@ async fn start_runtime_and_notify(
             .await;
     }
 
-    if before.session_id.as_deref() != Some(session_id.as_str()) {
+    if force_session_ready
+        || before.initialize.is_none()
+        || before.session_id.as_deref() != Some(session_id.as_str())
+    {
         plugin_host
             .send_output(ChannelOutput::SessionReady {
                 route: route.clone(),

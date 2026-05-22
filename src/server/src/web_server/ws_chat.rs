@@ -579,7 +579,7 @@ async fn apply_web_session_resume_now(
     state
         .web_channel
         .set_route_agent(&route.chat_id, resume.agent.clone());
-    if let Err(error) = state
+    let runtime = match state
         .channel_hub
         .workspace_thread_manager()
         .attach_external_session(
@@ -590,6 +590,20 @@ async fn apply_web_session_resume_now(
             std::path::PathBuf::from(resume.cwd),
         )
         .await
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            send_web_system_text(state, route, &format!("❌ {}", error)).await;
+            return;
+        }
+    };
+    if let Err(error) = common::channels::prompt::start_runtime_and_notify(
+        &runtime,
+        &state.channel_hub.plugin_host(),
+        route,
+        true,
+    )
+    .await
     {
         send_web_system_text(state, route, &format!("❌ {}", error)).await;
     }
