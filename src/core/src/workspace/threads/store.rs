@@ -104,6 +104,16 @@ pub struct WorkspaceThread {
     pub updated_at: String,
 }
 
+impl WorkspaceThread {
+    pub fn has_agent_session(&self, binding: &HostBinding, session_id: &str) -> bool {
+        self.agent_sessions.get(binding).is_some_and(|sessions| {
+            sessions
+                .iter()
+                .any(|session| session.session_id == session_id)
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum ThreadEvent {
@@ -297,6 +307,9 @@ impl ThreadProjection {
                     session_id: session_id.clone(),
                     observed_at: occurred_at.clone(),
                 };
+                if thread.has_agent_session(&session.binding(), &session.session_id) {
+                    return Ok(());
+                }
                 thread
                     .agent_sessions
                     .entry(session.binding())
@@ -475,5 +488,31 @@ mod tests {
                 .as_deref(),
             Some("first")
         );
+    }
+
+    #[test]
+    fn duplicate_agent_session_observations_are_idempotent() {
+        let thread_id = WorkspaceThreadId::from("wt_a");
+        let codex = HostBinding::new("codex", Some("profile_a".to_string()));
+        let events = vec![
+            ThreadEvent::created(thread_id.clone(), WorkspaceId::from("ws_a"), codex.clone()),
+            ThreadEvent::agent_session_observed(
+                thread_id.clone(),
+                "codex",
+                Some("profile_a".to_string()),
+                "session-1",
+            ),
+            ThreadEvent::agent_session_observed(
+                thread_id.clone(),
+                "codex",
+                Some("profile_a".to_string()),
+                "session-1",
+            ),
+        ];
+
+        let projection = ThreadProjection::from_events(&events).unwrap();
+        let thread = projection.get(&thread_id).unwrap();
+
+        assert_eq!(thread.agent_sessions.get(&codex).unwrap().len(), 1);
     }
 }

@@ -306,6 +306,15 @@ impl ThreadRuntime {
             return Ok(());
         }
 
+        let binding = HostBinding::new(agent_id.to_string(), profile_id.clone());
+        {
+            let thread = self.thread.lock().await;
+            if thread.has_agent_session(&binding, session_id) {
+                *self.session_id.lock().await = Some(session_id.to_string());
+                return Ok(());
+            }
+        }
+
         let thread_id = self.thread.lock().await.id.clone();
         let event = ThreadEvent::agent_session_observed(
             thread_id,
@@ -372,6 +381,9 @@ impl ThreadRuntime {
                     session_id: session_id.clone(),
                     observed_at: occurred_at.clone(),
                 };
+                if thread.has_agent_session(&session.binding(), &session.session_id) {
+                    return Ok(());
+                }
                 thread
                     .agent_sessions
                     .entry(session.binding())
