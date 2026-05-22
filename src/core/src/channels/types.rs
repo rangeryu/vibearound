@@ -66,6 +66,10 @@ pub enum ChannelInput {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum ChannelOutput {
+    ThreadReply {
+        route: RouteKey,
+        reply: ThreadReply,
+    },
     RawAcp {
         route: RouteKey,
         payload: serde_json::Value,
@@ -119,7 +123,8 @@ pub enum ChannelOutput {
 impl ChannelOutput {
     pub fn route_key(&self) -> &RouteKey {
         match self {
-            Self::RawAcp { route, .. }
+            Self::ThreadReply { route, .. }
+            | Self::RawAcp { route, .. }
             | Self::SystemText { route, .. }
             | Self::AgentReady { route, .. }
             | Self::SessionReady { route, .. }
@@ -130,4 +135,28 @@ impl ChannelOutput {
             | Self::PermissionRequest { route, .. } => route,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadReply {
+    pub workspace_id: String,
+    pub thread_id: String,
+    pub agent: ThreadReplyAgent,
+    pub payload: ThreadReplyPayload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadReplyAgent {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ThreadReplyPayload {
+    AcpSessionNotification { notification: serde_json::Value },
 }

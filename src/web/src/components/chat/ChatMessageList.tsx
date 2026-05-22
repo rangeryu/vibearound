@@ -21,6 +21,7 @@ interface ChatMessageListProps {
   replayLoading?: boolean;
   replayTitle?: string;
   displaySettings: ChatDisplaySettings;
+  workspacePath?: string;
 }
 
 function activityVisible(
@@ -79,6 +80,7 @@ export function ChatMessageList({
   replayLoading = false,
   replayTitle,
   displaySettings,
+  workspacePath,
 }: ChatMessageListProps) {
   const { t } = useI18n();
 
@@ -147,6 +149,7 @@ export function ChatMessageList({
                         message={msg}
                         isStreaming={isLastStreamingMessage}
                         displaySettings={displaySettings}
+                        workspacePath={workspacePath}
                       />
                     </MessageRenderErrorBoundary>
                   </MessageContent>

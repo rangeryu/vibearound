@@ -111,6 +111,53 @@ impl SpawnSpec {
     }
 }
 
+/// Delay policy for repeated restarts.
+#[derive(Debug, Clone, Copy)]
+pub enum RestartBackoff {
+    Fixed(Duration),
+    Exponential {
+        initial: Duration,
+        max: Duration,
+        factor: u32,
+    },
+}
+
+impl RestartBackoff {
+    pub const fn fixed(delay: Duration) -> Self {
+        Self::Fixed(delay)
+    }
+
+    pub const fn exponential(initial: Duration, max: Duration) -> Self {
+        Self::Exponential {
+            initial,
+            max,
+            factor: 2,
+        }
+    }
+
+    fn delay_for_attempt(&self, attempt: u32) -> Duration {
+        match self {
+            Self::Fixed(delay) => *delay,
+            Self::Exponential {
+                initial,
+                max,
+                factor,
+            } => {
+                let mut secs = initial.as_secs().max(1);
+                let cap = max.as_secs().max(secs);
+                let steps = attempt.saturating_sub(1).min(32);
+                for _ in 0..steps {
+                    secs = secs.saturating_mul((*factor).max(1) as u64).min(cap);
+                    if secs == cap {
+                        break;
+                    }
+                }
+                Duration::from_secs(secs.min(cap))
+            }
+        }
+    }
+}
+
 /// What to do when a supervised process dies.
 #[derive(Debug, Clone, Copy)]
 pub enum RestartPolicy {
@@ -123,16 +170,16 @@ pub enum RestartPolicy {
     /// window — this catches frozen plugins that aren't emitting
     /// heartbeats. Used by `ChannelPlugin`.
     OnCrash {
-        backoff: Duration,
+        backoff: RestartBackoff,
         watchdog: Option<Duration>,
     },
 }
 
 impl RestartPolicy {
-    fn backoff(&self) -> Option<Duration> {
+    fn backoff_delay(&self, attempt: u32) -> Option<Duration> {
         match self {
             RestartPolicy::Never => None,
-            RestartPolicy::OnCrash { backoff, .. } => Some(*backoff),
+            RestartPolicy::OnCrash { backoff, .. } => Some(backoff.delay_for_attempt(attempt)),
         }
     }
 
@@ -644,9 +691,9 @@ impl Supervisor {
                     return;
                 }
                 proc.set_reason(format!("spawn failed: {}", reason));
-                proc.crash_count.fetch_add(1, Ordering::Relaxed);
+                let attempt = proc.crash_count.fetch_add(1, Ordering::Relaxed) + 1;
                 proc.last_crash_ts.store(now_secs(), Ordering::Relaxed);
-                if let Some(backoff) = proc.policy.backoff() {
+                if let Some(backoff) = proc.policy.backoff_delay(attempt) {
                     proc.restart_at
                         .store(now_secs() + backoff.as_secs(), Ordering::Relaxed);
                 }
@@ -830,10 +877,11 @@ impl Supervisor {
                         );
                     }
                 }
-                RestartPolicy::OnCrash { backoff, .. } => {
+                RestartPolicy::OnCrash { .. } => {
                     proc.set_status(ProcessStatus::Crashed);
-                    proc.crash_count.fetch_add(1, Ordering::Relaxed);
+                    let attempt = proc.crash_count.fetch_add(1, Ordering::Relaxed) + 1;
                     proc.last_crash_ts.store(now_secs(), Ordering::Relaxed);
+                    let backoff = proc.policy.backoff_delay(attempt).unwrap_or(Duration::ZERO);
                     proc.restart_at
                         .store(now_secs() + backoff.as_secs(), Ordering::Relaxed);
                     proc.set_reason(&reason);
@@ -853,7 +901,7 @@ impl Supervisor {
         // Auto-deregister terminal one-shot processes. Without this the
         // `processes` map grows unbounded over daemon lifetime as
         // `RestartPolicy::Never` workloads (chiefly `AcpAgent` spawns
-        // tied to opened conversations) accumulate Stopped entries.
+        // tied to one-shot agent launches) accumulate Stopped entries.
         // Keeping `OnCrash` entries around is deliberate: a user-stopped
         // channel plugin can still be resurrected via `force_start`.
         if matches!(proc.policy, RestartPolicy::Never)
@@ -1050,7 +1098,7 @@ mod tests {
             "test-crasher",
             cat_spec(),
             RestartPolicy::OnCrash {
-                backoff: Duration::from_secs(30),
+                backoff: RestartBackoff::fixed(Duration::from_secs(30)),
                 watchdog: None,
             },
             Box::new(|| Box::new(InstantErrorBridge)),
@@ -1064,6 +1112,16 @@ mod tests {
             p.restart_in_secs > 0,
             "backoff should schedule a future respawn"
         );
+    }
+
+    #[test]
+    fn exponential_backoff_grows_until_cap() {
+        let backoff = RestartBackoff::exponential(Duration::from_secs(5), Duration::from_secs(60));
+
+        assert_eq!(backoff.delay_for_attempt(1), Duration::from_secs(5));
+        assert_eq!(backoff.delay_for_attempt(2), Duration::from_secs(10));
+        assert_eq!(backoff.delay_for_attempt(3), Duration::from_secs(20));
+        assert_eq!(backoff.delay_for_attempt(10), Duration::from_secs(60));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

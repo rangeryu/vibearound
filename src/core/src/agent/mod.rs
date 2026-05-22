@@ -19,10 +19,11 @@
 //!   the agent knows how to reach us. [`sync_integrations`] is the
 //!   startup/settings-change entrypoint.
 //!
-//! [`Conversation`]: crate::conversations::Conversation
+//! [`ThreadRuntime`]: crate::workspace::threads::ThreadRuntime
 
 mod bridge;
 pub mod install;
+pub mod launch;
 mod mcp;
 pub mod runtime;
 mod skills;

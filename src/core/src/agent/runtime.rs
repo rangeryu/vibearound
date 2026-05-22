@@ -18,7 +18,7 @@
 //! whether to re-spawn. `Agent::shutdown` translates to
 //! `supervisor.force_stop(process_id)`.
 //!
-//! [`Conversation`]: crate::conversations::Conversation
+//! [`ThreadRuntime`]: crate::workspace::threads::ThreadRuntime
 //! [`process::Supervisor`]: crate::process::Supervisor
 //! [`RestartPolicy`]: crate::process::RestartPolicy
 

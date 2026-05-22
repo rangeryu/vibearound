@@ -225,6 +225,12 @@ export function ChatView({
   const selectedWorkspace = workspaces.find(
     (workspace) => workspace.path === selectedWorkspacePath,
   );
+  const activeWorkspacePath =
+    runtimeSpecs[activeRuntimeKey]?.launchSession?.workspace ??
+    runtimeSpecs[activeRuntimeKey]?.workspacePath ??
+    resumeReplay?.workspace ??
+    selectedWorkspace?.path ??
+    defaultWorkspacePath;
   const sessionSelection = sessionSelections[selectedAgent] ?? { kind: "current" };
   const selectedLaunchSession =
     sessionSelection.kind === "resume" &&
@@ -1236,6 +1242,7 @@ export function ChatView({
               replayLoading={replayLoading}
               replayTitle={resumeReplay?.title}
               displaySettings={displaySettings}
+              workspacePath={activeWorkspacePath}
             />
 
             <PendingPermissions

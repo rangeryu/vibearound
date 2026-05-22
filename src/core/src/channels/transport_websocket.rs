@@ -5,9 +5,9 @@ use std::time::Duration;
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
 
-use crate::conversations::ConversationManager;
 use crate::routing::ChannelKind;
 use crate::routing::RouteKey;
+use crate::workspace::WorkspaceThreadManager;
 
 use super::ChannelOutput;
 
@@ -237,7 +237,7 @@ impl WebChannelManager {
 
     pub fn schedule_idle_close(
         self: &Arc<Self>,
-        conversation_manager: Arc<ConversationManager>,
+        workspace_threads: Arc<WorkspaceThreadManager>,
         deadline: WebRouteIdleDeadline,
     ) {
         let manager = Arc::clone(self);
@@ -246,8 +246,8 @@ impl WebChannelManager {
             if !manager.is_idle_deadline_current(&deadline) {
                 return;
             }
-            conversation_manager
-                .close(&deadline.route, Some("web idle timeout".to_string()))
+            let _ = workspace_threads
+                .close_route(&deadline.route, Some("web idle timeout".to_string()))
                 .await;
         });
     }
@@ -576,19 +576,17 @@ impl WebSocketPluginRuntime {
         })
     }
 
-    pub async fn send_output(&self, output: ChannelOutput) {
+    pub async fn send_output(&self, output: ChannelOutput) -> Result<(), String> {
         tracing::info!(
             "[WebSocketPluginRuntime] send_output channel_kind={} route={}",
             self.channel_kind,
             output.route_key()
         );
-        if let Err(error) = self.outbound_tx.send(output) {
-            tracing::info!(
-                "[{}] failed to deliver websocket output: {}",
-                self.channel_kind,
-                error
-            );
-        }
+        self.outbound_tx.send(output).map_err(|error| {
+            let message = format!("failed to deliver websocket output: {error}");
+            tracing::info!("[{}] {}", self.channel_kind, message);
+            message
+        })
     }
 
     pub async fn shutdown(&self) {}

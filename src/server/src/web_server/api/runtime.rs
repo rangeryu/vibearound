@@ -65,15 +65,14 @@ pub async fn list_tunnels_handler(
     )
 }
 
-/// GET /api/agents/runtime -- live list of agent pods from `ConversationManager`.
+/// GET /api/agents/runtime -- live list of workspace thread host runtimes.
 pub async fn list_agents_runtime_handler(
     State(state): State<AppState>,
 ) -> Json<Vec<crate::api_types::AgentRuntime>> {
-    let conversation_manager = state.channel_hub.conversation_manager();
-    let pods = conversation_manager.list();
-    let mut out = Vec::with_capacity(pods.len());
-    for pod in pods {
-        let st = pod.state().await;
+    let entries = state.channel_hub.workspace_thread_manager().list().await;
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let st = entry.state;
         let (agent_name, agent_title, agent_version) = st
             .initialize
             .as_ref()
@@ -86,17 +85,29 @@ pub async fn list_agents_runtime_handler(
                 )
             })
             .unwrap_or((None, None, None));
+        let (route_key, channel_kind, chat_id) = match entry.route {
+            Some(route) => (
+                route.as_key(),
+                route.channel_kind.clone(),
+                route.chat_id.clone(),
+            ),
+            None => (
+                st.thread_id.to_string(),
+                "workspace".to_string(),
+                st.thread_id.to_string(),
+            ),
+        };
         out.push(crate::api_types::AgentRuntime {
-            route_key: pod.route.as_key(),
-            channel_kind: pod.route.channel_kind.clone(),
-            chat_id: pod.route.chat_id.clone(),
-            cli_kind: st.cli_kind,
-            profile: st.profile,
+            route_key,
+            channel_kind,
+            chat_id,
+            cli_kind: Some(st.host_binding.agent_id.clone()),
+            profile: st.host_binding.profile_id.clone(),
             session_id: st.session_id,
-            workspace: st.workspace,
+            workspace: Some(st.workspace.to_string_lossy().to_string()),
             busy: st.busy,
             failed: st.failed,
-            started_at: pod.started_at(),
+            started_at: 0,
             agent_name,
             agent_title,
             agent_version,
@@ -118,7 +129,7 @@ pub async fn stop_channel_handler(
 }
 
 /// POST /api/channels/:kind/restart -- user-initiated restart (kill +
-/// immediate respawn, no 15s backoff).
+/// immediate respawn, no retry backoff).
 pub async fn restart_channel_handler(
     State(state): State<AppState>,
     Path(kind): Path<String>,
@@ -156,25 +167,27 @@ pub async fn kill_tunnel_handler(
     }
 }
 
-/// DELETE /api/agents/:route_key -- close an agent pod.
+/// DELETE /api/agents/:route_key -- close a workspace thread host.
 ///
 /// `route_key` is the colon-joined form from `RouteKey::as_key()`, e.g.
-/// `telegram:chat_42`. The handler closes the pod (shutting down its
-/// bridge) and returns `404` if the key doesn't parse.
+/// `telegram:chat_42`, or a workspace thread id.
 pub async fn kill_agent_handler(
     State(state): State<AppState>,
     Path(route_key): Path<String>,
 ) -> impl IntoResponse {
-    let Some(route) = common::routing::RouteKey::from_key(&route_key) else {
-        return (
-            StatusCode::NOT_FOUND,
-            format!("Invalid agent route key: {}", route_key),
-        );
-    };
-    state
+    if let Some(route) = common::routing::RouteKey::from_key(&route_key) {
+        let _ = state
+            .channel_hub
+            .workspace_thread_manager()
+            .close_route(&route, Some("killed by user".to_string()))
+            .await;
+        return (StatusCode::OK, format!("Killed agent {}", route_key));
+    }
+    let thread_id = common::workspace::threads::store::WorkspaceThreadId::from(route_key.as_str());
+    let _ = state
         .channel_hub
-        .conversation_manager()
-        .close(&route, Some("killed by user".to_string()))
+        .workspace_thread_manager()
+        .close_thread(&thread_id, Some("killed by user".to_string()))
         .await;
     (StatusCode::OK, format!("Killed agent {}", route_key))
 }

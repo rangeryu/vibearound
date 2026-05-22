@@ -1,7 +1,7 @@
 //! `TunnelManager` — owns the registry of active tunnels.
 //!
 //! Follows the "per-domain kernel manager + `StateSource` trait" pattern
-//! shared with `ChannelMonitor` and `ConversationManager`: consumers read tunnel state
+//! shared with `ChannelMonitor` and `WorkspaceThreadManager`: consumers read tunnel state
 //! via `list()` / `subscribe_changes()` directly — there is no aggregate
 //! facade above these managers.
 

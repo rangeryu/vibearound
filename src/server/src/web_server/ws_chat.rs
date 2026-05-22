@@ -2,8 +2,8 @@
 //!
 //! - GET /ws/chat — ACP-native websocket adapter
 //!
-//! Inbound user messages are dispatched to ConversationManager via the channel-input
-//! thread (fire-and-forget through ChannelManager). ACP events flow back
+//! Inbound user messages are dispatched to workspace threads via the channel-input
+//! task (fire-and-forget through ChannelManager). ACP events flow back
 //! through the WebChannelManager outbound channel to the websocket,
 //! wrapped in a tagged [`crate::api_types::ChatEvent`] envelope so the
 //! frontend can discriminate exhaustively.
@@ -20,6 +20,7 @@ use uuid::Uuid;
 use agent_client_protocol::schema as acp;
 use common::channels::{ChannelEnvelope, ChannelInput, ChannelOutput};
 use common::routing::{Attachment, RouteKey};
+use common::workspace::threads::HostBinding;
 use common::{agent_state, config};
 
 use crate::api_types::{AgentInfo, ChatEvent};
@@ -120,10 +121,10 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                             &state, &route, &input, profile, cwd,
                                         )
                                         .await;
-                                        state
+                                        let _ = state
                                             .channel_hub
-                                            .conversation_manager()
-                                            .reset_session(&route)
+                                            .workspace_thread_manager()
+                                            .create_thread_in_current_workspace(&route)
                                             .await;
                                     }
                                     None => {
@@ -150,7 +151,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             if let Some(deadline) = state.web_channel.bump_idle_route(&active_route)
                             {
                                 state.web_channel.schedule_idle_close(
-                                    state.channel_hub.conversation_manager(),
+                                    state.channel_hub.workspace_thread_manager(),
                                     deadline,
                                 );
                             }
@@ -166,7 +167,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             if let Some(deadline) = state.web_channel.bump_idle_route(&active_route)
                             {
                                 state.web_channel.schedule_idle_close(
-                                    state.channel_hub.conversation_manager(),
+                                    state.channel_hub.workspace_thread_manager(),
                                     deadline,
                                 );
                             }
@@ -181,7 +182,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                             state.channel_hub.handle_input(input);
                             let deadline = state.web_channel.mark_route_idle(&active_route);
                             state.web_channel.schedule_idle_close(
-                                state.channel_hub.conversation_manager(),
+                                state.channel_hub.workspace_thread_manager(),
                                 deadline,
                             );
                         }
@@ -240,7 +241,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                         state.web_channel.bump_idle_route(&active_route)
                                     {
                                         state.web_channel.schedule_idle_close(
-                                            state.channel_hub.conversation_manager(),
+                                            state.channel_hub.workspace_thread_manager(),
                                             deadline,
                                         );
                                     }
@@ -261,7 +262,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                 .await;
                                 let deadline = task_state.web_channel.mark_route_idle(&task_route);
                                 task_state.web_channel.schedule_idle_close(
-                                    task_state.channel_hub.conversation_manager(),
+                                    task_state.channel_hub.workspace_thread_manager(),
                                     deadline,
                                 );
                             }));
@@ -284,10 +285,10 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
     if !state.web_channel.route_has_session(&active_route.chat_id)
         && !state.web_channel.route_is_active(&active_route.chat_id)
     {
-        state
+        let _ = state
             .channel_hub
-            .conversation_manager()
-            .close(&active_route, None)
+            .workspace_thread_manager()
+            .close_route(&active_route, None)
             .await;
     }
 }
@@ -306,10 +307,10 @@ async fn abort_direct_resume_task(
     }
 
     handle.abort();
-    state
+    let _ = state
         .channel_hub
-        .conversation_manager()
-        .close(route, Some("web resume aborted".to_string()))
+        .workspace_thread_manager()
+        .close_route(route, Some("web resume aborted".to_string()))
         .await;
 }
 
@@ -448,9 +449,15 @@ async fn resolve_web_session_agent(
     route: &RouteKey,
     agent: Option<String>,
 ) -> Option<String> {
-    let manager = state.channel_hub.conversation_manager();
-    let current_state = match manager.conversation(route) {
-        Some(conversation) => Some(conversation.state().await),
+    let current_state = state
+        .channel_hub
+        .workspace_thread_manager()
+        .resolve_route_runtime(route)
+        .await
+        .ok()
+        .map(|runtime| async move { runtime.state().await });
+    let current_state = match current_state {
+        Some(state) => Some(state.await),
         None => None,
     };
     let cfg = config::ensure_loaded();
@@ -459,7 +466,7 @@ async fn resolve_web_session_agent(
         .or_else(|| {
             current_state
                 .as_ref()
-                .and_then(|state| state.cli_kind.clone())
+                .map(|state| state.host_binding.agent_id.clone())
         })
         .unwrap_or_else(|| agent_state::resolve_default_agent(&agent_prefs, &cfg));
     match common::resources::resolve_agent_id(&agent) {
@@ -484,13 +491,41 @@ async fn apply_web_launch_selection(
     if profile.is_none() && workspace.is_none() {
         return;
     }
-    if let Err(error) = state
-        .channel_hub
-        .conversation_manager()
-        .select_launch_route(route, agent, profile, workspace)
-        .await
-    {
-        send_web_system_text(state, route, &format!("❌ {}", error)).await;
+    if let Some(workspace) = workspace {
+        if let Err(error) = state
+            .channel_hub
+            .workspace_thread_manager()
+            .switch_workspace(route, &workspace)
+            .await
+        {
+            send_web_system_text(state, route, &format!("❌ {}", error)).await;
+        }
+    }
+    if let Some(profile) = profile {
+        let Ok(agent_id) = common::resources::resolve_agent_id(&agent) else {
+            send_web_system_text(state, route, &format!("❌ Unknown agent `{}`.", agent)).await;
+            return;
+        };
+        match state
+            .channel_hub
+            .workspace_thread_manager()
+            .resolve_route_runtime(route)
+            .await
+        {
+            Ok(runtime) => {
+                if let Err(error) = runtime
+                    .switch_host(HostBinding::new(agent_id.clone(), Some(profile)), false)
+                    .await
+                {
+                    send_web_system_text(state, route, &format!("❌ {}", error)).await;
+                } else {
+                    state.web_channel.set_route_agent(&route.chat_id, agent_id);
+                }
+            }
+            Err(error) => {
+                send_web_system_text(state, route, &format!("❌ {}", error)).await;
+            }
+        }
     }
 }
 
@@ -513,13 +548,13 @@ async fn apply_web_session_resume(
         .set_route_agent(&route.chat_id, resume.agent.clone());
     if let Err(error) = state
         .channel_hub
-        .conversation_manager()
-        .prepare_pickup(
-            route.clone(),
+        .workspace_thread_manager()
+        .attach_external_session(
+            route,
             resume.agent,
-            resume.session_id,
-            Some(resume.cwd),
             resume.profile,
+            resume.session_id,
+            std::path::PathBuf::from(resume.cwd),
         )
         .await
     {
@@ -544,16 +579,33 @@ async fn apply_web_session_resume_now(
     state
         .web_channel
         .set_route_agent(&route.chat_id, resume.agent.clone());
-    if let Err(error) = state
+    let runtime = match state
         .channel_hub
-        .resume_session(
+        .workspace_thread_manager()
+        .attach_external_session(
             route,
             resume.agent,
-            resume.session_id,
-            Some(resume.cwd),
             resume.profile,
+            resume.session_id,
+            std::path::PathBuf::from(resume.cwd),
         )
         .await
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            send_web_system_text(state, route, &format!("❌ {}", error)).await;
+            return;
+        }
+    };
+    let workspace_threads = state.channel_hub.workspace_thread_manager();
+    if let Err(error) = common::channels::prompt::start_runtime_and_notify(
+        &workspace_threads,
+        &runtime,
+        &state.channel_hub.plugin_host(),
+        route,
+        true,
+    )
+    .await
     {
         send_web_system_text(state, route, &format!("❌ {}", error)).await;
     }
@@ -574,9 +626,15 @@ async fn resolve_web_session_resume(
     session_id: String,
     cwd: Option<String>,
 ) -> Option<WebSessionResume> {
-    let manager = state.channel_hub.conversation_manager();
-    let current_state = match manager.conversation(route) {
-        Some(conversation) => Some(conversation.state().await),
+    let current_state = state
+        .channel_hub
+        .workspace_thread_manager()
+        .resolve_route_runtime(route)
+        .await
+        .ok()
+        .map(|runtime| async move { runtime.state().await });
+    let current_state = match current_state {
+        Some(state) => Some(state.await),
         None => None,
     };
     let cfg = config::ensure_loaded();
@@ -585,7 +643,7 @@ async fn resolve_web_session_resume(
         .or_else(|| {
             current_state
                 .as_ref()
-                .and_then(|state| state.cli_kind.clone())
+                .map(|state| state.host_binding.agent_id.clone())
         })
         .unwrap_or_else(|| agent_state::resolve_default_agent(&agent_prefs, &cfg));
     let canonical_agent = match common::resources::resolve_agent_id(&agent) {
@@ -599,10 +657,10 @@ async fn resolve_web_session_resume(
     if current_state.as_ref().is_some_and(|state| {
         let profile_matches = profile
             .as_deref()
-            .map(|profile| state.profile.as_deref() == Some(profile))
+            .map(|profile| state.host_binding.profile_id.as_deref() == Some(profile))
             .unwrap_or(true);
         state.session_id.as_deref() == Some(session_id.as_str())
-            && state.cli_kind.as_deref() == Some(canonical_agent.as_str())
+            && state.host_binding.agent_id == canonical_agent
             && profile_matches
     }) {
         return None;
@@ -612,7 +670,7 @@ async fn resolve_web_session_resume(
         .or_else(|| {
             current_state
                 .as_ref()
-                .and_then(|state| state.workspace.clone())
+                .map(|state| state.workspace.to_string_lossy().to_string())
         })
         .unwrap_or_else(|| {
             cfg.resolve_workspace(&canonical_agent)
@@ -665,27 +723,15 @@ async fn apply_web_session_mode(state: &AppState, route: &RouteKey, mode_id: &st
         .await;
         return;
     };
-    if canonical == "default" {
-        state
-            .channel_hub
-            .conversation_manager()
-            .clear_desired_session_mode(route)
-            .await;
-        return;
-    }
-    if let Err(error) = state
-        .channel_hub
-        .conversation_manager()
-        .set_desired_session_mode(route, canonical.to_string())
-        .await
-    {
-        send_web_system_text(
-            state,
-            route,
-            &format!("❌ Could not switch mode to `{}`: {}.", canonical, error),
-        )
-        .await;
-    }
+    send_web_system_text(
+        state,
+        route,
+        &format!(
+            "Session mode `{}` is no longer a route-level setting; switch host/profile instead.",
+            canonical
+        ),
+    )
+    .await;
 }
 
 async fn apply_web_session_config_option(
@@ -694,25 +740,15 @@ async fn apply_web_session_config_option(
     config_id: String,
     value: String,
 ) {
-    match state
-        .channel_hub
-        .conversation_manager()
-        .set_session_config_option(route, config_id.clone(), value.clone())
-        .await
-    {
-        Ok(_) => {}
-        Err(error) => {
-            send_web_system_text(
-                state,
-                route,
-                &format!(
-                    "❌ Could not set session config `{}` to `{}`: {}.",
-                    config_id, value, error
-                ),
-            )
-            .await;
-        }
-    }
+    send_web_system_text(
+        state,
+        route,
+        &format!(
+            "Session config `{}` is no longer a route-level setting; requested value `{}` was ignored.",
+            config_id, value
+        ),
+    )
+    .await;
 }
 
 async fn send_event<S>(ws_tx: &mut S, event: &ChatEvent) -> Result<(), ()>
@@ -1002,6 +1038,11 @@ fn parse_web_session_workspace(value: &serde_json::Value) -> Option<String> {
 /// Translate a `ChannelOutput` into a wire `ChatEvent`.
 fn output_to_chat_event(output: ChannelOutput) -> ChatEvent {
     match output {
+        ChannelOutput::ThreadReply { reply, .. } => match reply.payload {
+            common::channels::types::ThreadReplyPayload::AcpSessionNotification {
+                notification,
+            } => acp_passthrough(notification),
+        },
         ChannelOutput::RawAcp { payload, .. } => acp_passthrough(payload),
         ChannelOutput::SystemText { text, .. } => ChatEvent::SystemText { text },
         ChannelOutput::AgentReady { agent, version, .. } => {

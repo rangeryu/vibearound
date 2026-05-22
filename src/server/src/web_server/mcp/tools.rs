@@ -4,8 +4,8 @@
 //! validates inputs, touches workspace config / preview store / session
 //! files, and returns a JSON-RPC response.
 //!
-//! Tools never touch `ConversationManager`, pods, or bridges — they're stateless. Any
-//! session loading happens later when the user sends `/pickup` in IM chat.
+//! Tools do not touch agent processes directly. Session loading happens later
+//! when the user sends `/pickup` in an attached IM/web route.
 
 use axum::Json;
 
@@ -34,15 +34,20 @@ pub(super) async fn mcp_get_session_id(
     };
 
     let route = common::routing::RouteKey::new(channel_kind, chat_id);
-    let conversation_manager = state.channel_hub.conversation_manager();
-
-    let state_opt = match conversation_manager.conversation(&route) {
-        Some(conv) => Some(conv.state().await),
+    let state_opt = state
+        .channel_hub
+        .workspace_thread_manager()
+        .resolve_route_runtime(&route)
+        .await
+        .ok()
+        .map(|runtime| async move { runtime.state().await });
+    let state_opt = match state_opt {
+        Some(state) => Some(state.await),
         None => None,
     };
     match state_opt {
-        Some(snap) if snap.session_id.is_some() => {
-            let sid = snap.session_id.unwrap();
+        Some(snapshot) if snapshot.session_id.is_some() => {
+            let sid = snapshot.session_id.unwrap();
             mcp_text(id, &sid)
         }
         _ => mcp_error_text(
@@ -53,7 +58,7 @@ pub(super) async fn mcp_get_session_id(
 }
 
 // ---------------------------------------------------------------------------
-// prepare_handover — stateless, no ConversationManager dependency
+// prepare_handover — issue a short-lived code consumed by /pickup
 // ---------------------------------------------------------------------------
 
 pub(super) async fn mcp_prepare_handover(
@@ -77,10 +82,14 @@ pub(super) async fn mcp_prepare_handover(
     // Validate cwd is a known workspace.
     // Built-in workspaces under ~/.vibearound/workspaces/ are always accepted.
     let config = common::config::ensure_loaded();
-    let cwd_path = std::path::PathBuf::from(cwd);
-    let builtin_dir = common::config::builtin_workspaces_dir();
+    let cwd_path = common::workspace::normalize_workspace_cwd(std::path::PathBuf::from(cwd));
+    let builtin_dir =
+        common::workspace::normalize_workspace_cwd(common::config::builtin_workspaces_dir());
     let is_builtin = cwd_path.starts_with(&builtin_dir);
-    let is_registered = config.all_workspaces().iter().any(|ws| ws == &cwd_path);
+    let is_registered = config
+        .all_workspaces()
+        .iter()
+        .any(|ws| common::workspace::normalize_workspace_cwd(ws) == cwd_path);
 
     if !is_builtin && !is_registered {
         return mcp_error_text(
@@ -88,7 +97,7 @@ pub(super) async fn mcp_prepare_handover(
             &format!(
                 "Workspace {} is not registered in VibeAround.\n\
              Use the `register_workspace` tool to add it first, then retry.",
-                cwd
+                cwd_path.to_string_lossy()
             ),
         );
     }
@@ -116,10 +125,10 @@ pub(super) async fn mcp_prepare_handover(
         },
     };
 
-    let code = common::conversations::handover::pickup_codes::store(
+    let code = common::workspace::handoff::store(
         agent_kind_str.to_string(),
         session_id,
-        cwd.to_string(),
+        cwd_path.to_string_lossy().to_string(),
     );
     let pickup_cmd = format!("/pickup {}", code);
     mcp_text(
