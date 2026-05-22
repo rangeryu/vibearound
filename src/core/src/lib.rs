@@ -16,4 +16,6 @@ pub mod pty;
 pub mod resources;
 pub mod routing;
 pub mod state;
+pub mod storage;
 pub mod tunnels;
+pub mod workspace;
