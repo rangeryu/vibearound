@@ -377,12 +377,19 @@ fn normalize_claude_env(env: &mut Vec<(String, String)>, ctx: &BTreeMap<String, 
     let model = first_env_value(env, &["ANTHROPIC_MODEL"])
         .or_else(|| ctx.get("model").cloned())
         .unwrap_or_default();
+    let auto_compact_window = ctx
+        .get("model_context_window")
+        .filter(|value| !value.is_empty())
+        .cloned();
 
     env.retain(|(key, _)| !is_standardized_claude_env_key(key));
     push_env_if_nonempty(env, "ANTHROPIC_API_KEY", api_key.clone());
     push_env_if_nonempty(env, "ANTHROPIC_AUTH_TOKEN", api_key);
     push_env_if_nonempty(env, "ANTHROPIC_BASE_URL", base_url);
     push_env_if_nonempty(env, "ANTHROPIC_MODEL", model);
+    if let Some(auto_compact_window) = auto_compact_window {
+        push_env_if_nonempty(env, "CLAUDE_CODE_AUTO_COMPACT_WINDOW", auto_compact_window);
+    }
 }
 
 fn first_env_value(env: &[(String, String)], keys: &[&str]) -> Option<String> {
@@ -409,6 +416,7 @@ fn is_standardized_claude_env_key(key: &str) -> bool {
             | "ANTHROPIC_DEFAULT_OPUS_MODEL"
             | "ANTHROPIC_DEFAULT_SONNET_MODEL"
             | "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+            | "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
             | "CLAUDE_CODE_SUBAGENT_MODEL"
             | "CLAUDE_CODE_EFFORT_LEVEL"
     )
@@ -647,6 +655,7 @@ mod tests {
                     "ANTHROPIC_AUTH_TOKEN",
                     "ANTHROPIC_BASE_URL",
                     "ANTHROPIC_MODEL",
+                    "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
                 ]
             );
             assert_eq!(
@@ -656,6 +665,17 @@ mod tests {
                     .find(|(key, _)| key == "ANTHROPIC_MODEL")
                     .map(|(_, value)| value.as_str()),
                 Some(model_for(&profile))
+            );
+            assert_eq!(
+                rendered
+                    .env
+                    .iter()
+                    .find(|(key, _)| key == "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+                    .map(|(_, value)| value.as_str()),
+                Some(match profile.provider.as_str() {
+                    "kimi" => "256000",
+                    _ => "1000000",
+                })
             );
         }
     }

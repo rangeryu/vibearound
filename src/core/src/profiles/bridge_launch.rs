@@ -147,20 +147,37 @@ fn render_claude_bridge_profile(
         settings.target_api_type
     );
     RenderedProfile {
-        env: claude_env(settings.api_key, bridge_base_url, settings.model),
+        env: claude_env(
+            settings.api_key,
+            bridge_base_url,
+            settings.model,
+            settings.model_context_window,
+        ),
         settings_files: Vec::new(),
         command_args: Vec::new(),
         config_env: None,
     }
 }
 
-fn claude_env(api_key: String, base_url: String, model: String) -> Vec<(String, String)> {
-    vec![
+fn claude_env(
+    api_key: String,
+    base_url: String,
+    model: String,
+    model_context_window: Option<u64>,
+) -> Vec<(String, String)> {
+    let mut env = vec![
         ("ANTHROPIC_API_KEY".to_string(), api_key.clone()),
         ("ANTHROPIC_AUTH_TOKEN".to_string(), api_key),
         ("ANTHROPIC_BASE_URL".to_string(), base_url),
         ("ANTHROPIC_MODEL".to_string(), model),
-    ]
+    ];
+    if let Some(model_context_window) = model_context_window {
+        env.push((
+            "CLAUDE_CODE_AUTO_COMPACT_WINDOW".to_string(),
+            model_context_window.to_string(),
+        ));
+    }
+    env
 }
 
 fn render_codex_bridge_profile(
@@ -556,7 +573,16 @@ mod tests {
                     "ANTHROPIC_AUTH_TOKEN",
                     "ANTHROPIC_BASE_URL",
                     "ANTHROPIC_MODEL",
+                    "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
                 ]
+            );
+            assert_eq!(
+                rendered
+                    .env
+                    .iter()
+                    .find(|(key, _)| key == "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+                    .map(|(_, value)| value.as_str()),
+                Some("1000000")
             );
             assert!(rendered.settings_files.is_empty());
             assert!(rendered.command_args.is_empty());
