@@ -384,68 +384,74 @@ export function SettingsDialog({
 
           <TabsContent
             value="general"
-            className="min-h-0 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]"
+            className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
           >
-            <div className="space-y-2">
-              <SettingsActionRow
-                label={t("Restart Services")}
-                action={
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={saving !== "idle"}
-                    onClick={() => void restartServices()}
-                  >
-                    <RotateCw className="h-3 w-3" />
-                    {saving === "restart-services"
-                      ? t("Restarting services…")
-                      : t("Restart")}
-                  </Button>
-                }
-              />
-              <SettingsActionRow
-                label={t("Rerun Onboarding")}
-                action={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={saving !== "idle"}
-                    onClick={() => window.location.replace("/onboarding")}
-                  >
-                    <WandSparkles className="h-3 w-3" />
-                    {t("Open Config Wizard")}
-                  </Button>
-                }
-              />
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]">
+              <div className="space-y-2">
+                <SettingsActionRow
+                  label={t("Restart Services")}
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={saving !== "idle"}
+                      onClick={() => void restartServices()}
+                    >
+                      <RotateCw className="h-3 w-3" />
+                      {saving === "restart-services"
+                        ? t("Restarting services…")
+                        : t("Restart")}
+                    </Button>
+                  }
+                />
+                <SettingsActionRow
+                  label={t("Rerun Onboarding")}
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={saving !== "idle"}
+                      onClick={() => window.location.replace("/onboarding")}
+                    >
+                      <WandSparkles className="h-3 w-3" />
+                      {t("Open Config Wizard")}
+                    </Button>
+                  }
+                />
+              </div>
             </div>
           </TabsContent>
 
           <TabsContent
             value="im"
-            className="min-h-0 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]"
+            className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
           >
             {loading ? (
-              <LoadingBlock />
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]">
+                <LoadingBlock />
+              </div>
             ) : (
-              <div className="space-y-3">
-                <StepChannels
-                  pluginRegistry={pluginRegistry}
-                  discoveredPlugins={discoveredPlugins}
-                  enabledChannels={enabledChannels}
-                  channelConfigs={channelConfigs}
-                  channelVerbose={channelVerbose}
-                  installingPlugins={installingPlugins}
-                  authStates={authStates}
-                  onToggleChannel={toggleChannel}
-                  onConfigChange={updateChannelConfig}
-                  onVerboseChange={updateChannelVerbose}
-                  onInstallPlugin={installPlugin}
-                  onStartAuth={(pluginId) => void startAuth(pluginId)}
-                  onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
-                  switchSize="sm"
-                />
-                <div className="flex justify-end border-t border-border pt-3">
+              <>
+                <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]">
+                  <StepChannels
+                    pluginRegistry={pluginRegistry}
+                    discoveredPlugins={discoveredPlugins}
+                    enabledChannels={enabledChannels}
+                    channelConfigs={channelConfigs}
+                    channelVerbose={channelVerbose}
+                    installingPlugins={installingPlugins}
+                    authStates={authStates}
+                    onToggleChannel={toggleChannel}
+                    onConfigChange={updateChannelConfig}
+                    onVerboseChange={updateChannelVerbose}
+                    onInstallPlugin={installPlugin}
+                    onStartAuth={(pluginId) => void startAuth(pluginId)}
+                    onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
+                    switchSize="sm"
+                  />
+                </div>
+                <div className="flex shrink-0 justify-end border-t border-border px-6 py-4">
                   <Button
                     type="button"
                     size="sm"
@@ -455,32 +461,36 @@ export function SettingsDialog({
                     {saving === "im" ? t("Applying…") : t("Apply IM Settings")}
                   </Button>
                 </div>
-              </div>
+              </>
             )}
           </TabsContent>
 
           <TabsContent
             value="tunnel"
-            className="min-h-0 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]"
+            className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
           >
             {loading ? (
-              <LoadingBlock />
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]">
+                <LoadingBlock />
+              </div>
             ) : (
-              <div className="space-y-3">
-                <StepTunnel
-                  tunnels={tunnels}
-                  provider={tunnelProvider}
-                  onProvider={setTunnelProvider}
-                  ngrokToken={ngrokToken}
-                  onNgrokToken={setNgrokToken}
-                  ngrokDomain={ngrokDomain}
-                  onNgrokDomain={setNgrokDomain}
-                  cfToken={cfToken}
-                  onCfToken={setCfToken}
-                  cfHostname={cfHostname}
-                  onCfHostname={setCfHostname}
-                />
-                <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
+              <>
+                <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]">
+                  <StepTunnel
+                    tunnels={tunnels}
+                    provider={tunnelProvider}
+                    onProvider={setTunnelProvider}
+                    ngrokToken={ngrokToken}
+                    onNgrokToken={setNgrokToken}
+                    ngrokDomain={ngrokDomain}
+                    onNgrokDomain={setNgrokDomain}
+                    cfToken={cfToken}
+                    onCfToken={setCfToken}
+                    cfHostname={cfHostname}
+                    onCfHostname={setCfHostname}
+                  />
+                </div>
+                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border px-6 py-4">
                   <Button
                     type="button"
                     variant="outline"
@@ -502,7 +512,7 @@ export function SettingsDialog({
                       : t("Save & Restart Services")}
                   </Button>
                 </div>
-              </div>
+              </>
             )}
           </TabsContent>
         </Tabs>
