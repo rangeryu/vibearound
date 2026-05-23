@@ -34,7 +34,7 @@ import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Previews } from "./Previews";
 import { Launch } from "./Launch";
-import { SettingsPage } from "./Settings";
+import { SettingsDialog } from "./Settings";
 import { getLauncherPreferences, type LauncherPreferences } from "./Launch/api";
 import { LanguageMenu } from "./components/LanguageMenu";
 
@@ -325,11 +325,12 @@ function App() {
   return <Dashboard />;
 }
 
-type DashboardPage = "launch" | "status" | "previews" | "settings";
+type DashboardPage = "launch" | "status" | "previews";
 
 function Dashboard() {
   const { t } = useI18n();
   const [page, setPage] = useState<DashboardPage>("launch");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [launcherPrefs, setLauncherPrefs] =
     useState<LauncherPreferences | null>(null);
   const [launcherPrefsLoaded, setLauncherPrefsLoaded] = useState(false);
@@ -480,20 +481,20 @@ function Dashboard() {
           </span>
           <LanguageMenu />
           <Button
-            onClick={() => setPage("settings")}
+            onClick={() => setSettingsOpen(true)}
             variant="ghost"
             size="icon-xs"
             title={t("Settings")}
             aria-label={t("Settings")}
             className={
-              effectivePage === "settings"
+              settingsOpen
                 ? "bg-accent text-accent-foreground"
                 : undefined
             }
           >
             <Settings
               className={`w-3.5 h-3.5 ${
-                effectivePage === "settings"
+                settingsOpen
                   ? "text-accent-foreground"
                   : "text-muted-foreground"
               }`}
@@ -502,17 +503,19 @@ function Dashboard() {
         </div>
       </header>
 
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onServicesRestarted={refreshAll}
+      />
+
       {firstError && (
         <div className="px-3 py-1 bg-destructive/10 text-destructive text-xs">
           {firstError}
         </div>
       )}
 
-      {effectivePage === "settings" ? (
-        <div className="flex-1 overflow-y-auto">
-          <SettingsPage onServicesRestarted={refreshAll} />
-        </div>
-      ) : effectivePage === "previews" ? (
+      {effectivePage === "previews" ? (
         <div className="flex-1 overflow-y-auto">
           <Previews />
         </div>

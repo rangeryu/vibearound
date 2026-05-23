@@ -1,21 +1,40 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { RefreshCw, Settings as SettingsIcon, WandSparkles } from "lucide-react";
+import {
+  Globe,
+  MessageSquare,
+  RotateCw,
+  Settings as SettingsIcon,
+  WandSparkles,
+} from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { StepChannels } from "../Onboarding/components/StepChannels";
+import { StepTunnel } from "../Onboarding/components/StepTunnel";
 import { useChannelAuth } from "../Onboarding/hooks/useChannelAuth";
+import type { TunnelProvider } from "../Onboarding/constants";
 import type {
   ChannelVerboseConfig,
   ConfigSchemaProperty,
   DiscoveredChannelPlugin,
   PluginRegistryEntry,
   Settings as AppSettings,
+  TunnelSummary,
 } from "../Onboarding/types";
+import { apiFetch } from "../lib/api";
 import { Button } from "@/components/ui/button";
-import { PageHeader, PageShell, StatusBanner } from "@/components/page";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StatusBanner } from "@/components/page";
 
-interface SettingsPageProps {
+interface SettingsDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onServicesRestarted?: () => void;
 }
 
@@ -24,13 +43,25 @@ type Notice = {
   message: string;
 };
 
-export function SettingsPage({ onServicesRestarted }: SettingsPageProps) {
+type SaveState =
+  | "idle"
+  | "im"
+  | "tunnel"
+  | "tunnel-restart"
+  | "restart-services";
+
+export function SettingsDialog({
+  open,
+  onOpenChange,
+  onServicesRestarted,
+}: SettingsDialogProps) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({});
   const [pluginRegistry, setPluginRegistry] = useState<PluginRegistryEntry[]>([]);
   const [discoveredPlugins, setDiscoveredPlugins] = useState<
     DiscoveredChannelPlugin[]
   >([]);
+  const [tunnels, setTunnels] = useState<TunnelSummary[]>([]);
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(
     () => new Set(),
   );
@@ -40,15 +71,21 @@ export function SettingsPage({ onServicesRestarted }: SettingsPageProps) {
   const [channelVerbose, setChannelVerbose] = useState<
     Record<string, ChannelVerboseConfig>
   >({});
+  const [tunnelProvider, setTunnelProvider] =
+    useState<TunnelProvider>("none");
+  const [ngrokToken, setNgrokToken] = useState("");
+  const [ngrokDomain, setNgrokDomain] = useState("");
+  const [cfToken, setCfToken] = useState("");
+  const [cfHostname, setCfHostname] = useState("");
   const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(
     () => new Set(),
   );
   const [loading, setLoading] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [saving, setSaving] = useState<"idle" | "save" | "restart">("idle");
+  const [saving, setSaving] = useState<SaveState>("idle");
   const [notice, setNotice] = useState<Notice | null>(null);
 
-  const hydrate = useCallback(
+  const hydrateChannels = useCallback(
     (
       loadedSettings: AppSettings,
       registry: PluginRegistryEntry[],
@@ -85,22 +122,35 @@ export function SettingsPage({ onServicesRestarted }: SettingsPageProps) {
     [],
   );
 
+  const hydrateTunnel = useCallback((loadedSettings: AppSettings) => {
+    const tunnel = loadedSettings.tunnel;
+    setTunnelProvider(tunnel?.provider ?? "none");
+    setNgrokToken(tunnel?.ngrok?.auth_token ?? "");
+    setNgrokDomain(tunnel?.ngrok?.domain ?? "");
+    setCfToken(tunnel?.cloudflare?.tunnel_token ?? "");
+    setCfHostname(tunnel?.cloudflare?.hostname ?? "");
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
+    setSettingsLoaded(false);
     setNotice(null);
     try {
-      const [loadedSettings, registry, discovered] = await Promise.all([
-        invoke<AppSettings>("get_settings"),
-        invoke<PluginRegistryEntry[]>("list_plugin_registry"),
-        invoke<DiscoveredChannelPlugin[]>("list_channel_plugins"),
-      ]);
+      const [loadedSettings, registry, discovered, tunnelDefs] =
+        await Promise.all([
+          invoke<AppSettings>("get_settings"),
+          invoke<PluginRegistryEntry[]>("list_plugin_registry"),
+          invoke<DiscoveredChannelPlugin[]>("list_channel_plugins"),
+          invoke<TunnelSummary[]>("list_tunnels"),
+        ]);
       setSettings(loadedSettings);
       setPluginRegistry(registry);
       setDiscoveredPlugins(discovered);
-      hydrate(loadedSettings, registry, discovered);
+      setTunnels(tunnelDefs);
+      hydrateChannels(loadedSettings, registry, discovered);
+      hydrateTunnel(loadedSettings);
       setSettingsLoaded(true);
     } catch (error) {
-      setSettingsLoaded(false);
       setNotice({
         variant: "error",
         message: error instanceof Error ? error.message : String(error),
@@ -108,11 +158,11 @@ export function SettingsPage({ onServicesRestarted }: SettingsPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [hydrate]);
+  }, [hydrateChannels, hydrateTunnel]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (open) void load();
+  }, [open, load]);
 
   const updateChannelConfig = useCallback(
     (pluginId: string, key: string, value: string) => {
@@ -182,7 +232,7 @@ export function SettingsPage({ onServicesRestarted }: SettingsPageProps) {
   );
 
   const { authStates, startAuth, cancelAuth } = useChannelAuth({
-    active: true,
+    active: open,
     discoveredPlugins,
     channelConfigs,
     onConfigChange: updateChannelConfig,
@@ -193,18 +243,71 @@ export function SettingsPage({ onServicesRestarted }: SettingsPageProps) {
     [settingsLoaded, loading, saving],
   );
 
-  const save = useCallback(
+  const restartServices = useCallback(async () => {
+    setSaving("restart-services");
+    setNotice(null);
+    try {
+      await invoke("restart_services");
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "Services restarted." });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving("idle");
+    }
+  }, [onServicesRestarted]);
+
+  const applyImSettings = useCallback(async () => {
+    setSaving("im");
+    setNotice(null);
+    try {
+      const nextSettings = buildChannelSettings({
+        settings,
+        pluginRegistry,
+        discoveredPlugins,
+        enabledChannels,
+        channelConfigs,
+        channelVerbose,
+      });
+      await invoke("save_settings", { settings: nextSettings });
+      setSettings(nextSettings);
+      const response = await apiFetch("/api/channels/sync", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "IM settings applied." });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving("idle");
+    }
+  }, [
+    settings,
+    pluginRegistry,
+    discoveredPlugins,
+    enabledChannels,
+    channelConfigs,
+    channelVerbose,
+    onServicesRestarted,
+  ]);
+
+  const saveTunnelSettings = useCallback(
     async (restart: boolean) => {
-      setSaving(restart ? "restart" : "save");
+      setSaving(restart ? "tunnel-restart" : "tunnel");
       setNotice(null);
       try {
-        const nextSettings = buildChannelSettings({
+        const nextSettings = buildTunnelSettings({
           settings,
-          pluginRegistry,
-          discoveredPlugins,
-          enabledChannels,
-          channelConfigs,
-          channelVerbose,
+          tunnelProvider,
+          ngrokToken,
+          ngrokDomain,
+          cfToken,
+          cfHostname,
         });
         await invoke("save_settings", { settings: nextSettings });
         setSettings(nextSettings);
@@ -212,9 +315,9 @@ export function SettingsPage({ onServicesRestarted }: SettingsPageProps) {
         if (restart) {
           await invoke("restart_services");
           onServicesRestarted?.();
-          setNotice({ variant: "success", message: "Settings applied." });
+          setNotice({ variant: "success", message: "Tunnel settings applied." });
         } else {
-          setNotice({ variant: "success", message: "Settings saved." });
+          setNotice({ variant: "success", message: "Tunnel settings saved." });
         }
       } catch (error) {
         setNotice({
@@ -227,94 +330,192 @@ export function SettingsPage({ onServicesRestarted }: SettingsPageProps) {
     },
     [
       settings,
-      pluginRegistry,
-      discoveredPlugins,
-      enabledChannels,
-      channelConfigs,
-      channelVerbose,
+      tunnelProvider,
+      ngrokToken,
+      ngrokDomain,
+      cfToken,
+      cfHostname,
       onServicesRestarted,
     ],
   );
 
   return (
-    <PageShell className="space-y-3">
-      <PageHeader
-        icon={<SettingsIcon className="h-4 w-4 text-primary" />}
-        title={t("Settings")}
-        actions={
-          <>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={() => void load()}
-              disabled={loading}
-            >
-              <RefreshCw className="h-3 w-3" />
-              {t("Refresh")}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={() => window.location.replace("/onboarding")}
-            >
-              <WandSparkles className="h-3 w-3" />
-              {t("Open Config Wizard")}
-            </Button>
-          </>
-        }
-      />
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[780px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <SettingsIcon className="h-4 w-4 text-primary" />
+            {t("Settings")}
+          </DialogTitle>
+        </DialogHeader>
 
-      {notice && (
-        <StatusBanner variant={notice.variant}>{t(notice.message)}</StatusBanner>
-      )}
+        {notice && (
+          <div className="px-4 pb-2">
+            <StatusBanner variant={notice.variant}>
+              {t(notice.message)}
+            </StatusBanner>
+          </div>
+        )}
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!canSubmit}
-          onClick={() => void save(false)}
-        >
-          {saving === "save" ? t("Saving…") : t("Save")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={!canSubmit}
-          onClick={() => void save(true)}
-        >
-          <RefreshCw className="h-3 w-3" />
-          {saving === "restart"
-            ? t("Restarting services…")
-            : t("Save & Restart Services")}
-        </Button>
-      </div>
+        <Tabs defaultValue="general" className="min-h-0 px-4 pb-4">
+          <TabsList className="mb-3">
+            <TabsTrigger value="general">
+              <SettingsIcon className="h-3 w-3" />
+              {t("General")}
+            </TabsTrigger>
+            <TabsTrigger value="im">
+              <MessageSquare className="h-3 w-3" />
+              {t("IM")}
+            </TabsTrigger>
+            <TabsTrigger value="tunnel">
+              <Globe className="h-3 w-3" />
+              {t("Tunnel")}
+            </TabsTrigger>
+          </TabsList>
 
-      {loading ? (
-        <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-          {t("Loading…")}
-        </p>
-      ) : (
-        <StepChannels
-          pluginRegistry={pluginRegistry}
-          discoveredPlugins={discoveredPlugins}
-          enabledChannels={enabledChannels}
-          channelConfigs={channelConfigs}
-          channelVerbose={channelVerbose}
-          installingPlugins={installingPlugins}
-          authStates={authStates}
-          onToggleChannel={toggleChannel}
-          onConfigChange={updateChannelConfig}
-          onVerboseChange={updateChannelVerbose}
-          onInstallPlugin={installPlugin}
-          onStartAuth={(pluginId) => void startAuth(pluginId)}
-          onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
-        />
-      )}
-    </PageShell>
+          <TabsContent value="general" className="max-h-[62vh] overflow-y-auto">
+            <div className="space-y-2">
+              <SettingsActionRow
+                label={t("Restart Services")}
+                action={
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={saving !== "idle"}
+                    onClick={() => void restartServices()}
+                  >
+                    <RotateCw className="h-3 w-3" />
+                    {saving === "restart-services"
+                      ? t("Restarting services…")
+                      : t("Restart")}
+                  </Button>
+                }
+              />
+              <SettingsActionRow
+                label={t("Rerun Onboarding")}
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={saving !== "idle"}
+                    onClick={() => window.location.replace("/onboarding")}
+                  >
+                    <WandSparkles className="h-3 w-3" />
+                    {t("Open Config Wizard")}
+                  </Button>
+                }
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="im" className="max-h-[62vh] overflow-y-auto pr-1">
+            {loading ? (
+              <LoadingBlock />
+            ) : (
+              <div className="space-y-3">
+                <StepChannels
+                  pluginRegistry={pluginRegistry}
+                  discoveredPlugins={discoveredPlugins}
+                  enabledChannels={enabledChannels}
+                  channelConfigs={channelConfigs}
+                  channelVerbose={channelVerbose}
+                  installingPlugins={installingPlugins}
+                  authStates={authStates}
+                  onToggleChannel={toggleChannel}
+                  onConfigChange={updateChannelConfig}
+                  onVerboseChange={updateChannelVerbose}
+                  onInstallPlugin={installPlugin}
+                  onStartAuth={(pluginId) => void startAuth(pluginId)}
+                  onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
+                />
+                <div className="flex justify-end border-t border-border pt-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!canSubmit}
+                    onClick={() => void applyImSettings()}
+                  >
+                    {saving === "im" ? t("Applying…") : t("Apply IM Settings")}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent
+            value="tunnel"
+            className="max-h-[62vh] overflow-y-auto pr-1"
+          >
+            {loading ? (
+              <LoadingBlock />
+            ) : (
+              <div className="space-y-3">
+                <StepTunnel
+                  tunnels={tunnels}
+                  provider={tunnelProvider}
+                  onProvider={setTunnelProvider}
+                  ngrokToken={ngrokToken}
+                  onNgrokToken={setNgrokToken}
+                  ngrokDomain={ngrokDomain}
+                  onNgrokDomain={setNgrokDomain}
+                  cfToken={cfToken}
+                  onCfToken={setCfToken}
+                  cfHostname={cfHostname}
+                  onCfHostname={setCfHostname}
+                />
+                <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canSubmit}
+                    onClick={() => void saveTunnelSettings(false)}
+                  >
+                    {saving === "tunnel" ? t("Saving…") : t("Save")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!canSubmit}
+                    onClick={() => void saveTunnelSettings(true)}
+                  >
+                    <RotateCw className="h-3 w-3" />
+                    {saving === "tunnel-restart"
+                      ? t("Restarting services…")
+                      : t("Save & Restart Services")}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SettingsActionRow({
+  label,
+  action,
+}: {
+  label: string;
+  action: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+      <span className="text-sm font-medium">{label}</span>
+      {action}
+    </div>
+  );
+}
+
+function LoadingBlock() {
+  const { t } = useI18n();
+  return (
+    <p className="px-1 py-6 text-center text-xs text-muted-foreground">
+      {t("Loading…")}
+    </p>
   );
 }
 
@@ -389,6 +590,42 @@ function buildChannelSettings({
     delete result.channels;
   }
 
+  return result;
+}
+
+function buildTunnelSettings({
+  settings,
+  tunnelProvider,
+  ngrokToken,
+  ngrokDomain,
+  cfToken,
+  cfHostname,
+}: {
+  settings: AppSettings;
+  tunnelProvider: TunnelProvider;
+  ngrokToken: string;
+  ngrokDomain: string;
+  cfToken: string;
+  cfHostname: string;
+}): AppSettings {
+  const result: AppSettings = { ...settings };
+  if (tunnelProvider === "none") {
+    delete result.tunnel;
+    return result;
+  }
+
+  const tunnel: AppSettings["tunnel"] = { provider: tunnelProvider };
+  if (tunnelProvider === "ngrok") {
+    tunnel.ngrok = {};
+    if (ngrokToken.trim()) tunnel.ngrok.auth_token = ngrokToken.trim();
+    if (ngrokDomain.trim()) tunnel.ngrok.domain = ngrokDomain.trim();
+  }
+  if (tunnelProvider === "cloudflare") {
+    tunnel.cloudflare = {};
+    if (cfToken.trim()) tunnel.cloudflare.tunnel_token = cfToken.trim();
+    if (cfHostname.trim()) tunnel.cloudflare.hostname = cfHostname.trim();
+  }
+  result.tunnel = tunnel;
   return result;
 }
 
