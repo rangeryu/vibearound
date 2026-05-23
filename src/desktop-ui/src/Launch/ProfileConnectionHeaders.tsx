@@ -87,14 +87,14 @@ export function HeaderSettingDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[min(620px,calc(100vw-32px))]">
-        <DialogHeader>
+      <DialogContent className="!flex max-h-[calc(100vh-64px)] w-[min(620px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(620px,calc(100vw-32px))]">
+        <DialogHeader className="shrink-0 px-6 pt-6 pr-12">
           <DialogTitle>{t("Headers")}</DialogTitle>
           <DialogDescription className="sr-only">
             {t("Configure API bridge headers.")}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 px-4 pb-1">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-3 [scrollbar-gutter:stable]">
           <div className="font-mono text-[11px] leading-5 text-primary">
             {setting.agentLabel} ·{" "}
             {apiTypeProtocolDisplayLabel(setting.clientApiType)} -&gt;{" "}
@@ -106,7 +106,7 @@ export function HeaderSettingDialog({
             onChange={setRows}
           />
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border px-6 py-4">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             {t("Cancel")}
           </Button>

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use dashmap::DashMap;
@@ -22,6 +23,8 @@ use super::threads::store::{
     HostBinding, ThreadEvent, ThreadEventStore, ThreadProjection, WorkspaceThread,
     WorkspaceThreadId,
 };
+
+pub const AGENT_HOST_IDLE_SHUTDOWN_DELAY: Duration = Duration::from_secs(10 * 60);
 
 pub struct WorkspaceThreadManager {
     workspace_store: WorkspaceEventStore,
@@ -136,7 +139,9 @@ impl WorkspaceThreadManager {
         runtime
             .close(reason)
             .await
-            .map_err(|error| anyhow!(error.to_string()))
+            .map_err(|error| anyhow!(error.to_string()))?;
+        self.runtimes.remove(&attached.thread_id);
+        self.detach_route(route).await
     }
 
     pub async fn detach_route(&self, route: &RouteKey) -> anyhow::Result<()> {
@@ -158,7 +163,31 @@ impl WorkspaceThreadManager {
         runtime
             .close(reason)
             .await
-            .map_err(|error| anyhow!(error.to_string()))
+            .map_err(|error| anyhow!(error.to_string()))?;
+        self.runtimes.remove(thread_id);
+        self.notify_change();
+        Ok(())
+    }
+
+    pub async fn shutdown_route_host(&self, route: &RouteKey) -> anyhow::Result<()> {
+        let Some(attached) = self.current_attachment(route).await? else {
+            return Ok(());
+        };
+        self.shutdown_thread_host(&attached.thread_id).await
+    }
+
+    pub async fn shutdown_thread_host(&self, thread_id: &WorkspaceThreadId) -> anyhow::Result<()> {
+        let Some(runtime) = self
+            .runtimes
+            .get(thread_id)
+            .map(|entry| Arc::clone(entry.value()))
+        else {
+            return Ok(());
+        };
+        runtime.shutdown_host().await;
+        self.runtimes.remove(thread_id);
+        self.notify_change();
+        Ok(())
     }
 
     pub async fn attach_external_session(
@@ -316,21 +345,77 @@ impl WorkspaceThreadManager {
         }
 
         let mut entries = Vec::new();
-        for thread in thread_projection.all() {
+        let runtimes: Vec<(WorkspaceThreadId, Arc<ThreadRuntime>)> = self
+            .runtimes
+            .iter()
+            .map(|entry| (entry.key().clone(), Arc::clone(entry.value())))
+            .collect();
+        for (thread_id, runtime) in runtimes {
+            let Some(thread) = thread_projection.get(&thread_id) else {
+                continue;
+            };
             if thread.status != super::threads::store::ThreadStatus::Open {
                 continue;
             }
-            let runtime = self.runtime_from_thread(thread.clone()).await?;
+            let state = runtime.state().await;
+            if !runtime_has_started_host(&state) {
+                continue;
+            }
             entries.push(WorkspaceThreadRuntimeEntry {
                 route: routes_by_thread.get(&thread.id).cloned(),
                 first_user_prompt: thread.first_user_prompt.clone(),
                 created_at: thread.created_at.clone(),
                 updated_at: thread.updated_at.clone(),
-                state: runtime.state().await,
+                state,
             });
         }
         entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         Ok(entries)
+    }
+
+    pub async fn schedule_route_host_idle_shutdown(
+        self: &Arc<Self>,
+        route: &RouteKey,
+    ) -> anyhow::Result<()> {
+        if let Some(attached) = self.current_attachment(route).await? {
+            self.schedule_host_idle_shutdown(attached.thread_id);
+        }
+        Ok(())
+    }
+
+    pub fn schedule_host_idle_shutdown(self: &Arc<Self>, thread_id: WorkspaceThreadId) {
+        self.schedule_host_idle_shutdown_after(thread_id, AGENT_HOST_IDLE_SHUTDOWN_DELAY);
+    }
+
+    pub fn schedule_host_idle_shutdown_after(
+        self: &Arc<Self>,
+        thread_id: WorkspaceThreadId,
+        delay: Duration,
+    ) {
+        let Some(runtime) = self
+            .runtimes
+            .get(&thread_id)
+            .map(|entry| Arc::clone(entry.value()))
+        else {
+            return;
+        };
+        let generation = runtime.idle_generation();
+        let manager = Arc::clone(self);
+        tokio::spawn(async move {
+            tokio::time::sleep(delay).await;
+            if !runtime.shutdown_host_if_idle(generation).await {
+                return;
+            }
+            let should_remove = manager
+                .runtimes
+                .get(&thread_id)
+                .map(|entry| Arc::ptr_eq(entry.value(), &runtime))
+                .unwrap_or(false);
+            if should_remove {
+                manager.runtimes.remove(&thread_id);
+            }
+            manager.notify_change();
+        });
     }
 
     pub async fn shutdown_all(&self) {
@@ -681,6 +766,10 @@ fn workspace_by_cwd<'a>(
     })
 }
 
+fn runtime_has_started_host(state: &ThreadRuntimeState) -> bool {
+    state.initialize.is_some() || state.busy || state.failed.is_some()
+}
+
 #[allow(dead_code)]
 fn workspace_name_from_path(path: &Path) -> String {
     path.file_name()
@@ -744,6 +833,43 @@ mod tests {
         assert_eq!(
             manager.thread(&thread_id).await.unwrap().unwrap().status,
             crate::workspace::threads::store::ThreadStatus::Open
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_entries_do_not_materialize_unstarted_threads() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let route = RouteKey::new("web", "chat-a");
+
+        let runtime = manager.resolve_route_runtime(&route).await.unwrap();
+        let thread_id = runtime.state().await.thread_id;
+
+        assert!(manager.runtime_entries().await.unwrap().is_empty());
+        assert_eq!(
+            manager.thread(&thread_id).await.unwrap().unwrap().status,
+            crate::workspace::threads::store::ThreadStatus::Open
+        );
+    }
+
+    #[tokio::test]
+    async fn close_route_detaches_closed_thread() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let route = RouteKey::new("slack", "chat-a");
+
+        let runtime = manager.resolve_route_runtime(&route).await.unwrap();
+        let thread_id = runtime.state().await.thread_id;
+
+        manager
+            .close_route(&route, Some("user closed".to_string()))
+            .await
+            .unwrap();
+
+        assert!(manager.current_attachment(&route).await.unwrap().is_none());
+        assert_eq!(
+            manager.thread(&thread_id).await.unwrap().unwrap().status,
+            crate::workspace::threads::store::ThreadStatus::Closed
         );
     }
 

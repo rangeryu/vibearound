@@ -74,6 +74,16 @@ pub async fn handle_channel_input(
                 }
             }
             send_prompt_done(plugin_host, &route, message_id).await;
+            if let Err(error) = workspace_threads
+                .schedule_route_host_idle_shutdown(&route)
+                .await
+            {
+                tracing::debug!(
+                    route = %route,
+                    error = %error,
+                    "failed to schedule agent host idle shutdown"
+                );
+            }
         }
         ChannelInput::Stop { route } => {
             let runtime = workspace_threads.resolve_route_runtime(&route).await;

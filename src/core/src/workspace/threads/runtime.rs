@@ -1,6 +1,7 @@
 //! Runtime owner for one workspace thread.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol::schema as acp;
@@ -36,6 +37,7 @@ pub struct ThreadRuntime {
     prompt_lock: Mutex<()>,
     busy: Mutex<bool>,
     failed: Mutex<Option<String>>,
+    activity_generation: AtomicU64,
     store: ThreadEventStore,
     change_tx: Option<broadcast::Sender<()>>,
 }
@@ -61,6 +63,7 @@ impl ThreadRuntime {
             prompt_lock: Mutex::new(()),
             busy: Mutex::new(false),
             failed: Mutex::new(None),
+            activity_generation: AtomicU64::new(0),
             store,
             change_tx,
         }
@@ -87,6 +90,7 @@ impl ThreadRuntime {
         route: &RouteKey,
         handler: Arc<dyn AgentClientHandler>,
     ) -> acp::Result<String> {
+        self.mark_activity();
         let agent = self.ensure_agent(route, handler).await?;
         self.ensure_session(&agent).await
     }
@@ -98,6 +102,7 @@ impl ThreadRuntime {
         handler: Arc<dyn AgentClientHandler>,
     ) -> acp::Result<acp::PromptResponse> {
         let _prompt_guard = self.prompt_lock.lock().await;
+        self.mark_activity();
         *self.busy.lock().await = true;
         *self.failed.lock().await = None;
         self.notify_change();
@@ -121,6 +126,7 @@ impl ThreadRuntime {
     }
 
     pub async fn cancel(&self) -> acp::Result<()> {
+        self.mark_activity();
         let agent = self
             .agent
             .lock()
@@ -137,6 +143,7 @@ impl ThreadRuntime {
     }
 
     pub async fn close(&self, reason: Option<String>) -> acp::Result<()> {
+        self.mark_activity();
         if let Some(session_id) = self.session_id.lock().await.clone() {
             crate::previews::kill_by_session(&session_id);
         }
@@ -154,6 +161,7 @@ impl ThreadRuntime {
     }
 
     pub async fn shutdown_host(&self) {
+        self.mark_activity();
         if let Some(session_id) = self.session_id.lock().await.clone() {
             crate::previews::kill_by_session(&session_id);
         }
@@ -162,7 +170,33 @@ impl ThreadRuntime {
         }
         *self.initialize.lock().await = None;
         *self.busy.lock().await = false;
+        *self.failed.lock().await = None;
         self.notify_change();
+    }
+
+    pub fn idle_generation(&self) -> u64 {
+        self.activity_generation.load(Ordering::Relaxed)
+    }
+
+    pub async fn shutdown_host_if_idle(&self, generation: u64) -> bool {
+        if self.idle_generation() != generation {
+            return false;
+        }
+        if *self.busy.lock().await {
+            return false;
+        }
+        if self.idle_generation() != generation {
+            return false;
+        }
+        let has_host = self.agent.lock().await.is_some() || self.initialize.lock().await.is_some();
+        if !has_host {
+            return false;
+        }
+        if self.idle_generation() != generation {
+            return false;
+        }
+        self.shutdown_host().await;
+        true
     }
 
     pub async fn switch_host(
@@ -170,11 +204,13 @@ impl ThreadRuntime {
         host_binding: HostBinding,
         context_transfer: bool,
     ) -> acp::Result<()> {
+        self.mark_activity();
         if let Some(agent) = self.agent.lock().await.take() {
             agent.shutdown().await;
         }
         *self.session_id.lock().await = None;
         *self.initialize.lock().await = None;
+        *self.failed.lock().await = None;
 
         let thread_id = self.thread.lock().await.id.clone();
         let event = ThreadEvent::host_changed(thread_id, host_binding, context_transfer);
@@ -411,6 +447,10 @@ impl ThreadRuntime {
         if let Some(tx) = &self.change_tx {
             let _ = tx.send(());
         }
+    }
+
+    fn mark_activity(&self) {
+        self.activity_generation.fetch_add(1, Ordering::Relaxed);
     }
 }
 

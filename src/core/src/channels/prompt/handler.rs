@@ -327,6 +327,7 @@ pub async fn start_runtime_and_notify(
             })
             .await;
     }
+    workspace_threads.schedule_host_idle_shutdown(after.thread_id);
     Ok(())
 }
 

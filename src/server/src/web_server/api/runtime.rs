@@ -173,7 +173,7 @@ pub async fn kill_tunnel_handler(
     }
 }
 
-/// DELETE /api/agents/:route_key -- close a workspace thread host.
+/// DELETE /api/agents/:route_key -- stop a live workspace thread host.
 ///
 /// `route_key` is the colon-joined form from `RouteKey::as_key()`, e.g.
 /// `telegram:chat_42`, or a workspace thread id.
@@ -185,17 +185,17 @@ pub async fn kill_agent_handler(
         let _ = state
             .channel_hub
             .workspace_thread_manager()
-            .close_route(&route, Some("killed by user".to_string()))
+            .shutdown_route_host(&route)
             .await;
-        return (StatusCode::OK, format!("Killed agent {}", route_key));
+        return (StatusCode::OK, format!("Stopped agent {}", route_key));
     }
     let thread_id = common::workspace::threads::store::WorkspaceThreadId::from(route_key.as_str());
     let _ = state
         .channel_hub
         .workspace_thread_manager()
-        .close_thread(&thread_id, Some("killed by user".to_string()))
+        .shutdown_thread_host(&thread_id)
         .await;
-    (StatusCode::OK, format!("Killed agent {}", route_key))
+    (StatusCode::OK, format!("Stopped agent {}", route_key))
 }
 
 /// DELETE /api/pty/:session_id -- kill a PTY session.

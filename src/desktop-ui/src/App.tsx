@@ -439,7 +439,7 @@ function Dashboard() {
           }}
           className="contents"
         >
-          <TabsList>
+          <TabsList className="!h-8 rounded-md p-1">
             <TooltipProvider>
               {launchDisabledReason ? (
                 <Tooltip>
@@ -452,7 +452,11 @@ function Dashboard() {
                       aria-label={launchDisabledReason}
                       title={launchDisabledReason}
                     >
-                      <TabsTrigger value="launch" disabled>
+                      <TabsTrigger
+                        value="launch"
+                        disabled
+                        className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+                      >
                         <Rocket /> {t("Launch")}
                       </TabsTrigger>
                     </span>
@@ -462,15 +466,24 @@ function Dashboard() {
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                <TabsTrigger value="launch">
+                <TabsTrigger
+                  value="launch"
+                  className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+                >
                   <Rocket /> {t("Launch")}
                 </TabsTrigger>
               )}
             </TooltipProvider>
-            <TabsTrigger value="status">
+            <TabsTrigger
+              value="status"
+              className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+            >
               <Activity /> {t("Status")}
             </TabsTrigger>
-            <TabsTrigger value="previews">
+            <TabsTrigger
+              value="previews"
+              className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+            >
               <Eye /> {t("Previews")}
             </TabsTrigger>
           </TabsList>

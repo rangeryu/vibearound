@@ -36,6 +36,7 @@ export function StepChannels({
   onInstallPlugin,
   onStartAuth,
   onCancelAuth,
+  switchSize = "default",
 }: StepChannelsProps) {
   const { t } = useI18n();
   const discoveredMap = new Map(discoveredPlugins.map((p) => [p.id, p]));
@@ -77,6 +78,7 @@ export function StepChannels({
             config={config}
             verbose={verbose}
             authState={authState}
+            switchSize={switchSize}
 
             onToggle={(v) => onToggleChannel(entry.id, v)}
             onConfigChange={(k, v) => onConfigChange(entry.id, k, v)}
@@ -107,6 +109,7 @@ interface PluginCardProps {
   config: Record<string, string>;
   verbose: StepChannelsProps["channelVerbose"][string];
   authState?: StepChannelsProps["authStates"][string];
+  switchSize: NonNullable<StepChannelsProps["switchSize"]>;
 
   onToggle: (enabled: boolean) => void;
   onConfigChange: (key: string, value: string) => void;
@@ -131,6 +134,7 @@ function PluginCard({
   config,
   verbose,
   authState,
+  switchSize,
   onToggle,
   onConfigChange,
   onVerboseChange,
@@ -171,6 +175,7 @@ function PluginCard({
             checked={enabled}
             onCheckedChange={onToggle}
             aria-label={t("Toggle {{name}}", { name })}
+            size={switchSize}
           />
         ) : installing ? (
           <Button
@@ -235,6 +240,7 @@ function PluginCard({
                     onVerboseChange("show_thinking", checked === true)
                   }
                   aria-label={t("Show thinking")}
+                  size={switchSize}
                 />
               </label>
               <label className="flex items-center justify-between gap-3">
@@ -247,6 +253,7 @@ function PluginCard({
                     onVerboseChange("show_tool_use", checked === true)
                   }
                   aria-label={t("Show tool activity")}
+                  size={switchSize}
                 />
               </label>
             </div>
@@ -325,9 +332,12 @@ function AuthFlowSection({
           variant={
             status === "error"
               ? "destructive"
-              : status === "connected"
-                ? "success"
-                : "default"
+              : "default"
+          }
+          className={
+            status === "connected"
+              ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : undefined
           }
         >
           {t(authState.message)}

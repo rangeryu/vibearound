@@ -54,7 +54,7 @@ export function ProviderGrid({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="text-xs font-semibold">{t("Preset providers")}</div>
-          <Badge variant="muted" className="tabular-nums">
+          <Badge variant="secondary" className="tabular-nums">
             {filteredCatalog.length}
           </Badge>
         </div>
@@ -126,7 +126,7 @@ function ProviderTile({
       </div>
       <div className="flex flex-wrap gap-1 mt-1">
         {endpoints.map((e) => (
-          <Badge key={e.api_type} variant="muted" className="text-[10px]">
+          <Badge key={e.api_type} variant="secondary" className="text-[10px]">
             {apiTypeShort(e.api_type)}
           </Badge>
         ))}
