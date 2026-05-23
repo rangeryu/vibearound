@@ -1,6 +1,7 @@
 mod dashscope;
 mod deepseek;
 mod kimi;
+mod mimo;
 mod minimax;
 mod zai;
 
@@ -11,6 +12,7 @@ use va_ai_api_bridge::UniversalEvent;
 use self::dashscope::DashScopeBridgeAdapter;
 use self::deepseek::DeepSeekBridgeAdapter;
 use self::kimi::KimiBridgeAdapter;
+use self::mimo::MimoBridgeAdapter;
 use self::minimax::MiniMaxBridgeAdapter;
 use self::zai::ZaiBridgeAdapter;
 
@@ -36,6 +38,7 @@ pub enum ProviderBridgeAdapter {
     None,
     DeepSeek(DeepSeekBridgeAdapter),
     Kimi(KimiBridgeAdapter),
+    Mimo(MimoBridgeAdapter),
     MiniMax(MiniMaxBridgeAdapter),
     DashScope(DashScopeBridgeAdapter),
     Zai(ZaiBridgeAdapter),
@@ -51,6 +54,7 @@ impl ProviderBridgeAdapter {
             "moonshot" if is_moonshot_kimi_coding(profile, target_api_type) => {
                 Self::Kimi(KimiBridgeAdapter::default())
             }
+            "mimo" => Self::Mimo(MimoBridgeAdapter),
             "minimax" => Self::MiniMax(MiniMaxBridgeAdapter::default()),
             "dashscope" | "qwen" => Self::DashScope(DashScopeBridgeAdapter::new(profile)),
             "zai" => Self::Zai(ZaiBridgeAdapter::new(profile)),
@@ -70,6 +74,9 @@ impl ProviderBridgeAdapter {
                 adapter.prepare_chat_request(source, original_request, chat_request)
             }
             Self::Kimi(_) => {}
+            Self::Mimo(adapter) => {
+                adapter.prepare_chat_request(source, original_request, chat_request)
+            }
             Self::MiniMax(adapter) => adapter.prepare_chat_request(chat_request),
             Self::DashScope(adapter) => {
                 adapter.prepare_chat_request(original_request, chat_request)
@@ -83,6 +90,7 @@ impl ProviderBridgeAdapter {
             Self::None => {}
             Self::DeepSeek(_) => {}
             Self::Kimi(adapter) => adapter.prepare_anthropic_request(request),
+            Self::Mimo(_) => {}
             Self::MiniMax(_) => {}
             Self::DashScope(_) => {}
             Self::Zai(_) => {}
@@ -94,6 +102,7 @@ impl ProviderBridgeAdapter {
             Self::None => {}
             Self::DeepSeek(_) => {}
             Self::Kimi(adapter) => adapter.transform_upstream_events(events),
+            Self::Mimo(_) => {}
             Self::MiniMax(adapter) => adapter.transform_upstream_events(events),
             Self::DashScope(_) => {}
             Self::Zai(_) => {}

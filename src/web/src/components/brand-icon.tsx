@@ -18,9 +18,12 @@ const PROVIDER_LOGOS: Record<string, string> = {
   deepseek: "brand/provider-deepseek-color.svg",
   gemini: "brand/provider-gemini-color.svg",
   kimi: "brand/provider-moonshot.webp",
+  mimo: "brand/provider-mimo.svg",
   minimax: "brand/provider-minimax-color.svg",
   moonshot: "brand/provider-moonshot.webp",
+  nvidia: "brand/provider-nvidia.svg",
   openrouter: "brand/provider-openrouter-color.svg",
+  xai: "brand/provider-xai.svg",
   zai: "brand/provider-zai-color.svg",
 };
 

@@ -486,9 +486,12 @@ mod tests {
         assert!(get("dashscope").is_some());
         assert!(get("openrouter").is_some());
         assert!(get("minimax").is_some());
+        assert!(get("mimo").is_some());
         assert!(get("deepseek").is_some());
         assert!(get("zai").is_some());
         assert!(get("gemini").is_some());
+        assert!(get("xai").is_some());
+        assert!(get("nvidia").is_some());
         assert!(get("azure").is_some());
     }
 
@@ -700,6 +703,68 @@ mod tests {
             Some("{{api_key}}")
         );
         assert!(render.env.get("ANTHROPIC_API_KEY").is_none());
+    }
+
+    #[test]
+    fn mimo_catalog_exposes_token_plan_chat_endpoints() {
+        let provider = get("mimo").expect("mimo must exist");
+        let payg = find_endpoint(provider, "openai-chat", Some("pay-as-you-go"))
+            .expect("mimo pay-as-you-go endpoint");
+
+        assert!(!payg.append_v1_path);
+        assert_eq!(payg.default_base_url, "https://api.xiaomimimo.com/v1");
+        for (endpoint_id, base_url) in [
+            ("token-plan-cn", "https://token-plan-cn.xiaomimimo.com/v1"),
+            ("token-plan-sgp", "https://token-plan-sgp.xiaomimimo.com/v1"),
+            ("token-plan-ams", "https://token-plan-ams.xiaomimimo.com/v1"),
+        ] {
+            let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("mimo token-plan endpoint {endpoint_id}"));
+            assert_eq!(endpoint.default_base_url, base_url);
+            assert!(!endpoint.append_v1_path);
+        }
+        assert_eq!(
+            model(payg, "mimo-v2.5-pro").label.as_deref(),
+            Some("MiMo V2.5 Pro")
+        );
+    }
+
+    #[test]
+    fn xai_catalog_supports_grok_responses_and_chat() {
+        let provider = get("xai").expect("xai must exist");
+        for api_type in ["openai-responses", "openai-chat"] {
+            let endpoint =
+                find_endpoint(provider, api_type, None).expect("xai endpoint must exist");
+            assert_eq!(endpoint.default_base_url, "https://api.x.ai/v1");
+            assert!(!endpoint.append_v1_path);
+            assert!(endpoint.capabilities.reasoning_effort);
+            let grok = model(endpoint, "grok-latest");
+            assert_eq!(grok.id, "grok-4.3");
+            assert_eq!(grok.context_window, Some(1_000_000));
+            assert!(grok.capabilities.image_input);
+            let build = model(endpoint, "grok-code-fast");
+            assert_eq!(build.id, "grok-build-0.1");
+            assert_eq!(build.context_window, Some(256_000));
+        }
+    }
+
+    #[test]
+    fn nvidia_catalog_supports_nim_chat_completions() {
+        let provider = get("nvidia").expect("nvidia must exist");
+        let endpoint = find_endpoint(provider, "openai-chat", None).expect("nvidia chat endpoint");
+        assert_eq!(
+            endpoint.default_base_url,
+            "https://integrate.api.nvidia.com/v1"
+        );
+        assert!(!endpoint.append_v1_path);
+        assert_eq!(
+            model(endpoint, "nvidia/nemotron-3-super-120b-a12b")
+                .label
+                .as_deref(),
+            Some("Nemotron 3 Super 120B A12B")
+        );
+        assert!(find_model(endpoint, "qwen/qwen3-coder-480b-a35b-instruct").is_some());
+        assert!(find_model(endpoint, "openai/gpt-oss-120b").is_some());
     }
 
     #[test]

@@ -13,7 +13,7 @@ const MISSING_REASONING_CONTENT_FALLBACK: &str =
 const MISSING_TOOL_OUTPUT_FALLBACK: &str = "Tool output unavailable from the local bridge.";
 
 #[derive(Debug, Default)]
-struct RequestReasoning {
+pub(super) struct RequestReasoning {
     by_call_id: HashMap<String, String>,
     by_message: HashMap<String, String>,
 }
@@ -154,7 +154,7 @@ impl DeepSeekBridgeAdapter {
                 }
                 ProviderRequestSource::OpenAiChat => {}
             }
-            inject_reasoning_content(&reasoning, chat_request);
+            inject_reasoning_content(&reasoning, chat_request, MISSING_REASONING_CONTENT_FALLBACK);
         }
 
         let Some(request) = chat_request.as_object_mut() else {
@@ -191,7 +191,10 @@ impl DeepSeekBridgeAdapter {
     }
 }
 
-fn repair_tool_call_history(tool_outputs: &HashMap<String, String>, request: &mut Value) {
+pub(super) fn repair_tool_call_history(
+    tool_outputs: &HashMap<String, String>,
+    request: &mut Value,
+) {
     let Some(messages) = request.get_mut("messages").and_then(Value::as_array_mut) else {
         return;
     };
@@ -391,7 +394,7 @@ fn tool_message_for_call_id(tool_call_id: &str, content: &str) -> Value {
     })
 }
 
-fn collect_tool_outputs_from_responses_input(
+pub(super) fn collect_tool_outputs_from_responses_input(
     responses_request: &Value,
     outputs: &mut HashMap<String, String>,
 ) {
@@ -411,7 +414,10 @@ fn collect_tool_outputs_from_responses_input(
     }
 }
 
-fn collect_tool_outputs_from_chat_request(request: &Value, outputs: &mut HashMap<String, String>) {
+pub(super) fn collect_tool_outputs_from_chat_request(
+    request: &Value,
+    outputs: &mut HashMap<String, String>,
+) {
     let Some(messages) = request.get("messages").and_then(Value::as_array) else {
         return;
     };
@@ -437,7 +443,11 @@ fn collect_tool_outputs_from_chat_request(request: &Value, outputs: &mut HashMap
     }
 }
 
-fn inject_reasoning_content(reasoning: &RequestReasoning, chat_request: &mut Value) {
+pub(super) fn inject_reasoning_content(
+    reasoning: &RequestReasoning,
+    chat_request: &mut Value,
+    missing_reasoning_content_fallback: &str,
+) {
     let Some(messages) = chat_request
         .get_mut("messages")
         .and_then(Value::as_array_mut)
@@ -458,7 +468,7 @@ fn inject_reasoning_content(reasoning: &RequestReasoning, chat_request: &mut Val
                 .iter()
                 .filter_map(|tool_call| tool_call.get("id").and_then(Value::as_str))
                 .find_map(|call_id| lookup_reasoning(reasoning, call_id))
-                .unwrap_or_else(|| MISSING_REASONING_CONTENT_FALLBACK.to_string())
+                .unwrap_or_else(|| missing_reasoning_content_fallback.to_string())
         } else {
             let Some(reasoning_content) = lookup_reasoning_for_message(reasoning, message) else {
                 continue;
@@ -474,7 +484,7 @@ fn inject_reasoning_content(reasoning: &RequestReasoning, chat_request: &mut Val
     }
 }
 
-fn collect_reasoning_from_responses_input(
+pub(super) fn collect_reasoning_from_responses_input(
     reasoning: &mut RequestReasoning,
     responses_request: &Value,
 ) {
@@ -493,7 +503,7 @@ fn collect_reasoning_from_responses_input(
     }
 }
 
-fn collect_reasoning_from_anthropic_input(
+pub(super) fn collect_reasoning_from_anthropic_input(
     reasoning: &mut RequestReasoning,
     anthropic_request: &Value,
 ) {
@@ -512,7 +522,10 @@ fn collect_reasoning_from_anthropic_input(
     }
 }
 
-fn collect_reasoning_from_gemini_input(reasoning: &mut RequestReasoning, gemini_request: &Value) {
+pub(super) fn collect_reasoning_from_gemini_input(
+    reasoning: &mut RequestReasoning,
+    gemini_request: &Value,
+) {
     let Some(contents) = gemini_request.get("contents").and_then(Value::as_array) else {
         return;
     };
@@ -748,7 +761,7 @@ fn lookup_reasoning(reasoning: &RequestReasoning, call_id: &str) -> Option<Strin
     reasoning.by_call_id.get(call_id).cloned()
 }
 
-fn strip_anthropic_reasoning_content_blocks(chat_request: &mut Value) {
+pub(super) fn strip_anthropic_reasoning_content_blocks(chat_request: &mut Value) {
     let Some(messages) = chat_request
         .get_mut("messages")
         .and_then(Value::as_array_mut)

@@ -21,6 +21,10 @@
       "file": "minimax.json"
     },
     {
+      "id": "mimo",
+      "file": "mimo.json"
+    },
+    {
       "id": "deepseek",
       "file": "deepseek.json"
     },
@@ -31,6 +35,14 @@
     {
       "id": "gemini",
       "file": "gemini.json"
+    },
+    {
+      "id": "xai",
+      "file": "xai.json"
+    },
+    {
+      "id": "nvidia",
+      "file": "nvidia.json"
     },
     {
       "id": "azure",
