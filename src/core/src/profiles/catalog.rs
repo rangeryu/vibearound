@@ -547,13 +547,34 @@ mod tests {
     #[test]
     fn moonshot_catalog_tracks_kimi_k26() {
         let provider = get("moonshot").expect("moonshot must exist");
-        for api_type in ["anthropic", "openai-chat"] {
-            let endpoint =
-                find_endpoint(provider, api_type, None).expect("moonshot endpoint must exist");
-            let kimi = model(endpoint, "kimi-k2.6");
-            assert_eq!(kimi.label.as_deref(), Some("Kimi K2.6"));
-            assert_eq!(kimi.context_window, Some(256_000));
+        let anthropic =
+            find_endpoint(provider, "anthropic", None).expect("moonshot anthropic endpoint");
+        for id in ["kimi-k2.6", "kimi-k2-0905-preview", "kimi-k2-turbo-preview"] {
+            assert_eq!(model(anthropic, id).context_window, Some(256_000));
         }
+
+        let openai_chat =
+            find_endpoint(provider, "openai-chat", None).expect("moonshot chat endpoint");
+        assert_eq!(
+            model(openai_chat, "kimi-k2.6").label.as_deref(),
+            Some("Kimi K2.6")
+        );
+        assert_eq!(
+            model(openai_chat, "kimi-k2.6").context_window,
+            Some(256_000)
+        );
+        assert_eq!(
+            model(openai_chat, "kimi-k2-0905-preview").context_window,
+            Some(256_000)
+        );
+        assert_eq!(
+            model(openai_chat, "moonshot-v1-32k").context_window,
+            Some(32_768)
+        );
+        assert_eq!(
+            model(openai_chat, "moonshot-v1-128k").context_window,
+            Some(131_072)
+        );
     }
 
     #[test]
@@ -727,6 +748,25 @@ mod tests {
             model(payg, "mimo-v2.5-pro").label.as_deref(),
             Some("MiMo V2.5 Pro")
         );
+        for endpoint in &provider.endpoints {
+            assert_eq!(
+                model(endpoint, "mimo-v2.5-pro").context_window,
+                Some(1_000_000)
+            );
+            assert_eq!(model(endpoint, "mimo-v2.5").context_window, Some(1_000_000));
+            assert_eq!(
+                model(endpoint, "mimo-v2-pro").context_window,
+                Some(1_000_000)
+            );
+            assert_eq!(
+                model(endpoint, "mimo-v2-omni").context_window,
+                Some(256_000)
+            );
+            assert_eq!(
+                model(endpoint, "mimo-v2-flash").context_window,
+                Some(256_000)
+            );
+        }
     }
 
     #[test]
@@ -763,6 +803,16 @@ mod tests {
                 .as_deref(),
             Some("Nemotron 3 Super 120B A12B")
         );
+        for (id, context_window) in [
+            ("nvidia/nemotron-3-super-120b-a12b", 1_000_000),
+            ("nvidia/nemotron-3-nano-30b-a3b", 1_000_000),
+            ("nvidia/nvidia-nemotron-nano-9b-v2", 128_000),
+            ("qwen/qwen3-coder-480b-a35b-instruct", 262_144),
+            ("openai/gpt-oss-120b", 128_000),
+            ("moonshotai/kimi-k2.6", 256_000),
+        ] {
+            assert_eq!(model(endpoint, id).context_window, Some(context_window));
+        }
         assert!(find_model(endpoint, "qwen/qwen3-coder-480b-a35b-instruct").is_some());
         assert!(find_model(endpoint, "openai/gpt-oss-120b").is_some());
     }

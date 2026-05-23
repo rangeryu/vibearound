@@ -16,11 +16,13 @@
         },
         {
           "id": "kimi-k2-0905-preview",
-          "label": "Kimi K2 (0905 preview)"
+          "label": "Kimi K2 (0905 preview)",
+          "context_window": 256000
         },
         {
           "id": "kimi-k2-turbo-preview",
-          "label": "Kimi K2 turbo (preview)"
+          "label": "Kimi K2 turbo (preview)",
+          "context_window": 256000
         }
       ],
       "auth_modes": [
@@ -108,15 +110,18 @@
         },
         {
           "id": "kimi-k2-0905-preview",
-          "label": "Kimi K2 (0905 preview)"
+          "label": "Kimi K2 (0905 preview)",
+          "context_window": 256000
         },
         {
           "id": "moonshot-v1-32k",
-          "label": "Moonshot v1 32K"
+          "label": "Moonshot v1 32K",
+          "context_window": 32768
         },
         {
           "id": "moonshot-v1-128k",
-          "label": "Moonshot v1 128K"
+          "label": "Moonshot v1 128K",
+          "context_window": 131072
         }
       ],
       "auth_modes": [
