@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import type { OnboardingStep } from "../constants";
 import type { AuthFlowState, DiscoveredChannelPlugin } from "../types";
 
 interface UseChannelAuthInput {
-  currentStep: OnboardingStep;
+  currentStep?: OnboardingStep;
+  active?: boolean;
   discoveredPlugins: DiscoveredChannelPlugin[];
   channelConfigs: Record<string, Record<string, string>>;
   onConfigChange: (pluginId: string, key: string, value: string) => void;
@@ -26,11 +27,18 @@ interface UseChannelAuthResult {
  */
 export function useChannelAuth({
   currentStep,
+  active,
   discoveredPlugins,
   channelConfigs,
   onConfigChange,
 }: UseChannelAuthInput): UseChannelAuthResult {
   const [authStates, setAuthStates] = useState<Record<string, AuthFlowState>>({});
+  const authStatesRef = useRef(authStates);
+  const keepAuthAlive = active ?? currentStep === "Channels";
+
+  useEffect(() => {
+    authStatesRef.current = authStates;
+  }, [authStates]);
 
   const startAuth = useCallback(
     async (pluginId: string) => {
@@ -139,13 +147,23 @@ export function useChannelAuth({
   }, []);
 
   useEffect(() => {
-    if (currentStep === "Channels") return;
+    if (keepAuthAlive) return;
     for (const [pluginId, state] of Object.entries(authStates)) {
       if (state.status === "generating" || state.status === "waiting") {
         void invoke("plugin_auth_cancel", { request: { pluginId } }).catch(() => {});
       }
     }
-  }, [currentStep, authStates]);
+  }, [keepAuthAlive, authStates]);
+
+  useEffect(() => {
+    return () => {
+      for (const [pluginId, state] of Object.entries(authStatesRef.current)) {
+        if (state.status === "generating" || state.status === "waiting") {
+          void invoke("plugin_auth_cancel", { request: { pluginId } }).catch(() => {});
+        }
+      }
+    };
+  }, []);
 
   return { authStates, startAuth, cancelAuth };
 }

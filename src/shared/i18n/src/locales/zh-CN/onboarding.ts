@@ -43,6 +43,9 @@ export const zhCNOnboarding: Record<string, string> = {
   "IM Channels": "IM 频道",
   "Connect messaging bots to vibe code from your phone. Install plugins from the registry, then configure and enable them.":
     "连接消息机器人后，就能在手机上 vibe code。先从 registry 安装插件，然后配置并启用。",
+  "IM message detail": "IM 消息细节",
+  "Show thinking": "显示思考",
+  "Show tool activity": "显示工具活动",
   "View on GitHub": "在 GitHub 查看",
   Installing: "安装中",
   "Installing…": "安装中…",

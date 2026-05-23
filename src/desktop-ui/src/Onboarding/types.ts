@@ -38,6 +38,11 @@ export interface Settings {
   [key: string]: unknown;
 }
 
+export interface ChannelVerboseConfig {
+  show_thinking: boolean;
+  show_tool_use: boolean;
+}
+
 export interface PluginAuthCapabilities {
   methods: string[];
 }
@@ -110,10 +115,16 @@ export interface StepChannelsProps {
   discoveredPlugins: DiscoveredChannelPlugin[];
   enabledChannels: Set<string>;
   channelConfigs: Record<string, Record<string, string>>;
+  channelVerbose: Record<string, ChannelVerboseConfig>;
   installingPlugins: Set<string>;
   authStates: Record<string, AuthFlowState>;
   onToggleChannel: (pluginId: string, enabled: boolean) => void;
   onConfigChange: (pluginId: string, key: string, value: string) => void;
+  onVerboseChange: (
+    pluginId: string,
+    key: keyof ChannelVerboseConfig,
+    value: boolean,
+  ) => void;
   onInstallPlugin: (pluginId: string, githubUrl: string) => void;
   onStartAuth: (pluginId: string) => void;
   onCancelAuth: (pluginId: string) => void;

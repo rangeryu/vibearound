@@ -224,6 +224,23 @@ impl ChannelMonitor {
             .collect()
     }
 
+    pub fn registered_kinds(&self) -> Vec<String> {
+        let mut kinds = self
+            .kinds
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>();
+        kinds.sort();
+        kinds
+    }
+
+    pub fn status(&self, kind: &str) -> Option<ChannelRunStatus> {
+        self.snapshot()
+            .into_iter()
+            .find(|snapshot| snapshot.kind == kind)
+            .map(|snapshot| snapshot.status)
+    }
+
     pub fn subscribe_changes(&self) -> broadcast::Receiver<()> {
         self.change_tx.subscribe()
     }
@@ -304,19 +321,20 @@ fn build_bridge_factory(
     workspace_thread_manager: Arc<WorkspaceThreadManager>,
     plugin_host: Arc<PluginHost>,
 ) -> BridgeFactory {
+    let channel_kind = manifest.channel_kind.clone();
     Box::new(move || {
         let (output_tx, output_rx) = mpsc::unbounded_channel();
         plugin_host.replace_stdio_runtime(
-            &manifest.channel_kind,
-            Arc::new(StdioPluginRuntime::new(
-                manifest.channel_kind.clone(),
-                output_tx,
-            )),
+            &channel_kind,
+            Arc::new(StdioPluginRuntime::new(channel_kind.clone(), output_tx)),
         );
+        let raw_config = crate::config::ensure_loaded()
+            .channel_raw_config(&channel_kind)
+            .unwrap_or_else(|| serde_json::json!({}));
 
         Box::new(ChannelPluginBridge {
-            channel_kind: manifest.channel_kind.clone(),
-            raw_config: manifest.raw_config.clone(),
+            channel_kind: channel_kind.clone(),
+            raw_config,
             input_tx: (*input_tx).clone(),
             output_rx,
             workspace_thread_manager: Arc::clone(&workspace_thread_manager),

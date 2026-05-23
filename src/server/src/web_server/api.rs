@@ -17,7 +17,7 @@ pub use profiles::list_profiles_handler;
 pub use runtime::{
     kill_agent_handler, kill_pty_handler, kill_tunnel_handler, list_agents_handler,
     list_agents_runtime_handler, list_channels_handler, list_tunnels_handler,
-    restart_channel_handler, start_channel_handler, stop_channel_handler,
+    restart_channel_handler, start_channel_handler, stop_channel_handler, sync_channels_handler,
 };
 pub use sessions::{
     archive_launch_session_handler, create_session_handler, delete_session_handler,

@@ -1,4 +1,8 @@
-import type { DiscoveredChannelPlugin, Settings } from "../types";
+import type {
+  ChannelVerboseConfig,
+  DiscoveredChannelPlugin,
+  Settings,
+} from "../types";
 import type { AgentId, TunnelProvider } from "../constants";
 
 export interface BuildSettingsInput {
@@ -10,6 +14,7 @@ export interface BuildSettingsInput {
   enabledChannels: Set<string>;
   registryPluginIds?: Set<string>;
   channelConfigs: Record<string, Record<string, string>>;
+  channelVerbose?: Record<string, ChannelVerboseConfig>;
   discoveredPlugins: DiscoveredChannelPlugin[];
   tunnelProvider: TunnelProvider;
   ngrokToken: string;
@@ -33,6 +38,7 @@ export function buildSettings(input: BuildSettingsInput): Settings {
     enabledChannels,
     registryPluginIds = new Set(enabledChannels),
     channelConfigs,
+    channelVerbose = {},
     discoveredPlugins,
     tunnelProvider,
     ngrokToken,
@@ -87,12 +93,13 @@ export function buildSettings(input: BuildSettingsInput): Settings {
         }
       }
 
-      const existingVerbose = (
-        existingChannels as Record<string, Record<string, unknown>>
-      )?.[id]?.verbose;
-      config.verbose = existingVerbose ?? {
-        show_thinking: false,
-        show_tool_use: false,
+      const existingVerbose = isRecord(existingChannels[id])
+        ? parseVerbose(existingChannels[id].verbose)
+        : undefined;
+      const verbose = channelVerbose[id] ?? existingVerbose ?? defaultVerbose();
+      config.verbose = {
+        show_thinking: verbose.show_thinking,
+        show_tool_use: verbose.show_tool_use,
       };
 
       channels[id] = config;
@@ -129,4 +136,21 @@ export function buildSettings(input: BuildSettingsInput): Settings {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function defaultVerbose(): ChannelVerboseConfig {
+  return {
+    show_thinking: false,
+    show_tool_use: false,
+  };
+}
+
+function parseVerbose(value: unknown): ChannelVerboseConfig | undefined {
+  if (!isRecord(value)) return undefined;
+  return {
+    show_thinking:
+      typeof value.show_thinking === "boolean" ? value.show_thinking : false,
+    show_tool_use:
+      typeof value.show_tool_use === "boolean" ? value.show_tool_use : false,
+  };
 }

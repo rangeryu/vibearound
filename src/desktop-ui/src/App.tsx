@@ -34,6 +34,7 @@ import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Previews } from "./Previews";
 import { Launch } from "./Launch";
+import { SettingsDialog } from "./Settings";
 import { getLauncherPreferences, type LauncherPreferences } from "./Launch/api";
 import { LanguageMenu } from "./components/LanguageMenu";
 
@@ -329,6 +330,7 @@ type DashboardPage = "launch" | "status" | "previews";
 function Dashboard() {
   const { t } = useI18n();
   const [page, setPage] = useState<DashboardPage>("launch");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [launcherPrefs, setLauncherPrefs] =
     useState<LauncherPreferences | null>(null);
   const [launcherPrefsLoaded, setLauncherPrefsLoaded] = useState(false);
@@ -479,16 +481,33 @@ function Dashboard() {
           </span>
           <LanguageMenu />
           <Button
-            onClick={() => window.location.replace("/onboarding")}
+            onClick={() => setSettingsOpen(true)}
             variant="ghost"
             size="icon-xs"
-            title={t("Open Config Wizard")}
-            aria-label={t("Open Config Wizard")}
+            title={t("Settings")}
+            aria-label={t("Settings")}
+            className={
+              settingsOpen
+                ? "bg-accent text-accent-foreground"
+                : undefined
+            }
           >
-            <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+            <Settings
+              className={`w-3.5 h-3.5 ${
+                settingsOpen
+                  ? "text-accent-foreground"
+                  : "text-muted-foreground"
+              }`}
+            />
           </Button>
         </div>
       </header>
+
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onServicesRestarted={refreshAll}
+      />
 
       {firstError && (
         <div className="px-3 py-1 bg-destructive/10 text-destructive text-xs">
