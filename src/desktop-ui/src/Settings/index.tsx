@@ -341,7 +341,7 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[85vh] w-[min(780px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-4 sm:max-w-[min(780px,calc(100vw-32px))]">
+      <DialogContent className="!flex h-[85vh] w-[min(780px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-4 sm:max-w-[min(780px,calc(100vw-32px))]">
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <SettingsIcon className="h-4 w-4 text-primary" />
@@ -358,16 +358,25 @@ export function SettingsDialog({
         )}
 
         <Tabs defaultValue="general" className="min-h-0 flex-1">
-          <TabsList className="mb-3 shrink-0">
-            <TabsTrigger value="general">
+          <TabsList className="mb-3 !h-8 shrink-0 rounded-md p-1">
+            <TabsTrigger
+              value="general"
+              className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+            >
               <SettingsIcon className="h-3 w-3" />
               {t("General")}
             </TabsTrigger>
-            <TabsTrigger value="im">
+            <TabsTrigger
+              value="im"
+              className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+            >
               <MessageSquare className="h-3 w-3" />
               {t("IM")}
             </TabsTrigger>
-            <TabsTrigger value="tunnel">
+            <TabsTrigger
+              value="tunnel"
+              className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+            >
               <Globe className="h-3 w-3" />
               {t("Tunnel")}
             </TabsTrigger>

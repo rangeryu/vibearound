@@ -144,7 +144,7 @@ export function ProfileConnectionDialog({
         }
       }}
     >
-      <DialogContent className="flex max-h-[calc(100vh-64px)] w-[min(860px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(860px,calc(100vw-32px))]">
+      <DialogContent className="!flex max-h-[calc(100vh-64px)] w-[min(860px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(860px,calc(100vw-32px))]">
         <DialogHeader className="shrink-0 px-6 pt-6 pr-12">
           <DialogTitle>{t("{{label}} Connections", { label: profile.label })}</DialogTitle>
           <DialogDescription>

@@ -87,7 +87,7 @@ export function HeaderSettingDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[calc(100vh-64px)] w-[min(620px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(620px,calc(100vw-32px))]">
+      <DialogContent className="!flex max-h-[calc(100vh-64px)] w-[min(620px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(620px,calc(100vw-32px))]">
         <DialogHeader className="shrink-0 px-6 pt-6 pr-12">
           <DialogTitle>{t("Headers")}</DialogTitle>
           <DialogDescription className="sr-only">
