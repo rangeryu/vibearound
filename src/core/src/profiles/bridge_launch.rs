@@ -400,6 +400,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::profiles::schema::{ApiTypeOverrides, AuthMode, ProfileDef};
+    use serde_json::Value;
 
     use super::*;
 
@@ -426,6 +427,47 @@ mod tests {
             .command_args
             .iter()
             .any(|arg| arg == "model_context_window=1000000"));
+    }
+
+    #[test]
+    fn codex_bridge_launch_includes_kimi_model_catalog() {
+        let profile = moonshot_profile();
+
+        let rendered = render_bridge_launch(
+            &profile,
+            "codex",
+            "launch-test",
+            "openai-responses",
+            "anthropic",
+            Some("kimi-code"),
+            None,
+        )
+        .expect("codex bridge launch renders");
+
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model='kimi-code'"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model_context_window=256000"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg.starts_with("model_catalog_json='")));
+
+        let catalog_file = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path == "codex-model-catalog-launch-test.json")
+            .expect("codex model catalog file");
+        let catalog: Value =
+            serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
+        let model = &catalog["models"][0];
+        assert_eq!(model["slug"], "kimi-code");
+        assert_eq!(model["context_window"], 256_000);
+        assert_eq!(model["max_context_window"], 256_000);
     }
 
     #[test]
@@ -600,6 +642,34 @@ mod tests {
             provider: "deepseek".to_string(),
             auth_mode: AuthMode::ApiKey,
             api_types: vec!["openai-chat".to_string()],
+            credentials,
+            overrides,
+            provider_settings: Default::default(),
+        }
+    }
+
+    fn moonshot_profile() -> ProfileDef {
+        let mut credentials = BTreeMap::new();
+        credentials.insert("api_key".to_string(), "test-key".to_string());
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "anthropic".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: Some("kimi-coding".to_string()),
+                base_url: None,
+                model: Some("kimi-for-coding".to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                capabilities: None,
+            },
+        );
+
+        ProfileDef {
+            id: "moonshot-test".to_string(),
+            label: "Moonshot Test".to_string(),
+            provider: "moonshot".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["anthropic".to_string()],
             credentials,
             overrides,
             provider_settings: Default::default(),
