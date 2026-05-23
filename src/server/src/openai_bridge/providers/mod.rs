@@ -97,6 +97,18 @@ impl ProviderBridgeAdapter {
         }
     }
 
+    pub fn normalize_chat_response(&mut self, response: &mut Value) {
+        match self {
+            Self::None => {}
+            Self::DeepSeek(_) => {}
+            Self::Kimi(_) => {}
+            Self::Mimo(adapter) => adapter.normalize_chat_response(response),
+            Self::MiniMax(_) => {}
+            Self::DashScope(_) => {}
+            Self::Zai(_) => {}
+        }
+    }
+
     pub fn transform_upstream_events(&mut self, events: &mut Vec<UniversalEvent>) {
         match self {
             Self::None => {}

@@ -51,11 +51,36 @@ impl MimoBridgeAdapter {
             object.insert("thinking".to_string(), json!({ "type": "enabled" }));
         }
     }
+
+    pub fn normalize_chat_response(&mut self, response: &mut Value) {
+        normalize_null_tool_calls(response);
+    }
+}
+
+fn normalize_null_tool_calls(value: &mut Value) {
+    let Some(choices) = value.get_mut("choices").and_then(Value::as_array_mut) else {
+        return;
+    };
+
+    for choice in choices {
+        normalize_message_tool_calls(choice, "message");
+        normalize_message_tool_calls(choice, "delta");
+    }
+}
+
+fn normalize_message_tool_calls(choice: &mut Value, key: &str) {
+    let Some(message) = choice.get_mut(key).and_then(Value::as_object_mut) else {
+        return;
+    };
+    if matches!(message.get("tool_calls"), Some(Value::Null)) {
+        message.insert("tool_calls".to_string(), Value::Array(Vec::new()));
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use va_ai_api_bridge::{DecodeState, OpenAiChatTranslator, WireTranslator};
 
     use crate::openai_bridge::providers::ProviderRequestSource;
     use crate::openai_bridge::reasoning_blob::encode_reasoning_content;
@@ -140,5 +165,58 @@ mod tests {
             chat_request["messages"][0]["reasoning_content"],
             super::MISSING_REASONING_CONTENT_FALLBACK
         );
+    }
+
+    #[test]
+    fn normalizes_mimo_null_tool_calls_for_chat_completion_response() {
+        let mut response = json!({
+            "id": "chatcmpl_mimo",
+            "model": "mimo-v2.5-pro",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {
+                    "role": "assistant",
+                    "content": "OK",
+                    "tool_calls": null,
+                    "reasoning_content": "Answer briefly."
+                }
+            }]
+        });
+        let mut adapter = MimoBridgeAdapter;
+
+        adapter.normalize_chat_response(&mut response);
+
+        assert_eq!(response["choices"][0]["message"]["tool_calls"], json!([]));
+        OpenAiChatTranslator
+            .decode_response(response)
+            .expect("normalized MiMo response decodes");
+    }
+
+    #[test]
+    fn normalizes_mimo_null_tool_calls_for_chat_stream_chunk() {
+        let mut chunk = json!({
+            "id": "chatcmpl_mimo",
+            "model": "mimo-v2.5-pro",
+            "choices": [{
+                "index": 0,
+                "finish_reason": null,
+                "delta": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": null,
+                    "reasoning_content": null
+                }
+            }]
+        });
+        let mut adapter = MimoBridgeAdapter;
+        let mut state = DecodeState::default();
+
+        adapter.normalize_chat_response(&mut chunk);
+
+        assert_eq!(chunk["choices"][0]["delta"]["tool_calls"], json!([]));
+        OpenAiChatTranslator
+            .decode_stream_chunk(chunk, &mut state)
+            .expect("normalized MiMo stream chunk decodes");
     }
 }
