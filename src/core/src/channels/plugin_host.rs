@@ -35,6 +35,7 @@ use crate::process::registry::ProcessKind;
 use crate::routing::ChannelKind;
 
 use super::monitor::ChannelMonitor;
+use super::outbox::ChannelOutbox;
 use super::plugin_runtime::PluginRuntime;
 use super::transport_stdio::StdioPluginRuntime;
 use super::transport_websocket::WebSocketPluginRuntime;
@@ -42,6 +43,7 @@ use super::{ChannelInput, ChannelOutput};
 
 pub struct PluginHost {
     runtimes: DashMap<ChannelKind, PluginRuntime>,
+    outbox: Arc<ChannelOutbox>,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     /// Pending `requestPermission` replies keyed by a fresh request_id.
     /// Value is `(channel_kind, sender)`: the sender is consumed by the
@@ -65,6 +67,7 @@ impl PluginHost {
     pub fn new(input_tx: mpsc::UnboundedSender<ChannelInput>) -> Self {
         Self {
             runtimes: DashMap::new(),
+            outbox: Arc::new(ChannelOutbox::new_default()),
             input_tx,
             pending_permissions: DashMap::new(),
             monitor: RwLock::new(Weak::new()),
@@ -93,6 +96,7 @@ impl PluginHost {
     pub fn replace_stdio_runtime(&self, channel_kind: &str, runtime: Arc<StdioPluginRuntime>) {
         self.runtimes
             .insert(channel_kind.to_string(), PluginRuntime::Stdio(runtime));
+        self.flush_pending(channel_kind);
     }
 
     pub fn register_websocket_plugin(
@@ -103,11 +107,26 @@ impl PluginHost {
         let channel_kind = channel_kind.into();
         let runtime = WebSocketPluginRuntime::new(channel_kind.clone(), outbound_tx);
         self.runtimes
-            .insert(channel_kind, PluginRuntime::WebSocket(runtime));
+            .insert(channel_kind.clone(), PluginRuntime::WebSocket(runtime));
+        self.flush_pending(&channel_kind);
     }
 
     pub async fn send_output(&self, output: ChannelOutput) {
         let route = output.route_key().clone();
+        let output_id = match self.outbox.enqueue(output.clone()).await {
+            Ok(output_id) => output_id,
+            Err(error) => {
+                proc_log!(
+                    warn,
+                    kind = ProcessKind::ChannelPlugin,
+                    label = route.channel_kind,
+                    event = "outbox_enqueue_failed",
+                    route = %route,
+                    error = %error
+                );
+                String::new()
+            }
+        };
         proc_log!(
             debug,
             kind = ProcessKind::ChannelPlugin,
@@ -124,7 +143,41 @@ impl PluginHost {
             });
 
         if let Some(runtime) = runtime {
-            runtime.send_output(output).await;
+            match runtime.send_output(output).await {
+                Ok(()) if !output_id.is_empty() => {
+                    if let Err(error) = self.outbox.mark_sent(&output_id).await {
+                        proc_log!(
+                            warn,
+                            kind = ProcessKind::ChannelPlugin,
+                            label = route.channel_kind,
+                            event = "outbox_mark_sent_failed",
+                            route = %route,
+                            error = %error
+                        );
+                    }
+                }
+                Ok(()) => {}
+                Err(error) if !output_id.is_empty() => {
+                    proc_log!(
+                        warn,
+                        kind = ProcessKind::ChannelPlugin,
+                        label = route.channel_kind,
+                        event = "outbox_send_failed",
+                        route = %route,
+                        error = %error
+                    );
+                }
+                Err(error) => {
+                    proc_log!(
+                        warn,
+                        kind = ProcessKind::ChannelPlugin,
+                        label = route.channel_kind,
+                        event = "send_output_failed",
+                        route = %route,
+                        error = %error
+                    );
+                }
+            }
         } else {
             let known: Vec<String> = self
                 .runtimes
@@ -140,6 +193,54 @@ impl PluginHost {
                 known = ?known
             );
         }
+    }
+
+    fn flush_pending(&self, channel_kind: &str) {
+        let pending = self.outbox.pending_for_channel(channel_kind);
+        if pending.is_empty() {
+            return;
+        }
+        let runtime = self
+            .runtimes
+            .get(channel_kind)
+            .map(|entry| match entry.value() {
+                PluginRuntime::Stdio(runtime) => PluginRuntime::Stdio(Arc::clone(runtime)),
+                PluginRuntime::WebSocket(runtime) => PluginRuntime::WebSocket(Arc::clone(runtime)),
+            });
+        let Some(runtime) = runtime else {
+            return;
+        };
+        let outbox = Arc::clone(&self.outbox);
+        let channel_kind = channel_kind.to_string();
+        tokio::spawn(async move {
+            for pending in pending {
+                match runtime.send_output(pending.output).await {
+                    Ok(()) => {
+                        if let Err(error) = outbox.mark_sent(&pending.output_id).await {
+                            proc_log!(
+                                warn,
+                                kind = ProcessKind::ChannelPlugin,
+                                label = channel_kind,
+                                event = "outbox_flush_mark_sent_failed",
+                                output_id = %pending.output_id,
+                                error = %error
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        proc_log!(
+                            warn,
+                            kind = ProcessKind::ChannelPlugin,
+                            label = channel_kind,
+                            event = "outbox_flush_send_failed",
+                            output_id = %pending.output_id,
+                            error = %error
+                        );
+                        break;
+                    }
+                }
+            }
+        });
     }
 
     pub async fn shutdown_all(&self) {

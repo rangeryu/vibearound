@@ -209,8 +209,8 @@ export function ProfileFormDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent>
-        <DialogHeader className="border-b border-border pr-10">
+      <DialogContent className="!flex max-h-[calc(100vh-64px)] w-[min(960px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(960px,calc(100vw-32px))]">
+        <DialogHeader className="shrink-0 border-b border-border px-6 py-4 pr-12">
           <DialogTitle>
             {editing
               ? t("Edit profile · {{label}}", { label: initial!.label })
@@ -223,7 +223,7 @@ export function ProfileFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 [scrollbar-gutter:stable]">
           {step === "pick-provider" ? (
             <ProviderGrid catalog={catalog} onPick={handlePickProvider} />
           ) : provider ? (
@@ -246,19 +246,19 @@ export function ProfileFormDialog({
         </div>
 
         {providerMissing && (
-          <div className="px-4 py-2 bg-amber-500/10 text-amber-700 text-xs border-t border-amber-500/20">
+          <div className="shrink-0 border-t border-amber-500/20 bg-amber-500/10 px-6 py-2 text-xs text-amber-700">
             ⚠ {t("The provider {{provider}} is no longer in the catalog. Form fell back to a custom endpoint — re-pick a provider via Back, or edit the URL/key and save.", {
               provider: initial?.provider ?? "",
             })}
           </div>
         )}
         {error && (
-          <div className="px-4 py-2 bg-destructive/10 text-destructive text-xs border-t border-destructive/20">
+          <div className="shrink-0 border-t border-destructive/20 bg-destructive/10 px-6 py-2 text-xs text-destructive">
             {error}
           </div>
         )}
 
-        <DialogFooter className="justify-between border-t border-border">
+        <DialogFooter className="shrink-0 border-t border-border px-6 py-4 sm:justify-between">
           <div>
             {step === "fill-form" && !editing && (
               <Button

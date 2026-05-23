@@ -88,7 +88,7 @@ function SectionCard({
           {icon}
           {title && <span className="text-xs font-semibold">{title}</span>}
           {badge !== undefined && (
-            <Badge variant="muted" className="ml-auto tabular-nums">
+            <Badge variant="secondary" className="ml-auto tabular-nums">
               {badge}
             </Badge>
           )}

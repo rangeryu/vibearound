@@ -26,5 +26,6 @@ pub use bridge::{
 pub use error::{ProcessError, ProcessResult};
 pub use registry::{ChildRegistry, ProcessKind};
 pub use supervisor::{
-    ProcessEvent, ProcessId, ProcessSnapshot, ProcessStatus, RestartPolicy, SpawnSpec, Supervisor,
+    ProcessEvent, ProcessId, ProcessSnapshot, ProcessStatus, RestartBackoff, RestartPolicy,
+    SpawnSpec, Supervisor,
 };

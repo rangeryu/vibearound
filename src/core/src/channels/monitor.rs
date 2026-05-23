@@ -25,10 +25,12 @@ use std::time::Duration;
 use dashmap::DashMap;
 use tokio::sync::{broadcast, mpsc};
 
-use crate::conversations::ConversationManager;
 use crate::process::bridge::{BridgeFactory, ProcessBridge};
 use crate::process::registry::ProcessKind;
-use crate::process::supervisor::{ProcessEvent, ProcessId, RestartPolicy, SpawnSpec, Supervisor};
+use crate::process::supervisor::{
+    ProcessEvent, ProcessId, RestartBackoff, RestartPolicy, SpawnSpec, Supervisor,
+};
+use crate::workspace::WorkspaceThreadManager;
 
 use super::manifest::ChannelPluginManifest;
 use super::plugin_bridge::ChannelPluginBridge;
@@ -40,7 +42,8 @@ use super::ChannelInput;
 // Tunables — kept at module scope so the Dashboard can display them.
 // ---------------------------------------------------------------------------
 
-pub const RESTART_BACKOFF: Duration = Duration::from_secs(15);
+pub const RESTART_BACKOFF_INITIAL: Duration = Duration::from_secs(5);
+pub const RESTART_BACKOFF_MAX: Duration = Duration::from_secs(300);
 pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(90);
 
 // ---------------------------------------------------------------------------
@@ -99,7 +102,7 @@ pub struct ChannelStatusSnapshot {
 pub struct ChannelMonitor {
     supervisor: Arc<Supervisor>,
     kinds: DashMap<String, ProcessId>,
-    conversation_manager: Arc<ConversationManager>,
+    workspace_thread_manager: Arc<WorkspaceThreadManager>,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     plugin_host: Arc<PluginHost>,
     /// Republished `()` stream for `StateSource::subscribe_changes`.
@@ -114,7 +117,7 @@ impl ChannelMonitor {
     ///
     /// [`StateSource::subscribe_changes`]: crate::state::StateSource::subscribe_changes
     pub fn new(
-        conversation_manager: Arc<ConversationManager>,
+        workspace_thread_manager: Arc<WorkspaceThreadManager>,
         input_tx: mpsc::UnboundedSender<ChannelInput>,
         plugin_host: Arc<PluginHost>,
         change_tx: broadcast::Sender<()>,
@@ -128,7 +131,7 @@ impl ChannelMonitor {
         Arc::new(Self {
             supervisor,
             kinds: DashMap::new(),
-            conversation_manager,
+            workspace_thread_manager,
             input_tx,
             plugin_host,
             change_tx,
@@ -137,8 +140,8 @@ impl ChannelMonitor {
 
     /// Register a channel plugin. The supervisor spawns immediately
     /// (no wait for the next tick) and keeps it alive under an
-    /// `OnCrash` policy with a 15-second backoff and a 90-second
-    /// heartbeat watchdog.
+    /// `OnCrash` policy with a short exponential backoff capped at five
+    /// minutes and a 90-second heartbeat watchdog.
     pub fn register(self: &Arc<Self>, manifest: ChannelPluginManifest) {
         let kind = manifest.channel_kind.clone();
 
@@ -149,7 +152,7 @@ impl ChannelMonitor {
         let factory = build_bridge_factory(
             manifest,
             Arc::clone(&self.input_tx_owned()),
-            Arc::clone(&self.conversation_manager),
+            Arc::clone(&self.workspace_thread_manager),
             Arc::clone(&self.plugin_host),
         );
 
@@ -158,7 +161,7 @@ impl ChannelMonitor {
             kind.clone(),
             spec,
             RestartPolicy::OnCrash {
-                backoff: RESTART_BACKOFF,
+                backoff: RestartBackoff::exponential(RESTART_BACKOFF_INITIAL, RESTART_BACKOFF_MAX),
                 watchdog: Some(HEARTBEAT_TIMEOUT),
             },
             factory,
@@ -219,6 +222,23 @@ impl ChannelMonitor {
                 started_at: now_secs().saturating_sub(p.last_seen_age_secs),
             })
             .collect()
+    }
+
+    pub fn registered_kinds(&self) -> Vec<String> {
+        let mut kinds = self
+            .kinds
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>();
+        kinds.sort();
+        kinds
+    }
+
+    pub fn status(&self, kind: &str) -> Option<ChannelRunStatus> {
+        self.snapshot()
+            .into_iter()
+            .find(|snapshot| snapshot.kind == kind)
+            .map(|snapshot| snapshot.status)
     }
 
     pub fn subscribe_changes(&self) -> broadcast::Receiver<()> {
@@ -298,25 +318,26 @@ async fn forward_events(mut rx: broadcast::Receiver<ProcessEvent>, tx: broadcast
 fn build_bridge_factory(
     manifest: ChannelPluginManifest,
     input_tx: Arc<mpsc::UnboundedSender<ChannelInput>>,
-    conversation_manager: Arc<ConversationManager>,
+    workspace_thread_manager: Arc<WorkspaceThreadManager>,
     plugin_host: Arc<PluginHost>,
 ) -> BridgeFactory {
+    let channel_kind = manifest.channel_kind.clone();
     Box::new(move || {
         let (output_tx, output_rx) = mpsc::unbounded_channel();
         plugin_host.replace_stdio_runtime(
-            &manifest.channel_kind,
-            Arc::new(StdioPluginRuntime::new(
-                manifest.channel_kind.clone(),
-                output_tx,
-            )),
+            &channel_kind,
+            Arc::new(StdioPluginRuntime::new(channel_kind.clone(), output_tx)),
         );
+        let raw_config = crate::config::ensure_loaded()
+            .channel_raw_config(&channel_kind)
+            .unwrap_or_else(|| serde_json::json!({}));
 
         Box::new(ChannelPluginBridge {
-            channel_kind: manifest.channel_kind.clone(),
-            raw_config: manifest.raw_config.clone(),
+            channel_kind: channel_kind.clone(),
+            raw_config,
             input_tx: (*input_tx).clone(),
             output_rx,
-            conversation_manager: Arc::clone(&conversation_manager),
+            workspace_thread_manager: Arc::clone(&workspace_thread_manager),
             plugin_host: Arc::clone(&plugin_host),
         }) as Box<dyn ProcessBridge>
     })

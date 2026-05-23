@@ -17,11 +17,11 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use acp::schema;
 use agent_client_protocol as acp;
 
-use crate::conversations::ConversationManager;
 use crate::proc_log;
 use crate::process::acp_transport::notifying_stdio_transport;
 use crate::process::bridge::{BridgeExit, CancelSignal};
 use crate::process::registry::ProcessKind;
+use crate::workspace::WorkspaceThreadManager;
 
 use super::super::plugin_host::PluginHost;
 use super::super::{ChannelInput, ChannelOutput};
@@ -37,7 +37,7 @@ pub(crate) async fn run_acp_plugin_bridge(
     stdout: tokio::process::ChildStdout,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     mut output_rx: mpsc::UnboundedReceiver<ChannelOutput>,
-    conversation_manager: Arc<ConversationManager>,
+    workspace_thread_manager: Arc<WorkspaceThreadManager>,
     plugin_host: Arc<PluginHost>,
     mut cancel: CancelSignal,
 ) -> BridgeExit {
@@ -50,7 +50,7 @@ pub(crate) async fn run_acp_plugin_bridge(
         channel_kind.clone(),
         config.clone(),
         input_tx.clone(),
-        conversation_manager,
+        workspace_thread_manager,
         plugin_host,
     ));
     let (transport, mut stdio_closed) =

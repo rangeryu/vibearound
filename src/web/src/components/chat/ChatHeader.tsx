@@ -20,6 +20,7 @@ interface ChatHeaderProps {
   agentLabel: string;
   routeLabel: string;
   headerSessionLabel: string | null;
+  workspacePath?: string;
   sessionId?: string;
   chatStatus: ChatRuntimeStatus;
   statusLabel: string;
@@ -37,6 +38,7 @@ export function ChatHeader({
   agentLabel,
   routeLabel,
   headerSessionLabel,
+  workspacePath,
   sessionId,
   chatStatus,
   statusLabel,
@@ -98,8 +100,16 @@ export function ChatHeader({
           <div className="truncate text-sm font-medium text-foreground">
             {routeLabel}
           </div>
-          {(headerSessionLabel || sessionId) && (
+          {(workspacePath || headerSessionLabel || sessionId) && (
             <div className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground/60">
+              {workspacePath && (
+                <span
+                  className="min-w-0 max-w-[18rem] truncate text-muted-foreground/70"
+                  title={workspacePath}
+                >
+                  {workspacePath}
+                </span>
+              )}
               {headerSessionLabel && (
                 <span className="truncate">{headerSessionLabel}</span>
               )}

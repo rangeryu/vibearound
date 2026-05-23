@@ -2,7 +2,7 @@
 //!
 //! This is the contract between `common` and its shells (the axum
 //! server, the Tauri desktop, any future TUI/CLI). Every manager that
-//! holds runtime state — `ChannelMonitor`, `ConversationManager`, `TunnelManager`,
+//! holds runtime state — `ChannelMonitor`, `WorkspaceThreadManager`, `TunnelManager`,
 //! `PtyRegistry` — implements [`StateSource`] so consumers have two
 //! ways to work with it:
 //!
@@ -12,10 +12,9 @@
 //!   `broadcast::Receiver<()>` that pings when `list()` output
 //!   changes, then re-poll. No typed event payloads on this channel
 //!   by design — every additional schema is an additional thing that
-//!   can drift from the list entries. Managers that need richer,
-//!   typed events (ConversationManager's [`SystemEvent`] feed) expose them on
-//!   separate channels; `subscribe_changes` is the lowest-common-
-//!   denominator signal.
+//!   can drift from the list entries. Managers that need richer typed
+//!   events can expose them on separate channels; `subscribe_changes` is
+//!   the lowest-common-denominator signal.
 //!
 //! # Why not take a trait bound at every call site?
 //!
@@ -25,7 +24,6 @@
 //! concrete references (`Arc<ChannelMonitor>`, etc.) and the trait
 //! documents what they can count on.
 //!
-//! [`SystemEvent`]: crate::conversations::SystemEvent
 
 /// Managers that expose a list of entries and notify when the list
 /// changes. See module docs for the intended usage pattern.

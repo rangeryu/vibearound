@@ -106,23 +106,23 @@ pub async fn ws_agents_runtime_handler(
     ws: WebSocketUpgrade,
 ) -> Response {
     ws.on_upgrade(move |socket| async move {
-        let conversation_manager = state.channel_hub.conversation_manager();
-        let rx = conversation_manager.subscribe_changes();
+        let workspace_threads = state.channel_hub.workspace_thread_manager();
+        let rx = workspace_threads.subscribe_changes();
         run_ws_loop(socket, rx, "ws/agents/runtime", move || {
-            let conversation_manager = conversation_manager.clone();
-            async move { build_agents_runtime(&conversation_manager).await }
+            let workspace_threads = workspace_threads.clone();
+            async move { build_agents_runtime(&workspace_threads).await }
         })
         .await;
     })
 }
 
 async fn build_agents_runtime(
-    conversation_manager: &common::conversations::ConversationManager,
+    workspace_threads: &common::workspace::WorkspaceThreadManager,
 ) -> Vec<crate::api_types::AgentRuntime> {
-    let pods = conversation_manager.list();
-    let mut out = Vec::with_capacity(pods.len());
-    for pod in pods {
-        let st = pod.state().await;
+    let entries = workspace_threads.list().await;
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let st = entry.state;
         let (agent_name, agent_title, agent_version) = st
             .initialize
             .as_ref()
@@ -135,17 +135,29 @@ async fn build_agents_runtime(
                 )
             })
             .unwrap_or((None, None, None));
+        let (route_key, channel_kind, chat_id) = match entry.route {
+            Some(route) => (
+                route.as_key(),
+                route.channel_kind.clone(),
+                route.chat_id.clone(),
+            ),
+            None => (
+                st.thread_id.to_string(),
+                "workspace".to_string(),
+                st.thread_id.to_string(),
+            ),
+        };
         out.push(crate::api_types::AgentRuntime {
-            route_key: pod.route.as_key(),
-            channel_kind: pod.route.channel_kind.clone(),
-            chat_id: pod.route.chat_id.clone(),
-            cli_kind: st.cli_kind,
-            profile: st.profile,
+            route_key,
+            channel_kind,
+            chat_id,
+            cli_kind: Some(st.host_binding.agent_id.clone()),
+            profile: st.host_binding.profile_id.clone(),
             session_id: st.session_id,
-            workspace: st.workspace,
+            workspace: Some(st.workspace.to_string_lossy().to_string()),
             busy: st.busy,
             failed: st.failed,
-            started_at: pod.started_at(),
+            started_at: 0,
             agent_name,
             agent_title,
             agent_version,

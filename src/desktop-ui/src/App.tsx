@@ -34,6 +34,7 @@ import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Previews } from "./Previews";
 import { Launch } from "./Launch";
+import { SettingsDialog } from "./Settings";
 import { getLauncherPreferences, type LauncherPreferences } from "./Launch/api";
 import { LanguageMenu } from "./components/LanguageMenu";
 
@@ -329,6 +330,7 @@ type DashboardPage = "launch" | "status" | "previews";
 function Dashboard() {
   const { t } = useI18n();
   const [page, setPage] = useState<DashboardPage>("launch");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [launcherPrefs, setLauncherPrefs] =
     useState<LauncherPreferences | null>(null);
   const [launcherPrefsLoaded, setLauncherPrefsLoaded] = useState(false);
@@ -437,7 +439,7 @@ function Dashboard() {
           }}
           className="contents"
         >
-          <TabsList>
+          <TabsList className="!h-8 rounded-md p-1">
             <TooltipProvider>
               {launchDisabledReason ? (
                 <Tooltip>
@@ -450,7 +452,11 @@ function Dashboard() {
                       aria-label={launchDisabledReason}
                       title={launchDisabledReason}
                     >
-                      <TabsTrigger value="launch" disabled>
+                      <TabsTrigger
+                        value="launch"
+                        disabled
+                        className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+                      >
                         <Rocket /> {t("Launch")}
                       </TabsTrigger>
                     </span>
@@ -460,15 +466,24 @@ function Dashboard() {
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                <TabsTrigger value="launch">
+                <TabsTrigger
+                  value="launch"
+                  className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+                >
                   <Rocket /> {t("Launch")}
                 </TabsTrigger>
               )}
             </TooltipProvider>
-            <TabsTrigger value="status">
+            <TabsTrigger
+              value="status"
+              className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+            >
               <Activity /> {t("Status")}
             </TabsTrigger>
-            <TabsTrigger value="previews">
+            <TabsTrigger
+              value="previews"
+              className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+            >
               <Eye /> {t("Previews")}
             </TabsTrigger>
           </TabsList>
@@ -479,16 +494,33 @@ function Dashboard() {
           </span>
           <LanguageMenu />
           <Button
-            onClick={() => window.location.replace("/onboarding")}
+            onClick={() => setSettingsOpen(true)}
             variant="ghost"
             size="icon-xs"
-            title={t("Open Config Wizard")}
-            aria-label={t("Open Config Wizard")}
+            title={t("Settings")}
+            aria-label={t("Settings")}
+            className={
+              settingsOpen
+                ? "bg-accent text-accent-foreground"
+                : undefined
+            }
           >
-            <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+            <Settings
+              className={`w-3.5 h-3.5 ${
+                settingsOpen
+                  ? "text-accent-foreground"
+                  : "text-muted-foreground"
+              }`}
+            />
           </Button>
         </div>
       </header>
+
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onServicesRestarted={refreshAll}
+      />
 
       {firstError && (
         <div className="px-3 py-1 bg-destructive/10 text-destructive text-xs">

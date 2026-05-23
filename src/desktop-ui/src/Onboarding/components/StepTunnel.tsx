@@ -113,13 +113,13 @@ export function StepTunnel({
 
 function tunnelRank(id: string): number {
   switch (id) {
-    case "cloudflare":
-      return 0;
     case "none":
+      return 0;
+    case "cloudflare":
       return 1;
-    case "localtunnel":
-      return 2;
     case "ngrok":
+      return 2;
+    case "localtunnel":
       return 3;
     default:
       return 10;

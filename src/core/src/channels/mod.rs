@@ -1,12 +1,11 @@
 //! ACP-native channel manager: hosts channel plugins and routes traffic.
 //!
-//! The web channel path uses ACP directly (ws_chat dispatches via ConversationManager).
-//! Stdio plugins still use the legacy ChannelInput/ChannelOutput for now.
+//! Web and stdio plugins both enter through `ChannelInput` and are routed
+//! into workspace threads.
 //!
 //! Module layout:
 //! - `types`            — wire types: `ChannelEnvelope`, `ChannelInput`, `ChannelOutput`
-//! - `slash`            — slash-command parser + `SlashAction` enum
-//! - `prompt`           — `handle_channel_input` + `handle_prompt` + helpers
+//! - `prompt`           — `handle_channel_input` + workspace-thread commands
 //! - `bridge_handler`   — `ChannelBridgeHandler` (notification + permission forwarding)
 //! - `monitor`          — Dashboard-facing facade over `process::Supervisor`
 //! - `plugin_bridge`    — `ChannelPluginBridge` (`ProcessBridge` impl for stdio plugins)
@@ -19,11 +18,11 @@
 pub mod bridge_handler;
 pub mod manifest;
 pub mod monitor;
+pub mod outbox;
 pub mod plugin_bridge;
 pub mod plugin_host;
 pub mod plugin_runtime;
 pub mod prompt;
-pub mod slash;
 pub mod transport_stdio;
 pub mod transport_websocket;
 pub mod types;
@@ -31,12 +30,11 @@ pub mod types;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use agent_client_protocol::schema as acp;
-use tokio::sync::{broadcast, mpsc};
+use serde::Serialize;
+use tokio::sync::mpsc;
 
-use crate::agent::AgentClientHandler;
-use crate::conversations::event::SystemEvent;
-use crate::conversations::ConversationManager;
 use crate::plugins::DiscoveredPlugin;
+use crate::workspace::WorkspaceThreadManager;
 
 use self::manifest::ChannelPluginManifest;
 use self::plugin_host::PluginHost;
@@ -45,6 +43,15 @@ use self::plugin_host::PluginHost;
 pub use self::prompt::handle_channel_input;
 pub use self::transport_websocket::WebChannelManager;
 pub use self::types::{ChannelEnvelope, ChannelInput, ChannelOutput};
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ChannelSyncReport {
+    pub registered: Vec<String>,
+    pub restarted: Vec<String>,
+    pub started: Vec<String>,
+    pub stopped: Vec<String>,
+    pub missing: Vec<String>,
+}
 
 /// Facade over the plugin host + monitor. Built once at daemon boot and
 /// passed around as `Arc<ChannelManager>`.
@@ -55,7 +62,7 @@ pub struct ChannelManager {
     /// task owned by the server startup path.
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     input_rx: StdMutex<Option<mpsc::UnboundedReceiver<ChannelInput>>>,
-    conversation_manager: Arc<ConversationManager>,
+    workspace_thread_manager: Arc<WorkspaceThreadManager>,
     /// Lazy-initialised on first `register_plugin` call. The monitor is
     /// a thin facade over `process::Supervisor` — it owns the supervisor
     /// and its tick loop internally.
@@ -63,13 +70,13 @@ pub struct ChannelManager {
 }
 
 impl ChannelManager {
-    pub fn new(conversation_manager: Arc<ConversationManager>) -> Self {
+    pub fn new(workspace_thread_manager: Arc<WorkspaceThreadManager>) -> Self {
         let (input_tx, input_rx) = mpsc::unbounded_channel();
         Self {
             plugin_host: Arc::new(PluginHost::new(input_tx.clone())),
             input_tx,
             input_rx: StdMutex::new(Some(input_rx)),
-            conversation_manager,
+            workspace_thread_manager,
             monitor: StdMutex::new(None),
         }
     }
@@ -87,7 +94,7 @@ impl ChannelManager {
         }
         let (change_tx, _) = tokio::sync::broadcast::channel::<()>(64);
         let m = monitor::ChannelMonitor::new(
-            Arc::clone(&self.conversation_manager),
+            Arc::clone(&self.workspace_thread_manager),
             self.input_tx.clone(),
             Arc::clone(&self.plugin_host),
             change_tx,
@@ -129,6 +136,70 @@ impl ChannelManager {
         true
     }
 
+    pub async fn sync_configured_plugins(&self) -> ChannelSyncReport {
+        let cfg = crate::config::reload();
+        let discovered_plugins = crate::plugins::channel::discover();
+        let desired = cfg.channel_names();
+        let desired_set = desired
+            .iter()
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
+        let monitor = self.monitor();
+        let registered = monitor.registered_kinds();
+        let registered_set = registered
+            .iter()
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
+        let mut report = ChannelSyncReport::default();
+
+        for name in registered {
+            if desired_set.contains(&name) {
+                continue;
+            }
+            if monitor.force_stop(&name).await.is_ok() {
+                report.stopped.push(name);
+            }
+        }
+
+        for name in desired {
+            let Some(plugin) = discovered_plugins.get(&name) else {
+                if registered_set.contains(&name) && monitor.force_stop(&name).await.is_ok() {
+                    report.stopped.push(name.clone());
+                }
+                report.missing.push(name);
+                continue;
+            };
+            if !registered_set.contains(&name) {
+                if self.register_plugin(&name, plugin) {
+                    report.registered.push(name);
+                }
+                continue;
+            }
+
+            match monitor.status(&name) {
+                Some(monitor::ChannelRunStatus::Stopped)
+                | Some(monitor::ChannelRunStatus::Crashed)
+                | Some(monitor::ChannelRunStatus::NotStarted) => {
+                    if monitor.force_start(&name).is_ok() {
+                        report.started.push(name);
+                    }
+                }
+                _ => {
+                    if monitor.force_restart(&name).await.is_ok() {
+                        report.restarted.push(name);
+                    }
+                }
+            }
+        }
+
+        report.registered.sort();
+        report.restarted.sort();
+        report.started.sort();
+        report.stopped.sort();
+        report.missing.sort();
+        report
+    }
+
     pub fn start_internal_plugin(
         &self,
         channel_name: &str,
@@ -152,31 +223,12 @@ impl ChannelManager {
 
     /// Process a single input on the current executor.
     pub async fn process_input(&self, input: ChannelInput) {
-        prompt::handle_channel_input(&self.conversation_manager, &self.plugin_host, input).await;
+        prompt::handle_channel_input(&self.workspace_thread_manager, &self.plugin_host, input)
+            .await;
     }
 
-    pub fn conversation_manager(&self) -> Arc<ConversationManager> {
-        Arc::clone(&self.conversation_manager)
-    }
-
-    pub async fn resume_session(
-        &self,
-        route: &crate::routing::RouteKey,
-        agent_kind: String,
-        session_id: String,
-        cwd: Option<String>,
-        profile: Option<String>,
-    ) -> acp::Result<()> {
-        let handler: Arc<dyn AgentClientHandler> =
-            Arc::new(bridge_handler::ChannelBridgeHandler::new(
-                Arc::clone(&self.plugin_host),
-                Arc::clone(&self.conversation_manager),
-                route.clone(),
-            ));
-
-        self.conversation_manager
-            .resume_session(route.clone(), agent_kind, session_id, cwd, profile, handler)
-            .await
+    pub fn workspace_thread_manager(&self) -> Arc<WorkspaceThreadManager> {
+        Arc::clone(&self.workspace_thread_manager)
     }
 
     pub async fn send_output(&self, output: ChannelOutput) {
@@ -201,72 +253,5 @@ impl ChannelManager {
             monitor.shutdown_all().await;
         }
         self.plugin_host.shutdown_all().await;
-    }
-
-    /// Subscribe to ConversationManager `SystemEvent`s and forward relevant ones to
-    /// channel plugins. Call once during daemon startup. Returns the
-    /// forwarder task's `JoinHandle`.
-    pub fn start_event_forwarder(
-        &self,
-        mut event_rx: broadcast::Receiver<SystemEvent>,
-    ) -> tokio::task::JoinHandle<()> {
-        let plugin_host = Arc::clone(&self.plugin_host);
-        tokio::spawn(async move {
-            loop {
-                match event_rx.recv().await {
-                    Ok(event) => forward_system_event(&plugin_host, &event).await,
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(broadcast::error::RecvError::Closed) => break,
-                }
-            }
-        })
-    }
-}
-
-/// Translate lifecycle `SystemEvent`s into `ChannelOutput` for the plugin.
-/// Currently surfaces agent-ready + session-ready so the IM user can see
-/// which backend is speaking.
-async fn forward_system_event(plugin_host: &Arc<PluginHost>, event: &SystemEvent) {
-    match event {
-        SystemEvent::AgentInitialized {
-            route,
-            cli_kind,
-            initialize,
-            ..
-        } => {
-            let agent_info = initialize.agent_info.as_ref();
-            let agent = agent_info
-                .map(|i| i.title.clone().unwrap_or_else(|| i.name.clone()))
-                .or_else(|| cli_kind.clone())
-                .unwrap_or_else(|| "agent".to_string());
-            let version = agent_info.map(|i| i.version.clone()).unwrap_or_default();
-            plugin_host
-                .send_output(ChannelOutput::AgentReady {
-                    route: route.clone(),
-                    agent,
-                    version,
-                })
-                .await;
-        }
-        SystemEvent::SessionReady { route, session_id } => {
-            plugin_host
-                .send_output(ChannelOutput::SessionReady {
-                    route: route.clone(),
-                    session_id: session_id.clone(),
-                })
-                .await;
-        }
-        SystemEvent::SessionMode {
-            route,
-            session_mode,
-        } => {
-            plugin_host
-                .send_output(ChannelOutput::SessionMode {
-                    route: route.clone(),
-                    session_mode: session_mode.clone(),
-                })
-                .await;
-        }
-        _ => {}
     }
 }

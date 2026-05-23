@@ -28,7 +28,7 @@ pub enum PluginRuntime {
 }
 
 impl PluginRuntime {
-    pub async fn send_output(&self, output: ChannelOutput) {
+    pub async fn send_output(&self, output: ChannelOutput) -> Result<(), String> {
         match self {
             Self::Stdio(runtime) => runtime.send_output(output).await,
             Self::WebSocket(runtime) => runtime.send_output(output).await,

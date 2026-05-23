@@ -33,14 +33,12 @@ impl StdioPluginRuntime {
         &self.channel_kind
     }
 
-    pub async fn send_output(&self, output: ChannelOutput) {
-        if let Err(error) = self.output_tx.send(output) {
-            tracing::info!(
-                "[{}] failed to send output to ACP plugin bridge: {}",
-                self.channel_kind,
-                error
-            );
-        }
+    pub async fn send_output(&self, output: ChannelOutput) -> Result<(), String> {
+        self.output_tx.send(output).map_err(|error| {
+            let message = format!("failed to send output to ACP plugin bridge: {error}");
+            tracing::info!("[{}] {}", self.channel_kind, message);
+            message
+        })
     }
 
     /// No-op — lifecycle (cancel + reap) is the supervisor's job now.

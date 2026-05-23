@@ -8,14 +8,14 @@ use tokio::sync::mpsc;
 
 use agent_client_protocol::schema as acp;
 
-use crate::conversations::ConversationManager;
 use crate::proc_log;
 use crate::process::registry::ProcessKind;
 use crate::routing::RouteKey;
+use crate::workspace::WorkspaceThreadManager;
 
 use super::super::plugin_host::PluginHost;
 use super::super::prompt::handle_prompt;
-use super::super::{ChannelEnvelope, ChannelInput, ChannelOutput};
+use super::super::{ChannelEnvelope, ChannelInput};
 
 /// ACP Agent handler for a channel plugin. `prompt()` calls through to
 /// `handle_prompt()` directly — blocks until the turn completes and
@@ -25,7 +25,7 @@ pub(super) struct PluginAgentHandler {
     config: serde_json::Value,
     /// Still used for fire-and-forget operations: cancel, callback.
     input_tx: mpsc::UnboundedSender<ChannelInput>,
-    conversation_manager: Arc<ConversationManager>,
+    workspace_thread_manager: Arc<WorkspaceThreadManager>,
     plugin_host: Arc<PluginHost>,
 }
 
@@ -34,14 +34,14 @@ impl PluginAgentHandler {
         channel_kind: String,
         config: serde_json::Value,
         input_tx: mpsc::UnboundedSender<ChannelInput>,
-        conversation_manager: Arc<ConversationManager>,
+        workspace_thread_manager: Arc<WorkspaceThreadManager>,
         plugin_host: Arc<PluginHost>,
     ) -> Self {
         Self {
             channel_kind,
             config,
             input_tx,
-            conversation_manager,
+            workspace_thread_manager,
             plugin_host,
         }
     }
@@ -110,26 +110,12 @@ impl PluginAgentHandler {
         // Session notifications stream to the plugin via ChannelBridgeHandler
         // → PluginHost → output_tx → output forwarder → conn.session_notification().
         let result = handle_prompt(
-            &self.conversation_manager,
+            &self.workspace_thread_manager,
             &self.plugin_host,
             route.clone(),
-            None, // cli_kind: plugin prompts don't specify
             content_blocks,
         )
         .await;
-
-        // Surface detailed error to the IM chat so the user sees more than
-        // the plugin's default "Internal error" rendering. The ACP Error's
-        // Display impl includes `data.details` when present.
-        if let Err(ref e) = result {
-            self.plugin_host
-                .send_output(ChannelOutput::SystemText {
-                    route,
-                    text: format!("⚠️ {}", e),
-                    reply_to: None,
-                })
-                .await;
-        }
 
         result
     }

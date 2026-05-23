@@ -27,13 +27,16 @@ export function StepChannels({
   discoveredPlugins,
   enabledChannels,
   channelConfigs,
+  channelVerbose,
   installingPlugins,
   authStates,
   onToggleChannel,
   onConfigChange,
+  onVerboseChange,
   onInstallPlugin,
   onStartAuth,
   onCancelAuth,
+  switchSize = "default",
 }: StepChannelsProps) {
   const { t } = useI18n();
   const discoveredMap = new Map(discoveredPlugins.map((p) => [p.id, p]));
@@ -56,6 +59,10 @@ export function StepChannels({
         const isReady = !!discovered;
         const enabled = enabledChannels.has(entry.id);
         const config = channelConfigs[entry.id] ?? {};
+        const verbose = channelVerbose[entry.id] ?? {
+          show_thinking: false,
+          show_tool_use: false,
+        };
         const authState = authStates[entry.id];
         return (
           <PluginCard
@@ -69,10 +76,13 @@ export function StepChannels({
             enabled={enabled}
             discovered={discovered}
             config={config}
+            verbose={verbose}
             authState={authState}
+            switchSize={switchSize}
 
             onToggle={(v) => onToggleChannel(entry.id, v)}
             onConfigChange={(k, v) => onConfigChange(entry.id, k, v)}
+            onVerboseChange={(k, v) => onVerboseChange(entry.id, k, v)}
             onInstall={() => onInstallPlugin(entry.id, entry.github)}
             onStartAuth={() => onStartAuth(entry.id)}
             onCancelAuth={() => onCancelAuth(entry.id)}
@@ -97,10 +107,16 @@ interface PluginCardProps {
   enabled: boolean;
   discovered?: StepChannelsProps["discoveredPlugins"][number];
   config: Record<string, string>;
+  verbose: StepChannelsProps["channelVerbose"][string];
   authState?: StepChannelsProps["authStates"][string];
+  switchSize: NonNullable<StepChannelsProps["switchSize"]>;
 
   onToggle: (enabled: boolean) => void;
   onConfigChange: (key: string, value: string) => void;
+  onVerboseChange: (
+    key: keyof StepChannelsProps["channelVerbose"][string],
+    value: boolean,
+  ) => void;
   onInstall: () => void;
   onStartAuth: () => void;
   onCancelAuth: () => void;
@@ -116,9 +132,12 @@ function PluginCard({
   enabled,
   discovered,
   config,
+  verbose,
   authState,
+  switchSize,
   onToggle,
   onConfigChange,
+  onVerboseChange,
   onInstall,
   onStartAuth,
   onCancelAuth,
@@ -156,6 +175,7 @@ function PluginCard({
             checked={enabled}
             onCheckedChange={onToggle}
             aria-label={t("Toggle {{name}}", { name })}
+            size={switchSize}
           />
         ) : installing ? (
           <Button
@@ -204,6 +224,40 @@ function PluginCard({
               ))}
             </div>
           )}
+
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-3">
+            <div className="mb-2 text-xs font-medium text-foreground">
+              {t("IM message detail")}
+            </div>
+            <div className="space-y-2">
+              <label className="flex items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">
+                  {t("Show thinking")}
+                </span>
+                <Switch
+                  checked={verbose.show_thinking}
+                  onCheckedChange={(checked) =>
+                    onVerboseChange("show_thinking", checked === true)
+                  }
+                  aria-label={t("Show thinking")}
+                  size={switchSize}
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">
+                  {t("Show tool activity")}
+                </span>
+                <Switch
+                  checked={verbose.show_tool_use}
+                  onCheckedChange={(checked) =>
+                    onVerboseChange("show_tool_use", checked === true)
+                  }
+                  aria-label={t("Show tool activity")}
+                  size={switchSize}
+                />
+              </label>
+            </div>
+          </div>
 
           {/* Auth flow (QR login) */}
           {supportsAuth && (
@@ -278,9 +332,12 @@ function AuthFlowSection({
           variant={
             status === "error"
               ? "destructive"
-              : status === "connected"
-                ? "success"
-                : "default"
+              : "default"
+          }
+          className={
+            status === "connected"
+              ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : undefined
           }
         >
           {t(authState.message)}

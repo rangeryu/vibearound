@@ -178,6 +178,62 @@ export function ChatView({
     [],
   );
 
+  useEffect(() => {
+    const staleLaunches = Object.entries(runtimeSpecs)
+      .map(([runtimeKey, spec]) => {
+        const sessionId = runtimeSnapshots[runtimeKey]?.meta.sessionId;
+        const launchSession = spec.launchSession;
+        if (!sessionId || !launchSession || launchSession.session_id === sessionId) {
+          return null;
+        }
+        return {
+          agentId: spec.agentId,
+          runtimeKey,
+          sessionId: launchSession.session_id,
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is { agentId: string; runtimeKey: string; sessionId: string } =>
+          item !== null,
+      );
+    if (staleLaunches.length === 0) return;
+
+    setRuntimeSpecs((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const stale of staleLaunches) {
+        const spec = next[stale.runtimeKey];
+        if (!spec || spec.launchSession?.session_id !== stale.sessionId) continue;
+        next[stale.runtimeKey] = { ...spec, launchSession: undefined };
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setSelectedLaunchSessions((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const stale of staleLaunches) {
+        if (next[stale.agentId]?.session_id !== stale.sessionId) continue;
+        delete next[stale.agentId];
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setSessionSelections((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const stale of staleLaunches) {
+        const selection = next[stale.agentId];
+        if (selection?.kind !== "resume" || selection.sessionId !== stale.sessionId) continue;
+        next[stale.agentId] = { kind: "current" };
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [runtimeSnapshots, runtimeSpecs]);
+
   const activeRuntime = runtimeSnapshots[activeRuntimeKey] ?? EMPTY_RUNTIME_SNAPSHOT;
   const activeRuntimeActions = runtimeActionsRef.current[activeRuntimeKey];
   const messages = activeRuntime.messages;
@@ -225,7 +281,13 @@ export function ChatView({
   const selectedWorkspace = workspaces.find(
     (workspace) => workspace.path === selectedWorkspacePath,
   );
-  const sessionSelection = sessionSelections[selectedAgent] ?? { kind: "current" };
+  const activeWorkspacePath =
+    runtimeSpecs[activeRuntimeKey]?.launchSession?.workspace ??
+    runtimeSpecs[activeRuntimeKey]?.workspacePath ??
+    resumeReplay?.workspace ??
+    selectedWorkspace?.path ??
+    defaultWorkspacePath;
+  const sessionSelection = sessionSelections[selectedAgent] ?? { kind: "new" };
   const selectedLaunchSession =
     sessionSelection.kind === "resume" &&
     selectedLaunchSessions[selectedAgent]?.agent_id === selectedAgent &&
@@ -1164,6 +1226,7 @@ export function ChatView({
           agentLabel={agentLabel}
           routeLabel={routeLabel}
           headerSessionLabel={headerSessionLabel}
+          workspacePath={activeWorkspacePath}
           sessionId={meta.sessionId}
           chatStatus={chatStatus}
           statusLabel={statusLabel}
@@ -1236,6 +1299,7 @@ export function ChatView({
               replayLoading={replayLoading}
               replayTitle={resumeReplay?.title}
               displaySettings={displaySettings}
+              workspacePath={activeWorkspacePath}
             />
 
             <PendingPermissions

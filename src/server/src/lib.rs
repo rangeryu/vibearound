@@ -17,11 +17,11 @@ use tokio::task::JoinHandle;
 use common::auth::{self, AuthToken};
 use common::channels::{handle_channel_input, ChannelManager, WebChannelManager};
 use common::config;
-use common::conversations::ConversationManager;
 use common::plugins;
 use common::process::registry::{self as child_registry, ChildRegistry};
 use common::pty::{PtySessionManager, Registry, SessionId};
 use common::tunnels::{self, TunnelManager};
+use common::workspace::WorkspaceThreadManager;
 
 /// Unified daemon that starts and manages all VibeAround services.
 /// Both the server binary and the desktop (Tauri) binary use this.
@@ -36,7 +36,7 @@ pub struct ServerDaemon {
 
 pub struct RunningDaemon {
     pub channel_hub: Arc<ChannelManager>,
-    pub conversation_manager: Arc<ConversationManager>,
+    pub workspace_thread_manager: Arc<WorkspaceThreadManager>,
     pub web_channel: Arc<WebChannelManager>,
     pub web_handle: JoinHandle<Result<(), String>>,
     pub tunnel_handle: JoinHandle<()>,
@@ -54,7 +54,7 @@ pub struct RunningDaemon {
 
 impl RunningDaemon {
     pub async fn stop(self) {
-        self.conversation_manager.shutdown_all().await;
+        self.workspace_thread_manager.shutdown_all().await;
         self.channel_hub.shutdown_all().await;
 
         // Safety net: synchronously kill any child process still registered
@@ -156,25 +156,22 @@ impl ServerDaemon {
             );
         }
 
-        // 1. Initialize hub architecture: ConversationManager → ChannelManager
-        let conversation_manager = Arc::new(ConversationManager::new());
-        let channel_hub = Arc::new(ChannelManager::new(Arc::clone(&conversation_manager)));
+        // 1. Initialize workspace-thread routing and channel hub.
+        let workspace_thread_manager = WorkspaceThreadManager::new_default();
+        let channel_hub = Arc::new(ChannelManager::new(Arc::clone(&workspace_thread_manager)));
         let web_channel = WebChannelManager::new();
-
-        // 2. ChannelManager subscribes to SystemEvent for agent info forwarding
-        channel_hub.start_event_forwarder(conversation_manager.subscribe());
 
         // Register built-in internal channels.
         let (web_outbound_tx, mut web_outbound_rx) = web_channel.sender();
         channel_hub.start_internal_plugin("web", web_outbound_tx);
         let web_dispatch_handle = {
             let web_channel = Arc::clone(&web_channel);
-            let conversation_manager = Arc::clone(&conversation_manager);
+            let workspace_thread_manager = Arc::clone(&workspace_thread_manager);
             tokio::spawn(async move {
                 while let Some(output) = web_outbound_rx.recv().await {
                     if let Some(deadline) = web_channel.dispatch_output(output) {
                         web_channel
-                            .schedule_idle_close(Arc::clone(&conversation_manager), deadline);
+                            .schedule_idle_close(Arc::clone(&workspace_thread_manager), deadline);
                     }
                 }
             })
@@ -188,7 +185,7 @@ impl ServerDaemon {
         let mut input_rx = channel_hub
             .take_input_rx()
             .context("input_rx already taken")?;
-        let manager_for_input = Arc::clone(&conversation_manager);
+        let manager_for_input = Arc::clone(&workspace_thread_manager);
         let plugin_host_for_input = channel_hub.plugin_host();
         let channel_input_shutdown = Arc::new(Notify::new());
         let input_shutdown_for_task = Arc::clone(&channel_input_shutdown);
@@ -199,10 +196,10 @@ impl ServerDaemon {
                     _ = input_shutdown_for_task.notified() => break,
                     maybe = input_rx.recv() => {
                         let Some(input) = maybe else { break };
-                        let conversation_manager = Arc::clone(&manager_for_input);
-                        let plugin_host = Arc::clone(&plugin_host_for_input);
-                        tokio::spawn(async move {
-                            handle_channel_input(&conversation_manager, &plugin_host, input).await;
+                            let workspace_thread_manager = Arc::clone(&manager_for_input);
+                            let plugin_host = Arc::clone(&plugin_host_for_input);
+                            tokio::spawn(async move {
+                            handle_channel_input(&workspace_thread_manager, &plugin_host, input).await;
                         });
                     }
                 }
@@ -275,7 +272,7 @@ impl ServerDaemon {
 
         Ok(RunningDaemon {
             channel_hub,
-            conversation_manager,
+            workspace_thread_manager,
             web_channel,
             web_handle,
             tunnel_handle,

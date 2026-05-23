@@ -60,20 +60,24 @@ fn validate_workspace_name(name: &str) -> Result<String, (StatusCode, String)> {
 pub async fn add_workspace_handler(
     Json(body): Json<WorkspacePathBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let path = std::path::PathBuf::from(&body.path);
+    let path = common::workspace::normalize_workspace_cwd(std::path::PathBuf::from(&body.path));
     if !path.exists() || !path.is_dir() {
         return Err((
             StatusCode::BAD_REQUEST,
-            format!("Path does not exist or is not a directory: {}", body.path),
+            format!(
+                "Path does not exist or is not a directory: {}",
+                path.to_string_lossy()
+            ),
         ));
     }
+    let path_string = path.to_string_lossy().to_string();
     config::update_settings_json(|root| {
         if let Some(obj) = root.as_object_mut() {
             let workspaces = obj
                 .entry("workspaces")
                 .or_insert_with(|| serde_json::json!([]));
             if let Some(arr) = workspaces.as_array_mut() {
-                let val = serde_json::Value::String(body.path.clone());
+                let val = serde_json::Value::String(path_string.clone());
                 if !arr.contains(&val) {
                     arr.push(val);
                 }
@@ -82,7 +86,7 @@ pub async fn add_workspace_handler(
     })
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
-    Ok(Json(serde_json::json!({ "added": body.path })))
+    Ok(Json(serde_json::json!({ "added": path_string })))
 }
 
 /// POST /api/workspaces/create -- create and register a workspace under the built-in root.

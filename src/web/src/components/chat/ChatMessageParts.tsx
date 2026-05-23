@@ -7,12 +7,14 @@ interface ChatMessagePartsProps {
   message: ChatMessage;
   isStreaming?: boolean;
   displaySettings: ChatDisplaySettings;
+  workspacePath?: string;
 }
 
 export function ChatMessageParts({
   message,
   isStreaming = false,
   displaySettings,
+  workspacePath,
 }: ChatMessagePartsProps) {
   if ((message.parts ?? []).length === 0) {
     if (message.role === "user") {
@@ -30,6 +32,7 @@ export function ChatMessageParts({
         message={message}
         isStreaming={isStreaming}
         displaySettings={displaySettings}
+        workspacePath={workspacePath}
       />
     );
   }

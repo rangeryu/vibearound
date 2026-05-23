@@ -533,9 +533,11 @@ function WorkGroup({
 function ProcessDetails({
   segments,
   displaySettings,
+  workspacePath,
 }: {
   segments: TurnDisplaySegment[];
   displaySettings: ChatDisplaySettings;
+  workspacePath?: string;
 }) {
   const { t } = useI18n();
   const visibleSegments = segments.filter((segment) => {
@@ -563,7 +565,13 @@ function ProcessDetails({
               />
             );
           }
-          return <ResultBlock key={segment.id} item={segment.item} />;
+          return (
+            <ResultBlock
+              key={segment.id}
+              item={segment.item}
+              workspacePath={workspacePath}
+            />
+          );
         })}
       </div>
     </details>
@@ -573,9 +581,11 @@ function ProcessDetails({
 function ResultBlock({
   item,
   isStreaming = false,
+  workspacePath,
 }: {
   item: ResultItem;
   isStreaming?: boolean;
+  workspacePath?: string;
 }) {
   if (item.kind === "content") {
     return (
@@ -587,7 +597,7 @@ function ResultBlock({
     );
   }
   if (item.item.type === "diff") {
-    return <DiffRenderer diff={item.item} />;
+    return <DiffRenderer diff={item.item} workspacePath={workspacePath} />;
   }
   if (item.item.type === "content") {
     return <ContentBlockRenderer block={item.item.content} role="assistant" />;
@@ -595,14 +605,32 @@ function ResultBlock({
   return null;
 }
 
-function ResultItems({ items }: { items: ResultItem[] }) {
+function ResultItems({
+  items,
+  workspacePath,
+}: {
+  items: ResultItem[];
+  workspacePath?: string;
+}) {
   return (
     <>
       {groupResultItems(items).map((group) => {
         if (group.kind === "diffGroup") {
-          return <DiffGroupRenderer key={group.id} items={group.items} />;
+          return (
+            <DiffGroupRenderer
+              key={group.id}
+              items={group.items}
+              workspacePath={workspacePath}
+            />
+          );
         }
-        return <ResultBlock key={group.id} item={group.item} />;
+        return (
+          <ResultBlock
+            key={group.id}
+            item={group.item}
+            workspacePath={workspacePath}
+          />
+        );
       })}
     </>
   );
@@ -612,10 +640,12 @@ export function ChatTurnDisplay({
   message,
   isStreaming,
   displaySettings,
+  workspacePath,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
   displaySettings: ChatDisplaySettings;
+  workspacePath?: string;
 }) {
   if (isStreaming) {
     const model = buildTurnDisplayModel(message);
@@ -642,6 +672,7 @@ export function ChatTurnDisplay({
               key={segment.id}
               item={segment.item}
               isStreaming={isLastSegment}
+              workspacePath={workspacePath}
             />
           );
         })}
@@ -668,11 +699,12 @@ export function ChatTurnDisplay({
       <ProcessDetails
         segments={model.processSegments}
         displaySettings={displaySettings}
+        workspacePath={workspacePath}
       />
       {model.finalItems.map((item) => (
-        <ResultBlock key={item.id} item={item} />
+        <ResultBlock key={item.id} item={item} workspacePath={workspacePath} />
       ))}
-      <ResultItems items={model.resultItems} />
+      <ResultItems items={model.resultItems} workspacePath={workspacePath} />
     </div>
   );
 }

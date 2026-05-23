@@ -120,6 +120,11 @@ fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn restart_services<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    restart_daemon(&app).await
+}
+
+#[tauri::command]
 fn set_ui_locale<R: Runtime>(app: AppHandle<R>, locale: String) -> Result<(), String> {
     tray::set_ui_locale(&app, &locale)
 }
@@ -194,6 +199,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_auth_token,
             open_external_url,
+            restart_services,
             set_ui_locale,
             onboarding::get_settings,
             onboarding::list_channel_plugins,

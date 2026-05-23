@@ -27,6 +27,7 @@ import type { ProfileFormSubmit } from "../Launch/ProfileFormDialog";
 import type { CatalogEntry, ProfileSummary } from "../Launch/types";
 import type {
   AgentSummary,
+  ChannelVerboseConfig,
   DiscoveredChannelPlugin,
   PluginRegistryEntry,
   Settings,
@@ -102,6 +103,9 @@ export default function Onboarding() {
   const [channelConfigs, setChannelConfigs] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [channelVerbose, setChannelVerbose] = useState<
+    Record<string, ChannelVerboseConfig>
+  >({});
   const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(
     new Set(),
   );
@@ -173,6 +177,7 @@ export default function Onboarding() {
           const channels = loadedSettings.channels ?? {};
           const enabled = new Set<string>();
           const configs: Record<string, Record<string, string>> = {};
+          const verbose: Record<string, ChannelVerboseConfig> = {};
           for (const [id, channelConfig] of Object.entries(channels)) {
             if (!registryPluginIds.has(id)) continue;
             enabled.add(id);
@@ -183,9 +188,11 @@ export default function Onboarding() {
               }
             }
             configs[id] = configMap;
+            verbose[id] = parseChannelVerbose(channelConfig.verbose);
           }
           setEnabledChannels(enabled);
           setChannelConfigs(configs);
+          setChannelVerbose(verbose);
 
           const provider = loadedSettings.tunnel?.provider;
           if (
@@ -219,6 +226,11 @@ export default function Onboarding() {
       else next.delete(pluginId);
       return next;
     });
+    if (enabled) {
+      setChannelVerbose((prev) =>
+        prev[pluginId] ? prev : { ...prev, [pluginId]: defaultChannelVerbose() },
+      );
+    }
   }, []);
 
   const updateChannelConfig = useCallback(
@@ -226,6 +238,23 @@ export default function Onboarding() {
       setChannelConfigs((prev) => ({
         ...prev,
         [pluginId]: { ...(prev[pluginId] ?? {}), [key]: value },
+      }));
+    },
+    [],
+  );
+
+  const updateChannelVerbose = useCallback(
+    (
+      pluginId: string,
+      key: keyof ChannelVerboseConfig,
+      value: boolean,
+    ) => {
+      setChannelVerbose((prev) => ({
+        ...prev,
+        [pluginId]: {
+          ...(prev[pluginId] ?? defaultChannelVerbose()),
+          [key]: value,
+        },
       }));
     },
     [],
@@ -288,6 +317,7 @@ export default function Onboarding() {
       enabledChannels,
       registryPluginIds: new Set(pluginRegistry.map((plugin) => plugin.id)),
       channelConfigs,
+      channelVerbose,
       discoveredPlugins,
       tunnelProvider,
       ngrokToken,
@@ -302,6 +332,7 @@ export default function Onboarding() {
     enabledAgents,
     enabledChannels,
     channelConfigs,
+    channelVerbose,
     discoveredPlugins,
     tunnelProvider,
     ngrokToken,
@@ -428,10 +459,12 @@ export default function Onboarding() {
             discoveredPlugins={discoveredPlugins}
             enabledChannels={enabledChannels}
             channelConfigs={channelConfigs}
+            channelVerbose={channelVerbose}
             installingPlugins={installingPlugins}
             authStates={authStates}
             onToggleChannel={toggleChannel}
             onConfigChange={updateChannelConfig}
+            onVerboseChange={updateChannelVerbose}
             onInstallPlugin={installPlugin}
             onStartAuth={startAuth}
             onCancelAuth={cancelAuth}
@@ -533,4 +566,28 @@ export default function Onboarding() {
       )}
     </div>
   );
+}
+
+function defaultChannelVerbose(): ChannelVerboseConfig {
+  return {
+    show_thinking: false,
+    show_tool_use: false,
+  };
+}
+
+function parseChannelVerbose(value: unknown): ChannelVerboseConfig {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return defaultChannelVerbose();
+  }
+  const verbose = value as Record<string, unknown>;
+  return {
+    show_thinking:
+      typeof verbose.show_thinking === "boolean"
+        ? verbose.show_thinking
+        : false,
+    show_tool_use:
+      typeof verbose.show_tool_use === "boolean"
+        ? verbose.show_tool_use
+        : false,
+  };
 }

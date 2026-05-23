@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useI18n } from "@va/i18n";
 import { cn } from "@/lib/utils";
 import { buildLineDiff, diffLineStats, type DiffLine } from "./diffUtils";
+import { workspaceRelativePath } from "./pathDisplay";
 import type { ToolCallContent } from "@agentclientprotocol/sdk";
 
 export type DiffContent = Extract<ToolCallContent, { type: "diff" }>;
@@ -56,18 +57,27 @@ export function DiffLines({ lines }: { lines: DiffLine[] }) {
   );
 }
 
-export function DiffRenderer({ diff }: { diff: DiffContent }) {
+export function DiffRenderer({
+  diff,
+  workspacePath,
+}: {
+  diff: DiffContent;
+  workspacePath?: string;
+}) {
   const lines = useMemo(
     () => buildLineDiff(diff.oldText, diff.newText),
     [diff.oldText, diff.newText],
   );
   const stats = useMemo(() => diffLineStats(lines), [lines]);
+  const displayPath = workspaceRelativePath(diff.path, workspacePath) ?? diff.path;
 
   return (
     <details className="overflow-hidden rounded-md border border-border/70 bg-background/70">
       <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm">
         <FileDiff className="h-4 w-4 text-primary" />
-        <span className="min-w-0 truncate text-foreground/90">{diff.path}</span>
+        <span className="min-w-0 truncate text-foreground/90" title={diff.path}>
+          {displayPath}
+        </span>
         <span className="ml-auto shrink-0 font-mono text-xs text-emerald-600">
           +{stats.added}
         </span>

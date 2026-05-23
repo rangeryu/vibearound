@@ -77,6 +77,7 @@ pub async fn list_launch_sessions_handler(
     let workspace = query
         .workspace_path
         .map(std::path::PathBuf::from)
+        .map(common::workspace::normalize_workspace_cwd)
         .unwrap_or_else(|| common::config::ensure_loaded().resolve_workspace(&agent_id));
     let limit = query.limit.unwrap_or(25).clamp(1, 100);
     let sessions = common::launch_sessions::list_for_agent_workspace_with_archived(
@@ -154,6 +155,7 @@ async fn set_launch_session_archived(
         .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
     let workspace = workspace_path
         .map(std::path::PathBuf::from)
+        .map(common::workspace::normalize_workspace_cwd)
         .unwrap_or_else(|| common::config::ensure_loaded().resolve_workspace(&agent_id));
 
     let result = if archived {

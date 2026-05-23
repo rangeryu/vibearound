@@ -228,6 +228,7 @@ pub async fn run_web_server(
             get(ws_domains::ws_agents_runtime_handler),
         )
         .route("/api/channels", get(api::list_channels_handler))
+        .route("/api/channels/sync", post(api::sync_channels_handler))
         .route("/api/tunnels", get(api::list_tunnels_handler))
         .route("/api/agents/runtime", get(api::list_agents_runtime_handler))
         .route("/api/channels/{kind}/stop", post(api::stop_channel_handler))

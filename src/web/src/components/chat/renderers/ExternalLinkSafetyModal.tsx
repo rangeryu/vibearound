@@ -115,7 +115,7 @@ export function ExternalLinkSafetyModal({
           </Button>
           <Button
             type="button"
-            variant="solid"
+            variant="default"
             className="h-11 cursor-pointer"
             onClick={handleConfirm}
           >

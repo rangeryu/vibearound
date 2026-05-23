@@ -325,7 +325,9 @@ pub enum ChatEvent {
 
 /// One agent runtime, as returned by `GET /api/agents/runtime`.
 ///
-/// Sources: `common::conversations::ConversationManager::list()` → `Conversation::state()`.
+/// Sources: `WorkspaceThreadManager::list()` → live `ThreadRuntimeState`
+/// entries. Persisted workspace threads that do not currently own a host
+/// process are intentionally omitted.
 ///
 /// # Wire format (JSON)
 /// ```json

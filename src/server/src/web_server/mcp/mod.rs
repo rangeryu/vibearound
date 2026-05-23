@@ -4,8 +4,8 @@
 //! Methods: initialize, notifications/initialized, tools/list, tools/call.
 //!
 //! MCP tools are **stateless** — they validate inputs and return text.
-//! They never touch ConversationManager, pods, or bridges. Session loading happens
-//! later when the user sends `/pickup` in the IM channel.
+//! They never touch agent processes directly. Session loading happens later
+//! when the user sends `/pickup` in an IM/web route.
 //!
 //! ## Module layout
 //!

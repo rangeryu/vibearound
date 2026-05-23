@@ -11,8 +11,8 @@ export type { AgentRuntime };
 /**
  * Agents tab in the desktop dashboard. Subscribes to
  * `/ws/agents/runtime` for live updates and falls back to
- * `/api/agents/runtime` polling on disconnect. `kill` routes
- * through `DELETE /api/agents/:route_key`, where `route_key` is
+ * `/api/agents/runtime` polling on disconnect. `kill` stops the live
+ * host through `DELETE /api/agents/:route_key`, where `route_key` is
  * `channel_kind:chat_id` (e.g. `telegram:chat_42`).
  */
 export function useAgentsRuntime() {
