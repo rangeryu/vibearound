@@ -144,15 +144,15 @@ export function ProfileConnectionDialog({
         }
       }}
     >
-      <DialogContent className="w-[min(740px,calc(100vw-32px))]">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100vh-64px)] w-[min(860px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(860px,calc(100vw-32px))]">
+        <DialogHeader className="shrink-0 px-6 pt-6 pr-12">
           <DialogTitle>{t("{{label}} Connections", { label: profile.label })}</DialogTitle>
           <DialogDescription>
             {t("Choose how coding agents connect through this profile.")}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-1 min-h-0 flex-col gap-2 overflow-y-auto px-4 pb-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-6 pb-3 [scrollbar-gutter:stable]">
           {resolved.map((connection) => {
             const { agent } = connection;
             const current = draft[agent.id];
@@ -224,7 +224,7 @@ export function ProfileConnectionDialog({
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-[13px] font-semibold">{agent.label}</div>
                       <Badge
-                        variant={connection.status === "unsupported" ? "muted" : "default"}
+                        variant={connection.status === "unsupported" ? "secondary" : "default"}
                         className={
                           connection.status === "via_bridge"
                             ? "bg-primary/10 text-primary"
@@ -561,9 +561,9 @@ export function ProfileConnectionDialog({
           })}
         </div>
 
-        {error && <div className="px-4 text-[11px] text-destructive">{error}</div>}
+        {error && <div className="shrink-0 px-6 text-[11px] text-destructive">{error}</div>}
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border px-6 py-4">
           <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving}>
             {t("Cancel")}
           </Button>

@@ -182,8 +182,8 @@ export function ManualSettingDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[min(700px,calc(100vw-32px))]">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100vh-64px)] w-[min(700px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(700px,calc(100vw-32px))]">
+        <DialogHeader className="shrink-0 px-6 pt-6 pr-12">
           <DialogTitle>
             {t("{{agent}} manual setting", { agent: setting.agentLabel })}
           </DialogTitle>
@@ -194,7 +194,7 @@ export function ManualSettingDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid flex-1 min-h-0 gap-3 overflow-y-auto px-4 pb-4">
+        <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]">
           <div className="grid gap-2 rounded-md border border-border/70 bg-muted/25 p-3 text-[12px]">
             <ConfigInfoRow label={t("Configuration file")} value={setting.filePath} />
           </div>

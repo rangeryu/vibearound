@@ -146,7 +146,7 @@ function PreviewRow({ preview, tunnelUrl, localBase, isFirst, onClose }: Preview
                 {preview.kind}
               </Badge>
               {preview.port != null && (
-                <Badge variant="muted" className="text-[10px] font-mono">
+                <Badge variant="secondary" className="text-[10px] font-mono">
                   :{preview.port}
                 </Badge>
               )}

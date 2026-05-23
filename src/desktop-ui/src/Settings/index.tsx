@@ -341,8 +341,8 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[85vh] w-[780px]">
-        <DialogHeader>
+      <DialogContent className="flex h-[85vh] w-[min(780px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-4 sm:max-w-[min(780px,calc(100vw-32px))]">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <SettingsIcon className="h-4 w-4 text-primary" />
             {t("Settings")}
@@ -358,7 +358,7 @@ export function SettingsDialog({
         )}
 
         <Tabs defaultValue="general" className="min-h-0 flex-1">
-          <TabsList className="mx-4 mb-3">
+          <TabsList className="mb-3 shrink-0">
             <TabsTrigger value="general">
               <SettingsIcon className="h-3 w-3" />
               {t("General")}
@@ -375,7 +375,7 @@ export function SettingsDialog({
 
           <TabsContent
             value="general"
-            className="min-h-0 overflow-y-auto px-4 pb-4 [scrollbar-gutter:stable]"
+            className="min-h-0 overflow-y-auto pr-3 pb-1 [scrollbar-gutter:stable]"
           >
             <div className="space-y-2">
               <SettingsActionRow
@@ -414,7 +414,7 @@ export function SettingsDialog({
 
           <TabsContent
             value="im"
-            className="min-h-0 overflow-y-auto px-4 pb-4 [scrollbar-gutter:stable]"
+            className="min-h-0 overflow-y-auto pr-3 pb-1 [scrollbar-gutter:stable]"
           >
             {loading ? (
               <LoadingBlock />
@@ -434,6 +434,7 @@ export function SettingsDialog({
                   onInstallPlugin={installPlugin}
                   onStartAuth={(pluginId) => void startAuth(pluginId)}
                   onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
+                  switchSize="sm"
                 />
                 <div className="flex justify-end border-t border-border pt-3">
                   <Button
@@ -451,7 +452,7 @@ export function SettingsDialog({
 
           <TabsContent
             value="tunnel"
-            className="min-h-0 overflow-y-auto px-4 pb-4 [scrollbar-gutter:stable]"
+            className="min-h-0 overflow-y-auto pr-3 pb-1 [scrollbar-gutter:stable]"
           >
             {loading ? (
               <LoadingBlock />
