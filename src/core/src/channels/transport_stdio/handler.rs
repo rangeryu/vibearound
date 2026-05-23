@@ -15,7 +15,7 @@ use crate::workspace::WorkspaceThreadManager;
 
 use super::super::plugin_host::PluginHost;
 use super::super::prompt::handle_prompt;
-use super::super::{ChannelEnvelope, ChannelInput, ChannelOutput};
+use super::super::{ChannelEnvelope, ChannelInput};
 
 /// ACP Agent handler for a channel plugin. `prompt()` calls through to
 /// `handle_prompt()` directly — blocks until the turn completes and
@@ -116,19 +116,6 @@ impl PluginAgentHandler {
             content_blocks,
         )
         .await;
-
-        // Surface detailed error to the IM chat so the user sees more than
-        // the plugin's default "Internal error" rendering. The ACP Error's
-        // Display impl includes `data.details` when present.
-        if let Err(ref e) = result {
-            self.plugin_host
-                .send_output(ChannelOutput::SystemText {
-                    route,
-                    text: format!("⚠️ {}", e),
-                    reply_to: None,
-                })
-                .await;
-        }
 
         result
     }

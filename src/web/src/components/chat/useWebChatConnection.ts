@@ -666,7 +666,7 @@ export function useWebChatConnection({
           if (workspacePath) {
             payload.sessionWorkspace = workspacePath;
           }
-        } else if (launchSession) {
+        } else if (sessionSelection.kind === "resume" && launchSession) {
           payload.sessionAction = "resume";
           payload.sessionId = launchSession.session_id;
           payload.sessionWorkspace = launchSession.workspace;

@@ -391,7 +391,14 @@ impl ThreadRuntime {
                     .push(session);
                 thread.updated_at = occurred_at.clone();
             }
-            ThreadEvent::Closed { occurred_at, .. } => {
+            ThreadEvent::Closed {
+                occurred_at,
+                reason,
+                ..
+            } => {
+                if !super::store::closed_reason_closes_thread(reason.as_deref()) {
+                    return Ok(());
+                }
                 thread.status = ThreadStatus::Closed;
                 thread.updated_at = occurred_at.clone();
             }

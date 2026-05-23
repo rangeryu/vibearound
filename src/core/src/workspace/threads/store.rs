@@ -321,8 +321,12 @@ impl ThreadProjection {
             ThreadEvent::Closed {
                 occurred_at,
                 thread_id,
+                reason,
                 ..
             } => {
+                if !closed_reason_closes_thread(reason.as_deref()) {
+                    return Ok(());
+                }
                 let thread = self.thread_mut(thread_id)?;
                 thread.status = ThreadStatus::Closed;
                 thread.updated_at = occurred_at.clone();
@@ -387,6 +391,13 @@ impl ThreadProjection {
                 thread_id: thread_id.clone(),
             })
     }
+}
+
+pub(crate) fn closed_reason_closes_thread(reason: Option<&str>) -> bool {
+    !matches!(
+        reason,
+        None | Some("web idle timeout") | Some("web resume aborted")
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -488,6 +499,28 @@ mod tests {
                 .as_deref(),
             Some("first")
         );
+    }
+
+    #[test]
+    fn web_lifecycle_close_events_do_not_close_threads() {
+        let thread_id = WorkspaceThreadId::from("wt_a");
+        for reason in [None, Some("web idle timeout"), Some("web resume aborted")] {
+            let events = vec![
+                ThreadEvent::created(
+                    thread_id.clone(),
+                    WorkspaceId::from("ws_a"),
+                    HostBinding::new("codex", Some("direct".to_string())),
+                ),
+                ThreadEvent::closed(thread_id.clone(), reason.map(str::to_string)),
+            ];
+
+            let projection = ThreadProjection::from_events(&events).unwrap();
+
+            assert_eq!(
+                projection.get(&thread_id).unwrap().status,
+                ThreadStatus::Open
+            );
+        }
     }
 
     #[test]

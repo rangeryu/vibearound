@@ -115,6 +115,15 @@ impl WorkspaceThreadManager {
         self.create_thread_for_route(route, workspace_id).await
     }
 
+    pub async fn create_thread_for_cwd(
+        &self,
+        route: &RouteKey,
+        cwd: PathBuf,
+    ) -> anyhow::Result<Arc<ThreadRuntime>> {
+        let workspace = self.ensure_workspace_for_cwd(cwd).await?;
+        self.create_thread_for_route(route, workspace.id).await
+    }
+
     pub async fn close_route(
         &self,
         route: &RouteKey,
@@ -128,6 +137,16 @@ impl WorkspaceThreadManager {
             .close(reason)
             .await
             .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    pub async fn detach_route(&self, route: &RouteKey) -> anyhow::Result<()> {
+        self.attachment_store
+            .append(&RouteAttachmentEvent::detached(route.clone()))
+            .await
+            .context("append route detach")?;
+        self.pending_selections.remove(route);
+        self.notify_change();
+        Ok(())
     }
 
     pub async fn close_thread(
@@ -154,7 +173,7 @@ impl WorkspaceThreadManager {
         let host_binding = HostBinding::new(agent_id.clone(), profile_id.clone());
         let projection = self.thread_projection().await?;
         let thread = projection
-            .for_workspace(&workspace.id, false)
+            .for_workspace(&workspace.id, true)
             .find(|thread| {
                 thread
                     .agent_sessions
@@ -168,7 +187,9 @@ impl WorkspaceThreadManager {
             });
 
         self.ensure_thread_persisted(&thread).await?;
-        if thread.host_binding != host_binding {
+        if thread.status != crate::workspace::threads::store::ThreadStatus::Closed
+            && thread.host_binding != host_binding
+        {
             self.thread_store
                 .append(&ThreadEvent::host_changed(
                     thread.id.clone(),
@@ -179,7 +200,9 @@ impl WorkspaceThreadManager {
                 .context("append external session host binding")?;
             self.notify_change();
         }
-        if !thread.has_agent_session(&host_binding, &session_id) {
+        if thread.status != crate::workspace::threads::store::ThreadStatus::Closed
+            && !thread.has_agent_session(&host_binding, &session_id)
+        {
             self.thread_store
                 .append(&ThreadEvent::agent_session_observed(
                     thread.id.clone(),
@@ -707,6 +730,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn detach_route_keeps_thread_open() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let route = RouteKey::new("web", "chat-a");
+
+        let runtime = manager.resolve_route_runtime(&route).await.unwrap();
+        let thread_id = runtime.state().await.thread_id;
+
+        manager.detach_route(&route).await.unwrap();
+
+        assert!(manager.current_attachment(&route).await.unwrap().is_none());
+        assert_eq!(
+            manager.thread(&thread_id).await.unwrap().unwrap().status,
+            crate::workspace::threads::store::ThreadStatus::Open
+        );
+    }
+
+    #[tokio::test]
     async fn switch_workspace_registers_existing_directory_path() {
         let (workspaces, threads, attachments) = temp_paths();
         let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
@@ -763,6 +804,97 @@ mod tests {
             .unwrap()
             .get_by_cwd(&root.canonicalize().unwrap())
             .is_some());
+    }
+
+    #[tokio::test]
+    async fn attach_external_session_reuses_closed_matching_thread() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let root = std::env::temp_dir().join(format!("vibearound-ws-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let first_route = RouteKey::new("web", "chat-a");
+        let second_route = RouteKey::new("web", "chat-b");
+
+        let first = manager
+            .attach_external_session(
+                &first_route,
+                "codex".to_string(),
+                Some("direct".to_string()),
+                "session-closed".to_string(),
+                root.clone(),
+            )
+            .await
+            .unwrap();
+        let thread_id = first.state().await.thread_id;
+
+        manager
+            .close_thread(&thread_id, Some("user closed".to_string()))
+            .await
+            .unwrap();
+
+        let second = manager
+            .attach_external_session(
+                &second_route,
+                "codex".to_string(),
+                Some("direct".to_string()),
+                "session-closed".to_string(),
+                root,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(second.state().await.thread_id, thread_id);
+        assert_eq!(
+            manager.thread(&thread_id).await.unwrap().unwrap().status,
+            crate::workspace::threads::store::ThreadStatus::Closed
+        );
+        assert_eq!(
+            manager
+                .current_attachment(&second_route)
+                .await
+                .unwrap()
+                .unwrap()
+                .thread_id,
+            thread_id
+        );
+    }
+
+    #[tokio::test]
+    async fn create_thread_for_cwd_starts_new_thread_even_when_workspace_has_threads() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let root = std::env::temp_dir().join(format!("vibearound-ws-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let first_route = RouteKey::new("web", "chat-a");
+        let second_route = RouteKey::new("web", "chat-b");
+
+        let first = manager
+            .create_thread_for_cwd(&first_route, root.clone())
+            .await
+            .unwrap();
+        let second = manager
+            .create_thread_for_cwd(&second_route, root.clone())
+            .await
+            .unwrap();
+
+        assert_ne!(
+            first.state().await.thread_id,
+            second.state().await.thread_id
+        );
+        assert_eq!(
+            first.state().await.workspace_id,
+            second.state().await.workspace_id
+        );
+        assert_eq!(second.state().await.workspace, root.canonicalize().unwrap());
+        assert_eq!(
+            manager
+                .current_attachment(&second_route)
+                .await
+                .unwrap()
+                .unwrap()
+                .thread_id,
+            second.state().await.thread_id
+        );
     }
 
     #[tokio::test]

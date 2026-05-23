@@ -97,6 +97,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                 &active_route,
                             )
                             .await;
+                            let mut dispatch_input = true;
                             if let Some(route) = input_route(&input) {
                                 state.web_channel.mark_route_active(&route);
                                 remember_web_route_agent(&state, &route, input_agent(&input)).await;
@@ -117,15 +118,39 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                         .await;
                                     }
                                     Some(WebChatSessionIntent::New { cwd }) => {
-                                        apply_web_launch_selection(
-                                            &state, &route, &input, profile, cwd,
-                                        )
-                                        .await;
-                                        let _ = state
-                                            .channel_hub
-                                            .workspace_thread_manager()
-                                            .create_thread_in_current_workspace(&route)
-                                            .await;
+                                        let manager = state.channel_hub.workspace_thread_manager();
+                                        let created = match cwd {
+                                            Some(cwd) => {
+                                                manager
+                                                    .create_thread_for_cwd(
+                                                        &route,
+                                                        std::path::PathBuf::from(cwd),
+                                                    )
+                                                    .await
+                                            }
+                                            None => {
+                                                manager
+                                                    .create_thread_in_current_workspace(&route)
+                                                    .await
+                                            }
+                                        };
+                                        match created {
+                                            Ok(_) => {
+                                                apply_web_launch_selection(
+                                                    &state, &route, &input, profile, None,
+                                                )
+                                                .await;
+                                            }
+                                            Err(error) => {
+                                                dispatch_input = false;
+                                                send_web_system_text(
+                                                    &state,
+                                                    &route,
+                                                    &format!("❌ {}", error),
+                                                )
+                                                .await;
+                                            }
+                                        }
                                     }
                                     None => {
                                         apply_web_launch_selection(
@@ -144,7 +169,9 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
                                     wait_for_session_ready,
                                 );
                             }
-                            state.channel_hub.handle_input(input);
+                            if dispatch_input {
+                                state.channel_hub.handle_input(input);
+                            }
                         }
                         WebChatInput::SetMode { mode_id } => {
                             apply_web_session_mode(&state, &active_route, &mode_id).await;
@@ -288,7 +315,7 @@ async fn handle_chat_socket(socket: WebSocket, state: AppState) {
         let _ = state
             .channel_hub
             .workspace_thread_manager()
-            .close_route(&active_route, None)
+            .detach_route(&active_route)
             .await;
     }
 }
@@ -310,7 +337,7 @@ async fn abort_direct_resume_task(
     let _ = state
         .channel_hub
         .workspace_thread_manager()
-        .close_route(route, Some("web resume aborted".to_string()))
+        .detach_route(route)
         .await;
 }
 
@@ -1049,6 +1076,27 @@ fn output_to_chat_event(output: ChannelOutput) -> ChatEvent {
             ChatEvent::AgentReady { agent, version }
         }
         ChannelOutput::SessionReady { session_id, .. } => ChatEvent::SessionReady { session_id },
+        ChannelOutput::SessionInfo { info, .. } => ChatEvent::SystemText {
+            text: format!(
+                "Workspace: {}\nAgent: {}{}\nProfile: {}\n{}: {}",
+                info.workspace_path,
+                info.agent.name,
+                if info.agent.version.is_empty() {
+                    String::new()
+                } else {
+                    format!(" v{}", info.agent.version)
+                },
+                info.agent
+                    .profile_id
+                    .unwrap_or_else(|| "default".to_string()),
+                match info.start {
+                    common::channels::types::ChannelSessionStart::New => "New session started",
+                    common::channels::types::ChannelSessionStart::Resumed =>
+                        "Continuing from session",
+                },
+                info.session_id
+            ),
+        },
         ChannelOutput::SessionMode { session_mode, .. } => ChatEvent::SessionMode { session_mode },
         ChannelOutput::CommandMenu {
             system_commands,

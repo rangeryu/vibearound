@@ -88,6 +88,10 @@ pub enum ChannelOutput {
         route: RouteKey,
         session_id: String,
     },
+    SessionInfo {
+        route: RouteKey,
+        info: ChannelSessionInfo,
+    },
     SessionMode {
         route: RouteKey,
         session_mode: serde_json::Value,
@@ -128,6 +132,7 @@ impl ChannelOutput {
             | Self::SystemText { route, .. }
             | Self::AgentReady { route, .. }
             | Self::SessionReady { route, .. }
+            | Self::SessionInfo { route, .. }
             | Self::SessionMode { route, .. }
             | Self::CommandMenu { route, .. }
             | Self::PromptDone { route, .. }
@@ -135,6 +140,35 @@ impl ChannelOutput {
             | Self::PermissionRequest { route, .. } => route,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelSessionInfo {
+    pub workspace_id: String,
+    pub workspace_path: String,
+    pub thread_id: String,
+    pub agent: ChannelSessionAgent,
+    pub session_id: String,
+    pub start: ChannelSessionStart,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelSessionAgent {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChannelSessionStart {
+    New,
+    Resumed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

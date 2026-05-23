@@ -246,9 +246,7 @@ impl WebChannelManager {
             if !manager.is_idle_deadline_current(&deadline) {
                 return;
             }
-            let _ = workspace_threads
-                .close_route(&deadline.route, Some("web idle timeout".to_string()))
-                .await;
+            let _ = workspace_threads.detach_route(&deadline.route).await;
         });
     }
 
@@ -263,6 +261,9 @@ impl WebChannelManager {
 
     pub fn dispatch_output(&self, output: ChannelOutput) -> Option<WebRouteIdleDeadline> {
         let route = output.route_key().clone();
+        if matches!(output, ChannelOutput::SessionInfo { .. }) {
+            return self.bump_idle_route(&route);
+        }
         let chat_id = route.chat_id.clone();
         let mut follow_up_outputs = Vec::new();
         if let ChannelOutput::SessionReady { session_id, .. } = &output {
