@@ -47,6 +47,12 @@ pub async fn list_channels_handler(
     )
 }
 
+/// POST /api/channels/sync -- reload settings.json and reconcile IM channel
+/// plugins without restarting the whole daemon.
+pub async fn sync_channels_handler(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state.channel_hub.sync_configured_plugins().await)
+}
+
 /// GET /api/tunnels -- live list of tunnels from `TunnelManager`.
 pub async fn list_tunnels_handler(
     State(state): State<AppState>,

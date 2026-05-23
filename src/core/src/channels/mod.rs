@@ -30,6 +30,7 @@ pub mod types;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use agent_client_protocol::schema as acp;
+use serde::Serialize;
 use tokio::sync::mpsc;
 
 use crate::plugins::DiscoveredPlugin;
@@ -42,6 +43,15 @@ use self::plugin_host::PluginHost;
 pub use self::prompt::handle_channel_input;
 pub use self::transport_websocket::WebChannelManager;
 pub use self::types::{ChannelEnvelope, ChannelInput, ChannelOutput};
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ChannelSyncReport {
+    pub registered: Vec<String>,
+    pub restarted: Vec<String>,
+    pub started: Vec<String>,
+    pub stopped: Vec<String>,
+    pub missing: Vec<String>,
+}
 
 /// Facade over the plugin host + monitor. Built once at daemon boot and
 /// passed around as `Arc<ChannelManager>`.
@@ -124,6 +134,70 @@ impl ChannelManager {
             };
         self.monitor().register(manifest);
         true
+    }
+
+    pub async fn sync_configured_plugins(&self) -> ChannelSyncReport {
+        let cfg = crate::config::reload();
+        let discovered_plugins = crate::plugins::channel::discover();
+        let desired = cfg.channel_names();
+        let desired_set = desired
+            .iter()
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
+        let monitor = self.monitor();
+        let registered = monitor.registered_kinds();
+        let registered_set = registered
+            .iter()
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
+        let mut report = ChannelSyncReport::default();
+
+        for name in registered {
+            if desired_set.contains(&name) {
+                continue;
+            }
+            if monitor.force_stop(&name).await.is_ok() {
+                report.stopped.push(name);
+            }
+        }
+
+        for name in desired {
+            let Some(plugin) = discovered_plugins.get(&name) else {
+                if registered_set.contains(&name) && monitor.force_stop(&name).await.is_ok() {
+                    report.stopped.push(name.clone());
+                }
+                report.missing.push(name);
+                continue;
+            };
+            if !registered_set.contains(&name) {
+                if self.register_plugin(&name, plugin) {
+                    report.registered.push(name);
+                }
+                continue;
+            }
+
+            match monitor.status(&name) {
+                Some(monitor::ChannelRunStatus::Stopped)
+                | Some(monitor::ChannelRunStatus::Crashed)
+                | Some(monitor::ChannelRunStatus::NotStarted) => {
+                    if monitor.force_start(&name).is_ok() {
+                        report.started.push(name);
+                    }
+                }
+                _ => {
+                    if monitor.force_restart(&name).await.is_ok() {
+                        report.restarted.push(name);
+                    }
+                }
+            }
+        }
+
+        report.registered.sort();
+        report.restarted.sort();
+        report.started.sort();
+        report.stopped.sort();
+        report.missing.sort();
+        report
     }
 
     pub fn start_internal_plugin(
