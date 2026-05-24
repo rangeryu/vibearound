@@ -99,7 +99,7 @@ export function ProfilePanel({
   }
 
   return (
-    <section className="space-y-2">
+    <section className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
       <SelectableItemCard
         active={directActive}
         disabled={busy}
@@ -110,17 +110,17 @@ export function ProfilePanel({
           label={t("Direct")}
           disabledReason={t("Direct profile is fixed")}
         />
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
           <Terminal className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate text-[13px] font-semibold">
+            <span className="truncate text-[12px] font-semibold">
               {t("Direct")}
             </span>
             {directIsGlobalDefault && <DefaultBadge />}
           </div>
-          <div className="truncate text-[11px] text-muted-foreground">
+          <div className="truncate text-[10px] text-muted-foreground">
             {t("Use existing CLI login")}
           </div>
         </div>
@@ -131,15 +131,16 @@ export function ProfilePanel({
           {!directIsGlobalDefault && (
             <TooltipButton
               type="button"
-              size="xs"
+              size="icon-xs"
               variant="ghost"
-              className="h-7 text-[11px]"
+              className="h-7 w-7"
+              aria-label={t("Set app default")}
+              title={t("Set app default")}
               disabled={busy}
               disabledReason={t("Launch is already in progress")}
               onClick={() => void onMakeDefault({ kind: "direct" })}
             >
               <Star className="h-3 w-3" />
-              {t("Set app default")}
             </TooltipButton>
           )}
           <DisabledMoreButton
@@ -201,25 +202,25 @@ export function ProfilePanel({
                       }
                       dragHandleRef={dragHandleRef}
                     />
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
                       <BrandIcon
                         kind="provider"
                         id={profile.provider}
                         label={profile.providerLabel}
                         fallback={profile.providerIcon}
                         framed={false}
-                        className="h-7 w-7"
+                        className="h-6 w-6"
                       />
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="truncate text-[13px] font-semibold">
+                        <span className="truncate text-[12px] font-semibold">
                           {profile.label}
                         </span>
                         {globalDefaultForProfile && <DefaultBadge />}
                         {summary.bridge && <BridgeBadge />}
                       </div>
-                      <div className="truncate text-[11px] text-muted-foreground">
+                      <div className="truncate text-[10px] text-muted-foreground">
                         {availability.launchable
                           ? summary.route
                           : availability.reason}
@@ -238,7 +239,7 @@ export function ProfilePanel({
                           disabled={busy}
                           onValueChange={(apiType) => onSelectApiType(profile, apiType)}
                         >
-                          <SelectTrigger size="sm" className="h-7 w-[clamp(9rem,20vw,172px)] text-[11px]">
+                          <SelectTrigger size="sm" className="h-7 w-[clamp(8rem,20vw,160px)] text-[11px]">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -257,9 +258,11 @@ export function ProfilePanel({
                       {(!globalDefaultForProfile || !availability.launchable) && (
                         <TooltipButton
                           type="button"
-                          size="xs"
+                          size="icon-xs"
                           variant="ghost"
-                          className="h-7 text-[11px]"
+                          className="h-7 w-7"
+                          aria-label={t("Set app default")}
+                          title={t("Set app default")}
                           disabled={busy || !availability.launchable}
                           disabledReason={
                             busy
@@ -274,7 +277,6 @@ export function ProfilePanel({
                           }
                         >
                           <Star className="h-3 w-3" />
-                          {t("Set app default")}
                         </TooltipButton>
                       )}
                       <ProfileActionsMenu
