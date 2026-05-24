@@ -62,7 +62,7 @@ export function SelectorTile({
       onClick={() => {
         if (!disabled) onClick();
       }}
-      className={`flex min-h-[76px] items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
+      className={`flex min-h-[62px] items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
         disabled
           ? "cursor-not-allowed border-border bg-card text-muted-foreground opacity-60"
           : active
@@ -71,7 +71,7 @@ export function SelectorTile({
       }`}
     >
       <span
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${
           active
             ? "border-primary/40 bg-background text-primary"
             : "border-border/70 bg-background text-muted-foreground"
@@ -82,14 +82,14 @@ export function SelectorTile({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span
-            className={`text-[11px] font-semibold uppercase ${active ? "text-primary" : "text-muted-foreground"}`}
+            className={`text-[10px] font-semibold uppercase ${active ? "text-primary" : "text-muted-foreground"}`}
           >
             {label}
           </span>
           {badges}
         </span>
-        <span className="block truncate text-[13px] font-medium">{title}</span>
-        <span className="block truncate text-[11px] text-muted-foreground">
+        <span className="block truncate text-[12px] font-semibold">{title}</span>
+        <span className="block truncate text-[10px] text-muted-foreground">
           {detail}
         </span>
       </span>
@@ -132,7 +132,7 @@ export function SelectableItemCard({
         if (!disabled) onSelect();
       }}
       onKeyDown={handleKeyDown}
-      className={`flex w-full items-center gap-3 rounded-md border px-3 py-3 text-left transition-colors ${
+      className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
         active
           ? "border-primary bg-primary/10 text-primary shadow-[inset_3px_0_0_hsl(var(--primary))]"
           : disabled

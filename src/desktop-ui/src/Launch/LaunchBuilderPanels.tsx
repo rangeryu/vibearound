@@ -24,6 +24,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { resolveProfileConnection } from "./connections";
 import type {
+  AgentSummary,
   LaunchSessionSummary,
   LauncherPreferences,
   WorkspaceOption,
@@ -54,6 +55,71 @@ import {
   WorkspaceActionsMenu,
 } from "./LaunchBuilderPrimitives";
 import type { ConnectionAgentId, ProfileSummary } from "./types";
+
+export function AgentPanel({
+  agents,
+  selectedAgentId,
+  defaultAgentId,
+  busy,
+  onSelect,
+}: {
+  agents: AgentSummary[];
+  selectedAgentId: string;
+  defaultAgentId: string;
+  busy: boolean;
+  onSelect: (agentId: string) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <section className="grid grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-1.5">
+      {agents.map((agent) => {
+        const active = agent.id === selectedAgentId;
+        const isDefault = agent.id === defaultAgentId;
+        return (
+          <button
+            type="button"
+            key={agent.id}
+            disabled={busy}
+            className={`flex min-h-[58px] items-center gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors ${
+              active
+                ? "border-primary bg-primary/10 text-primary shadow-[inset_3px_0_0_hsl(var(--primary))]"
+                : "border-border bg-card hover:border-primary/40 hover:bg-accent/35"
+            } ${busy ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+            onClick={() => {
+              if (!busy) onSelect(agent.id);
+            }}
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
+              <BrandIcon
+                kind="cli"
+                id={agent.id}
+                label={agent.display_name}
+                framed={false}
+                className="h-7 w-7"
+              />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="truncate text-[12px] font-semibold">
+                  {agent.display_name}
+                </span>
+                {isDefault && <DefaultBadge />}
+              </span>
+              <span className="block truncate text-[10px] text-muted-foreground">
+                {isDefault ? t("Default agent") : t("Launch agent")}
+              </span>
+            </span>
+            {active ? (
+              <Check className="h-4 w-4 shrink-0 text-primary" />
+            ) : (
+              <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+            )}
+          </button>
+        );
+      })}
+    </section>
+  );
+}
 
 export function ProfilePanel({
   agentId,
@@ -99,7 +165,7 @@ export function ProfilePanel({
   }
 
   return (
-    <section className="space-y-2">
+    <section className="space-y-1.5">
       <SelectableItemCard
         active={directActive}
         disabled={busy}
@@ -110,17 +176,17 @@ export function ProfilePanel({
           label={t("Direct")}
           disabledReason={t("Direct profile is fixed")}
         />
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
           <Terminal className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate text-[13px] font-semibold">
+            <span className="truncate text-[12px] font-semibold">
               {t("Direct")}
             </span>
             {directIsGlobalDefault && <DefaultBadge />}
           </div>
-          <div className="truncate text-[11px] text-muted-foreground">
+          <div className="truncate text-[10px] text-muted-foreground">
             {t("Use existing CLI login")}
           </div>
         </div>
@@ -201,25 +267,25 @@ export function ProfilePanel({
                       }
                       dragHandleRef={dragHandleRef}
                     />
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
                       <BrandIcon
                         kind="provider"
                         id={profile.provider}
                         label={profile.providerLabel}
                         fallback={profile.providerIcon}
                         framed={false}
-                        className="h-7 w-7"
+                        className="h-6 w-6"
                       />
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="truncate text-[13px] font-semibold">
+                        <span className="truncate text-[12px] font-semibold">
                           {profile.label}
                         </span>
                         {globalDefaultForProfile && <DefaultBadge />}
                         {summary.bridge && <BridgeBadge />}
                       </div>
-                      <div className="truncate text-[11px] text-muted-foreground">
+                      <div className="truncate text-[10px] text-muted-foreground">
                         {availability.launchable
                           ? summary.route
                           : availability.reason}
@@ -238,7 +304,7 @@ export function ProfilePanel({
                           disabled={busy}
                           onValueChange={(apiType) => onSelectApiType(profile, apiType)}
                         >
-                          <SelectTrigger size="sm" className="h-7 w-[clamp(9rem,20vw,172px)] text-[11px]">
+                          <SelectTrigger size="sm" className="h-7 w-[clamp(8rem,20vw,160px)] text-[11px]">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -357,7 +423,7 @@ export function WorkspacePanel({
         role="button"
         key={workspace.path}
         tabIndex={busy ? -1 : 0}
-        className={`group flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
+        className={`group flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${
           active
             ? "bg-primary/10 text-primary"
             : "text-foreground hover:bg-accent/50"
@@ -383,17 +449,17 @@ export function WorkspacePanel({
           }
           dragHandleRef={dragHandleRef}
         />
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
           <FolderOpen className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate text-[13px] font-semibold">
+            <span className="truncate text-[12px] font-semibold">
               {workspace.label}
             </span>
             {workspace.isDefault && <DefaultBadge />}
           </span>
-          <span className="block truncate text-[11px] text-muted-foreground">
+          <span className="block truncate text-[10px] text-muted-foreground">
             {workspace.detail}
           </span>
         </span>
@@ -430,11 +496,11 @@ export function WorkspacePanel({
 
   return (
     <section className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
-      <div className="border-b border-border/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
+      <div className="border-b border-border/70 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
         {t("Switch workspace")}
       </div>
       {loading && workspaceOptions.length === 0 && (
-        <p className="px-3 py-2 text-xs text-muted-foreground">
+        <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
           {t("Loading…")}
         </p>
       )}
@@ -465,10 +531,10 @@ export function WorkspacePanel({
       <button
         type="button"
         disabled={busy}
-        className="flex w-full items-center gap-2 border-t border-border bg-background px-3 py-2 text-left text-[13px] font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex w-full items-center gap-2 border-t border-border bg-background px-2.5 py-1.5 text-left text-[12px] font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
         onClick={onCreate}
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-md border border-dashed border-primary/40 bg-primary/5">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md border border-dashed border-primary/40 bg-primary/5">
           <Plus className="h-3.5 w-3.5" />
         </span>
         {t("New workspace...")}
@@ -506,7 +572,7 @@ export function SessionPanel({
   }
   return (
     <section className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-3 py-2">
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2.5 py-1.5">
         <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
           {t("Switch session")}
         </div>
@@ -523,7 +589,7 @@ export function SessionPanel({
         )}
       </div>
       {sessions.length === 0 && (
-        <p className="px-3 py-2 text-xs text-muted-foreground">
+        <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
           {t("No session in this workspace")}
         </p>
       )}
@@ -538,7 +604,7 @@ export function SessionPanel({
             <button
               type="button"
               key={`${session.sessionId}:${session.archived ? "archived" : "active"}`}
-              className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
+              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${
                 active
                   ? "bg-primary/10 text-primary"
                   : "text-foreground hover:bg-accent/50"
@@ -547,12 +613,12 @@ export function SessionPanel({
                 onSelect({ kind: "session", sessionId: session.sessionId })
               }
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
                 <MessageCircle className="h-4 w-4" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="truncate text-[13px] font-semibold">
+                    <span className="truncate text-[12px] font-semibold">
                     {session.title}
                   </span>
                   {session.archived && (
