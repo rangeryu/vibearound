@@ -145,7 +145,7 @@ export function SelectableItemCard({
         if (!disabled) onSelect();
       }}
       onKeyDown={handleKeyDown}
-      className={`flex h-full min-h-[74px] w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
+      className={`flex h-full min-h-[86px] w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${
         active
           ? "border-primary bg-primary/10 text-primary shadow-[inset_3px_0_0_hsl(var(--primary))]"
           : disabled
@@ -303,12 +303,16 @@ export function TooltipButton({
 export function ProfileActionsMenu({
   profile,
   bridgeAvailable,
+  onMakeDefault,
+  makeDefaultDisabled = false,
   onConnectionSettings,
   onEditProfile,
   onDeleteProfile,
 }: {
   profile: ProfileSummary;
   bridgeAvailable: boolean;
+  onMakeDefault?: () => void;
+  makeDefaultDisabled?: boolean;
   onConnectionSettings: (profile: ProfileSummary) => void;
   onEditProfile: (profile: ProfileSummary) => void;
   onDeleteProfile: (profile: ProfileSummary) => void;
@@ -328,6 +332,17 @@ export function ProfileActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
+        {onMakeDefault && (
+          <DropdownMenuItem
+            className="text-xs"
+            disabled={makeDefaultDisabled}
+            onSelect={() => onMakeDefault()}
+          >
+            <Star className="h-3 w-3" />
+            {t("Set app default")}
+          </DropdownMenuItem>
+        )}
+        {onMakeDefault && <DropdownMenuSeparator />}
         {bridgeAvailable && (
           <DropdownMenuItem
             className="text-xs"
@@ -352,6 +367,53 @@ export function ProfileActionsMenu({
         >
           <Trash2 className="h-3 w-3" />
           {t("Delete")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function DirectProfileActionsMenu({
+  isDefault,
+  disabled,
+  onMakeDefault,
+}: {
+  isDefault: boolean;
+  disabled: boolean;
+  onMakeDefault: () => void;
+}) {
+  const { t } = useI18n();
+  if (isDefault) {
+    return (
+      <DisabledMoreButton reason={t("Direct profile cannot be edited or deleted")} />
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="ghost"
+          className="h-7 w-7 text-muted-foreground"
+          aria-label={t("More")}
+        >
+          <MoreVertical className="h-3.5 w-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem
+          className="text-xs"
+          disabled={disabled}
+          onSelect={() => onMakeDefault()}
+        >
+          <Star className="h-3 w-3" />
+          {t("Set app default")}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="text-xs" disabled>
+          <Pencil className="h-3 w-3" />
+          {t("Direct profile is fixed")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

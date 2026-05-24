@@ -8,7 +8,6 @@ import {
   History,
   MessageCircle,
   Plus,
-  Star,
   Terminal,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
@@ -45,12 +44,12 @@ import {
 import {
   DefaultBadge,
   DisabledMoreButton,
+  DirectProfileActionsMenu,
   DragHandle,
   ProfileActionsMenu,
   BridgeBadge,
   SelectableItemCard,
   SortableItem,
-  TooltipButton,
   WorkspaceActionsMenu,
 } from "./LaunchBuilderPrimitives";
 import type { ConnectionAgentId, ProfileSummary } from "./types";
@@ -99,7 +98,7 @@ export function ProfilePanel({
   }
 
   return (
-    <section className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+    <section className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
       <SelectableItemCard
         active={directActive}
         disabled={busy}
@@ -110,17 +109,17 @@ export function ProfilePanel({
           label={t("Direct")}
           disabledReason={t("Direct profile is fixed")}
         />
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
-          <Terminal className="h-4 w-4" />
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+          <Terminal className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate text-[12px] font-semibold">
+            <span className="truncate text-[13px] font-semibold">
               {t("Direct")}
             </span>
             {directIsGlobalDefault && <DefaultBadge />}
           </div>
-          <div className="truncate text-[10px] text-muted-foreground">
+          <div className="truncate text-[11px] text-muted-foreground">
             {t("Use existing CLI login")}
           </div>
         </div>
@@ -128,23 +127,10 @@ export function ProfilePanel({
           className="flex shrink-0 flex-wrap justify-end gap-2"
           onClick={(event) => event.stopPropagation()}
         >
-          {!directIsGlobalDefault && (
-            <TooltipButton
-              type="button"
-              size="icon-xs"
-              variant="ghost"
-              className="h-7 w-7"
-              aria-label={t("Set app default")}
-              title={t("Set app default")}
-              disabled={busy}
-              disabledReason={t("Launch is already in progress")}
-              onClick={() => void onMakeDefault({ kind: "direct" })}
-            >
-              <Star className="h-3 w-3" />
-            </TooltipButton>
-          )}
-          <DisabledMoreButton
-            reason={t("Direct profile cannot be edited or deleted")}
+          <DirectProfileActionsMenu
+            isDefault={directIsGlobalDefault}
+            disabled={busy}
+            onMakeDefault={() => void onMakeDefault({ kind: "direct" })}
           />
         </div>
       </SelectableItemCard>
@@ -202,25 +188,32 @@ export function ProfilePanel({
                       }
                       dragHandleRef={dragHandleRef}
                     />
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
                       <BrandIcon
                         kind="provider"
                         id={profile.provider}
                         label={profile.providerLabel}
                         fallback={profile.providerIcon}
                         framed={false}
-                        className="h-6 w-6"
+                        className="h-8 w-8"
                       />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="truncate text-[12px] font-semibold">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-[13px] font-semibold">
                           {profile.label}
                         </span>
                         {globalDefaultForProfile && <DefaultBadge />}
-                        {summary.bridge && <BridgeBadge />}
                       </div>
-                      <div className="truncate text-[10px] text-muted-foreground">
+                      {summary.bridge && (
+                        <div className="mt-0.5">
+                          <BridgeBadge />
+                        </div>
+                      )}
+                      <div
+                        className="truncate text-[11px] text-muted-foreground"
+                        title={availability.launchable ? summary.route : availability.reason}
+                      >
                         {availability.launchable
                           ? summary.route
                           : availability.reason}
@@ -255,33 +248,19 @@ export function ProfilePanel({
                           </SelectContent>
                         </Select>
                       )}
-                      {(!globalDefaultForProfile || !availability.launchable) && (
-                        <TooltipButton
-                          type="button"
-                          size="icon-xs"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          aria-label={t("Set app default")}
-                          title={t("Set app default")}
-                          disabled={busy || !availability.launchable}
-                          disabledReason={
-                            busy
-                              ? t("Launch is already in progress")
-                              : availability.reason
-                          }
-                          onClick={() =>
-                            void onMakeDefault({
-                              kind: "profile",
-                              profileId: profile.id,
-                            })
-                          }
-                        >
-                          <Star className="h-3 w-3" />
-                        </TooltipButton>
-                      )}
                       <ProfileActionsMenu
                         profile={profile}
                         bridgeAvailable={isBridgeAgent(agentId)}
+                        onMakeDefault={
+                          globalDefaultForProfile
+                            ? undefined
+                            : () =>
+                                void onMakeDefault({
+                                  kind: "profile",
+                                  profileId: profile.id,
+                                })
+                        }
+                        makeDefaultDisabled={busy || !availability.launchable}
                         onConnectionSettings={(profile) => {
                           if (isBridgeAgent(agentId)) {
                             onConnectionSettings(profile, agentId);

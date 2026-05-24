@@ -217,7 +217,7 @@ export function profileSummary(
         title: profile.label,
         detail: profile.providerLabel,
         bridge: true,
-        route: `${apiTypeProtocolDisplayLabel(resolved.selectedApiType)} -> ${profile.providerLabel} ${apiTypeRouteDisplayLabel(resolved.selected.targetApiType)}`,
+        route: `${agentLabel(agentId)} ${apiTypeProtocolDisplayLabel(resolved.selectedApiType)} -> ${profile.providerLabel} ${apiTypeProtocolDisplayLabel(resolved.selected.targetApiType)}`,
       };
     }
     if (resolved.status === "native") {
