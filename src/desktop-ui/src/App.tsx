@@ -38,6 +38,7 @@ import { SettingsDialog } from "./Settings";
 import { getLauncherPreferences, type LauncherPreferences } from "./Launch/api";
 import { LanguageMenu } from "./components/LanguageMenu";
 import { cn } from "./lib/utils";
+import { UpdateIndicator } from "./UpdateIndicator";
 
 // ---------------------------------------------------------------------------
 // Per-domain status presentation — each manager has its own natural status
@@ -457,6 +458,7 @@ function Dashboard() {
           <span className="font-mono text-[10px] text-muted-foreground/60">
             @{__APP_VERSION_LABEL__}
           </span>
+          <UpdateIndicator />
         </div>
         <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
           <Tabs

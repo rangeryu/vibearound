@@ -44,4 +44,6 @@ export const zhCNDesktopDashboard: Record<string, string> = {
   "Tunnel ({{provider}})": "隧道（{{provider}}）",
   "Stopped {{name}}": "已停止 {{name}}",
   "Restarting {{name}}": "正在重启 {{name}}",
+  Update: "有更新",
+  "Update to VibeAround {{version}}": "更新到 VibeAround {{version}}",
 };
