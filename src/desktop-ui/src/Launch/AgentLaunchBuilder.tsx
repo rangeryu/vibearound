@@ -17,13 +17,6 @@ import {
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   AgentRailButton,
@@ -33,6 +26,7 @@ import {
 import {
   ProfilePanel,
   SessionPanel,
+  TerminalPanel,
   WorkspacePanel,
 } from "./LaunchBuilderPanels";
 import {
@@ -85,7 +79,7 @@ import {
 import { resolveProfileConnection } from "./connections";
 import type { ConnectionAgentId, ProfileSummary } from "./types";
 
-type SelectorPopupId = "profile" | "workspace" | "session";
+type SelectorPopupId = "profile" | "terminal" | "workspace" | "session";
 
 const AGENT_ORDER = [
   "codex",
@@ -132,6 +126,7 @@ function SelectorPopup({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const open = openSelector === id;
   const [position, setPosition] = useState<{ left: number; top: number } | null>(
     null,
@@ -166,7 +161,10 @@ function SelectorPopup({
       if (!rect) return;
 
       const gutter = 8;
-      const popupWidth = Math.min(widthPx, window.innerWidth - gutter * 2);
+      const measuredWidth = contentRef.current?.getBoundingClientRect().width;
+      const targetWidth =
+        measuredWidth && measuredWidth > 0 ? measuredWidth : widthPx;
+      const popupWidth = Math.min(targetWidth, window.innerWidth - gutter * 2);
       const rawLeft = align === "end" ? rect.right - popupWidth : rect.left;
       const maxLeft = Math.max(gutter, window.innerWidth - popupWidth - gutter);
       setPosition({
@@ -176,9 +174,11 @@ function SelectorPopup({
     }
 
     updatePosition();
+    const frame = window.requestAnimationFrame(updatePosition);
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
@@ -189,6 +189,7 @@ function SelectorPopup({
       {trigger}
       {open && position && (
         <div
+          ref={contentRef}
           className={`fixed z-50 ${widthClassName}`}
           style={{ left: position.left, top: position.top }}
         >
@@ -244,13 +245,14 @@ function LaunchSummaryPill({
       )}
     </>
   );
+  const interactiveClassName = onClick ? "cursor-pointer" : "";
   const baseClassName = `flex h-9 w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md border bg-transparent px-2.5 text-xs transition-colors ${
     disabled
       ? "cursor-not-allowed border-border/70 opacity-60"
       : active
-        ? "border-primary/45"
+        ? `${interactiveClassName} border-primary/45`
       : onClick
-        ? "border-border/70 hover:border-primary/35"
+        ? "cursor-pointer border-border/70 hover:border-primary/35"
         : "border-border/70"
   } ${className}`;
 
@@ -311,11 +313,13 @@ function ProfileInfoRow({
   children: ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 border-t border-border/60 px-3 py-2">
+    <div className="grid grid-cols-[92px_minmax(0,max-content)] gap-3 border-t border-border/60 px-3 py-2">
       <div className="text-[11px] font-medium text-muted-foreground">
         {label}
       </div>
-      <div className="min-w-0 text-[12px] text-foreground">{children}</div>
+      <div className="min-w-0 max-w-[540px] text-[12px] text-foreground">
+        {children}
+      </div>
     </div>
   );
 }
@@ -992,12 +996,12 @@ export function AgentLaunchBuilder({
                       id="profile"
                       openSelector={openSelector}
                       onOpenChange={setOpenSelector}
-                      widthClassName="w-[min(340px,calc(100vw-1rem))]"
-                      widthPx={340}
+                      widthClassName="w-max min-w-[340px] max-w-[min(680px,calc(100vw-1rem))]"
+                      widthPx={680}
                       trigger={
                         <button
                           type="button"
-                          className={`mt-0.5 flex max-w-[520px] min-w-0 items-center gap-1 rounded-sm text-left text-[12px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          className={`mt-0.5 flex max-w-[520px] min-w-0 cursor-pointer items-center gap-1 rounded-sm text-left text-[12px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                             openSelector === "profile"
                               ? "text-primary"
                               : "text-muted-foreground hover:text-foreground"
@@ -1008,7 +1012,6 @@ export function AgentLaunchBuilder({
                             )
                           }
                         >
-                          <span className="shrink-0">{t("Profile")}</span>
                           <span className="min-w-0 truncate font-semibold text-foreground">
                             {selectedProfileSummary.title}
                           </span>
@@ -1028,43 +1031,39 @@ export function AgentLaunchBuilder({
                     </SelectorPopup>
                   </AgentSummaryHeader>
                   <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
-                    <Select
-                      value={viewPrefs.terminal}
-                      disabled={busy}
-                      onValueChange={(terminalId) =>
-                        void chooseTerminal(terminalId)
+                    <SelectorPopup
+                      id="terminal"
+                      openSelector={openSelector}
+                      onOpenChange={setOpenSelector}
+                      widthClassName="w-[min(300px,calc(100vw-1rem))]"
+                      widthPx={300}
+                      trigger={
+                        <LaunchSummaryPill
+                          active={openSelector === "terminal"}
+                          chevron
+                          disabled={busy}
+                          className="w-[160px]"
+                          icon={<Terminal className="h-4 w-4" />}
+                          onClick={() =>
+                            setOpenSelector(
+                              openSelector === "terminal" ? null : "terminal",
+                            )
+                          }
+                          label={t("Terminal")}
+                          title={selectedTerminal?.label ?? t("Terminal")}
+                        />
                       }
                     >
-                      <SelectTrigger
-                        size="sm"
-                        className="!h-9 w-[160px] justify-start gap-1.5 border-border/70 bg-transparent px-2.5 text-xs shadow-none hover:border-primary/35 [&>svg:last-child]:ml-auto"
-                      >
-                        <Terminal className="h-4 w-4 text-muted-foreground" />
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
-                          {t("Terminal")}
-                        </span>
-                        <SelectValue
-                          className="min-w-0 truncate font-semibold text-foreground"
-                          placeholder={selectedTerminal?.label ?? t("Terminal")}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {viewPrefs.options.map((option) => (
-                          <SelectItem
-                            key={option.id}
-                            value={option.id}
-                            disabled={!option.installed}
-                            className="text-xs"
-                          >
-                            {option.installed
-                              ? option.label
-                              : t("{{label}} (not installed)", {
-                                  label: option.label,
-                                })}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      <TerminalPanel
+                        options={viewPrefs.options}
+                        selected={viewPrefs.terminal}
+                        busy={busy}
+                        onSelect={(terminalId) => {
+                          setOpenSelector(null);
+                          void chooseTerminal(terminalId);
+                        }}
+                      />
+                    </SelectorPopup>
                     <SelectorPopup
                       id="workspace"
                       openSelector={openSelector}
@@ -1113,7 +1112,6 @@ export function AgentLaunchBuilder({
                       id="session"
                       openSelector={openSelector}
                       onOpenChange={setOpenSelector}
-                      align="end"
                       widthClassName="w-[min(420px,calc(100vw-1rem))]"
                       widthPx={420}
                       trigger={

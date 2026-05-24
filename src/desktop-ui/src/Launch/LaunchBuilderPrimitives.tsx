@@ -57,9 +57,9 @@ export function SelectorTile({
     disabled
       ? "cursor-not-allowed border-border bg-card text-muted-foreground opacity-60"
       : active
-        ? "border-primary bg-primary/10 shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.35)]"
+        ? "cursor-pointer border-primary bg-primary/10 shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.35)]"
         : onClick
-          ? "border-border bg-card hover:border-primary/40"
+          ? "cursor-pointer border-border bg-card hover:border-primary/40"
           : "border-border bg-card"
   }`;
   const content = (
@@ -491,7 +491,7 @@ export function AgentRailButton({
       type="button"
       onClick={onClick}
       title={agent.display_name}
-      className={`relative flex h-14 w-14 items-center justify-center rounded-md border transition-colors ${
+      className={`relative flex h-14 w-14 cursor-pointer items-center justify-center rounded-md border transition-colors ${
         active
           ? "border-primary bg-primary/10 text-primary"
           : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"

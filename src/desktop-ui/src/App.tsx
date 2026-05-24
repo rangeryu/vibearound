@@ -534,7 +534,7 @@ function Dashboard() {
             }
           >
             <Settings
-              className={`w-3.5 h-3.5 ${
+              className={`size-4 ${
                 settingsOpen
                   ? "text-accent-foreground"
                   : "text-muted-foreground"

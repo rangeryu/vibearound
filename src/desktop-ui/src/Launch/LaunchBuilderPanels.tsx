@@ -21,10 +21,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { resolveProfileConnection } from "./connections";
 import type {
   LaunchSessionSummary,
   LauncherPreferences,
+  TerminalOption,
   WorkspaceOption,
 } from "./api";
 import {
@@ -53,6 +59,65 @@ import {
   WorkspaceActionsMenu,
 } from "./LaunchBuilderPrimitives";
 import type { ConnectionAgentId, ProfileSummary } from "./types";
+
+export function TerminalPanel({
+  options,
+  selected,
+  busy,
+  onSelect,
+}: {
+  options: TerminalOption[];
+  selected: string;
+  busy: boolean;
+  onSelect: (terminalId: string) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <section className="box-border flex max-h-[430px] flex-col overflow-hidden rounded-md border border-border bg-card shadow-sm">
+      <div className="border-b border-border/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
+        {t("Switch terminal")}
+      </div>
+      <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto">
+        {options.map((option) => {
+          const active = option.id === selected;
+          const disabled = busy || !option.installed;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              disabled={disabled}
+              className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                active
+                  ? "bg-primary/10 text-primary"
+                  : "text-foreground hover:bg-accent/50"
+              }`}
+              onClick={() => onSelect(option.id)}
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+                <Terminal className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-semibold">
+                  {option.label}
+                </span>
+                {!option.installed && (
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {t("{{label}} (not installed)", { label: option.label })}
+                  </span>
+                )}
+              </span>
+              {active ? (
+                <Check className="h-4 w-4 shrink-0 text-primary" />
+              ) : (
+                <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 export function ProfilePanel({
   agentId,
@@ -401,9 +466,16 @@ export function WorkspacePanel({
             </span>
             {workspace.isDefault && <DefaultBadge />}
           </span>
-          <span className="block truncate text-[11px] text-muted-foreground">
-            {workspace.detail}
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="block truncate text-[11px] text-muted-foreground">
+                {workspace.detail}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[min(520px,calc(100vw-2rem))] break-all text-left">
+              {workspace.path}
+            </TooltipContent>
+          </Tooltip>
         </span>
         <span className="w-8 shrink-0 text-right font-mono text-[11px] text-muted-foreground">
           {sessionCounts[workspace.path] ?? ""}
@@ -474,7 +546,7 @@ export function WorkspacePanel({
         <button
           type="button"
           disabled={busy}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
           onClick={onCreate}
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-dashed border-primary/40 bg-primary/5">
@@ -554,7 +626,7 @@ export function SessionPanel({
             <button
               type="button"
               key={`${session.sessionId}:${session.archived ? "archived" : "active"}`}
-              className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
+              className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors ${
                 active
                   ? "bg-primary/10 text-primary"
                   : "text-foreground hover:bg-accent/50"
@@ -600,7 +672,7 @@ export function SessionPanel({
       <div className="shrink-0 border-t border-border bg-background">
         <button
           type="button"
-          className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
+          className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors ${
             selected === null
               ? "bg-primary/10 text-primary"
               : "text-foreground hover:bg-primary/5"
