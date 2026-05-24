@@ -10,13 +10,21 @@ use super::catalog::ContentCapabilities;
 pub struct CodexModelCatalogSpec<'a> {
     pub model: &'a str,
     pub provider_label: &'a str,
-    pub context_window: u64,
+    pub context_window: Option<u64>,
     pub capabilities: &'a ContentCapabilities,
 }
 
 static BUNDLED_MODEL_TEMPLATE: LazyLock<Option<Value>> = LazyLock::new(load_bundled_model_template);
 
-pub fn build_model_catalog_json(spec: CodexModelCatalogSpec<'_>) -> Option<String> {
+pub fn build_model_catalog_json(specs: &[CodexModelCatalogSpec<'_>]) -> Option<String> {
+    let models: Vec<_> = specs.iter().filter_map(model_catalog_entry).collect();
+    if models.is_empty() {
+        return None;
+    }
+    serde_json::to_string_pretty(&json!({ "models": models })).ok()
+}
+
+fn model_catalog_entry(spec: &CodexModelCatalogSpec<'_>) -> Option<Value> {
     let mut model = BUNDLED_MODEL_TEMPLATE
         .as_ref()
         .cloned()
@@ -38,19 +46,17 @@ pub fn build_model_catalog_json(spec: CodexModelCatalogSpec<'_>) -> Option<Strin
         Value::Array(Vec::new()),
     );
     object.insert("service_tiers".to_string(), Value::Array(Vec::new()));
-    object.insert(
-        "context_window".to_string(),
-        Value::Number(spec.context_window.into()),
-    );
-    object.insert(
-        "max_context_window".to_string(),
-        Value::Number(spec.context_window.into()),
-    );
+    let context_window = spec
+        .context_window
+        .map(|value| Value::Number(value.into()))
+        .unwrap_or(Value::Null);
+    object.insert("context_window".to_string(), context_window.clone());
+    object.insert("max_context_window".to_string(), context_window);
     object.insert("input_modalities".to_string(), input_modalities(spec));
-    serde_json::to_string_pretty(&json!({ "models": [model] })).ok()
+    Some(model)
 }
 
-fn input_modalities(spec: CodexModelCatalogSpec<'_>) -> Value {
+fn input_modalities(spec: &CodexModelCatalogSpec<'_>) -> Value {
     let mut modalities = vec![Value::String("text".to_string())];
     if spec.capabilities.image_input {
         modalities.push(Value::String("image".to_string()));

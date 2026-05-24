@@ -302,6 +302,24 @@ pub fn find_model<'a>(endpoint: &'a EndpointDef, model_id: &str) -> Option<&'a M
         .find(|model| model_matches(model, model_id))
 }
 
+pub fn canonical_model_id(endpoint: &EndpointDef, model_id: &str) -> Option<String> {
+    if let Some(base_model) = strip_bracket_suffix(model_id) {
+        if let Some(model) = find_model(endpoint, base_model) {
+            return Some(model.id.clone());
+        }
+    }
+    find_model(endpoint, model_id).map(|model| model.id.clone())
+}
+
+pub fn strip_bracket_suffix(model_id: &str) -> Option<&str> {
+    let model_id = model_id.trim();
+    let (base, suffix) = model_id.rsplit_once('[')?;
+    suffix
+        .ends_with(']')
+        .then(|| base.trim())
+        .filter(|base| !base.is_empty())
+}
+
 pub fn model_matches(model: &ModelDef, model_id: &str) -> bool {
     let model_id = model_id.trim();
     if model_id.is_empty() {

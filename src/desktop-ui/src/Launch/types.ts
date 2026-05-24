@@ -43,9 +43,16 @@ export interface ProfileBridgePreference {
   enabled?: boolean | null;
   useProxy?: boolean | null;
   targetApiType?: string | null;
+  /** TODO(0.7.x): remove single-model compatibility fields after migration to models[]. */
   upstreamModel?: string | null;
   fakeModelId?: string | null;
+  models?: ProfileBridgeModelPreference[] | null;
   headers?: Record<string, string> | null;
+}
+
+export interface ProfileBridgeModelPreference {
+  upstreamModel?: string | null;
+  fakeModelId?: string | null;
 }
 
 export type ProfileConnections = Record<

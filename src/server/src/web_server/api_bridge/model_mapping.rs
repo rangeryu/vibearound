@@ -1,5 +1,5 @@
 use common::agent_state;
-use common::profiles::{catalog, schema::ProfileDef};
+use common::profiles::{catalog, connections, schema::ProfileDef};
 
 #[derive(Debug, Clone)]
 pub(super) struct BridgeModelMapping {
@@ -31,47 +31,43 @@ pub(super) fn bridge_model_mapping(
     profile: &ProfileDef,
     bridge: Option<&agent_state::ProfileBridgePreference>,
     target_api_type: &str,
+    requested_agent_model: Option<&str>,
 ) -> Option<BridgeModelMapping> {
     let bridge = bridge?;
-    let requested_upstream_model = clean_model_id(bridge.upstream_model.as_deref())
-        .or_else(|| default_model(profile, target_api_type))?;
-    let upstream_model = canonical_model(profile, target_api_type, &requested_upstream_model)
-        .unwrap_or_else(|| requested_upstream_model.clone());
-    let agent_model =
-        clean_model_id(bridge.fake_model_id.as_deref()).unwrap_or(requested_upstream_model);
+    let routes = connections::bridge_model_routes(profile, Some(bridge), target_api_type);
+    if let Some(requested_agent_model) = clean_model_id(requested_agent_model) {
+        if let Some(route) = routes
+            .iter()
+            .find(|route| agent_model_matches(&route.agent_model, &requested_agent_model))
+        {
+            return Some(BridgeModelMapping {
+                upstream_model: route.upstream_model.clone(),
+                agent_model: route.agent_model.clone(),
+            });
+        }
+        let upstream_model = canonical_model(profile, target_api_type, &requested_agent_model)
+            .unwrap_or_else(|| requested_agent_model.clone());
+        return Some(BridgeModelMapping {
+            upstream_model,
+            agent_model: requested_agent_model,
+        });
+    }
+
+    let route = routes.into_iter().next()?;
     Some(BridgeModelMapping {
-        upstream_model,
-        agent_model,
+        upstream_model: route.upstream_model,
+        agent_model: route.agent_model,
     })
 }
 
 fn agent_id_from_scope(scope: &str, client_api_type: &str) -> Option<&'static str> {
-    for agent_id in ["claude", "codex", "gemini", "opencode"] {
+    for agent_id in ["claude", "codex", "gemini", "opencode", "pi"] {
         let prefix = format!("{agent_id}-");
         if scope.strip_prefix(&prefix) == Some(client_api_type) {
             return Some(agent_id);
         }
     }
     None
-}
-
-fn default_model(profile: &ProfileDef, target_api_type: &str) -> Option<String> {
-    let provider = catalog::get(&profile.provider)?;
-    let endpoint_id = profile
-        .overrides
-        .get(target_api_type)
-        .and_then(|overrides| overrides.endpoint_id.as_deref());
-    let endpoint = catalog::find_endpoint(provider, target_api_type, endpoint_id)?;
-    profile
-        .overrides
-        .get(target_api_type)
-        .and_then(|overrides| clean_model_id(overrides.model.as_deref()))
-        .or_else(|| {
-            endpoint
-                .models
-                .first()
-                .and_then(|model| clean_model_id(Some(&model.id)))
-        })
 }
 
 fn canonical_model(profile: &ProfileDef, target_api_type: &str, model: &str) -> Option<String> {
@@ -81,7 +77,17 @@ fn canonical_model(profile: &ProfileDef, target_api_type: &str, model: &str) -> 
         .get(target_api_type)
         .and_then(|overrides| overrides.endpoint_id.as_deref());
     let endpoint = catalog::find_endpoint(provider, target_api_type, endpoint_id)?;
-    catalog::find_model(endpoint, model).map(|model_def| model_def.id.clone())
+    catalog::canonical_model_id(endpoint, model)
+}
+
+fn agent_model_matches(configured: &str, requested: &str) -> bool {
+    configured == requested
+        || catalog::strip_bracket_suffix(configured)
+            .map(|base| base == requested)
+            .unwrap_or(false)
+        || catalog::strip_bracket_suffix(requested)
+            .map(|base| base == configured)
+            .unwrap_or(false)
 }
 
 fn clean_model_id(value: Option<&str>) -> Option<String> {
@@ -128,13 +134,81 @@ mod tests {
             target_api_type: Some("openai-chat".to_string()),
             upstream_model: Some("gemini-3.1-pro".to_string()),
             fake_model_id: None,
+            models: Vec::new(),
             headers: BTreeMap::new(),
         };
 
-        let mapping = bridge_model_mapping(&profile, Some(&bridge), "openai-chat")
+        let mapping = bridge_model_mapping(&profile, Some(&bridge), "openai-chat", None)
             .expect("mapping should resolve");
 
         assert_eq!(mapping.upstream_model, "gemini-3.1-pro-preview");
         assert_eq!(mapping.agent_model, "gemini-3.1-pro");
+    }
+
+    #[test]
+    fn bridge_mapping_passes_unknown_requested_model_through() {
+        let profile = ProfileDef {
+            id: "custom-test".to_string(),
+            label: "Custom Test".to_string(),
+            provider: "custom".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials: BTreeMap::new(),
+            overrides: BTreeMap::new(),
+            provider_settings: Default::default(),
+        };
+        let bridge = agent_state::ProfileBridgePreference {
+            enabled: true,
+            use_proxy: false,
+            target_api_type: Some("openai-chat".to_string()),
+            upstream_model: Some("gpt-4o".to_string()),
+            fake_model_id: None,
+            models: Vec::new(),
+            headers: BTreeMap::new(),
+        };
+
+        let mapping = bridge_model_mapping(
+            &profile,
+            Some(&bridge),
+            "openai-chat",
+            Some("provider-new-model"),
+        )
+        .expect("mapping should resolve");
+
+        assert_eq!(mapping.upstream_model, "provider-new-model");
+        assert_eq!(mapping.agent_model, "provider-new-model");
+    }
+
+    #[test]
+    fn bridge_mapping_matches_claude_context_suffix_alias() {
+        let profile = ProfileDef {
+            id: "deepseek-test".to_string(),
+            label: "DeepSeek Test".to_string(),
+            provider: "deepseek".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials: BTreeMap::new(),
+            overrides: BTreeMap::new(),
+            provider_settings: Default::default(),
+        };
+        let bridge = agent_state::ProfileBridgePreference {
+            enabled: true,
+            use_proxy: false,
+            target_api_type: Some("openai-chat".to_string()),
+            upstream_model: Some("deepseek-v4-pro".to_string()),
+            fake_model_id: Some("opus-4.7[1m]".to_string()),
+            models: vec![agent_state::ProfileBridgeModelPreference {
+                upstream_model: Some("deepseek-v4-pro".to_string()),
+                fake_model_id: Some("opus-4.7[1m]".to_string()),
+            }],
+            headers: BTreeMap::new(),
+        };
+
+        let mapping =
+            bridge_model_mapping(&profile, Some(&bridge), "openai-chat", Some("opus-4.7"))
+                .expect("mapping should resolve");
+
+        assert_eq!(mapping.upstream_model, "deepseek-v4-pro");
+        assert_eq!(mapping.agent_model, "opus-4.7[1m]");
     }
 }

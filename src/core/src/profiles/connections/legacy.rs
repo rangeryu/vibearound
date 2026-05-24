@@ -50,6 +50,7 @@ pub(super) fn profile_connections() -> agent_state::ProfileConnectionPreferences
                         target_api_type: preference.target_api_type,
                         upstream_model: None,
                         fake_model_id: None,
+                        models: Vec::new(),
                         headers: BTreeMap::new(),
                     },
                 );

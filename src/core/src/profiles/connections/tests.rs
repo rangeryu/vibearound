@@ -195,3 +195,52 @@ fn gemini_cli_can_launch_openai_chat_profile_via_bridge() {
     assert_eq!(route.bridge_target_api_type.as_deref(), Some("openai-chat"));
     assert_eq!(route.bridge_upstream_model.as_deref(), Some("gpt-test"));
 }
+
+#[test]
+fn bridge_route_carries_model_list() {
+    let profile = profile(&["openai-chat"]);
+    let prefs = connections(
+        &profile.id,
+        "codex",
+        agent_state::ProfileConnectionPreference {
+            selected_api_type: Some("openai-responses".to_string()),
+            bridge: [(
+                "openai-responses".to_string(),
+                agent_state::ProfileBridgePreference {
+                    enabled: true,
+                    target_api_type: Some("openai-chat".to_string()),
+                    models: vec![
+                        agent_state::ProfileBridgeModelPreference {
+                            upstream_model: Some("gpt-real".to_string()),
+                            fake_model_id: Some("gpt-fake".to_string()),
+                        },
+                        agent_state::ProfileBridgeModelPreference {
+                            upstream_model: Some("provider-extra".to_string()),
+                            fake_model_id: None,
+                        },
+                    ],
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        },
+    );
+
+    let route = resolve_profile_agent_route_with_connections(&profile, "codex", &prefs)
+        .expect("codex bridge route");
+
+    assert_eq!(
+        route.bridge_models,
+        vec![
+            ProfileBridgeModelRoute {
+                upstream_model: "gpt-real".to_string(),
+                agent_model: "gpt-fake".to_string(),
+            },
+            ProfileBridgeModelRoute {
+                upstream_model: "provider-extra".to_string(),
+                agent_model: "provider-extra".to_string(),
+            },
+        ]
+    );
+}

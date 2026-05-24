@@ -286,6 +286,10 @@ pub async fn run_web_server(
             post(api_bridge::legacy_messages_handler),
         )
         .route(
+            "/bridge/{profile_id}/{target_api_type}/v1/models",
+            get(api_bridge::legacy_models_handler),
+        )
+        .route(
             "/bridge/{profile_id}/{target_api_type}/{version}/models/{model_action}",
             post(api_bridge::legacy_gemini_generate_content_handler),
         )
@@ -302,6 +306,10 @@ pub async fn run_web_server(
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/v1/messages",
             post(api_bridge::local_messages_handler),
+        )
+        .route(
+            "/local-api/{profile_id}/{scope}/{target_api_type}/v1/models",
+            get(api_bridge::local_models_handler),
         )
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/{version}/models/{model_action}",

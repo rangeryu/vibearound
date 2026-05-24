@@ -12,7 +12,7 @@ use crate::agent_state;
 
 mod legacy;
 
-use super::schema::ProfileDef;
+use super::{catalog, schema::ProfileDef};
 
 #[derive(Debug, Clone)]
 pub struct ProfileAgentRoute {
@@ -20,6 +20,13 @@ pub struct ProfileAgentRoute {
     pub bridge_target_api_type: Option<String>,
     pub bridge_upstream_model: Option<String>,
     pub bridge_fake_model_id: Option<String>,
+    pub bridge_models: Vec<ProfileBridgeModelRoute>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileBridgeModelRoute {
+    pub upstream_model: String,
+    pub agent_model: String,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +98,7 @@ pub fn sanitize_profile_connection_preference(
             .fake_model_id
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let models = sanitize_bridge_models(bridge_preference.models);
         let headers = if bridge_preference.enabled {
             prune_bridge_headers(bridge_preference.headers)
         } else {
@@ -100,6 +108,7 @@ pub fn sanitize_profile_connection_preference(
             || target_api_type.is_some()
             || upstream_model.is_some()
             || fake_model_id.is_some()
+            || !models.is_empty()
             || !headers.is_empty()
         {
             bridge.insert(
@@ -110,6 +119,7 @@ pub fn sanitize_profile_connection_preference(
                     target_api_type,
                     upstream_model,
                     fake_model_id,
+                    models,
                     headers,
                 },
             );
@@ -162,11 +172,14 @@ pub fn resolve_profile_agent_route_with_connections(
             recommended_bridge_target(&profile.api_types, agent_id, &client_api_type)
         })?;
         if validate_bridge_target(profile, &target_api_type).is_ok() {
+            let bridge_models =
+                bridge_model_routes(profile, Some(bridge_preference), &target_api_type);
             return Some(ProfileAgentRoute {
                 client_api_type,
                 bridge_target_api_type: Some(target_api_type),
                 bridge_upstream_model: bridge_preference.upstream_model.clone(),
                 bridge_fake_model_id: bridge_preference.fake_model_id.clone(),
+                bridge_models,
             });
         }
     }
@@ -181,10 +194,147 @@ pub fn resolve_profile_agent_route_with_connections(
             bridge_target_api_type: None,
             bridge_upstream_model: None,
             bridge_fake_model_id: None,
+            bridge_models: Vec::new(),
         });
     }
 
     None
+}
+
+pub fn bridge_model_routes(
+    profile: &ProfileDef,
+    bridge: Option<&agent_state::ProfileBridgePreference>,
+    target_api_type: &str,
+) -> Vec<ProfileBridgeModelRoute> {
+    if let Some(models) = bridge
+        .map(|bridge| bridge.models.as_slice())
+        .filter(|models| !models.is_empty())
+    {
+        return dedupe_model_routes(
+            models
+                .iter()
+                .filter_map(|entry| {
+                    let upstream = clean_optional_string(entry.upstream_model.as_deref())?;
+                    let fake = clean_optional_string(entry.fake_model_id.as_deref());
+                    Some(model_route(profile, target_api_type, upstream, fake))
+                })
+                .collect(),
+        );
+    }
+
+    let legacy_upstream =
+        bridge.and_then(|bridge| clean_optional_string(bridge.upstream_model.as_deref()));
+    let legacy_fake =
+        bridge.and_then(|bridge| clean_optional_string(bridge.fake_model_id.as_deref()));
+    if legacy_fake.is_some() {
+        return legacy_upstream
+            .or_else(|| default_model(profile, target_api_type))
+            .map(|upstream| vec![model_route(profile, target_api_type, upstream, legacy_fake)])
+            .unwrap_or_default();
+    }
+
+    let preferred = legacy_upstream.or_else(|| default_model(profile, target_api_type));
+    let mut routes = Vec::new();
+    if let Some(preferred) = preferred {
+        routes.push(model_route(profile, target_api_type, preferred, None));
+    }
+    if let Some(endpoint) = endpoint_for(profile, target_api_type) {
+        routes.extend(endpoint.models.iter().filter_map(|model| {
+            clean_optional_string(Some(model.id.as_str()))
+                .map(|id| model_route(profile, target_api_type, id, None))
+        }));
+    }
+    dedupe_model_routes(routes)
+}
+
+fn sanitize_bridge_models(
+    models: Vec<agent_state::ProfileBridgeModelPreference>,
+) -> Vec<agent_state::ProfileBridgeModelPreference> {
+    let mut out = Vec::new();
+    for entry in models {
+        let upstream_model = clean_optional_string(entry.upstream_model.as_deref());
+        let Some(upstream_model) = upstream_model else {
+            continue;
+        };
+        out.push(agent_state::ProfileBridgeModelPreference {
+            upstream_model: Some(upstream_model),
+            fake_model_id: clean_optional_string(entry.fake_model_id.as_deref()),
+        });
+    }
+    out
+}
+
+fn model_route(
+    profile: &ProfileDef,
+    target_api_type: &str,
+    upstream_model: String,
+    fake_model_id: Option<String>,
+) -> ProfileBridgeModelRoute {
+    let requested_upstream_model = upstream_model.trim().to_string();
+    let upstream_model = canonical_model(profile, target_api_type, &requested_upstream_model)
+        .unwrap_or_else(|| requested_upstream_model.clone());
+    let agent_model = fake_model_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(requested_upstream_model);
+    ProfileBridgeModelRoute {
+        upstream_model,
+        agent_model,
+    }
+}
+
+fn dedupe_model_routes(routes: Vec<ProfileBridgeModelRoute>) -> Vec<ProfileBridgeModelRoute> {
+    let mut out = Vec::new();
+    for route in routes {
+        if route.upstream_model.is_empty() || route.agent_model.is_empty() {
+            continue;
+        }
+        if out
+            .iter()
+            .any(|existing: &ProfileBridgeModelRoute| existing.agent_model == route.agent_model)
+        {
+            continue;
+        }
+        out.push(route);
+    }
+    out
+}
+
+fn default_model(profile: &ProfileDef, target_api_type: &str) -> Option<String> {
+    profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| clean_optional_string(overrides.model.as_deref()))
+        .or_else(|| {
+            endpoint_for(profile, target_api_type)?
+                .models
+                .first()
+                .and_then(|model| clean_optional_string(Some(model.id.as_str())))
+        })
+}
+
+fn canonical_model(profile: &ProfileDef, target_api_type: &str, model: &str) -> Option<String> {
+    let endpoint = endpoint_for(profile, target_api_type)?;
+    catalog::canonical_model_id(endpoint, model)
+}
+
+fn endpoint_for<'a>(
+    profile: &'a ProfileDef,
+    target_api_type: &str,
+) -> Option<&'a catalog::EndpointDef> {
+    let provider = catalog::get(&profile.provider)?;
+    let endpoint_id = profile
+        .overrides
+        .get(target_api_type)
+        .and_then(|overrides| overrides.endpoint_id.as_deref());
+    catalog::find_endpoint(provider, target_api_type, endpoint_id)
+}
+
+fn clean_optional_string(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 pub fn launch_targets_for_profile(profile: &ProfileDef) -> Vec<ProfileLaunchTarget> {

@@ -60,6 +60,8 @@ pub struct ProfileBridgePreference {
     pub use_proxy: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_api_type: Option<String>,
+    // TODO(0.7.x): remove these single-model compatibility fields once all
+    // saved bridge preferences have migrated to `models`.
     /// The real upstream model this bridge route should run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream_model: Option<String>,
@@ -67,10 +69,25 @@ pub struct ProfileBridgePreference {
     /// `upstream_model` before calling the provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fake_model_id: Option<String>,
+    /// Optional per-route model list. Each entry can expose a fake model id to
+    /// the agent while routing to a provider-specific upstream model id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<ProfileBridgeModelPreference>,
     /// Extra provider headers for this bridge route. Catalog default headers
     /// remain owned by the provider catalog and cannot be overridden here.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileBridgeModelPreference {
+    /// The real upstream model this bridge route should run for this entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_model: Option<String>,
+    /// Optional model id exposed to the agent for this entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fake_model_id: Option<String>,
 }
 
 fn is_false(value: &bool) -> bool {
