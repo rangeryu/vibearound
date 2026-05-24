@@ -497,14 +497,6 @@ export function SettingsDialog({
           </aside>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            {notice && (
-              <div className="shrink-0 px-5 pt-4">
-                <StatusBanner variant={notice.variant}>
-                  {t(notice.message)}
-                </StatusBanner>
-              </div>
-            )}
-
             <TabsContent
               value="general"
               className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
@@ -518,6 +510,7 @@ export function SettingsDialog({
                   <p className="mt-1 text-xs text-muted-foreground">
                     {t("Manage local service controls and rerun setup when needed.")}
                   </p>
+                  <SettingsNotice notice={notice} />
                 </div>
                 <div className="rounded-md border border-border">
                   <SettingsActionRow
@@ -583,6 +576,7 @@ export function SettingsDialog({
                       onStartAuth={(pluginId) => void startAuth(pluginId)}
                       onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
                       switchSize="sm"
+                      notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
                   <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
@@ -614,6 +608,7 @@ export function SettingsDialog({
                       agents={agents}
                       enabledAgents={enabledAgents}
                       onToggle={toggleAgent}
+                      notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
                   <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
@@ -648,6 +643,7 @@ export function SettingsDialog({
                       proxyNoProxy={proxyNoProxy}
                       onProxyHttpChange={setProxyHttp}
                       onProxyNoProxyChange={setProxyNoProxy}
+                      notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
                   <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
@@ -689,6 +685,7 @@ export function SettingsDialog({
                       onCfToken={setCfToken}
                       cfHostname={cfHostname}
                       onCfHostname={setCfHostname}
+                      notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
                   <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border px-5 py-3">
@@ -727,10 +724,12 @@ function AgentSettingsPanel({
   agents,
   enabledAgents,
   onToggle,
+  notice,
 }: {
   agents: AgentSummary[];
   enabledAgents: Set<string>;
   onToggle: (agentId: string) => void;
+  notice?: ReactNode;
 }) {
   const { t } = useI18n();
   return (
@@ -745,6 +744,7 @@ function AgentSettingsPanel({
             "Choose which CLIs appear in Launch and new IM sessions. Running sessions continue.",
           )}
         </p>
+        {notice}
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(178px,220px))] gap-2">
         {agents.map((agent) => {
@@ -803,11 +803,13 @@ function ProxySettingsPanel({
   proxyNoProxy,
   onProxyHttpChange,
   onProxyNoProxyChange,
+  notice,
 }: {
   proxyHttp: string;
   proxyNoProxy: string;
   onProxyHttpChange: (value: string) => void;
   onProxyNoProxyChange: (value: string) => void;
+  notice?: ReactNode;
 }) {
   const { t } = useI18n();
   return (
@@ -822,6 +824,7 @@ function ProxySettingsPanel({
             "Configure the HTTP proxy used by API bridge routes that opt in from profile connection settings.",
           )}
         </p>
+        {notice}
       </div>
       <div className="rounded-md border border-border">
         <div className="grid gap-3 border-b border-border px-4 py-3 last:border-b-0">
@@ -849,6 +852,16 @@ function ProxySettingsPanel({
           </label>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SettingsNotice({ notice }: { notice: Notice | null }) {
+  const { t } = useI18n();
+  if (!notice) return null;
+  return (
+    <div className="mt-3">
+      <StatusBanner variant={notice.variant}>{t(notice.message)}</StatusBanner>
     </div>
   );
 }

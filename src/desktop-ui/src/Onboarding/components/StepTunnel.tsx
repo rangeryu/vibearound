@@ -18,6 +18,7 @@ export function StepTunnel({
   onCfToken,
   cfHostname,
   onCfHostname,
+  notice,
 }: StepTunnelProps) {
   const { t } = useI18n();
   const orderedTunnels = [...tunnels].sort(
@@ -34,6 +35,7 @@ export function StepTunnel({
         <p className="text-xs text-muted-foreground mt-1">
           {t("Expose your local server to the internet for IM webhooks and remote access. Skip if you only use it locally.")}
         </p>
+        {notice}
       </div>
 
       <div className="flex gap-2">

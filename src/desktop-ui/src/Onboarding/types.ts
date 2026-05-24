@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { AgentId, OnboardingGoal, TunnelProvider } from "./constants";
 import type { ProfileSummary } from "../Launch/types";
 
@@ -133,6 +134,7 @@ export interface StepChannelsProps {
   onStartAuth: (pluginId: string) => void;
   onCancelAuth: (pluginId: string) => void;
   switchSize?: "sm" | "default";
+  notice?: ReactNode;
 }
 
 export interface StepTunnelProps {
@@ -147,6 +149,7 @@ export interface StepTunnelProps {
   onCfToken: (value: string) => void;
   cfHostname: string;
   onCfHostname: (value: string) => void;
+  notice?: ReactNode;
 }
 
 export interface StepConfirmProps {

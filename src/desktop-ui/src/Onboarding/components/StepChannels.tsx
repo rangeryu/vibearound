@@ -37,6 +37,7 @@ export function StepChannels({
   onStartAuth,
   onCancelAuth,
   switchSize = "default",
+  notice,
 }: StepChannelsProps) {
   const { t } = useI18n();
   const discoveredMap = new Map(discoveredPlugins.map((p) => [p.id, p]));
@@ -51,6 +52,7 @@ export function StepChannels({
         <p className="text-xs text-muted-foreground mt-1">
           {t("Connect messaging bots to vibe code from your phone. Install plugins from the registry, then configure and enable them.")}
         </p>
+        {notice}
       </div>
 
       {pluginRegistry.map((entry) => {
