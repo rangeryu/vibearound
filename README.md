@@ -49,12 +49,17 @@ Coding agents are powerful, but their working state is usually trapped inside on
 ## Screenshots
 
 <p align="center">
+  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.5/current-app/app-launch-cn.webp" width="88%" alt="VibeAround desktop Launch page with agents, profiles, workspaces, sessions, and launch controls" />
+</p>
+
+<p align="center">
   <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.5/screenshots/web-chat.webp" width="49%" alt="VibeAround Web Chat and browser dashboard" />
   <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.5/screenshots/model-bridge-terminals.webp" width="49%" alt="Codex terminals launched with bridged model profiles" />
 </p>
 
 <p align="center">
-  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.5/screenshots/provider-catalog.webp" width="72%" alt="Provider catalog with supported API shapes" />
+  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.5/current-app/app-provider-catalog-cn.webp" width="49%" alt="Provider catalog with supported API shapes" />
+  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.5/current-app/app-profile-form-cn.webp" width="49%" alt="Provider profile form with API types and model settings" />
 </p>
 
 ## Quick Start
