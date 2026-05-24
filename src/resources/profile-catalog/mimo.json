@@ -13,19 +13,23 @@
       "models": [
         {
           "id": "mimo-v2.5-pro",
-          "label": "MiMo V2.5 Pro"
+          "label": "MiMo V2.5 Pro",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2.5",
-          "label": "MiMo V2.5"
+          "label": "MiMo V2.5",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2-pro",
-          "label": "MiMo V2 Pro"
+          "label": "MiMo V2 Pro",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2-omni",
           "label": "MiMo V2 Omni",
+          "context_window": 256000,
           "capabilities": {
             "image_input": true,
             "file_input": true
@@ -33,7 +37,8 @@
         },
         {
           "id": "mimo-v2-flash",
-          "label": "MiMo V2 Flash"
+          "label": "MiMo V2 Flash",
+          "context_window": 256000
         }
       ],
       "auth_modes": [
@@ -76,19 +81,23 @@
       "models": [
         {
           "id": "mimo-v2.5-pro",
-          "label": "MiMo V2.5 Pro"
+          "label": "MiMo V2.5 Pro",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2.5",
-          "label": "MiMo V2.5"
+          "label": "MiMo V2.5",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2-pro",
-          "label": "MiMo V2 Pro"
+          "label": "MiMo V2 Pro",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2-omni",
           "label": "MiMo V2 Omni",
+          "context_window": 256000,
           "capabilities": {
             "image_input": true,
             "file_input": true
@@ -96,7 +105,8 @@
         },
         {
           "id": "mimo-v2-flash",
-          "label": "MiMo V2 Flash"
+          "label": "MiMo V2 Flash",
+          "context_window": 256000
         }
       ],
       "auth_modes": [
@@ -139,19 +149,23 @@
       "models": [
         {
           "id": "mimo-v2.5-pro",
-          "label": "MiMo V2.5 Pro"
+          "label": "MiMo V2.5 Pro",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2.5",
-          "label": "MiMo V2.5"
+          "label": "MiMo V2.5",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2-pro",
-          "label": "MiMo V2 Pro"
+          "label": "MiMo V2 Pro",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2-omni",
           "label": "MiMo V2 Omni",
+          "context_window": 256000,
           "capabilities": {
             "image_input": true,
             "file_input": true
@@ -159,7 +173,8 @@
         },
         {
           "id": "mimo-v2-flash",
-          "label": "MiMo V2 Flash"
+          "label": "MiMo V2 Flash",
+          "context_window": 256000
         }
       ],
       "auth_modes": [
@@ -202,19 +217,23 @@
       "models": [
         {
           "id": "mimo-v2.5-pro",
-          "label": "MiMo V2.5 Pro"
+          "label": "MiMo V2.5 Pro",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2.5",
-          "label": "MiMo V2.5"
+          "label": "MiMo V2.5",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2-pro",
-          "label": "MiMo V2 Pro"
+          "label": "MiMo V2 Pro",
+          "context_window": 1000000
         },
         {
           "id": "mimo-v2-omni",
           "label": "MiMo V2 Omni",
+          "context_window": 256000,
           "capabilities": {
             "image_input": true,
             "file_input": true
@@ -222,7 +241,8 @@
         },
         {
           "id": "mimo-v2-flash",
-          "label": "MiMo V2 Flash"
+          "label": "MiMo V2 Flash",
+          "context_window": 256000
         }
       ],
       "auth_modes": [

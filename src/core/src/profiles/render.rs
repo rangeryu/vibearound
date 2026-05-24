@@ -14,8 +14,10 @@ use std::collections::BTreeMap;
 use anyhow::{anyhow, bail};
 
 use super::catalog::{
-    self, AuthModeDef, EndpointDef, ProviderCatalog, RenderRules, SettingsFileTemplate,
+    self, AuthModeDef, ContentCapabilities, EndpointDef, ProviderCatalog, RenderRules,
+    SettingsFileTemplate,
 };
+use super::codex_metadata::{self, CodexModelCatalogSpec};
 use super::schema::{ApiTypeOverrides, AuthMode, ProfileDef};
 
 // ---------------------------------------------------------------------------
@@ -105,16 +107,24 @@ pub fn render(
         });
     }
 
-    let config_env = if settings_files.is_empty() {
-        None
-    } else {
-        config_env_for(launch_target)
-    };
+    let mut command_args = command_args_for(launch_target, &context);
+    if let Some(metadata) = selected_model_metadata(&context, endpoint) {
+        add_codex_model_catalog(
+            profile,
+            launch_target,
+            &context,
+            &metadata,
+            &mut settings_files,
+            &mut command_args,
+        )?;
+    }
+
+    let config_env = config_env_for_rendered_files(launch_target, &settings_files);
 
     Ok(RenderedProfile {
         env,
         settings_files,
-        command_args: command_args_for(launch_target, &context),
+        command_args,
         config_env,
     })
 }
@@ -174,6 +184,19 @@ fn config_env_for(launch_target: &str) -> Option<ConfigEnvTarget> {
         }),
         _ => None,
     }
+}
+
+fn config_env_for_rendered_files(
+    launch_target: &str,
+    settings_files: &[RenderedSettingsFile],
+) -> Option<ConfigEnvTarget> {
+    if settings_files
+        .iter()
+        .all(|settings_file| settings_file.rel_path.starts_with("codex-model-catalog-"))
+    {
+        return None;
+    }
+    config_env_for(launch_target)
 }
 
 fn opencode_render_rules(api_type: &str) -> anyhow::Result<RenderRules> {
@@ -266,6 +289,84 @@ fn command_args_for(launch_target: &str, ctx: &BTreeMap<String, String>) -> Vec<
     args
 }
 
+#[derive(Debug)]
+struct SelectedModelMetadata {
+    context_window: u64,
+    capabilities: ContentCapabilities,
+}
+
+fn selected_model_metadata(
+    ctx: &BTreeMap<String, String>,
+    endpoint: &EndpointDef,
+) -> Option<SelectedModelMetadata> {
+    let model = ctx.get("model").filter(|value| !value.is_empty())?;
+    let model_def = catalog::find_model(endpoint, model)?;
+    Some(SelectedModelMetadata {
+        context_window: model_def.context_window?,
+        capabilities: endpoint.capabilities.content.merge(&model_def.capabilities),
+    })
+}
+
+fn add_codex_model_catalog(
+    profile: &ProfileDef,
+    launch_target: &str,
+    ctx: &BTreeMap<String, String>,
+    metadata: &SelectedModelMetadata,
+    settings_files: &mut Vec<RenderedSettingsFile>,
+    command_args: &mut Vec<String>,
+) -> anyhow::Result<()> {
+    if launch_target != "codex" {
+        return Ok(());
+    }
+    let Some(model) = ctx.get("model").filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let Some(provider_label) = ctx.get("provider_label").filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let Some(model_catalog_json) =
+        codex_metadata::build_model_catalog_json(CodexModelCatalogSpec {
+            model,
+            provider_label,
+            context_window: metadata.context_window,
+            capabilities: &metadata.capabilities,
+        })
+    else {
+        return Ok(());
+    };
+
+    let rel_path = codex_model_catalog_rel_path(model);
+    validate_rel_path(&rel_path)?;
+    let catalog_path = super::runtime::profile_state_dir(&profile.id).join(&rel_path);
+    let catalog_path = catalog_path.to_string_lossy();
+    command_args.push("-c".to_string());
+    command_args.push(format!(
+        "model_catalog_json={}",
+        toml_string(catalog_path.as_ref())
+    ));
+    settings_files.push(RenderedSettingsFile {
+        rel_path,
+        contents: model_catalog_json,
+    });
+
+    Ok(())
+}
+
+fn codex_model_catalog_rel_path(model: &str) -> String {
+    let mut slug = String::with_capacity(model.len());
+    for ch in model.chars().take(96) {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            slug.push(ch);
+        } else {
+            slug.push('_');
+        }
+    }
+    if slug.is_empty() {
+        slug.push_str("model");
+    }
+    format!("codex-model-catalog-{slug}.json")
+}
+
 fn normalize_claude_env(env: &mut Vec<(String, String)>, ctx: &BTreeMap<String, String>) {
     let api_key = first_env_value(env, &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"])
         .or_else(|| ctx.get("api_key").cloned())
@@ -276,12 +377,19 @@ fn normalize_claude_env(env: &mut Vec<(String, String)>, ctx: &BTreeMap<String, 
     let model = first_env_value(env, &["ANTHROPIC_MODEL"])
         .or_else(|| ctx.get("model").cloned())
         .unwrap_or_default();
+    let auto_compact_window = ctx
+        .get("model_context_window")
+        .filter(|value| !value.is_empty())
+        .cloned();
 
     env.retain(|(key, _)| !is_standardized_claude_env_key(key));
     push_env_if_nonempty(env, "ANTHROPIC_API_KEY", api_key.clone());
     push_env_if_nonempty(env, "ANTHROPIC_AUTH_TOKEN", api_key);
     push_env_if_nonempty(env, "ANTHROPIC_BASE_URL", base_url);
     push_env_if_nonempty(env, "ANTHROPIC_MODEL", model);
+    if let Some(auto_compact_window) = auto_compact_window {
+        push_env_if_nonempty(env, "CLAUDE_CODE_AUTO_COMPACT_WINDOW", auto_compact_window);
+    }
 }
 
 fn first_env_value(env: &[(String, String)], keys: &[&str]) -> Option<String> {
@@ -308,6 +416,7 @@ fn is_standardized_claude_env_key(key: &str) -> bool {
             | "ANTHROPIC_DEFAULT_OPUS_MODEL"
             | "ANTHROPIC_DEFAULT_SONNET_MODEL"
             | "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+            | "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
             | "CLAUDE_CODE_SUBAGENT_MODEL"
             | "CLAUDE_CODE_EFFORT_LEVEL"
     )
@@ -523,6 +632,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::profiles::schema::{ApiTypeOverrides, AuthMode, ProfileDef};
+    use serde_json::Value;
 
     use super::*;
 
@@ -545,6 +655,7 @@ mod tests {
                     "ANTHROPIC_AUTH_TOKEN",
                     "ANTHROPIC_BASE_URL",
                     "ANTHROPIC_MODEL",
+                    "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
                 ]
             );
             assert_eq!(
@@ -555,7 +666,57 @@ mod tests {
                     .map(|(_, value)| value.as_str()),
                 Some(model_for(&profile))
             );
+            assert_eq!(
+                rendered
+                    .env
+                    .iter()
+                    .find(|(key, _)| key == "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+                    .map(|(_, value)| value.as_str()),
+                Some(match profile.provider.as_str() {
+                    "kimi" => "256000",
+                    _ => "1000000",
+                })
+            );
         }
+    }
+
+    #[test]
+    fn codex_launch_includes_model_catalog_for_context_window() {
+        let profile = openai_responses_profile("xai", "grok-4.3");
+        let provider = catalog::get(&profile.provider).expect("provider exists");
+
+        let rendered =
+            render(&profile, "openai-responses", "codex", provider).expect("codex profile renders");
+
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model='grok-4.3'"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model_context_window=1000000"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg.starts_with("model_catalog_json='")));
+        assert!(rendered.config_env.is_none());
+
+        let catalog_file = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path.starts_with("codex-model-catalog-"))
+            .expect("codex model catalog file");
+        let catalog: Value =
+            serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
+        let model = &catalog["models"][0];
+        assert_eq!(model["slug"], "grok-4.3");
+        assert_eq!(model["context_window"], 1_000_000);
+        assert_eq!(model["max_context_window"], 1_000_000);
+        assert_eq!(
+            model["input_modalities"],
+            serde_json::json!(["text", "image"])
+        );
     }
 
     fn anthropic_profile(provider: &str, endpoint_id: Option<&str>, model: &str) -> ProfileDef {
@@ -580,6 +741,34 @@ mod tests {
             provider: provider.to_string(),
             auth_mode: AuthMode::ApiKey,
             api_types: vec!["anthropic".to_string()],
+            credentials,
+            overrides,
+            provider_settings: Default::default(),
+        }
+    }
+
+    fn openai_responses_profile(provider: &str, model: &str) -> ProfileDef {
+        let mut credentials = BTreeMap::new();
+        credentials.insert("api_key".to_string(), "test-key".to_string());
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "openai-responses".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: None,
+                base_url: None,
+                model: Some(model.to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                capabilities: None,
+            },
+        );
+
+        ProfileDef {
+            id: format!("{provider}-test"),
+            label: format!("{provider} test"),
+            provider: provider.to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-responses".to_string()],
             credentials,
             overrides,
             provider_settings: Default::default(),
