@@ -7,7 +7,13 @@ import {
   type ReactNode,
 } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ChevronDown, Rocket, Terminal } from "lucide-react";
+import {
+  ChevronDown,
+  FolderOpen,
+  MessageCircle,
+  Rocket,
+  Terminal,
+} from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
@@ -199,6 +205,7 @@ function LaunchSummaryPill({
   label,
   title,
   detail,
+  icon,
   className = "",
   chevron = false,
   onClick,
@@ -208,12 +215,18 @@ function LaunchSummaryPill({
   label: string;
   title: string;
   detail?: string;
+  icon?: ReactNode;
   className?: string;
   chevron?: boolean;
   onClick?: () => void;
 }) {
   const content = (
     <>
+      {icon && (
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
+          {icon}
+        </span>
+      )}
       <span className="shrink-0 text-[11px] text-muted-foreground">
         {label}
       </span>
@@ -968,7 +981,7 @@ export function AgentLaunchBuilder({
 
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col">
-            <header className="border-b border-border bg-card/20 p-3">
+            <header className="bg-card/20 p-3">
               <div className="grid grid-cols-[minmax(0,1fr)_190px] items-stretch gap-2">
                 <div className="overflow-visible rounded-xl border border-border bg-card p-3 shadow-sm">
                   <AgentSummaryHeader
@@ -1026,6 +1039,7 @@ export function AgentLaunchBuilder({
                         size="sm"
                         className="!h-9 w-[160px] justify-start gap-1.5 border-border/70 bg-transparent px-2.5 text-xs shadow-none hover:border-primary/35 [&>svg:last-child]:ml-auto"
                       >
+                        <Terminal className="h-4 w-4 text-muted-foreground" />
                         <span className="shrink-0 text-[11px] text-muted-foreground">
                           {t("Terminal")}
                         </span>
@@ -1062,6 +1076,7 @@ export function AgentLaunchBuilder({
                           active={openSelector === "workspace"}
                           chevron
                           className="w-[250px]"
+                          icon={<FolderOpen className="h-4 w-4" />}
                           onClick={() =>
                             setOpenSelector(
                               openSelector === "workspace" ? null : "workspace",
@@ -1113,6 +1128,7 @@ export function AgentLaunchBuilder({
                           chevron
                           disabled={!sessionResumeSupported}
                           className="w-[210px]"
+                          icon={<MessageCircle className="h-4 w-4" />}
                           onClick={() =>
                             setOpenSelector(
                               openSelector === "session" ? null : "session",
@@ -1153,9 +1169,9 @@ export function AgentLaunchBuilder({
                     disabledReason={launchDisabledReason}
                     onClick={() => void launchSelected()}
                     size="lg"
-                    className="h-full min-h-[115px] w-full rounded-xl justify-center text-sm font-semibold tracking-[0.1em] shadow-md shadow-primary/15"
+                    className="h-full min-h-[115px] w-full rounded-xl justify-center text-base font-semibold tracking-[0.12em] shadow-md shadow-primary/15"
                   >
-                    <Rocket className="h-4 w-4" />
+                    <Rocket className="h-5 w-5" />
                     {t("LAUNCH")}
                   </TooltipButton>
                 </div>

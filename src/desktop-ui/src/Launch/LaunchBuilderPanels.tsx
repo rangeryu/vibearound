@@ -130,16 +130,7 @@ export function ProfilePanel({
 
   return (
     <section className="space-y-2">
-      <div className="flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={profileSearch}
-            onChange={(event) => setProfileSearch(event.target.value)}
-            placeholder={t("Search profiles")}
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
+      <div className="flex items-center justify-between gap-2">
         <Button
           type="button"
           size="sm"
@@ -150,9 +141,18 @@ export function ProfilePanel({
           <Plus className="h-3.5 w-3.5" />
           {t("New profile")}
         </Button>
+        <div className="relative ml-auto w-[min(320px,42vw)] min-w-[180px]">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={profileSearch}
+            onChange={(event) => setProfileSearch(event.target.value)}
+            placeholder={t("Search profiles")}
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-2">
         {directVisible && (
           <SelectableItemCard
             active={directActive}
@@ -164,8 +164,8 @@ export function ProfilePanel({
               label={t("Direct")}
               disabledReason={t("Direct profile is fixed")}
             />
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
-              <Terminal className="h-5 w-5" />
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+              <Terminal className="h-6 w-6" />
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -250,14 +250,14 @@ export function ProfilePanel({
                         }
                         dragHandleRef={dragHandleRef}
                       />
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
                         <BrandIcon
                           kind="provider"
                           id={profile.provider}
                           label={profile.providerLabel}
                           fallback={profile.providerIcon}
                           framed={false}
-                          className="h-8 w-8"
+                          className="h-9 w-9"
                         />
                       </span>
                       <div className="min-w-0 flex-1">

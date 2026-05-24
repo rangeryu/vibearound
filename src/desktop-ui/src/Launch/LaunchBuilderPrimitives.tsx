@@ -145,7 +145,7 @@ export function SelectableItemCard({
         if (!disabled) onSelect();
       }}
       onKeyDown={handleKeyDown}
-      className={`flex h-full min-h-[86px] w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${
+      className={`flex h-full min-h-[94px] w-full items-center gap-3 rounded-md border px-3.5 py-3 text-left transition-colors ${
         active
           ? "border-primary bg-primary/10 text-primary shadow-[inset_3px_0_0_hsl(var(--primary))]"
           : disabled
