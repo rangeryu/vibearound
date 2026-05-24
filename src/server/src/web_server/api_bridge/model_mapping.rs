@@ -38,7 +38,7 @@ pub(super) fn bridge_model_mapping(
     if let Some(requested_agent_model) = clean_model_id(requested_agent_model) {
         if let Some(route) = routes
             .iter()
-            .find(|route| route.agent_model == requested_agent_model)
+            .find(|route| agent_model_matches(&route.agent_model, &requested_agent_model))
         {
             return Some(BridgeModelMapping {
                 upstream_model: route.upstream_model.clone(),
@@ -78,6 +78,16 @@ fn canonical_model(profile: &ProfileDef, target_api_type: &str, model: &str) -> 
         .and_then(|overrides| overrides.endpoint_id.as_deref());
     let endpoint = catalog::find_endpoint(provider, target_api_type, endpoint_id)?;
     catalog::canonical_model_id(endpoint, model)
+}
+
+fn agent_model_matches(configured: &str, requested: &str) -> bool {
+    configured == requested
+        || catalog::strip_bracket_suffix(configured)
+            .map(|base| base == requested)
+            .unwrap_or(false)
+        || catalog::strip_bracket_suffix(requested)
+            .map(|base| base == configured)
+            .unwrap_or(false)
 }
 
 fn clean_model_id(value: Option<&str>) -> Option<String> {
@@ -167,5 +177,38 @@ mod tests {
 
         assert_eq!(mapping.upstream_model, "provider-new-model");
         assert_eq!(mapping.agent_model, "provider-new-model");
+    }
+
+    #[test]
+    fn bridge_mapping_matches_claude_context_suffix_alias() {
+        let profile = ProfileDef {
+            id: "deepseek-test".to_string(),
+            label: "DeepSeek Test".to_string(),
+            provider: "deepseek".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials: BTreeMap::new(),
+            overrides: BTreeMap::new(),
+            provider_settings: Default::default(),
+        };
+        let bridge = agent_state::ProfileBridgePreference {
+            enabled: true,
+            use_proxy: false,
+            target_api_type: Some("openai-chat".to_string()),
+            upstream_model: Some("deepseek-v4-pro".to_string()),
+            fake_model_id: Some("opus-4.7[1m]".to_string()),
+            models: vec![agent_state::ProfileBridgeModelPreference {
+                upstream_model: Some("deepseek-v4-pro".to_string()),
+                fake_model_id: Some("opus-4.7[1m]".to_string()),
+            }],
+            headers: BTreeMap::new(),
+        };
+
+        let mapping =
+            bridge_model_mapping(&profile, Some(&bridge), "openai-chat", Some("opus-4.7"))
+                .expect("mapping should resolve");
+
+        assert_eq!(mapping.upstream_model, "deepseek-v4-pro");
+        assert_eq!(mapping.agent_model, "opus-4.7[1m]");
     }
 }
