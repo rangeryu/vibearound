@@ -1,18 +1,13 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import {
-  FolderOpen,
-  History,
-  MessageCircle,
-  Rocket,
-  Terminal,
-} from "lucide-react";
+import { ChevronDown, History, Rocket, Terminal } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
@@ -26,6 +21,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   AgentRailButton,
+  BridgeBadge,
   TooltipButton,
 } from "./LaunchBuilderPrimitives";
 import {
@@ -60,9 +56,11 @@ import {
 } from "./api";
 import {
   agentLabel,
+  agentConnectionDef,
   agentProfileId,
   agentSupportsSessionResume,
   agentWorkspace,
+  apiTypeProtocolDisplayLabel,
   currentTerminal,
   currentWorkspace,
   isBridgeAgent,
@@ -73,15 +71,15 @@ import {
   profileById,
   profileSupportsAgent,
   profileSummary,
-  relativeTime,
   resolveSelectedSession,
   selectionUnavailableReason,
   type ProfileChoice,
   type SessionChoice,
 } from "./launchModel";
+import { resolveProfileConnection } from "./connections";
 import type { ConnectionAgentId, ProfileSummary } from "./types";
 
-type SelectorPopupId = "workspace" | "session";
+type SelectorPopupId = "profile" | "workspace" | "session";
 
 const AGENT_ORDER = [
   "codex",
@@ -114,6 +112,7 @@ function SelectorPopup({
   onOpenChange,
   align = "start",
   widthClassName,
+  widthPx,
   trigger,
   children,
 }: {
@@ -122,11 +121,15 @@ function SelectorPopup({
   onOpenChange: (id: SelectorPopupId | null) => void;
   align?: "start" | "end";
   widthClassName: string;
+  widthPx: number;
   trigger: ReactNode;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const open = openSelector === id;
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -146,78 +149,96 @@ function SelectorPopup({
     };
   }, [onOpenChange, open]);
 
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+
+    function updatePosition() {
+      const rect = ref.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const gutter = 8;
+      const popupWidth = Math.min(widthPx, window.innerWidth - gutter * 2);
+      const rawLeft = align === "end" ? rect.right - popupWidth : rect.left;
+      const maxLeft = Math.max(gutter, window.innerWidth - popupWidth - gutter);
+      setPosition({
+        left: Math.min(Math.max(rawLeft, gutter), maxLeft),
+        top: rect.bottom + gutter,
+      });
+    }
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [align, open, widthPx]);
+
   return (
     <div ref={ref} className="relative min-w-0">
       {trigger}
-      {open && (
+      {open && position && (
         <div
-          className={`absolute top-full z-50 mt-2 ${align === "end" ? "right-0" : "left-0"} ${widthClassName}`}
+          className={`fixed z-50 ${widthClassName}`}
+          style={{ left: position.left, top: position.top }}
         >
-          <div className="max-h-[min(64vh,480px)] overflow-y-auto">
-            {children}
-          </div>
+          {children}
         </div>
       )}
     </div>
   );
 }
 
-function LaunchSummarySegment({
+function LaunchSummaryPill({
   active = false,
   disabled = false,
-  icon,
   label,
   title,
   detail,
-  badges,
   className = "",
+  chevron = false,
   onClick,
 }: {
   active?: boolean;
   disabled?: boolean;
-  icon: ReactNode;
   label: string;
   title: string;
-  detail: string;
-  badges?: ReactNode;
+  detail?: string;
   className?: string;
+  chevron?: boolean;
   onClick?: () => void;
 }) {
   const content = (
     <>
-      <span
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${
-          active
-            ? "border-primary/25 bg-background text-primary"
-            : "border-border/70 bg-background text-muted-foreground"
-        }`}
-      >
-        {icon}
+      <span className="shrink-0 text-[11px] text-muted-foreground">
+        {label}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span
-            className={`text-[10px] font-semibold uppercase ${active ? "text-primary" : "text-muted-foreground"}`}
-          >
-            {label}
-          </span>
-          {badges}
-        </span>
-        <span className="block truncate text-[12px] font-semibold">{title}</span>
-        <span className="block truncate text-[10px] text-muted-foreground">
+      <span className="min-w-0 truncate font-semibold text-foreground">
+        {title}
+      </span>
+      {detail && (
+        <span className="min-w-0 truncate text-muted-foreground">
+          <span className="px-0.5">·</span>
           {detail}
         </span>
-      </span>
+      )}
+      {chevron && (
+        <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      )}
     </>
   );
-  const baseClassName = `flex h-full min-h-[58px] w-full min-w-0 items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${
+  const baseClassName = `flex h-9 w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md border bg-transparent px-2.5 text-xs transition-colors ${
     disabled
-      ? "cursor-not-allowed text-muted-foreground opacity-60"
+      ? "cursor-not-allowed border-border/70 opacity-60"
       : active
-        ? "rounded bg-background text-foreground shadow-sm"
-        : onClick
-          ? "rounded text-foreground hover:bg-background/75"
-          : "text-foreground"
+        ? "border-primary/45"
+      : onClick
+        ? "border-border/70 hover:border-primary/35"
+        : "border-border/70"
   } ${className}`;
 
   if (!onClick) {
@@ -236,6 +257,198 @@ function LaunchSummarySegment({
     >
       {content}
     </button>
+  );
+}
+
+function AgentSummaryHeader({
+  agentId,
+  agentLabelText,
+}: {
+  agentId: string;
+  agentLabelText: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center text-primary">
+        <BrandIcon
+          kind="cli"
+          id={agentId}
+          label={agentLabelText}
+          framed={false}
+          className="h-9 w-9"
+        />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-[17px] font-semibold leading-tight">
+          {agentLabelText}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function ProfileInfoRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 border-t border-border/60 px-3 py-2">
+      <div className="text-[11px] font-medium text-muted-foreground">
+        {label}
+      </div>
+      <div className="min-w-0 text-[12px] text-foreground">{children}</div>
+    </div>
+  );
+}
+
+function ProfileInfoPanel({
+  agentId,
+  prefs,
+  profile,
+  summary,
+}: {
+  agentId: string;
+  prefs: LauncherPreferences;
+  profile: ProfileSummary | null;
+  summary: { title: string; detail: string; bridge: boolean; route: string };
+}) {
+  const { t } = useI18n();
+  const connection =
+    profile && isBridgeAgent(agentId)
+      ? resolveProfileConnection(
+          profile,
+          prefs.profileConnections,
+          agentConnectionDef(agentId),
+        )
+      : null;
+  const selectedConnection = connection?.selected ?? null;
+  const launchTarget = profile?.launchTargets.find(
+    (target) => target.id === agentId,
+  );
+  const bridgeStatus = selectedConnection
+    ? selectedConnection.status === "via_bridge"
+      ? t("API bridge on")
+      : selectedConnection.status === "native"
+        ? t("Native")
+        : t("Unsupported")
+    : t("Disabled");
+  const modelEntries =
+    selectedConnection?.status === "via_bridge"
+      ? selectedConnection.models.filter((model) => model.upstreamModel)
+      : [];
+
+  return (
+    <section className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+      <div className="flex items-center gap-3 px-3 py-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+          {profile ? (
+            <BrandIcon
+              kind="provider"
+              id={profile.provider}
+              label={profile.providerLabel}
+              fallback={profile.providerIcon}
+              framed={false}
+              className="h-8 w-8"
+            />
+          ) : (
+            <Terminal className="h-5 w-5" />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[13px] font-semibold">
+              {summary.title}
+            </span>
+            {summary.bridge && <BridgeBadge />}
+          </span>
+          <span className="block truncate text-[11px] text-muted-foreground">
+            {profile ? profile.providerLabel : t("Use existing CLI login")}
+          </span>
+        </span>
+      </div>
+      {profile ? (
+        <>
+          <ProfileInfoRow label={t("Provider")}>
+            <span className="truncate">{profile.providerLabel}</span>
+          </ProfileInfoRow>
+          <ProfileInfoRow label={t("API kinds")}>
+            <span className="truncate">
+              {profile.apiTypes.map(apiTypeProtocolDisplayLabel).join(", ")}
+            </span>
+          </ProfileInfoRow>
+          <ProfileInfoRow label={t("Route")}>
+            <span className="block truncate" title={summary.route}>
+              {summary.route}
+            </span>
+          </ProfileInfoRow>
+          <ProfileInfoRow label={t("API bridge")}>
+            <span className="truncate">{bridgeStatus}</span>
+          </ProfileInfoRow>
+          {selectedConnection && (
+            <ProfileInfoRow label={t("Client API")}>
+              <span className="truncate">
+                {apiTypeProtocolDisplayLabel(selectedConnection.apiType)}
+              </span>
+            </ProfileInfoRow>
+          )}
+          {selectedConnection?.targetApiType && (
+            <ProfileInfoRow label={t("Target API")}>
+              <span className="truncate">
+                {profile.providerLabel}{" "}
+                {apiTypeProtocolDisplayLabel(selectedConnection.targetApiType)}
+              </span>
+            </ProfileInfoRow>
+          )}
+          {!selectedConnection && launchTarget && (
+            <ProfileInfoRow label={t("Client API")}>
+              <span className="truncate">
+                {apiTypeProtocolDisplayLabel(launchTarget.apiType)}
+              </span>
+            </ProfileInfoRow>
+          )}
+          {modelEntries.length > 0 && (
+            <ProfileInfoRow label={t("Model routes")}>
+              <div className="space-y-1">
+                {modelEntries.slice(0, 3).map((model, index) => (
+                  <div
+                    key={`${model.fakeModelId ?? ""}:${model.upstreamModel ?? ""}:${index}`}
+                    className="flex min-w-0 items-center gap-1.5 font-mono text-[11px]"
+                  >
+                    <span className="min-w-0 truncate">
+                      {model.fakeModelId || model.upstreamModel}
+                    </span>
+                    <span className="text-muted-foreground">-&gt;</span>
+                    <span className="min-w-0 truncate">
+                      {model.upstreamModel}
+                    </span>
+                  </div>
+                ))}
+                {modelEntries.length > 3 && (
+                  <div className="text-[11px] text-muted-foreground">
+                    {t("+{{count}} more", { count: modelEntries.length - 3 })}
+                  </div>
+                )}
+              </div>
+            </ProfileInfoRow>
+          )}
+        </>
+      ) : (
+        <>
+          <ProfileInfoRow label={t("Launch mode")}>
+            <span className="truncate">{t("Direct launch")}</span>
+          </ProfileInfoRow>
+          <ProfileInfoRow label={t("Route")}>
+            <span className="truncate">{summary.route}</span>
+          </ProfileInfoRow>
+          <ProfileInfoRow label={t("API bridge")}>
+            <span className="truncate">{t("Disabled")}</span>
+          </ProfileInfoRow>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -732,11 +945,6 @@ export function AgentLaunchBuilder({
         route: t("Native CLI login"),
       };
   const sessionTitle = selectedSession?.title ?? t("New session");
-  const sessionDetail = selectedSession
-    ? `${selectedSession.shortId} · ${relativeTime(selectedSession.updatedAt, t)}`
-    : sessionResumeSupported
-      ? t("Quick Launch will start a new session")
-      : sessionResumeUnsupportedReason;
 
   return (
     <TooltipProvider>
@@ -757,117 +965,135 @@ export function AgentLaunchBuilder({
 
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col">
-            <header className="border-b border-border bg-card/20 p-2">
-              <div className="grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)] gap-1 overflow-visible rounded-md border border-border bg-muted/25 p-1 shadow-sm">
-                <LaunchSummarySegment
-                  active
-                  icon={
-                    selectedProfile ? (
-                      <BrandIcon
-                        kind="provider"
-                        id={selectedProfile.provider}
-                        label={selectedProfile.providerLabel}
-                        fallback={selectedProfile.providerIcon}
-                        framed={false}
-                        className="h-7 w-7"
-                      />
-                    ) : (
-                      <Terminal className="h-4 w-4" />
-                    )
-                  }
-                  label={t("Profile")}
-                  title={selectedProfileSummary.title}
-                  detail={selectedProfileSummary.route}
+            <header className="border-b border-border bg-card/20 p-3">
+              <div className="overflow-visible rounded-xl border border-border bg-card p-3 shadow-sm">
+                <AgentSummaryHeader
+                  agentId={agentId}
+                  agentLabelText={selectedAgent.display_name}
                 />
-                <SelectorPopup
-                  id="workspace"
-                  openSelector={openSelector}
-                  onOpenChange={setOpenSelector}
-                  widthClassName="w-[min(400px,calc(100vw-1rem))]"
-                  trigger={
-                    <LaunchSummarySegment
-                      active={openSelector === "workspace"}
-                      onClick={() =>
-                        setOpenSelector(
-                          openSelector === "workspace" ? null : "workspace",
-                        )
-                      }
-                      icon={<FolderOpen className="h-4 w-4" />}
-                      label={t("Workspace")}
-                      title={selectedWorkspace.label}
-                      detail={
-                        workspacesLoading
-                          ? t("Loading…")
-                          : t("{{count}} sessions", {
-                              count: visibleSessions.length,
-                            })
-                      }
+                <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+                  <SelectorPopup
+                    id="profile"
+                    openSelector={openSelector}
+                    onOpenChange={setOpenSelector}
+                    widthClassName="w-[min(360px,calc(100vw-1rem))]"
+                    widthPx={360}
+                    trigger={
+                      <LaunchSummaryPill
+                        active={openSelector === "profile"}
+                        className="w-[min(360px,100%)]"
+                        onClick={() =>
+                          setOpenSelector(
+                            openSelector === "profile" ? null : "profile",
+                          )
+                        }
+                        label={t("Profile")}
+                        title={selectedProfileSummary.title}
+                        detail={selectedProfileSummary.route}
+                      />
+                    }
+                  >
+                    <ProfileInfoPanel
+                      agentId={agentId}
+                      prefs={viewPrefs}
+                      profile={selectedProfile}
+                      summary={selectedProfileSummary}
                     />
-                  }
-                >
-                  <WorkspacePanel
-                    prefs={viewPrefs}
-                    loading={workspacesLoading}
-                    onSelect={(path) => {
-                      setOpenSelector(null);
-                      void chooseWorkspace(path);
-                    }}
-                    onDelete={(path, label) =>
-                      void removeWorkspace(path, label)
-                    }
-                    onReorder={(fromPath, toPath) =>
-                      void reorderWorkspace(fromPath, toPath)
-                    }
-                    onCreate={() => {
-                      setOpenSelector(null);
-                      void chooseFolder();
-                    }}
-                    sessionCounts={workspaceSessionCounts}
-                    busy={busy}
-                  />
-                </SelectorPopup>
-                <SelectorPopup
-                  id="session"
-                  openSelector={openSelector}
-                  onOpenChange={setOpenSelector}
-                  align="end"
-                  widthClassName="w-[min(420px,calc(100vw-1rem))]"
-                  trigger={
-                    <LaunchSummarySegment
-                      active={openSelector === "session"}
-                      disabled={!sessionResumeSupported}
-                      onClick={() =>
-                        setOpenSelector(
-                          openSelector === "session" ? null : "session",
-                        )
-                      }
-                      icon={<MessageCircle className="h-4 w-4" />}
-                      label={t("Session")}
-                      title={
-                        !sessionResumeSupported
-                          ? t("Session resume unavailable")
-                          : sessionsLoading
+                  </SelectorPopup>
+                  <SelectorPopup
+                    id="workspace"
+                    openSelector={openSelector}
+                    onOpenChange={setOpenSelector}
+                    widthClassName="w-[min(400px,calc(100vw-1rem))]"
+                    widthPx={400}
+                    trigger={
+                      <LaunchSummaryPill
+                        active={openSelector === "workspace"}
+                        chevron
+                        className="w-[250px]"
+                        onClick={() =>
+                          setOpenSelector(
+                            openSelector === "workspace" ? null : "workspace",
+                          )
+                        }
+                        label={t("Workspace")}
+                        title={selectedWorkspace.label}
+                        detail={
+                          workspacesLoading
                             ? t("Loading…")
-                            : sessionTitle
+                            : t("{{count}} sessions", {
+                                count: visibleSessions.length,
+                              })
+                        }
+                      />
+                    }
+                  >
+                    <WorkspacePanel
+                      prefs={viewPrefs}
+                      loading={workspacesLoading}
+                      onSelect={(path) => {
+                        setOpenSelector(null);
+                        void chooseWorkspace(path);
+                      }}
+                      onDelete={(path, label) =>
+                        void removeWorkspace(path, label)
                       }
-                      detail={sessionDetail}
+                      onReorder={(fromPath, toPath) =>
+                        void reorderWorkspace(fromPath, toPath)
+                      }
+                      onCreate={() => {
+                        setOpenSelector(null);
+                        void chooseFolder();
+                      }}
+                      sessionCounts={workspaceSessionCounts}
+                      busy={busy}
                     />
-                  }
-                >
-                  <SessionPanel
-                    sessions={visibleSessions}
-                    selected={sessionChoice}
-                    archiveFilterAvailable={agentId === "codex"}
-                    resumeSupported={sessionResumeSupported}
-                    unsupportedReason={sessionResumeUnsupportedReason}
-                    showArchived={showArchivedSessions}
-                    onShowArchivedChange={setShowArchivedSessions}
-                    onSelect={(choice) => {
-                      setOpenSelector(null);
-                      setSessionChoice(choice);
-                    }}
-                  />
-                </SelectorPopup>
+                  </SelectorPopup>
+                  <SelectorPopup
+                    id="session"
+                    openSelector={openSelector}
+                    onOpenChange={setOpenSelector}
+                    align="end"
+                    widthClassName="w-[min(420px,calc(100vw-1rem))]"
+                    widthPx={420}
+                    trigger={
+                      <LaunchSummaryPill
+                        active={openSelector === "session"}
+                        chevron
+                        disabled={!sessionResumeSupported}
+                        className="w-[210px]"
+                        onClick={() =>
+                          setOpenSelector(
+                            openSelector === "session" ? null : "session",
+                          )
+                        }
+                        label={t("Session")}
+                        title={
+                          !sessionResumeSupported
+                            ? t("Session resume unavailable")
+                            : sessionsLoading
+                              ? t("Loading…")
+                              : sessionTitle
+                        }
+                        detail={selectedSession ? t("resume") : undefined}
+                      />
+                    }
+                  >
+                    <SessionPanel
+                      sessions={visibleSessions}
+                      selected={sessionChoice}
+                      archiveFilterAvailable={agentId === "codex"}
+                      resumeSupported={sessionResumeSupported}
+                      unsupportedReason={sessionResumeUnsupportedReason}
+                      showArchived={showArchivedSessions}
+                      onShowArchivedChange={setShowArchivedSessions}
+                      onSelect={(choice) => {
+                        setOpenSelector(null);
+                        setSessionChoice(choice);
+                      }}
+                    />
+                  </SelectorPopup>
+                </div>
               </div>
             </header>
 
@@ -931,7 +1157,7 @@ export function AgentLaunchBuilder({
                 ) : (
                   <Rocket className="h-3.5 w-3.5" />
                 )}
-                {selectedSession ? t("Resume Session") : t("Quick Launch")}
+                {t("LAUNCH")}
               </TooltipButton>
             </footer>
           </div>

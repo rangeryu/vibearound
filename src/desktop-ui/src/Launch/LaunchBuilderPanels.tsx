@@ -473,7 +473,7 @@ export function WorkspacePanel({
   }
 
   return (
-    <section className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+    <section className="box-border flex max-h-[430px] flex-col overflow-hidden rounded-md border border-border bg-card shadow-sm">
       <div className="border-b border-border/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
         {t("Switch workspace")}
       </div>
@@ -483,7 +483,7 @@ export function WorkspacePanel({
         </p>
       )}
       <DragDropProvider onDragEnd={handleWorkspaceDragEnd}>
-        <div className="divide-y divide-border/60">
+        <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto">
           {workspaceOptions.map((workspace) => {
             if (!isSortableWorkspace(workspace)) {
               return renderWorkspaceRow(workspace);
@@ -506,17 +506,26 @@ export function WorkspacePanel({
           })}
         </div>
       </DragDropProvider>
-      <button
-        type="button"
-        disabled={busy}
-        className="flex w-full items-center gap-2 border-t border-border bg-background px-3 py-2 text-left text-[13px] font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
-        onClick={onCreate}
-      >
-        <span className="flex h-7 w-7 items-center justify-center rounded-md border border-dashed border-primary/40 bg-primary/5">
-          <Plus className="h-3.5 w-3.5" />
-        </span>
-        {t("New workspace...")}
-      </button>
+      <div className="shrink-0 border-t border-border bg-background">
+        <button
+          type="button"
+          disabled={busy}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={onCreate}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-dashed border-primary/40 bg-primary/5">
+            <Plus className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-semibold">
+              {t("New workspace...")}
+            </span>
+            <span className="block truncate text-[11px] text-muted-foreground">
+              {t("Choose folder...")}
+            </span>
+          </span>
+        </button>
+      </div>
     </section>
   );
 }
@@ -549,7 +558,7 @@ export function SessionPanel({
     );
   }
   return (
-    <section className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+    <section className="box-border flex max-h-[430px] flex-col overflow-hidden rounded-md border border-border bg-card shadow-sm">
       <div className="flex items-center justify-between gap-3 border-b border-border/70 px-3 py-2">
         <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
           {t("Switch session")}
@@ -566,33 +575,7 @@ export function SessionPanel({
           </label>
         )}
       </div>
-      <div className="divide-y divide-border/60">
-        <button
-          type="button"
-          className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
-            selected === null
-              ? "bg-primary/10 text-primary"
-              : "text-foreground hover:bg-accent/50"
-          }`}
-          onClick={() => onSelect(null)}
-        >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
-            <Plus className="h-4 w-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-semibold">
-              {t("New session")}
-            </span>
-            <span className="block truncate text-[11px] text-muted-foreground">
-              {t("Quick Launch will start a new session")}
-            </span>
-          </span>
-          {selected === null ? (
-            <Check className="h-4 w-4 shrink-0 text-primary" />
-          ) : (
-            <span className="h-4 w-4 shrink-0" aria-hidden="true" />
-          )}
-        </button>
+      <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto">
         {sessions.length === 0 && (
           <p className="px-3 py-2 text-xs text-muted-foreground">
             {t("No session in this workspace")}
@@ -649,6 +632,34 @@ export function SessionPanel({
             </button>
           );
         })}
+      </div>
+      <div className="shrink-0 border-t border-border bg-background">
+        <button
+          type="button"
+          className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
+            selected === null
+              ? "bg-primary/10 text-primary"
+              : "text-foreground hover:bg-primary/5"
+          }`}
+          onClick={() => onSelect(null)}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+            <Plus className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-semibold">
+              {t("New session")}
+            </span>
+            <span className="block truncate text-[11px] text-muted-foreground">
+              {t("Quick Launch will start a new session")}
+            </span>
+          </span>
+          {selected === null ? (
+            <Check className="h-4 w-4 shrink-0 text-primary" />
+          ) : (
+            <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+          )}
+        </button>
       </div>
     </section>
   );
