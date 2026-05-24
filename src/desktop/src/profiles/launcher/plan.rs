@@ -198,6 +198,10 @@ fn resume_command_for_agent(
             "codex".to_string(),
             vec!["resume".to_string(), session_id.to_string()],
         ),
+        "pi" => (
+            "pi".to_string(),
+            vec!["--session".to_string(), session_id.to_string()],
+        ),
         "gemini" => (
             "gemini".to_string(),
             vec!["--resume".to_string(), session_id.to_string()],
@@ -297,6 +301,22 @@ mod tests {
             ]
         );
         assert_eq!(plan.window_label, "Claude Code (resume)");
+    }
+
+    #[test]
+    fn direct_resume_plan_supports_pi_sessions() {
+        let plan = LaunchPlanBuilder::with_launch_id("launch-123")
+            .direct("pi")
+            .resume("019e57e0")
+            .build()
+            .expect("pi direct resume plan");
+
+        assert_eq!(plan.command, "pi");
+        assert_eq!(
+            plan.args,
+            vec!["--session".to_string(), "019e57e0".to_string()]
+        );
+        assert_eq!(plan.window_label, "Pi (resume)");
     }
 
     #[test]
