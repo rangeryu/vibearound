@@ -1161,7 +1161,7 @@ export function AgentLaunchBuilder({
                     disabledReason={launchDisabledReason}
                     onClick={() => void launchSelected()}
                     size="lg"
-                    className="h-full min-h-[115px] w-full rounded-md justify-center text-[22px] font-semibold tracking-[0.12em] shadow-md shadow-primary/15"
+                    className="h-full min-h-[115px] w-full rounded-md justify-center text-[22px] font-semibold tracking-[0.12em] shadow-md shadow-primary/15 transition-none"
                   >
                     <Rocket className="h-8 w-8" />
                     {t("LAUNCH")}
