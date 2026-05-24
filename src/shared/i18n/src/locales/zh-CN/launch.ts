@@ -63,6 +63,8 @@ export const zhCNLaunch: Record<string, string> = {
   "Direct Quick Launch default updated": "已更新直接快速启动默认项",
   "Profile order updated": "配置顺序已更新",
   "Profile deleted": "已删除配置",
+  "Search profiles": "搜索配置",
+  "No matching profiles": "没有匹配的配置",
   "Workspace order updated": "工作区顺序已更新",
   "Workspace removed": "已移除工作区",
   'Delete workspace "{{label}}"?': "删除工作区「{{label}}」？",

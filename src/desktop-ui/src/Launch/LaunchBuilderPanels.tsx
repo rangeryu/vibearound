@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type Ref } from "react";
+import { useMemo, useState, type KeyboardEvent, type Ref } from "react";
 import { DragDropProvider, type DragEndEvent } from "@dnd-kit/react";
 import { isSortable } from "@dnd-kit/react/sortable";
 import {
@@ -8,11 +8,14 @@ import {
   History,
   MessageCircle,
   Plus,
+  Search,
   Terminal,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -66,6 +69,7 @@ export function ProfilePanel({
   onConnectionSettings,
   onDeleteProfile,
   onReorderProfile,
+  onNewProfile,
   busy,
 }: {
   agentId: string;
@@ -82,201 +86,260 @@ export function ProfilePanel({
   ) => void;
   onDeleteProfile: (profile: ProfileSummary) => void;
   onReorderProfile: (fromId: string, toId: string) => void;
+  onNewProfile: () => void;
   busy: boolean;
 }) {
   const { t } = useI18n();
+  const [profileSearch, setProfileSearch] = useState("");
   const directIsGlobalDefault = isGlobalDefaultDirect(prefs, agentId);
   const directActive = selected.kind === "direct";
+  const normalizedProfileSearch = profileSearch.trim().toLowerCase();
+  const directVisible =
+    !normalizedProfileSearch ||
+    [t("Direct"), t("Use existing CLI login"), "direct", "native cli"]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedProfileSearch);
+  const visibleProfiles = useMemo(() => {
+    if (!normalizedProfileSearch) return profiles;
+    return profiles.filter((profile) => {
+      const summary = profileSummary(profile, agentId, prefs, t);
+      return [
+        profile.label,
+        profile.provider,
+        profile.providerLabel,
+        summary.route,
+        summary.detail,
+        ...profile.apiTypes,
+        ...profile.launchTargets.map((target) => `${target.label} ${target.id}`),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedProfileSearch);
+    });
+  }, [agentId, normalizedProfileSearch, prefs, profiles, t]);
 
   function handleProfileDragEnd(event: DragEndEvent) {
     if (event.canceled || busy) return;
     const { source } = event.operation;
     if (!isSortable(source) || source.initialIndex === source.index) return;
-    const from = profiles[source.initialIndex]?.id;
-    const to = profiles[source.index]?.id;
+    const from = visibleProfiles[source.initialIndex]?.id;
+    const to = visibleProfiles[source.index]?.id;
     if (from && to) onReorderProfile(from, to);
   }
 
   return (
-    <section className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
-      <SelectableItemCard
-        active={directActive}
-        disabled={busy}
-        onSelect={() => onSelect({ kind: "direct" })}
-      >
-        <DragHandle
-          disabled
-          label={t("Direct")}
-          disabledReason={t("Direct profile is fixed")}
-        />
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
-          <Terminal className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate text-[13px] font-semibold">
-              {t("Direct")}
-            </span>
-            {directIsGlobalDefault && <DefaultBadge />}
-          </div>
-          <div className="truncate text-[11px] text-muted-foreground">
-            {t("Use existing CLI login")}
-          </div>
-        </div>
-        <div
-          className="flex shrink-0 flex-wrap justify-end gap-2"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <DirectProfileActionsMenu
-            isDefault={directIsGlobalDefault}
-            disabled={busy}
-            onMakeDefault={() => void onMakeDefault({ kind: "direct" })}
+    <section className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={profileSearch}
+            onChange={(event) => setProfileSearch(event.target.value)}
+            placeholder={t("Search profiles")}
+            className="h-8 pl-8 text-xs"
           />
         </div>
-      </SelectableItemCard>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 shrink-0 text-xs"
+          onClick={onNewProfile}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {t("New profile")}
+        </Button>
+      </div>
 
-      <DragDropProvider onDragEnd={handleProfileDragEnd}>
-        {profiles.map((profile, index) => {
-          const availability = profileAvailability(profile, agentId, prefs, t);
-          return (
-            <SortableItem
-              key={profile.id}
-              id={profile.id}
-              index={index}
-              disabled={busy}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
+        {directVisible && (
+          <SelectableItemCard
+            active={directActive}
+            disabled={busy}
+            onSelect={() => onSelect({ kind: "direct" })}
+          >
+            <DragHandle
+              disabled
+              label={t("Direct")}
+              disabledReason={t("Direct profile is fixed")}
+            />
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+              <Terminal className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="truncate text-[13px] font-semibold">
+                  {t("Direct")}
+                </span>
+                {directIsGlobalDefault && <DefaultBadge />}
+              </div>
+              <div className="truncate text-[11px] text-muted-foreground">
+                {t("Use existing CLI login")}
+              </div>
+            </div>
+            <div
+              className="flex shrink-0 flex-wrap justify-end gap-2"
+              onClick={(event) => event.stopPropagation()}
             >
-              {({ dragHandleRef, isDragging }) => {
-                const summary = profileSummary(profile, agentId, prefs, t);
-                const active =
-                  availability.launchable &&
-                  selected.kind === "profile" &&
-                  selected.profileId === profile.id;
-                const globalDefaultForProfile = isGlobalDefaultProfile(
-                  prefs,
-                  agentId,
-                  profile.id,
-                );
-                const connection =
-                  isBridgeAgent(agentId)
-                    ? resolveProfileConnection(
-                        profile,
-                        prefs.profileConnections,
-                        agentConnectionDef(agentId),
-                      )
-                    : null;
-                const profileApiOptions =
-                  connection?.clientApiTypes.filter((client) => client.native) ?? [];
-                const profileApiSelectValue = profileApiOptions.some(
-                  (client) => client.apiType === connection?.selectedApiType,
-                )
-                  ? connection?.selectedApiType
-                  : profileApiOptions[0]?.apiType;
-                return (
-                  <SelectableItemCard
-                    active={active}
-                    disabled={busy || !availability.launchable}
-                    isDragging={isDragging}
-                    onSelect={() =>
-                      onSelect({ kind: "profile", profileId: profile.id })
-                    }
-                  >
-                    <DragHandle
-                      label={t("Reorder {{label}}", { label: profile.label })}
-                      disabled={busy}
-                      disabledReason={
-                        busy ? t("Reordering unavailable while launching") : undefined
+              <DirectProfileActionsMenu
+                isDefault={directIsGlobalDefault}
+                disabled={busy}
+                onMakeDefault={() => void onMakeDefault({ kind: "direct" })}
+              />
+            </div>
+          </SelectableItemCard>
+        )}
+
+        {!directVisible && visibleProfiles.length === 0 && (
+          <p className="col-span-full rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+            {t("No matching profiles")}
+          </p>
+        )}
+
+        <DragDropProvider onDragEnd={handleProfileDragEnd}>
+          {visibleProfiles.map((profile, index) => {
+            const availability = profileAvailability(profile, agentId, prefs, t);
+            return (
+              <SortableItem
+                key={profile.id}
+                id={profile.id}
+                index={index}
+                disabled={busy}
+              >
+                {({ dragHandleRef, isDragging }) => {
+                  const summary = profileSummary(profile, agentId, prefs, t);
+                  const active =
+                    availability.launchable &&
+                    selected.kind === "profile" &&
+                    selected.profileId === profile.id;
+                  const globalDefaultForProfile = isGlobalDefaultProfile(
+                    prefs,
+                    agentId,
+                    profile.id,
+                  );
+                  const connection =
+                    isBridgeAgent(agentId)
+                      ? resolveProfileConnection(
+                          profile,
+                          prefs.profileConnections,
+                          agentConnectionDef(agentId),
+                        )
+                      : null;
+                  const profileApiOptions =
+                    connection?.clientApiTypes.filter((client) => client.native) ?? [];
+                  const profileApiSelectValue = profileApiOptions.some(
+                    (client) => client.apiType === connection?.selectedApiType,
+                  )
+                    ? connection?.selectedApiType
+                    : profileApiOptions[0]?.apiType;
+                  return (
+                    <SelectableItemCard
+                      active={active}
+                      disabled={busy || !availability.launchable}
+                      isDragging={isDragging}
+                      onSelect={() =>
+                        onSelect({ kind: "profile", profileId: profile.id })
                       }
-                      dragHandleRef={dragHandleRef}
-                    />
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
-                      <BrandIcon
-                        kind="provider"
-                        id={profile.provider}
-                        label={profile.providerLabel}
-                        fallback={profile.providerIcon}
-                        framed={false}
-                        className="h-8 w-8"
-                      />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate text-[13px] font-semibold">
-                          {profile.label}
-                        </span>
-                        {globalDefaultForProfile && <DefaultBadge />}
-                      </div>
-                      {summary.bridge && (
-                        <div className="mt-0.5">
-                          <BridgeBadge />
-                        </div>
-                      )}
-                      <div
-                        className="truncate text-[11px] text-muted-foreground"
-                        title={availability.launchable ? summary.route : availability.reason}
-                      >
-                        {availability.launchable
-                          ? summary.route
-                          : availability.reason}
-                      </div>
-                    </div>
-                    <div
-                      className="flex shrink-0 flex-wrap items-center justify-end gap-2"
-                      onClick={(event) => event.stopPropagation()}
                     >
-                      {connection &&
-                        connection.agent.supportedApiTypes.length > 1 &&
-                        profileApiOptions.length > 0 &&
-                        profileApiSelectValue && (
-                        <Select
-                          value={profileApiSelectValue}
-                          disabled={busy}
-                          onValueChange={(apiType) => onSelectApiType(profile, apiType)}
-                        >
-                          <SelectTrigger size="sm" className="h-7 w-[clamp(8rem,20vw,160px)] text-[11px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {profileApiOptions.map((option) => (
-                              <SelectItem
-                                key={option.apiType}
-                                value={option.apiType}
-                                className="text-xs"
-                              >
-                                {apiTypeProtocolDisplayLabel(option.apiType)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      <ProfileActionsMenu
-                        profile={profile}
-                        bridgeAvailable={isBridgeAgent(agentId)}
-                        onMakeDefault={
-                          globalDefaultForProfile
-                            ? undefined
-                            : () =>
-                                void onMakeDefault({
-                                  kind: "profile",
-                                  profileId: profile.id,
-                                })
+                      <DragHandle
+                        label={t("Reorder {{label}}", { label: profile.label })}
+                        disabled={busy}
+                        disabledReason={
+                          busy ? t("Reordering unavailable while launching") : undefined
                         }
-                        makeDefaultDisabled={busy || !availability.launchable}
-                        onConnectionSettings={(profile) => {
-                          if (isBridgeAgent(agentId)) {
-                            onConnectionSettings(profile, agentId);
-                          }
-                        }}
-                        onEditProfile={onEditProfile}
-                        onDeleteProfile={onDeleteProfile}
+                        dragHandleRef={dragHandleRef}
                       />
-                    </div>
-                  </SelectableItemCard>
-                );
-              }}
-            </SortableItem>
-          );
-        })}
-      </DragDropProvider>
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
+                        <BrandIcon
+                          kind="provider"
+                          id={profile.provider}
+                          label={profile.providerLabel}
+                          fallback={profile.providerIcon}
+                          framed={false}
+                          className="h-8 w-8"
+                        />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-[13px] font-semibold">
+                            {profile.label}
+                          </span>
+                          {globalDefaultForProfile && <DefaultBadge />}
+                        </div>
+                        {summary.bridge && (
+                          <div className="mt-0.5">
+                            <BridgeBadge />
+                          </div>
+                        )}
+                        <div
+                          className="truncate text-[11px] text-muted-foreground"
+                          title={availability.launchable ? summary.route : availability.reason}
+                        >
+                          {availability.launchable
+                            ? summary.route
+                            : availability.reason}
+                        </div>
+                      </div>
+                      <div
+                        className="flex shrink-0 flex-wrap items-center justify-end gap-2"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {connection &&
+                          connection.agent.supportedApiTypes.length > 1 &&
+                          profileApiOptions.length > 0 &&
+                          profileApiSelectValue && (
+                          <Select
+                            value={profileApiSelectValue}
+                            disabled={busy}
+                            onValueChange={(apiType) => onSelectApiType(profile, apiType)}
+                          >
+                            <SelectTrigger size="sm" className="h-7 w-[clamp(8rem,20vw,160px)] text-[11px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {profileApiOptions.map((option) => (
+                                <SelectItem
+                                  key={option.apiType}
+                                  value={option.apiType}
+                                  className="text-xs"
+                                >
+                                  {apiTypeProtocolDisplayLabel(option.apiType)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        <ProfileActionsMenu
+                          profile={profile}
+                          bridgeAvailable={isBridgeAgent(agentId)}
+                          onMakeDefault={
+                            globalDefaultForProfile
+                              ? undefined
+                              : () =>
+                                  void onMakeDefault({
+                                    kind: "profile",
+                                    profileId: profile.id,
+                                  })
+                          }
+                          makeDefaultDisabled={busy || !availability.launchable}
+                          onConnectionSettings={(profile) => {
+                            if (isBridgeAgent(agentId)) {
+                              onConnectionSettings(profile, agentId);
+                            }
+                          }}
+                          onEditProfile={onEditProfile}
+                          onDeleteProfile={onDeleteProfile}
+                        />
+                      </div>
+                    </SelectableItemCard>
+                  );
+                }}
+              </SortableItem>
+            );
+          })}
+        </DragDropProvider>
+      </div>
     </section>
   );
 }

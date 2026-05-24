@@ -10,7 +10,6 @@ import {
   FolderOpen,
   History,
   MessageCircle,
-  Plus,
   Rocket,
   Terminal,
 } from "lucide-react";
@@ -27,8 +26,6 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   AgentRailButton,
-  DefaultBadge,
-  BridgeBadge,
   TooltipButton,
 } from "./LaunchBuilderPrimitives";
 import {
@@ -68,8 +65,6 @@ import {
   agentWorkspace,
   currentTerminal,
   currentWorkspace,
-  isGlobalDefaultDirect,
-  isGlobalDefaultProfile,
   isBridgeAgent,
   isSelectionLaunchable,
   isSortableWorkspace,
@@ -193,7 +188,7 @@ function LaunchSummarySegment({
       <span
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${
           active
-            ? "border-primary/35 bg-background text-primary"
+            ? "border-primary/25 bg-background text-primary"
             : "border-border/70 bg-background text-muted-foreground"
         }`}
       >
@@ -219,9 +214,9 @@ function LaunchSummarySegment({
     disabled
       ? "cursor-not-allowed text-muted-foreground opacity-60"
       : active
-        ? "bg-primary/10 text-primary"
+        ? "rounded bg-background text-foreground shadow-sm"
         : onClick
-          ? "text-foreground hover:bg-accent/50"
+          ? "rounded text-foreground hover:bg-background/75"
           : "text-foreground"
   } ${className}`;
 
@@ -736,10 +731,6 @@ export function AgentLaunchBuilder({
         bridge: false,
         route: t("Native CLI login"),
       };
-  const profileIsGlobalDefault =
-    profileChoice.kind === "profile"
-      ? isGlobalDefaultProfile(viewPrefs, agentId, profileChoice.profileId)
-      : isGlobalDefaultDirect(viewPrefs, agentId);
   const sessionTitle = selectedSession?.title ?? t("New session");
   const sessionDetail = selectedSession
     ? `${selectedSession.shortId} · ${relativeTime(selectedSession.updatedAt, t)}`
@@ -767,7 +758,7 @@ export function AgentLaunchBuilder({
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col">
             <header className="border-b border-border bg-card/20 p-2">
-              <div className="grid grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)_auto] overflow-visible rounded-md border border-border bg-card shadow-sm">
+              <div className="grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)] gap-1 overflow-visible rounded-md border border-border bg-muted/25 p-1 shadow-sm">
                 <LaunchSummarySegment
                   active
                   icon={
@@ -787,12 +778,6 @@ export function AgentLaunchBuilder({
                   label={t("Profile")}
                   title={selectedProfileSummary.title}
                   detail={selectedProfileSummary.route}
-                  badges={
-                    <>
-                      {selectedProfileSummary.bridge && <BridgeBadge />}
-                      {profileIsGlobalDefault && <DefaultBadge />}
-                    </>
-                  }
                 />
                 <SelectorPopup
                   id="workspace"
@@ -801,7 +786,6 @@ export function AgentLaunchBuilder({
                   widthClassName="w-[min(400px,calc(100vw-1rem))]"
                   trigger={
                     <LaunchSummarySegment
-                      className="border-l border-border/70"
                       active={openSelector === "workspace"}
                       onClick={() =>
                         setOpenSelector(
@@ -817,9 +801,6 @@ export function AgentLaunchBuilder({
                           : t("{{count}} sessions", {
                               count: visibleSessions.length,
                             })
-                      }
-                      badges={
-                        selectedWorkspace.isDefault ? <DefaultBadge /> : null
                       }
                     />
                   }
@@ -853,7 +834,6 @@ export function AgentLaunchBuilder({
                   widthClassName="w-[min(420px,calc(100vw-1rem))]"
                   trigger={
                     <LaunchSummarySegment
-                      className="border-l border-border/70"
                       active={openSelector === "session"}
                       disabled={!sessionResumeSupported}
                       onClick={() =>
@@ -888,14 +868,6 @@ export function AgentLaunchBuilder({
                     }}
                   />
                 </SelectorPopup>
-                <button
-                  type="button"
-                  className="flex min-h-[58px] items-center justify-center gap-2 border-l border-border/70 px-3 text-xs font-semibold text-foreground transition-colors hover:bg-accent/50"
-                  onClick={onNewProfile}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  {t("New profile")}
-                </button>
               </div>
             </header>
 
@@ -916,6 +888,7 @@ export function AgentLaunchBuilder({
                 onReorderProfile={(fromId, toId) =>
                   void reorderProfile(fromId, toId)
                 }
+                onNewProfile={onNewProfile}
                 busy={busy}
               />
             </section>
