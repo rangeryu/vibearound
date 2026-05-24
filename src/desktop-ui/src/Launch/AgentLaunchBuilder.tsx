@@ -981,7 +981,7 @@ export function AgentLaunchBuilder({
 
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col">
-            <header className="bg-card/20 p-2">
+            <header className="bg-card/20 p-3">
               <div className="grid grid-cols-4 items-stretch gap-2">
                 <div className="col-span-3 overflow-visible rounded-md border border-border bg-card p-3 shadow-sm">
                   <AgentSummaryHeader
@@ -1165,14 +1165,14 @@ export function AgentLaunchBuilder({
                     size="lg"
                     className="h-full min-h-[115px] w-full rounded-md justify-center text-[22px] font-semibold tracking-[0.12em] shadow-md shadow-primary/15"
                   >
-                    <Rocket className="h-7 w-7" />
+                    <Rocket className="h-8 w-8" />
                     {t("LAUNCH")}
                   </TooltipButton>
                 </div>
               </div>
             </header>
 
-            <section className="min-h-0 flex-1 overflow-y-auto p-2">
+            <section className="min-h-0 flex-1 overflow-y-auto p-3">
               <ProfilePanel
                 agentId={agentId}
                 prefs={viewPrefs}
