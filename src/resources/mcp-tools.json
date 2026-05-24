@@ -33,7 +33,7 @@
         },
         "agent_kind": {
           "type": "string",
-          "description": "Your agent type (e.g. claude, gemini, codex, cursor, kiro, qwen-code)."
+          "description": "Your agent type (e.g. claude, codex, pi, gemini, cursor, kiro, qwen-code)."
         }
       },
       "required": ["cwd", "agent_kind"]
