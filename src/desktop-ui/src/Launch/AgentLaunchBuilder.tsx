@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   FolderOpen,
-  FolderPlus,
   History,
   MessageCircle,
   Plus,
@@ -133,6 +132,9 @@ export function AgentLaunchBuilder({
   >(null);
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
   const [sessions, setSessions] = useState<LaunchSessionSummary[]>([]);
+  const [workspaceSessionCounts, setWorkspaceSessionCounts] = useState<
+    Record<string, number>
+  >({});
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [showArchivedSessions, setShowArchivedSessions] = useState(false);
   const [sessionChoice, setSessionChoice] = useState<SessionChoice>(null);
@@ -283,6 +285,29 @@ export function AgentLaunchBuilder({
       cancelled = true;
     };
   }, [agentId, currentAgentWorkspace, showArchivedSessions, onError]);
+
+  useEffect(() => {
+    if (!agentId || !agentSupportsSessionResume(agentId) || !viewPrefs) {
+      setWorkspaceSessionCounts({});
+      return;
+    }
+    let cancelled = false;
+    const workspaces = viewPrefs.workspaceOptions;
+    void Promise.all(
+      workspaces.map((workspace) =>
+        listLaunchSessions(agentId, workspace.path, false)
+          .then((items) => [workspace.path, items.length] as const)
+          .catch(() => [workspace.path, 0] as const),
+      ),
+    ).then((entries) => {
+      if (!cancelled) {
+        setWorkspaceSessionCounts(Object.fromEntries(entries));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId, viewPrefs?.workspaceOptions]);
 
   const selectedAgent = agents.find((agent) => agent.id === agentId);
   const selectedProfile =
@@ -647,17 +672,6 @@ export function AgentLaunchBuilder({
                 <Plus className="h-3.5 w-3.5" />
                 {t("New profile")}
               </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs"
-                disabled={busy}
-                onClick={() => void chooseFolder()}
-              >
-                <FolderPlus className="h-3.5 w-3.5" />
-                {t("New workspace")}
-              </Button>
             </div>
           </header>
 
@@ -751,6 +765,8 @@ export function AgentLaunchBuilder({
                   onReorder={(fromPath, toPath) =>
                     void reorderWorkspace(fromPath, toPath)
                   }
+                  onCreate={() => void chooseFolder()}
+                  sessionCounts={workspaceSessionCounts}
                   busy={busy}
                 />
               )}

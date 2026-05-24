@@ -1,11 +1,13 @@
-import { type Ref } from "react";
+import { type KeyboardEvent, type Ref } from "react";
 import { DragDropProvider, type DragEndEvent } from "@dnd-kit/react";
 import { isSortable } from "@dnd-kit/react/sortable";
 import {
   Archive,
+  Check,
   FolderOpen,
   History,
   MessageCircle,
+  Plus,
   Star,
   Terminal,
 } from "lucide-react";
@@ -304,6 +306,8 @@ export function WorkspacePanel({
   onSelect,
   onDelete,
   onReorder,
+  onCreate,
+  sessionCounts,
   busy,
 }: {
   prefs: LauncherPreferences;
@@ -311,6 +315,8 @@ export function WorkspacePanel({
   onSelect: (path: string) => void;
   onDelete: (path: string, label: string) => void;
   onReorder: (fromPath: string, toPath: string) => void;
+  onCreate: () => void;
+  sessionCounts: Record<string, number>;
   busy: boolean;
 }) {
   const { t } = useI18n();
@@ -329,6 +335,15 @@ export function WorkspacePanel({
     if (from && to) onReorder(from, to);
   }
 
+  function handleWorkspaceRowKeyDown(
+    event: KeyboardEvent<HTMLDivElement>,
+    workspace: WorkspaceOption,
+  ) {
+    if (busy || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    onSelect(workspace.path);
+  }
+
   function renderWorkspaceRow(
     workspace: WorkspaceOption,
     dragHandleRef?: Ref<HTMLSpanElement>,
@@ -338,12 +353,23 @@ export function WorkspacePanel({
     const sortable = isSortableWorkspace(workspace);
     const canDelete = canDeleteWorkspace(workspace);
     return (
-      <SelectableItemCard
+      <div
+        role="button"
         key={workspace.path}
-        active={active}
-        disabled={busy}
-        isDragging={isDragging}
-        onSelect={() => onSelect(workspace.path)}
+        tabIndex={busy ? -1 : 0}
+        className={`group flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
+          active
+            ? "bg-primary/10 text-primary"
+            : "text-foreground hover:bg-accent/50"
+        } ${busy ? "cursor-not-allowed opacity-60" : "cursor-pointer"} ${
+          isDragging ? "opacity-55" : ""
+        }`}
+        aria-disabled={busy}
+        data-dragging={isDragging ? "true" : undefined}
+        onClick={() => {
+          if (!busy) onSelect(workspace.path);
+        }}
+        onKeyDown={(event) => handleWorkspaceRowKeyDown(event, workspace)}
       >
         <DragHandle
           disabled={!sortable || busy}
@@ -371,6 +397,14 @@ export function WorkspacePanel({
             {workspace.detail}
           </span>
         </span>
+        <span className="w-8 shrink-0 text-right font-mono text-[11px] text-muted-foreground">
+          {sessionCounts[workspace.path] ?? ""}
+        </span>
+        {active ? (
+          <Check className="h-4 w-4 shrink-0 text-primary" />
+        ) : (
+          <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+        )}
         <span
           className="flex shrink-0 flex-wrap items-center justify-end gap-2"
           onClick={(event) => event.stopPropagation()}
@@ -390,39 +424,55 @@ export function WorkspacePanel({
             />
           )}
         </span>
-      </SelectableItemCard>
+      </div>
     );
   }
 
   return (
-    <section className="space-y-2">
+    <section className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+      <div className="border-b border-border/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
+        {t("Switch workspace")}
+      </div>
       {loading && workspaceOptions.length === 0 && (
-        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+        <p className="px-3 py-2 text-xs text-muted-foreground">
           {t("Loading…")}
         </p>
       )}
       <DragDropProvider onDragEnd={handleWorkspaceDragEnd}>
-        {workspaceOptions.map((workspace) => {
-          if (!isSortableWorkspace(workspace)) {
-            return renderWorkspaceRow(workspace);
-          }
-          const index = sortableWorkspaces.findIndex(
-            (sortable) => sortable.path === workspace.path,
-          );
-          return (
-            <SortableItem
-              key={workspace.path}
-              id={workspace.path}
-              index={index}
-              disabled={busy}
-            >
-              {({ dragHandleRef, isDragging }) =>
-                renderWorkspaceRow(workspace, dragHandleRef, isDragging)
-              }
-            </SortableItem>
-          );
-        })}
+        <div className="divide-y divide-border/60">
+          {workspaceOptions.map((workspace) => {
+            if (!isSortableWorkspace(workspace)) {
+              return renderWorkspaceRow(workspace);
+            }
+            const index = sortableWorkspaces.findIndex(
+              (sortable) => sortable.path === workspace.path,
+            );
+            return (
+              <SortableItem
+                key={workspace.path}
+                id={workspace.path}
+                index={index}
+                disabled={busy}
+              >
+                {({ dragHandleRef, isDragging }) =>
+                  renderWorkspaceRow(workspace, dragHandleRef, isDragging)
+                }
+              </SortableItem>
+            );
+          })}
+        </div>
       </DragDropProvider>
+      <button
+        type="button"
+        disabled={busy}
+        className="flex w-full items-center gap-2 border-t border-border bg-background px-3 py-2 text-left text-[13px] font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={onCreate}
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-md border border-dashed border-primary/40 bg-primary/5">
+          <Plus className="h-3.5 w-3.5" />
+        </span>
+        {t("New workspace...")}
+      </button>
     </section>
   );
 }
@@ -455,64 +505,82 @@ export function SessionPanel({
     );
   }
   return (
-    <section className="space-y-2">
-      {archiveFilterAvailable && (
-        <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
-          <Archive className="h-3.5 w-3.5" />
-          <span>{t("Show archived")}</span>
-          <Switch
-            checked={showArchived}
-            onCheckedChange={onShowArchivedChange}
-            aria-label={t("Show archived")}
-          />
+    <section className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-3 py-2">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
+          {t("Switch session")}
         </div>
-      )}
+        {archiveFilterAvailable && (
+          <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <Archive className="h-3.5 w-3.5" />
+            <span>{t("Show archived")}</span>
+            <Switch
+              checked={showArchived}
+              onCheckedChange={onShowArchivedChange}
+              aria-label={t("Show archived")}
+            />
+          </label>
+        )}
+      </div>
       {sessions.length === 0 && (
-        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+        <p className="px-3 py-2 text-xs text-muted-foreground">
           {t("No session in this workspace")}
         </p>
       )}
-      {sessions.map((session) => {
-        const active =
-          selected?.kind === "session" &&
-          selected.sessionId === session.sessionId;
-        const isLast = session === sessions[0];
-        return (
-          <SelectableItemCard
-            key={`${session.sessionId}:${session.archived ? "archived" : "active"}`}
-            active={active}
-            onSelect={() =>
-              onSelect({ kind: "session", sessionId: session.sessionId })
-            }
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
-              <MessageCircle className="h-4 w-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-[13px] font-semibold">
-                  {session.title}
+      <div className="divide-y divide-border/60">
+        {sessions.map((session) => {
+          const isLast = session === sessions[0];
+          const active =
+            selected?.kind === "session"
+              ? selected.sessionId === session.sessionId
+              : isLast;
+          return (
+            <button
+              type="button"
+              key={`${session.sessionId}:${session.archived ? "archived" : "active"}`}
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
+                active
+                  ? "bg-primary/10 text-primary"
+                  : "text-foreground hover:bg-accent/50"
+              }`}
+              onClick={() =>
+                onSelect({ kind: "session", sessionId: session.sessionId })
+              }
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+                <MessageCircle className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="truncate text-[13px] font-semibold">
+                    {session.title}
+                  </span>
+                  {session.archived && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                      <Archive className="h-3 w-3" />
+                      {t("Archived")}
+                    </span>
+                  )}
+                  {isLast && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      <History className="h-3 w-3" />
+                      {t("Last session")}
+                    </span>
+                  )}
                 </span>
-                {session.archived && (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                    <Archive className="h-3 w-3" />
-                    {t("Archived")}
-                  </span>
-                )}
-                {isLast && (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                    <History className="h-3 w-3" />
-                    {t("Last session")}
-                  </span>
-                )}
+                <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                  {session.shortId} · {relativeTime(session.updatedAt, t)}
+                </span>
               </span>
-              <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                {session.shortId} · {relativeTime(session.updatedAt, t)}
-              </span>
-            </span>
-          </SelectableItemCard>
-        );
-      })}
+              {active ? (
+                <Check className="h-4 w-4 shrink-0 text-primary" />
+              ) : (
+                <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+              )}
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }
