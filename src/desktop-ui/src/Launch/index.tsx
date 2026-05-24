@@ -32,7 +32,7 @@ type ConnectionEditing = {
   agentId: ConnectionAgentId;
 };
 
-export function Launch() {
+export function Launch({ refreshToken = 0 }: { refreshToken?: number }) {
   const { t } = useI18n();
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
@@ -65,7 +65,7 @@ export function Launch() {
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, refreshToken]);
 
   useEffect(() => {
     if (!toast) return;

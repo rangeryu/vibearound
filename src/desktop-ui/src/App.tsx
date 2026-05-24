@@ -337,6 +337,7 @@ function Dashboard() {
   const [launcherPrefs, setLauncherPrefs] =
     useState<LauncherPreferences | null>(null);
   const [launcherPrefsLoaded, setLauncherPrefsLoaded] = useState(false);
+  const [launchRefreshToken, setLaunchRefreshToken] = useState(0);
 
   const channels = useChannelsState();
   const tunnels = useTunnelsState();
@@ -364,6 +365,11 @@ function Dashboard() {
     void agents.refresh();
     refreshLauncherPrefs();
   }, [channels, tunnels, agents, refreshLauncherPrefs]);
+
+  const handleRuntimeSettingsChanged = useCallback(() => {
+    refreshAll();
+    setLaunchRefreshToken((token) => token + 1);
+  }, [refreshAll]);
 
   const everHadData = useRef(false);
   const [startTime] = useState(() => Date.now());
@@ -539,7 +545,7 @@ function Dashboard() {
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        onServicesRestarted={refreshAll}
+        onServicesRestarted={handleRuntimeSettingsChanged}
       />
 
       {firstError && (
@@ -554,7 +560,7 @@ function Dashboard() {
         </div>
       ) : effectivePage === "launch" ? (
         <div className="flex-1 min-h-0">
-          <Launch />
+          <Launch refreshToken={launchRefreshToken} />
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
