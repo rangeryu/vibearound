@@ -31,6 +31,7 @@ pub(super) fn render_bridge_launch(
             client_api_type,
             settings,
         )),
+        "pi" => render_pi_bridge_profile(profile, client_api_type, settings),
         other => bail!("bridge launch is not wired for '{}'", other),
     }
 }
@@ -358,6 +359,38 @@ fn render_gemini_bridge_profile(
     }
 }
 
+fn render_pi_bridge_profile(
+    profile: &ProfileDef,
+    client_api_type: &str,
+    settings: BridgeLaunchSettings,
+) -> anyhow::Result<RenderedProfile> {
+    let bridge_base_url = super::pi_launch::bridge_base_url(
+        &profile.id,
+        &settings.scope,
+        &settings.target_api_type,
+        client_api_type,
+    );
+    let provider_id = super::pi_launch::provider_id(
+        &profile.id,
+        &format!("bridge-{}-{}", client_api_type, settings.target_api_type),
+    );
+    super::pi_launch::render_pi_provider(super::pi_launch::PiProviderLaunchConfig {
+        profile_id: &profile.id,
+        provider_id: provider_id.clone(),
+        provider_label: &settings.provider_label,
+        api_type: client_api_type,
+        api_key: settings.api_key,
+        base_url: bridge_base_url,
+        model: settings.model,
+        model_context_window: settings.model_context_window,
+        model_capabilities: settings.model_capabilities,
+        reasoning: client_api_type == "openai-responses",
+        headers: Default::default(),
+        auth_header: false,
+        file_stem: provider_id,
+    })
+}
+
 fn opencode_bridge_base_url(
     profile: &ProfileDef,
     settings: &BridgeLaunchSettings,
@@ -523,6 +556,45 @@ mod tests {
             .env
             .contains(&("GEMINI_MODEL".to_string(), "gemini-2.5-flash".to_string())));
         assert!(rendered.settings_files.is_empty());
+        assert!(rendered.config_env.is_none());
+    }
+
+    #[test]
+    fn pi_bridge_launch_materializes_local_provider_extension() {
+        let profile = moonshot_profile();
+
+        let rendered = render_bridge_launch(
+            &profile,
+            "pi",
+            "launch-test",
+            "openai-responses",
+            "anthropic",
+            Some("kimi-code"),
+            Some("gpt-5.1"),
+        )
+        .expect("pi bridge launch renders");
+
+        assert!(rendered
+            .env
+            .contains(&("VIBEAROUND_PI_API_KEY".to_string(), "test-key".to_string())));
+        assert!(rendered
+            .command_args
+            .windows(2)
+            .any(|args| args[0] == "--provider"
+                && args[1] == "vibearound-moonshot-test-bridge-openai-responses-anthropic"));
+        assert!(rendered
+            .command_args
+            .windows(2)
+            .any(|args| args[0] == "--model" && args[1] == "gpt-5.1"));
+        let extension = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path.ends_with(".mjs"))
+            .expect("pi extension file");
+        assert!(extension.contents.contains("\"api\": \"openai-responses\""));
+        assert!(extension.contents.contains(
+            "\"baseUrl\": \"http://127.0.0.1:12358/va/local-api/moonshot-test/pi-openai-responses/anthropic/v1\""
+        ));
         assert!(rendered.config_env.is_none());
     }
 

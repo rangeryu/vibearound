@@ -49,6 +49,12 @@ export const CONNECTION_AGENTS: ConnectionAgentDef[] = [
     defaultApiType: "openai-responses",
   },
   {
+    id: "pi",
+    label: "Pi",
+    supportedApiTypes: ["anthropic", "openai-responses", "openai-chat"],
+    defaultApiType: "anthropic",
+  },
+  {
     id: "gemini",
     label: "Gemini CLI",
     supportedApiTypes: ["gemini"],
@@ -145,7 +151,8 @@ export function recommendedBridgeTarget(
     agentId === "gemini" && clientApiType === "gemini"
       ? ["openai-chat", "openai-responses", "anthropic"]
       : (agentId === "claude" && clientApiType === "anthropic") ||
-          (agentId === "opencode" && clientApiType === "anthropic")
+          (agentId === "opencode" && clientApiType === "anthropic") ||
+          (agentId === "pi" && clientApiType === "anthropic")
         ? ["openai-responses", "openai-chat", "anthropic"]
         : ["anthropic", "openai-chat", "openai-responses"];
   return order.find((apiType) => profile.apiTypes.includes(apiType)) ?? null;

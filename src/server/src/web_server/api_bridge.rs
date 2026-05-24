@@ -307,6 +307,9 @@ fn upstream_http_client(
         return Ok(state.preview_client.clone());
     }
     let cfg = config::ensure_loaded();
+    if !cfg.proxy.enabled {
+        return Ok(state.preview_client.clone());
+    }
     proxy_http_client(&cfg.proxy)
 }
 
@@ -394,6 +397,7 @@ mod tests {
     #[test]
     fn proxy_client_accepts_settings_proxy_with_no_proxy() {
         proxy_http_client(&HttpProxyConfig {
+            enabled: true,
             http_proxy: Some("http://127.0.0.1:7890".to_string()),
             no_proxy: Some("localhost,127.0.0.1".to_string()),
         })

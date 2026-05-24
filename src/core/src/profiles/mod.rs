@@ -11,6 +11,7 @@ pub mod catalog;
 pub mod codex_metadata;
 pub mod connections;
 pub mod headers;
+mod pi_launch;
 pub mod render;
 pub mod runtime;
 pub mod schema;

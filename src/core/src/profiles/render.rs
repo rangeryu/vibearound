@@ -63,6 +63,11 @@ pub fn render(
 ) -> anyhow::Result<RenderedProfile> {
     let endpoint = pick_endpoint(profile, catalog, api_type)?;
     let auth = pick_auth_mode(endpoint, &profile.auth_mode)?;
+    let context = build_context(profile, api_type, endpoint, catalog);
+    if launch_target == "pi" {
+        return render_pi_profile(profile, api_type, endpoint, catalog, &context);
+    }
+
     let opencode_rules;
     let render_rules = if launch_target == "opencode" {
         opencode_rules = opencode_render_rules(api_type)?;
@@ -77,8 +82,6 @@ pub fn render(
                 )
             })?
     };
-
-    let context = build_context(profile, api_type, endpoint, catalog);
 
     // Env vars — drop entries whose substituted value is empty so we don't
     // end up exporting blank keys (e.g. `ANTHROPIC_MODEL=""` when the user
@@ -239,6 +242,39 @@ fn opencode_render_rules(api_type: &str) -> anyhow::Result<RenderRules> {
         }),
         other => bail!("opencode launch is not wired for api kind '{}'", other),
     }
+}
+
+fn render_pi_profile(
+    profile: &ProfileDef,
+    api_type: &str,
+    endpoint: &EndpointDef,
+    catalog: &ProviderCatalog,
+    context: &BTreeMap<String, String>,
+) -> anyhow::Result<RenderedProfile> {
+    let model = context
+        .get("model")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty());
+    let model_def = model.and_then(|model| catalog::find_model(endpoint, model));
+    let model_capabilities = model_def
+        .map(|model_def| endpoint.capabilities.content.merge(&model_def.capabilities))
+        .unwrap_or_else(|| endpoint.capabilities.content.clone());
+    let provider_id = super::pi_launch::provider_id(&profile.id, api_type);
+    super::pi_launch::render_pi_provider(super::pi_launch::PiProviderLaunchConfig {
+        profile_id: &profile.id,
+        provider_id: provider_id.clone(),
+        provider_label: &catalog.label,
+        api_type,
+        api_key: context.get("api_key").cloned().unwrap_or_default(),
+        base_url: context.get("base_url").cloned().unwrap_or_default(),
+        model: context.get("model").cloned().unwrap_or_default(),
+        model_context_window: model_def.and_then(|model_def| model_def.context_window),
+        model_capabilities,
+        reasoning: endpoint.capabilities.reasoning_effort,
+        headers: endpoint.headers.clone(),
+        auth_header: endpoint.auth_header,
+        file_stem: provider_id,
+    })
 }
 
 fn command_args_for(launch_target: &str, ctx: &BTreeMap<String, String>) -> Vec<String> {
@@ -719,6 +755,71 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pi_launch_materializes_openai_chat_extension() {
+        let profile = openai_chat_profile("dashscope", Some("coding-plan"), "qwen3.6-plus");
+        let provider = catalog::get(&profile.provider).expect("provider exists");
+
+        let rendered = render(&profile, "openai-chat", "pi", provider).expect("pi profile renders");
+
+        assert!(rendered
+            .env
+            .contains(&("VIBEAROUND_PI_API_KEY".to_string(), "test-key".to_string())));
+        assert!(rendered
+            .command_args
+            .windows(2)
+            .any(|args| args[0] == "--provider"
+                && args[1] == "vibearound-dashscope-test-openai-chat"));
+        assert!(rendered
+            .command_args
+            .windows(2)
+            .any(|args| args[0] == "--model" && args[1] == "qwen3.6-plus"));
+        assert!(rendered.config_env.is_none());
+
+        let extension = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path.ends_with(".mjs"))
+            .expect("pi extension file");
+        assert!(extension.contents.contains("pi.registerProvider"));
+        assert!(extension
+            .contents
+            .contains("\"api\": \"openai-completions\""));
+        assert!(extension
+            .contents
+            .contains("\"baseUrl\": \"https://coding-intl.dashscope.aliyuncs.com/v1\""));
+        assert!(extension
+            .contents
+            .contains("\"apiKey\": \"VIBEAROUND_PI_API_KEY\""));
+        assert!(extension
+            .contents
+            .contains("\"X-DashScope-AuthType\": \"openai\""));
+        assert!(extension.contents.contains("\"contextWindow\": 1000000"));
+        assert!(extension.contents.contains("\"maxTokens\": 16384"));
+        assert!(extension.contents.contains("\"image\""));
+    }
+
+    #[test]
+    fn pi_launch_preserves_anthropic_headers_and_auth_header() {
+        let profile = anthropic_profile("dashscope", Some("coding-plan"), "qwen3.6-plus");
+        let provider = catalog::get(&profile.provider).expect("provider exists");
+
+        let rendered = render(&profile, "anthropic", "pi", provider).expect("pi profile renders");
+        let extension = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path.ends_with(".mjs"))
+            .expect("pi extension file");
+
+        assert!(extension
+            .contents
+            .contains("\"api\": \"anthropic-messages\""));
+        assert!(extension.contents.contains("\"authHeader\": true"));
+        assert!(extension
+            .contents
+            .contains("\"User-Agent\": \"claude-code/0.1.0\""));
+    }
+
     fn anthropic_profile(provider: &str, endpoint_id: Option<&str>, model: &str) -> ProfileDef {
         let mut credentials = BTreeMap::new();
         credentials.insert("api_key".to_string(), "test-key".to_string());
@@ -741,6 +842,34 @@ mod tests {
             provider: provider.to_string(),
             auth_mode: AuthMode::ApiKey,
             api_types: vec!["anthropic".to_string()],
+            credentials,
+            overrides,
+            provider_settings: Default::default(),
+        }
+    }
+
+    fn openai_chat_profile(provider: &str, endpoint_id: Option<&str>, model: &str) -> ProfileDef {
+        let mut credentials = BTreeMap::new();
+        credentials.insert("api_key".to_string(), "test-key".to_string());
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "openai-chat".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: endpoint_id.map(ToOwned::to_owned),
+                base_url: None,
+                model: Some(model.to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                capabilities: None,
+            },
+        );
+
+        ProfileDef {
+            id: format!("{provider}-test"),
+            label: format!("{provider} test"),
+            provider: provider.to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
             credentials,
             overrides,
             provider_settings: Default::default(),

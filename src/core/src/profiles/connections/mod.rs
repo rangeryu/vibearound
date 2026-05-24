@@ -267,12 +267,14 @@ fn recommended_bridge_target(
     client_api_type: &str,
 ) -> Option<String> {
     let order: &[&str] = match (agent_id, client_api_type) {
-        ("claude", "anthropic") | ("opencode", "anthropic") => {
+        ("claude", "anthropic") | ("opencode", "anthropic") | ("pi", "anthropic") => {
             &["openai-responses", "openai-chat", "anthropic"]
         }
         ("codex", "openai-responses")
         | ("opencode", "openai-responses")
-        | ("opencode", "openai-chat") => &["anthropic", "openai-chat", "openai-responses"],
+        | ("opencode", "openai-chat")
+        | ("pi", "openai-responses")
+        | ("pi", "openai-chat") => &["anthropic", "openai-chat", "openai-responses"],
         ("gemini", "gemini") => &["openai-chat", "openai-responses", "anthropic"],
         _ => &[],
     };
@@ -318,6 +320,7 @@ fn agent_client_api_types(agent_id: &str) -> &'static [&'static str] {
         "codex" => &["openai-responses"],
         "gemini" => &["gemini"],
         "opencode" => &["openai-responses", "openai-chat", "anthropic"],
+        "pi" => &["anthropic", "openai-responses", "openai-chat"],
         _ => &[],
     }
 }
@@ -335,6 +338,7 @@ fn launch_target_defs() -> &'static [(&'static str, &'static str)] {
         ("claude", "Claude Code"),
         ("codex", "Codex"),
         ("gemini", "Gemini CLI"),
+        ("pi", "Pi"),
         ("opencode", "OpenCode"),
     ]
 }

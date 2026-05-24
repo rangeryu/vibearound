@@ -31,6 +31,7 @@ export interface Settings {
   default_profiles?: Record<string, string>;
   enabled_agents?: string[];
   proxy?: {
+    enabled?: boolean;
     http_proxy?: string;
     no_proxy?: string;
   };

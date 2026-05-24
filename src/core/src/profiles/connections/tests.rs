@@ -150,6 +150,23 @@ fn gemini_profile_has_native_launch_target() {
 }
 
 #[test]
+fn pi_can_launch_openai_chat_profile_natively() {
+    let profile = profile(&["openai-chat"]);
+    let route = resolve_profile_agent_route_with_connections(&profile, "pi", &BTreeMap::new())
+        .expect("pi route");
+
+    assert_eq!(route.client_api_type, "openai-chat");
+    assert_eq!(route.bridge_target_api_type, None);
+
+    let targets = launch_targets_for_profile_with_connections(&profile, &BTreeMap::new());
+    assert!(targets.iter().any(|target| {
+        target.id == "pi"
+            && target.api_type == "openai-chat"
+            && target.bridge_target_api_type.is_none()
+    }));
+}
+
+#[test]
 fn gemini_cli_can_launch_openai_chat_profile_via_bridge() {
     let profile = profile(&["openai-chat"]);
     let prefs = connections(

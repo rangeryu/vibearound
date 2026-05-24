@@ -63,7 +63,7 @@ pub(super) fn profile_summaries() -> Vec<ProfileSummary> {
 }
 
 pub(super) fn catalog_entries() -> Vec<CatalogEntry> {
-    catalog::all()
+    let mut entries: Vec<_> = catalog::all()
         .iter()
         .filter(|c| !c.hidden_from_picker)
         .map(|c| CatalogEntry {
@@ -73,7 +73,32 @@ pub(super) fn catalog_entries() -> Vec<CatalogEntry> {
             homepage: c.homepage.clone(),
             endpoints: c.endpoints.clone(),
         })
-        .collect()
+        .collect();
+    entries.sort_by(|a, b| {
+        a.label
+            .to_ascii_lowercase()
+            .cmp(&b.label.to_ascii_lowercase())
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    entries
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalog_entries_are_sorted_by_label() {
+        let entries = catalog_entries();
+        let labels: Vec<_> = entries
+            .iter()
+            .map(|entry| entry.label.to_ascii_lowercase())
+            .collect();
+        let mut sorted = labels.clone();
+        sorted.sort();
+
+        assert_eq!(labels, sorted);
+    }
 }
 
 fn profile_summary(profile: ProfileDef) -> ProfileSummary {

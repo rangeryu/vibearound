@@ -28,6 +28,7 @@ import { apiFetch } from "../lib/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { BrandIcon } from "@/components/brand-icon";
 import {
   Dialog,
@@ -96,6 +97,7 @@ export function SettingsDialog({
   >({});
   const [tunnelProvider, setTunnelProvider] =
     useState<TunnelProvider>("none");
+  const [proxyEnabled, setProxyEnabled] = useState(false);
   const [proxyHttp, setProxyHttp] = useState("");
   const [proxyNoProxy, setProxyNoProxy] = useState("");
   const [ngrokToken, setNgrokToken] = useState("");
@@ -171,6 +173,7 @@ export function SettingsDialog({
 
   const hydrateProxy = useCallback((loadedSettings: AppSettings) => {
     const proxy = loadedSettings.proxy;
+    setProxyEnabled(Boolean(proxy?.enabled ?? proxy?.http_proxy));
     setProxyHttp(proxy?.http_proxy ?? "");
     setProxyNoProxy(proxy?.no_proxy ?? "");
   }, []);
@@ -349,6 +352,7 @@ export function SettingsDialog({
     try {
       const nextSettings = buildProxySettings({
         settings,
+        proxyEnabled,
         proxyHttp,
         proxyNoProxy,
       });
@@ -356,6 +360,7 @@ export function SettingsDialog({
       setSettings(nextSettings);
       const response = await apiFetch("/api/settings/reload", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      onServicesRestarted?.();
       setNotice({ variant: "success", message: "Proxy settings applied." });
     } catch (error) {
       setNotice({
@@ -365,7 +370,7 @@ export function SettingsDialog({
     } finally {
       setSaving("idle");
     }
-  }, [settings, proxyHttp, proxyNoProxy]);
+  }, [settings, proxyEnabled, proxyHttp, proxyNoProxy, onServicesRestarted]);
 
   const applyImSettings = useCallback(async () => {
     setSaving("im");
@@ -473,13 +478,6 @@ export function SettingsDialog({
                 {t("Agents")}
               </TabsTrigger>
               <TabsTrigger
-                value="proxy"
-                className="!h-8 w-full justify-start gap-2 px-2 text-xs data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
-              >
-                <Network className="h-3 w-3" />
-                {t("Proxy")}
-              </TabsTrigger>
-              <TabsTrigger
                 value="im"
                 className="!h-8 w-full justify-start gap-2 px-2 text-xs data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
               >
@@ -492,6 +490,13 @@ export function SettingsDialog({
               >
                 <Globe className="h-3 w-3" />
                 {t("Tunnel")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="proxy"
+                className="!h-8 w-full justify-start gap-2 px-2 text-xs data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Network className="h-3 w-3" />
+                {t("Proxy")}
               </TabsTrigger>
             </TabsList>
           </aside>
@@ -639,8 +644,10 @@ export function SettingsDialog({
                 <>
                   <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
                     <ProxySettingsPanel
+                      proxyEnabled={proxyEnabled}
                       proxyHttp={proxyHttp}
                       proxyNoProxy={proxyNoProxy}
+                      onProxyEnabledChange={setProxyEnabled}
                       onProxyHttpChange={setProxyHttp}
                       onProxyNoProxyChange={setProxyNoProxy}
                       notice={<SettingsNotice notice={notice} />}
@@ -799,14 +806,18 @@ function AgentSettingsPanel({
 }
 
 function ProxySettingsPanel({
+  proxyEnabled,
   proxyHttp,
   proxyNoProxy,
+  onProxyEnabledChange,
   onProxyHttpChange,
   onProxyNoProxyChange,
   notice,
 }: {
+  proxyEnabled: boolean;
   proxyHttp: string;
   proxyNoProxy: string;
+  onProxyEnabledChange: (value: boolean) => void;
   onProxyHttpChange: (value: string) => void;
   onProxyNoProxyChange: (value: string) => void;
   notice?: ReactNode;
@@ -827,6 +838,17 @@ function ProxySettingsPanel({
         {notice}
       </div>
       <div className="rounded-md border border-border">
+        <SettingsActionRow
+          label={t("Enable Settings proxy")}
+          description={t("Allow profile API bridge routes to opt in to this HTTP proxy.")}
+          action={
+            <Switch
+              checked={proxyEnabled}
+              onCheckedChange={onProxyEnabledChange}
+              aria-label={t("Enable Settings proxy")}
+            />
+          }
+        />
         <div className="grid gap-3 border-b border-border px-4 py-3 last:border-b-0">
           <label className="grid gap-1.5">
             <span className="text-xs font-medium">{t("HTTP proxy URL")}</span>
@@ -917,18 +939,24 @@ function buildAgentSettings({
 
 function buildProxySettings({
   settings,
+  proxyEnabled,
   proxyHttp,
   proxyNoProxy,
 }: {
   settings: AppSettings;
+  proxyEnabled: boolean;
   proxyHttp: string;
   proxyNoProxy: string;
 }): AppSettings {
   const result: AppSettings = { ...settings };
   const proxy: NonNullable<AppSettings["proxy"]> = {};
-  if (proxyHttp.trim()) proxy.http_proxy = proxyHttp.trim();
-  if (proxyNoProxy.trim()) proxy.no_proxy = proxyNoProxy.trim();
-  if (Object.keys(proxy).length > 0) {
+  const trimmedHttp = proxyHttp.trim();
+  const trimmedNoProxy = proxyNoProxy.trim();
+  const hasValues = Boolean(trimmedHttp || trimmedNoProxy);
+  proxy.enabled = proxyEnabled;
+  if (trimmedHttp) proxy.http_proxy = trimmedHttp;
+  if (trimmedNoProxy) proxy.no_proxy = trimmedNoProxy;
+  if (proxyEnabled || hasValues) {
     result.proxy = proxy;
   } else {
     delete result.proxy;

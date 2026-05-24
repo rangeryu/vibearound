@@ -104,13 +104,14 @@ pub struct Config {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HttpProxyConfig {
+    pub enabled: bool,
     pub http_proxy: Option<String>,
     pub no_proxy: Option<String>,
 }
 
 impl HttpProxyConfig {
     pub fn is_configured(&self) -> bool {
-        self.http_proxy.is_some()
+        self.enabled && self.http_proxy.is_some()
     }
 }
 
@@ -328,18 +329,27 @@ fn load_settings_from(path: &std::path::Path) -> Config {
     let proxy = root
         .get("proxy")
         .and_then(|value| value.as_object())
-        .map(|proxy| HttpProxyConfig {
-            http_proxy: proxy
+        .map(|proxy| {
+            let http_proxy = proxy
                 .get("http_proxy")
                 .or_else(|| proxy.get("url"))
                 .and_then(|value| value.as_str())
                 .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty()),
-            no_proxy: proxy
+                .filter(|value| !value.is_empty());
+            let no_proxy = proxy
                 .get("no_proxy")
                 .and_then(|value| value.as_str())
                 .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty()),
+                .filter(|value| !value.is_empty());
+            let enabled = proxy
+                .get("enabled")
+                .and_then(|value| value.as_bool())
+                .unwrap_or_else(|| http_proxy.is_some());
+            HttpProxyConfig {
+                enabled,
+                http_proxy,
+                no_proxy,
+            }
         })
         .unwrap_or_default();
 
@@ -539,10 +549,34 @@ mod tests {
             config.proxy.http_proxy.as_deref(),
             Some("http://127.0.0.1:7890")
         );
+        assert!(config.proxy.enabled);
+        assert!(config.proxy.is_configured());
         assert_eq!(
             config.proxy.no_proxy.as_deref(),
             Some("localhost,127.0.0.1")
         );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn disabled_proxy_keeps_values_but_is_not_configured() {
+        let dir = unique_test_dir("proxy-disabled");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(
+            &path,
+            r#"{ "proxy": { "enabled": false, "http_proxy": "http://127.0.0.1:7890" } }"#,
+        )
+        .unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert!(!config.proxy.enabled);
+        assert_eq!(
+            config.proxy.http_proxy.as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        assert!(!config.proxy.is_configured());
         fs::remove_dir_all(&dir).unwrap();
     }
 
