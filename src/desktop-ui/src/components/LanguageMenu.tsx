@@ -32,7 +32,7 @@ export function LanguageMenu() {
           title={t("Language")}
           aria-label={t("Language")}
         >
-          <Languages className="w-3.5 h-3.5 text-muted-foreground" />
+          <Languages className="size-4 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">

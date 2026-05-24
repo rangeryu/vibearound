@@ -399,6 +399,28 @@ mod tests {
     }
 
     #[test]
+    fn manifest_installs_configured_pi_acp_agent() {
+        let settings = serde_json::json!({
+            "enabled_agents": ["pi"],
+            "channels": {
+                "telegram": {}
+            }
+        });
+
+        let ids = manifest_ids(
+            settings,
+            InstallScope {
+                agents: false,
+                channels: true,
+            },
+        );
+
+        assert!(ids.contains(&"agent:pi:acp".to_string()));
+        assert!(ids.contains(&"plugin:telegram".to_string()));
+        assert!(!ids.contains(&"agent:pi:mcp".to_string()));
+    }
+
+    #[test]
     fn manifest_does_not_install_acp_agents_without_channels() {
         let settings = serde_json::json!({
             "enabled_agents": ["claude", "codex"]

@@ -96,8 +96,23 @@ pub struct Config {
     /// Validated at load time — entries that don't resolve via
     /// `resources::agent_by_alias` are dropped.
     pub enabled_agents: Vec<String>,
+    // --- Optional outbound HTTP proxy ---
+    pub proxy: HttpProxyConfig,
     // --- Raw channels JSON (for dynamic plugin config) ---
     raw_channels: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HttpProxyConfig {
+    pub enabled: bool,
+    pub http_proxy: Option<String>,
+    pub no_proxy: Option<String>,
+}
+
+impl HttpProxyConfig {
+    pub fn is_configured(&self) -> bool {
+        self.enabled && self.http_proxy.is_some()
+    }
 }
 
 impl Config {
@@ -311,6 +326,33 @@ fn load_settings_from(path: &std::path::Path) -> Config {
                 .collect()
         });
 
+    let proxy = root
+        .get("proxy")
+        .and_then(|value| value.as_object())
+        .map(|proxy| {
+            let http_proxy = proxy
+                .get("http_proxy")
+                .or_else(|| proxy.get("url"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let no_proxy = proxy
+                .get("no_proxy")
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let enabled = proxy
+                .get("enabled")
+                .and_then(|value| value.as_bool())
+                .unwrap_or_else(|| http_proxy.is_some());
+            HttpProxyConfig {
+                enabled,
+                http_proxy,
+                no_proxy,
+            }
+        })
+        .unwrap_or_default();
+
     Config {
         tunnel_provider,
         ngrok_auth_token,
@@ -323,6 +365,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         default_agent,
         default_profiles,
         enabled_agents,
+        proxy,
         raw_channels,
     }
 }
@@ -415,6 +458,7 @@ impl Default for Config {
                 .iter()
                 .map(|a| a.id.clone())
                 .collect(),
+            proxy: HttpProxyConfig::default(),
             raw_channels: serde_json::Value::Object(serde_json::Map::new()),
         }
     }
@@ -485,6 +529,54 @@ mod tests {
         let config = load_settings_from(&path);
 
         assert!(config.enabled_agents.is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn proxy_settings_are_trimmed() {
+        let dir = unique_test_dir("proxy");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(
+            &path,
+            r#"{ "proxy": { "http_proxy": " http://127.0.0.1:7890 ", "no_proxy": " localhost,127.0.0.1 " } }"#,
+        )
+        .unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert_eq!(
+            config.proxy.http_proxy.as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        assert!(config.proxy.enabled);
+        assert!(config.proxy.is_configured());
+        assert_eq!(
+            config.proxy.no_proxy.as_deref(),
+            Some("localhost,127.0.0.1")
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn disabled_proxy_keeps_values_but_is_not_configured() {
+        let dir = unique_test_dir("proxy-disabled");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(
+            &path,
+            r#"{ "proxy": { "enabled": false, "http_proxy": "http://127.0.0.1:7890" } }"#,
+        )
+        .unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert!(!config.proxy.enabled);
+        assert_eq!(
+            config.proxy.http_proxy.as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        assert!(!config.proxy.is_configured());
         fs::remove_dir_all(&dir).unwrap();
     }
 

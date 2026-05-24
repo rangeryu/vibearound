@@ -16,6 +16,7 @@ mod codex;
 mod cursor;
 mod gemini;
 mod opencode;
+mod pi;
 mod qwen;
 
 #[derive(Debug, Clone, Serialize)]
@@ -50,6 +51,7 @@ pub fn list_for_agent_workspace_with_archived(
         "cursor" => cursor::sessions(workspace),
         "gemini" => gemini::sessions(workspace),
         "opencode" => opencode::sessions(workspace),
+        "pi" => pi::sessions(workspace),
         "qwen-code" => qwen::sessions(workspace),
         _ => Vec::new(),
     };

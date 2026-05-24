@@ -148,10 +148,10 @@ impl<'a> LaunchPlanBuilder<'a> {
         let agent_id = profiles::runtime::agent_id_for(launch_target)?;
         let workspace = crate::profiles::resolve_launch_workspace(agent_id)?;
         let (command, mut args) = resume_command_for_agent(agent_id, session_id)?;
-        if agent_id == "codex" {
-            let mut codex_args = rendered.command_args.clone();
-            codex_args.extend(args);
-            args = codex_args;
+        if !rendered.command_args.is_empty() {
+            let mut profile_args = rendered.command_args.clone();
+            profile_args.extend(args);
+            args = profile_args;
         }
 
         Ok(LaunchPlan {
@@ -197,6 +197,10 @@ fn resume_command_for_agent(
         "codex" => (
             "codex".to_string(),
             vec!["resume".to_string(), session_id.to_string()],
+        ),
+        "pi" => (
+            "pi".to_string(),
+            vec!["--session".to_string(), session_id.to_string()],
         ),
         "gemini" => (
             "gemini".to_string(),
@@ -300,6 +304,22 @@ mod tests {
     }
 
     #[test]
+    fn direct_resume_plan_supports_pi_sessions() {
+        let plan = LaunchPlanBuilder::with_launch_id("launch-123")
+            .direct("pi")
+            .resume("019e57e0")
+            .build()
+            .expect("pi direct resume plan");
+
+        assert_eq!(plan.command, "pi");
+        assert_eq!(
+            plan.args,
+            vec!["--session".to_string(), "019e57e0".to_string()]
+        );
+        assert_eq!(plan.window_label, "Pi (resume)");
+    }
+
+    #[test]
     fn profile_launch_plan_adds_vibearound_identity_env() {
         let profile = minimax_anthropic_profile();
         let plan = LaunchPlanBuilder::with_launch_id("launch-123")
@@ -319,5 +339,53 @@ mod tests {
         assert!(plan
             .env
             .contains(&("VIBEAROUND_LAUNCH_TARGET".to_string(), "claude".to_string())));
+    }
+
+    #[test]
+    fn pi_profile_launch_plan_includes_extension_args() {
+        let profile = minimax_anthropic_profile();
+        let plan = LaunchPlanBuilder::with_launch_id("launch-123")
+            .profile(&profile, "pi")
+            .build()
+            .expect("pi profile plan");
+
+        assert_eq!(plan.command, "pi");
+        assert!(plan
+            .args
+            .windows(2)
+            .any(|args| args[0] == "--provider" && args[1] == "vibearound-minimax-test-anthropic"));
+        assert!(plan
+            .args
+            .windows(2)
+            .any(|args| args[0] == "--model" && args[1] == "MiniMax-M2.7"));
+        assert!(plan
+            .env
+            .contains(&("VIBEAROUND_PI_API_KEY".to_string(), "test-key".to_string())));
+        assert!(plan
+            .env
+            .contains(&("VIBEAROUND_LAUNCH_TARGET".to_string(), "pi".to_string())));
+    }
+
+    #[test]
+    fn pi_profile_resume_keeps_profile_extension_args() {
+        let mut profile = minimax_anthropic_profile();
+        profile.id = "minimax-resume-test".to_string();
+        let plan = LaunchPlanBuilder::with_launch_id("launch-123")
+            .profile(&profile, "pi")
+            .resume("019e57e0")
+            .build()
+            .expect("pi profile resume plan");
+
+        assert_eq!(plan.command, "pi");
+        assert!(plan
+            .args
+            .windows(2)
+            .any(|args| args[0] == "--provider"
+                && args[1] == "vibearound-minimax-resume-test-anthropic"));
+        assert!(plan.args.windows(2).any(|args| args[0] == "--session"));
+        assert_eq!(plan.args.last().map(String::as_str), Some("019e57e0"));
+        assert!(plan
+            .env
+            .contains(&("VIBEAROUND_PI_API_KEY".to_string(), "test-key".to_string())));
     }
 }

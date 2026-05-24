@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { AgentId, OnboardingGoal, TunnelProvider } from "./constants";
 import type { ProfileSummary } from "../Launch/types";
 
@@ -29,6 +30,11 @@ export interface Settings {
   default_agent?: string;
   default_profiles?: Record<string, string>;
   enabled_agents?: string[];
+  proxy?: {
+    enabled?: boolean;
+    http_proxy?: string;
+    no_proxy?: string;
+  };
   tunnel?: {
     provider?: string;
     ngrok?: { auth_token?: string; domain?: string };
@@ -129,6 +135,7 @@ export interface StepChannelsProps {
   onStartAuth: (pluginId: string) => void;
   onCancelAuth: (pluginId: string) => void;
   switchSize?: "sm" | "default";
+  notice?: ReactNode;
 }
 
 export interface StepTunnelProps {
@@ -143,6 +150,7 @@ export interface StepTunnelProps {
   onCfToken: (value: string) => void;
   cfHostname: string;
   onCfHostname: (value: string) => void;
+  notice?: ReactNode;
 }
 
 export interface StepConfirmProps {

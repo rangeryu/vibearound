@@ -333,8 +333,10 @@ mod tests {
     #[test]
     fn agent_lookup_works() {
         assert!(agent_by_id("claude").is_some());
+        assert!(agent_by_id("pi").is_some());
         assert!(agent_by_id("gemini").is_some());
         assert!(agent_by_alias("claude-code").is_some());
+        assert!(agent_by_alias("pi-coding-agent").is_some());
         assert!(agent_by_alias("nonexistent").is_none());
     }
 

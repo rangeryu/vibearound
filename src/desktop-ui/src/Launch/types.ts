@@ -7,7 +7,7 @@
 
 export type AuthMode = "api_key" | "oauth_via_cli";
 export type CompatibilityBridgeMode = "auto" | "on" | "off";
-export type ConnectionAgentId = "claude" | "codex" | "gemini" | "opencode";
+export type ConnectionAgentId = "claude" | "codex" | "gemini" | "opencode" | "pi";
 
 export interface ProfileSummary {
   id: string;
@@ -41,10 +41,18 @@ export interface ProfileConnectionPreference {
 
 export interface ProfileBridgePreference {
   enabled?: boolean | null;
+  useProxy?: boolean | null;
   targetApiType?: string | null;
+  /** TODO(0.7.x): remove single-model compatibility fields after migration to models[]. */
   upstreamModel?: string | null;
   fakeModelId?: string | null;
+  models?: ProfileBridgeModelPreference[] | null;
   headers?: Record<string, string> | null;
+}
+
+export interface ProfileBridgeModelPreference {
+  upstreamModel?: string | null;
+  fakeModelId?: string | null;
 }
 
 export type ProfileConnections = Record<

@@ -302,6 +302,24 @@ pub fn find_model<'a>(endpoint: &'a EndpointDef, model_id: &str) -> Option<&'a M
         .find(|model| model_matches(model, model_id))
 }
 
+pub fn canonical_model_id(endpoint: &EndpointDef, model_id: &str) -> Option<String> {
+    if let Some(base_model) = strip_bracket_suffix(model_id) {
+        if let Some(model) = find_model(endpoint, base_model) {
+            return Some(model.id.clone());
+        }
+    }
+    find_model(endpoint, model_id).map(|model| model.id.clone())
+}
+
+pub fn strip_bracket_suffix(model_id: &str) -> Option<&str> {
+    let model_id = model_id.trim();
+    let (base, suffix) = model_id.rsplit_once('[')?;
+    suffix
+        .ends_with(']')
+        .then(|| base.trim())
+        .filter(|base| !base.is_empty())
+}
+
 pub fn model_matches(model: &ModelDef, model_id: &str) -> bool {
     let model_id = model_id.trim();
     if model_id.is_empty() {
@@ -486,9 +504,12 @@ mod tests {
         assert!(get("dashscope").is_some());
         assert!(get("openrouter").is_some());
         assert!(get("minimax").is_some());
+        assert!(get("mimo").is_some());
         assert!(get("deepseek").is_some());
         assert!(get("zai").is_some());
         assert!(get("gemini").is_some());
+        assert!(get("xai").is_some());
+        assert!(get("nvidia").is_some());
         assert!(get("azure").is_some());
     }
 
@@ -544,13 +565,34 @@ mod tests {
     #[test]
     fn moonshot_catalog_tracks_kimi_k26() {
         let provider = get("moonshot").expect("moonshot must exist");
-        for api_type in ["anthropic", "openai-chat"] {
-            let endpoint =
-                find_endpoint(provider, api_type, None).expect("moonshot endpoint must exist");
-            let kimi = model(endpoint, "kimi-k2.6");
-            assert_eq!(kimi.label.as_deref(), Some("Kimi K2.6"));
-            assert_eq!(kimi.context_window, Some(256_000));
+        let anthropic =
+            find_endpoint(provider, "anthropic", None).expect("moonshot anthropic endpoint");
+        for id in ["kimi-k2.6", "kimi-k2-0905-preview", "kimi-k2-turbo-preview"] {
+            assert_eq!(model(anthropic, id).context_window, Some(256_000));
         }
+
+        let openai_chat =
+            find_endpoint(provider, "openai-chat", None).expect("moonshot chat endpoint");
+        assert_eq!(
+            model(openai_chat, "kimi-k2.6").label.as_deref(),
+            Some("Kimi K2.6")
+        );
+        assert_eq!(
+            model(openai_chat, "kimi-k2.6").context_window,
+            Some(256_000)
+        );
+        assert_eq!(
+            model(openai_chat, "kimi-k2-0905-preview").context_window,
+            Some(256_000)
+        );
+        assert_eq!(
+            model(openai_chat, "moonshot-v1-32k").context_window,
+            Some(32_768)
+        );
+        assert_eq!(
+            model(openai_chat, "moonshot-v1-128k").context_window,
+            Some(131_072)
+        );
     }
 
     #[test]
@@ -700,6 +742,97 @@ mod tests {
             Some("{{api_key}}")
         );
         assert!(render.env.get("ANTHROPIC_API_KEY").is_none());
+    }
+
+    #[test]
+    fn mimo_catalog_exposes_token_plan_chat_endpoints() {
+        let provider = get("mimo").expect("mimo must exist");
+        let payg = find_endpoint(provider, "openai-chat", Some("pay-as-you-go"))
+            .expect("mimo pay-as-you-go endpoint");
+
+        assert!(!payg.append_v1_path);
+        assert_eq!(payg.default_base_url, "https://api.xiaomimimo.com/v1");
+        for (endpoint_id, base_url) in [
+            ("token-plan-cn", "https://token-plan-cn.xiaomimimo.com/v1"),
+            ("token-plan-sgp", "https://token-plan-sgp.xiaomimimo.com/v1"),
+            ("token-plan-ams", "https://token-plan-ams.xiaomimimo.com/v1"),
+        ] {
+            let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("mimo token-plan endpoint {endpoint_id}"));
+            assert_eq!(endpoint.default_base_url, base_url);
+            assert!(!endpoint.append_v1_path);
+        }
+        assert_eq!(
+            model(payg, "mimo-v2.5-pro").label.as_deref(),
+            Some("MiMo V2.5 Pro")
+        );
+        for endpoint in &provider.endpoints {
+            assert_eq!(
+                model(endpoint, "mimo-v2.5-pro").context_window,
+                Some(1_000_000)
+            );
+            assert_eq!(model(endpoint, "mimo-v2.5").context_window, Some(1_000_000));
+            assert_eq!(
+                model(endpoint, "mimo-v2-pro").context_window,
+                Some(1_000_000)
+            );
+            assert_eq!(
+                model(endpoint, "mimo-v2-omni").context_window,
+                Some(256_000)
+            );
+            assert_eq!(
+                model(endpoint, "mimo-v2-flash").context_window,
+                Some(256_000)
+            );
+        }
+    }
+
+    #[test]
+    fn xai_catalog_supports_grok_responses_and_chat() {
+        let provider = get("xai").expect("xai must exist");
+        for api_type in ["openai-responses", "openai-chat"] {
+            let endpoint =
+                find_endpoint(provider, api_type, None).expect("xai endpoint must exist");
+            assert_eq!(endpoint.default_base_url, "https://api.x.ai/v1");
+            assert!(!endpoint.append_v1_path);
+            assert!(endpoint.capabilities.reasoning_effort);
+            let grok = model(endpoint, "grok-latest");
+            assert_eq!(grok.id, "grok-4.3");
+            assert_eq!(grok.context_window, Some(1_000_000));
+            assert!(grok.capabilities.image_input);
+            let build = model(endpoint, "grok-code-fast");
+            assert_eq!(build.id, "grok-build-0.1");
+            assert_eq!(build.context_window, Some(256_000));
+        }
+    }
+
+    #[test]
+    fn nvidia_catalog_supports_nim_chat_completions() {
+        let provider = get("nvidia").expect("nvidia must exist");
+        let endpoint = find_endpoint(provider, "openai-chat", None).expect("nvidia chat endpoint");
+        assert_eq!(
+            endpoint.default_base_url,
+            "https://integrate.api.nvidia.com/v1"
+        );
+        assert!(!endpoint.append_v1_path);
+        assert_eq!(
+            model(endpoint, "nvidia/nemotron-3-super-120b-a12b")
+                .label
+                .as_deref(),
+            Some("Nemotron 3 Super 120B A12B")
+        );
+        for (id, context_window) in [
+            ("nvidia/nemotron-3-super-120b-a12b", 1_000_000),
+            ("nvidia/nemotron-3-nano-30b-a3b", 1_000_000),
+            ("nvidia/nvidia-nemotron-nano-9b-v2", 128_000),
+            ("qwen/qwen3-coder-480b-a35b-instruct", 262_144),
+            ("openai/gpt-oss-120b", 128_000),
+            ("moonshotai/kimi-k2.6", 256_000),
+        ] {
+            assert_eq!(model(endpoint, id).context_window, Some(context_window));
+        }
+        assert!(find_model(endpoint, "qwen/qwen3-coder-480b-a35b-instruct").is_some());
+        assert!(find_model(endpoint, "openai/gpt-oss-120b").is_some());
     }
 
     #[test]

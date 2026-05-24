@@ -229,6 +229,7 @@ pub async fn run_web_server(
         )
         .route("/api/channels", get(api::list_channels_handler))
         .route("/api/channels/sync", post(api::sync_channels_handler))
+        .route("/api/settings/reload", post(api::reload_settings_handler))
         .route("/api/tunnels", get(api::list_tunnels_handler))
         .route("/api/agents/runtime", get(api::list_agents_runtime_handler))
         .route("/api/channels/{kind}/stop", post(api::stop_channel_handler))
@@ -285,6 +286,10 @@ pub async fn run_web_server(
             post(api_bridge::legacy_messages_handler),
         )
         .route(
+            "/bridge/{profile_id}/{target_api_type}/v1/models",
+            get(api_bridge::legacy_models_handler),
+        )
+        .route(
             "/bridge/{profile_id}/{target_api_type}/{version}/models/{model_action}",
             post(api_bridge::legacy_gemini_generate_content_handler),
         )
@@ -301,6 +306,10 @@ pub async fn run_web_server(
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/v1/messages",
             post(api_bridge::local_messages_handler),
+        )
+        .route(
+            "/local-api/{profile_id}/{scope}/{target_api_type}/v1/models",
+            get(api_bridge::local_models_handler),
         )
         .route(
             "/local-api/{profile_id}/{scope}/{target_api_type}/{version}/models/{model_action}",

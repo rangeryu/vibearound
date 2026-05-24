@@ -53,6 +53,13 @@ pub async fn sync_channels_handler(State(state): State<AppState>) -> impl IntoRe
     Json(state.channel_hub.sync_configured_plugins().await)
 }
 
+/// POST /api/settings/reload -- reload settings.json in the daemon process
+/// without restarting tunnels, channels, or active agent sessions.
+pub async fn reload_settings_handler() -> impl IntoResponse {
+    config::reload();
+    Json(serde_json::json!({ "ok": true }))
+}
+
 /// GET /api/tunnels -- live list of tunnels from `TunnelManager`.
 pub async fn list_tunnels_handler(
     State(state): State<AppState>,

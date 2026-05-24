@@ -114,10 +114,13 @@ export function selectedEndpoint(
 
 export function shouldShowBaseUrl(
   provider: CatalogEntry,
-  endpoint: { default_base_url: string },
+  endpoint: CatalogEntry["endpoints"][number],
   overrides: ApiTypeOverrides,
 ): boolean {
   if (provider.id === "custom") return true;
+  if (provider.id === "mimo" && endpointId(endpoint).startsWith("token-plan")) {
+    return true;
+  }
   if (!endpoint.default_base_url) return true;
   return !!overrides.base_url && overrides.base_url !== endpoint.default_base_url;
 }
@@ -127,6 +130,9 @@ export function apiKindHint(
   apiType: string,
   endpoint?: CatalogEntry["endpoints"][number],
 ): string | undefined {
+  if (provider.id === "mimo" && endpoint && endpointId(endpoint).startsWith("token-plan")) {
+    return "Token Plan keys must use the Base URL shown on the MiMo Subscription page.";
+  }
   if (provider.id === "gemini" && apiType === "openai-chat") {
     if (endpoint && endpointId(endpoint) === "vertex-openai-compatible") {
       return "Uses a Google Cloud access token and a Vertex endpoint root ending in /endpoints/openapi.";

@@ -75,6 +75,8 @@ export const zhCNWebDashboard: Record<string, string> = {
   "version: {{value}}": "版本：{{value}}",
   "sessionId: {{value}}": "会话 ID：{{value}}",
   "Using tool: {{tool}}…": "正在使用工具：{{tool}}…",
+  "Context compacted. Continuing from a compressed summary.":
+    "上下文已压缩。接下来会基于压缩摘要继续。",
   "Error: {{error}}": "错误：{{error}}",
   "{{agent}} / Direct": "{{agent}} / 直连",
   "{{agent}} / {{profile}}": "{{agent}} / {{profile}}",

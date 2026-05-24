@@ -2,37 +2,27 @@ import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   FolderOpen,
-  FolderPlus,
-  History,
   MessageCircle,
-  Plus,
   Rocket,
   Terminal,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
-import { BrandIcon } from "@/components/brand-icon";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import {
-  AgentRailButton,
-  DefaultBadge,
-  BridgeBadge,
-  SelectorTile,
-  TooltipButton,
-} from "./LaunchBuilderPrimitives";
+import { AgentRailButton, TooltipButton } from "./LaunchBuilderPrimitives";
 import {
   ProfilePanel,
   SessionPanel,
+  TerminalPanel,
   WorkspacePanel,
 } from "./LaunchBuilderPanels";
+import {
+  AgentSummaryHeader,
+  LaunchSummaryPill,
+  ProfileInfoPanel,
+  SelectorPopup,
+  type SelectorPopupId,
+} from "./LaunchSummary";
 import {
   deleteProfile,
   getLauncherPreferences,
@@ -65,8 +55,6 @@ import {
   agentWorkspace,
   currentTerminal,
   currentWorkspace,
-  isGlobalDefaultDirect,
-  isGlobalDefaultProfile,
   isBridgeAgent,
   isSelectionLaunchable,
   isSortableWorkspace,
@@ -75,10 +63,8 @@ import {
   profileById,
   profileSupportsAgent,
   profileSummary,
-  relativeTime,
   resolveSelectedSession,
   selectionUnavailableReason,
-  type ExpandedBlock,
   type ProfileChoice,
   type SessionChoice,
 } from "./launchModel";
@@ -87,6 +73,7 @@ import type { ConnectionAgentId, ProfileSummary } from "./types";
 const AGENT_ORDER = [
   "codex",
   "claude",
+  "pi",
   "gemini",
   "cursor",
   "kiro",
@@ -126,12 +113,17 @@ export function AgentLaunchBuilder({
   const [profileChoice, setProfileChoice] = useState<ProfileChoice>({
     kind: "direct",
   });
-  const [expanded, setExpanded] = useState<ExpandedBlock>("profile");
+  const [openSelector, setOpenSelector] = useState<SelectorPopupId | null>(
+    null,
+  );
   const [workspaceOptions, setWorkspaceOptions] = useState<
     WorkspaceOption[] | null
   >(null);
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
   const [sessions, setSessions] = useState<LaunchSessionSummary[]>([]);
+  const [workspaceSessionCounts, setWorkspaceSessionCounts] = useState<
+    Record<string, number>
+  >({});
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [showArchivedSessions, setShowArchivedSessions] = useState(false);
   const [sessionChoice, setSessionChoice] = useState<SessionChoice>(null);
@@ -283,6 +275,29 @@ export function AgentLaunchBuilder({
     };
   }, [agentId, currentAgentWorkspace, showArchivedSessions, onError]);
 
+  useEffect(() => {
+    if (!agentId || !agentSupportsSessionResume(agentId) || !viewPrefs) {
+      setWorkspaceSessionCounts({});
+      return;
+    }
+    let cancelled = false;
+    const workspaces = viewPrefs.workspaceOptions;
+    void Promise.all(
+      workspaces.map((workspace) =>
+        listLaunchSessions(agentId, workspace.path, false)
+          .then((items) => [workspace.path, items.length] as const)
+          .catch(() => [workspace.path, 0] as const),
+      ),
+    ).then((entries) => {
+      if (!cancelled) {
+        setWorkspaceSessionCounts(Object.fromEntries(entries));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId, viewPrefs?.workspaceOptions]);
+
   const selectedAgent = agents.find((agent) => agent.id === agentId);
   const selectedProfile =
     profileChoice.kind === "profile"
@@ -319,15 +334,7 @@ export function AgentLaunchBuilder({
     "{{agent}} does not support selecting a session to resume",
     { agent: agentLabel(agentId) },
   );
-  const canResume = sessionResumeSupported && Boolean(selectedSession);
-  const resumeDisabledReason = busy
-    ? t("Launch is already in progress")
-    : !sessionResumeSupported
-      ? sessionResumeUnsupportedReason
-      : !selectedSession
-        ? t("No session to resume")
-        : selectionDisabledReason;
-  const quickLaunchDisabledReason = busy
+  const launchDisabledReason = busy
     ? t("Launch is already in progress")
     : selectionDisabledReason;
 
@@ -341,7 +348,6 @@ export function AgentLaunchBuilder({
 
   async function chooseAgent(nextAgentId: string) {
     setAgentId(nextAgentId);
-    setExpanded("profile");
     setSessionChoice(null);
     onError(null);
     try {
@@ -531,39 +537,30 @@ export function AgentLaunchBuilder({
     }
   }
 
-  async function launchNew() {
+  async function launchSelected() {
     if (!agentId) return;
     setBusy(true);
     onError(null);
     try {
-      if (profileChoice.kind === "profile") {
-        await launchProfile(profileChoice.profileId, agentId);
+      if (selectedSession) {
+        if (profileChoice.kind === "profile") {
+          await launchProfileResume(
+            profileChoice.profileId,
+            agentId,
+            selectedSession.sessionId,
+          );
+        } else {
+          await launchDirectResume(agentId, selectedSession.sessionId);
+        }
+        onToast(t("Resume launch opened"));
       } else {
-        await launchDirect(agentId);
+        if (profileChoice.kind === "profile") {
+          await launchProfile(profileChoice.profileId, agentId);
+        } else {
+          await launchDirect(agentId);
+        }
+        onToast(t("Quick launch opened"));
       }
-      onToast(t("Quick launch opened"));
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function launchResume() {
-    if (!agentId || !selectedSession) return;
-    setBusy(true);
-    onError(null);
-    try {
-      if (profileChoice.kind === "profile") {
-        await launchProfileResume(
-          profileChoice.profileId,
-          agentId,
-          selectedSession.sessionId,
-        );
-      } else {
-        await launchDirectResume(agentId, selectedSession.sessionId);
-      }
-      onToast(t("Resume launch opened"));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -590,16 +587,7 @@ export function AgentLaunchBuilder({
         bridge: false,
         route: t("Native CLI login"),
       };
-  const profileIsGlobalDefault =
-    profileChoice.kind === "profile"
-      ? isGlobalDefaultProfile(viewPrefs, agentId, profileChoice.profileId)
-      : isGlobalDefaultDirect(viewPrefs, agentId);
-  const sessionTitle = selectedSession?.title ?? t("No session to resume");
-  const sessionDetail = selectedSession
-    ? `${selectedSession.shortId} · ${relativeTime(selectedSession.updatedAt, t)}`
-    : sessionResumeSupported
-      ? t("Quick Launch will start a new session")
-      : sessionResumeUnsupportedReason;
+  const sessionTitle = selectedSession?.title ?? t("New session");
 
   return (
     <TooltipProvider>
@@ -619,203 +607,213 @@ export function AgentLaunchBuilder({
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <BrandIcon
-                  kind="cli"
-                  id={agentId}
-                  label={selectedAgent.display_name}
-                  className="h-7 w-7"
-                />
-                <div className="min-w-0">
-                  <h2 className="truncate text-[15px] font-semibold">
-                    {selectedAgent.display_name}
-                  </h2>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <header className="bg-card/20 p-3">
+              <div className="grid grid-cols-4 items-stretch gap-2">
+                <div className="col-span-3 overflow-visible rounded-md border border-border bg-card p-3 shadow-sm">
+                  <AgentSummaryHeader
+                    agentId={agentId}
+                    agentLabelText={selectedAgent.display_name}
+                  >
+                    <SelectorPopup
+                      id="profile"
+                      openSelector={openSelector}
+                      onOpenChange={setOpenSelector}
+                      widthClassName="w-max min-w-[340px] max-w-[min(680px,calc(100vw-1rem))]"
+                      widthPx={680}
+                      trigger={
+                        <button
+                          type="button"
+                          className={`mt-0.5 flex max-w-[520px] min-w-0 cursor-pointer items-center gap-1 rounded-sm text-left text-[12px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                            openSelector === "profile"
+                              ? "text-primary"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                          onClick={() =>
+                            setOpenSelector(
+                              openSelector === "profile" ? null : "profile",
+                            )
+                          }
+                        >
+                          <span className="min-w-0 truncate font-semibold text-foreground">
+                            {selectedProfileSummary.title}
+                          </span>
+                          <span className="min-w-0 truncate text-muted-foreground">
+                            <span className="px-0.5">·</span>
+                            {selectedProfileSummary.route}
+                          </span>
+                        </button>
+                      }
+                    >
+                      <ProfileInfoPanel
+                        agentId={agentId}
+                        prefs={viewPrefs}
+                        profile={selectedProfile}
+                        summary={selectedProfileSummary}
+                      />
+                    </SelectorPopup>
+                  </AgentSummaryHeader>
+                  <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+                    <SelectorPopup
+                      id="terminal"
+                      openSelector={openSelector}
+                      onOpenChange={setOpenSelector}
+                      widthClassName="w-[min(300px,calc(100vw-1rem))]"
+                      widthPx={300}
+                      trigger={
+                        <LaunchSummaryPill
+                          active={openSelector === "terminal"}
+                          chevron
+                          disabled={busy}
+                          className="w-[160px]"
+                          icon={<Terminal className="h-4 w-4" />}
+                          onClick={() =>
+                            setOpenSelector(
+                              openSelector === "terminal" ? null : "terminal",
+                            )
+                          }
+                          label={t("Terminal")}
+                          title={selectedTerminal?.label ?? t("Terminal")}
+                        />
+                      }
+                    >
+                      <TerminalPanel
+                        options={viewPrefs.options}
+                        selected={viewPrefs.terminal}
+                        busy={busy}
+                        onSelect={(terminalId) => {
+                          setOpenSelector(null);
+                          void chooseTerminal(terminalId);
+                        }}
+                      />
+                    </SelectorPopup>
+                    <SelectorPopup
+                      id="workspace"
+                      openSelector={openSelector}
+                      onOpenChange={setOpenSelector}
+                      widthClassName="w-[min(400px,calc(100vw-1rem))]"
+                      widthPx={400}
+                      trigger={
+                        <LaunchSummaryPill
+                          active={openSelector === "workspace"}
+                          chevron
+                          className="w-[250px]"
+                          icon={<FolderOpen className="h-4 w-4" />}
+                          onClick={() =>
+                            setOpenSelector(
+                              openSelector === "workspace" ? null : "workspace",
+                            )
+                          }
+                          label={t("Workspace")}
+                          title={selectedWorkspace.label}
+                          detail={workspacesLoading ? t("Loading…") : undefined}
+                        />
+                      }
+                    >
+                      <WorkspacePanel
+                        prefs={viewPrefs}
+                        loading={workspacesLoading}
+                        onSelect={(path) => {
+                          setOpenSelector(null);
+                          void chooseWorkspace(path);
+                        }}
+                        onDelete={(path, label) =>
+                          void removeWorkspace(path, label)
+                        }
+                        onReorder={(fromPath, toPath) =>
+                          void reorderWorkspace(fromPath, toPath)
+                        }
+                        onCreate={() => {
+                          setOpenSelector(null);
+                          void chooseFolder();
+                        }}
+                        sessionCounts={workspaceSessionCounts}
+                        busy={busy}
+                      />
+                    </SelectorPopup>
+                    <SelectorPopup
+                      id="session"
+                      openSelector={openSelector}
+                      onOpenChange={setOpenSelector}
+                      widthClassName="w-[min(420px,calc(100vw-1rem))]"
+                      widthPx={420}
+                      trigger={
+                        <LaunchSummaryPill
+                          active={openSelector === "session"}
+                          chevron
+                          disabled={!sessionResumeSupported}
+                          className="w-[210px]"
+                          icon={<MessageCircle className="h-4 w-4" />}
+                          onClick={() =>
+                            setOpenSelector(
+                              openSelector === "session" ? null : "session",
+                            )
+                          }
+                          label={t("Session")}
+                          title={
+                            !sessionResumeSupported
+                              ? t("Session resume unavailable")
+                              : sessionsLoading
+                                ? t("Loading…")
+                                : sessionTitle
+                          }
+                          detail={selectedSession ? t("resume") : undefined}
+                        />
+                      }
+                    >
+                      <SessionPanel
+                        sessions={visibleSessions}
+                        selected={sessionChoice}
+                        archiveFilterAvailable={agentId === "codex"}
+                        resumeSupported={sessionResumeSupported}
+                        unsupportedReason={sessionResumeUnsupportedReason}
+                        showArchived={showArchivedSessions}
+                        onShowArchivedChange={setShowArchivedSessions}
+                        onSelect={(choice) => {
+                          setOpenSelector(null);
+                          setSessionChoice(choice);
+                        }}
+                      />
+                    </SelectorPopup>
+                  </div>
+                </div>
+                <div className="col-span-1 flex">
+                  <TooltipButton
+                    type="button"
+                    disabled={busy || !selectionLaunchable}
+                    disabledReason={launchDisabledReason}
+                    onClick={() => void launchSelected()}
+                    size="lg"
+                    className="h-full min-h-[115px] w-full rounded-md justify-center text-[22px] font-semibold tracking-[0.12em] shadow-md shadow-primary/15 transition-none"
+                  >
+                    <Rocket className="h-8 w-8" />
+                    {t("LAUNCH")}
+                  </TooltipButton>
                 </div>
               </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs"
-                onClick={onNewProfile}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {t("New profile")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs"
-                disabled={busy}
-                onClick={() => void chooseFolder()}
-              >
-                <FolderPlus className="h-3.5 w-3.5" />
-                {t("New workspace")}
-              </Button>
-            </div>
-          </header>
+            </header>
 
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="grid grid-cols-3 gap-2 border-b border-border bg-card/20 p-3">
-              <SelectorTile
-                active={expanded === "profile"}
-                onClick={() => setExpanded("profile")}
-                icon={
-                  selectedProfile ? (
-                    <BrandIcon
-                      kind="provider"
-                      id={selectedProfile.provider}
-                      label={selectedProfile.providerLabel}
-                      fallback={selectedProfile.providerIcon}
-                      framed={false}
-                      className="h-8 w-8"
-                    />
-                  ) : (
-                    <Terminal className="h-4 w-4" />
-                  )
+            <section className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+              <ProfilePanel
+                agentId={agentId}
+                prefs={viewPrefs}
+                selected={profileChoice}
+                profiles={profileOptions}
+                onSelect={(choice) => void chooseProfileChoice(choice)}
+                onSelectApiType={(profile, apiType) =>
+                  void chooseProfileApiType(profile, apiType)
                 }
-                label={t("Profile")}
-                title={selectedProfileSummary.title}
-                detail={selectedProfileSummary.route}
-                badges={
-                  <>
-                    {selectedProfileSummary.bridge && <BridgeBadge />}
-                    {profileIsGlobalDefault && <DefaultBadge />}
-                  </>
+                onMakeDefault={makeDefault}
+                onEditProfile={onEditProfile}
+                onConnectionSettings={onConnectionSettings}
+                onDeleteProfile={(profile) => void removeProfile(profile)}
+                onReorderProfile={(fromId, toId) =>
+                  void reorderProfile(fromId, toId)
                 }
+                onNewProfile={onNewProfile}
+                busy={busy}
               />
-              <SelectorTile
-                active={expanded === "workspace"}
-                onClick={() => setExpanded("workspace")}
-                icon={<FolderOpen className="h-4 w-4" />}
-                label={t("Workspace")}
-                title={selectedWorkspace.label}
-                detail={
-                  workspacesLoading
-                    ? t("Loading…")
-                    : t("{{count}} sessions", { count: visibleSessions.length })
-                }
-                badges={selectedWorkspace.isDefault ? <DefaultBadge /> : null}
-              />
-              <SelectorTile
-                active={expanded === "session"}
-                onClick={() => setExpanded("session")}
-                icon={<MessageCircle className="h-4 w-4" />}
-                label={t("Session")}
-                title={
-                  !sessionResumeSupported
-                    ? t("Session resume unavailable")
-                    : sessionsLoading
-                      ? t("Loading…")
-                      : sessionTitle
-                }
-                detail={sessionDetail}
-                disabled={!sessionResumeSupported}
-                disabledReason={sessionResumeUnsupportedReason}
-              />
-            </div>
-
-            <section className="min-h-0 flex-1 overflow-y-auto p-3">
-              {expanded === "profile" && (
-                <ProfilePanel
-                  agentId={agentId}
-                  prefs={viewPrefs}
-                  selected={profileChoice}
-                  profiles={profileOptions}
-                  onSelect={(choice) => void chooseProfileChoice(choice)}
-                  onSelectApiType={(profile, apiType) =>
-                    void chooseProfileApiType(profile, apiType)
-                  }
-                  onMakeDefault={makeDefault}
-                  onEditProfile={onEditProfile}
-                  onConnectionSettings={onConnectionSettings}
-                  onDeleteProfile={(profile) => void removeProfile(profile)}
-                  onReorderProfile={(fromId, toId) =>
-                    void reorderProfile(fromId, toId)
-                  }
-                  busy={busy}
-                />
-              )}
-              {expanded === "workspace" && (
-                <WorkspacePanel
-                  prefs={viewPrefs}
-                  loading={workspacesLoading}
-                  onSelect={(path) => void chooseWorkspace(path)}
-                  onDelete={(path, label) => void removeWorkspace(path, label)}
-                  onReorder={(fromPath, toPath) =>
-                    void reorderWorkspace(fromPath, toPath)
-                  }
-                  busy={busy}
-                />
-              )}
-              {expanded === "session" && (
-                <SessionPanel
-                  sessions={visibleSessions}
-                  selected={sessionChoice}
-                  archiveFilterAvailable={agentId === "codex"}
-                  resumeSupported={sessionResumeSupported}
-                  unsupportedReason={sessionResumeUnsupportedReason}
-                  showArchived={showArchivedSessions}
-                  onShowArchivedChange={setShowArchivedSessions}
-                  onSelect={setSessionChoice}
-                />
-              )}
             </section>
-
-            <footer className="flex items-center justify-end gap-2 border-t border-border bg-card/30 px-4 py-3">
-              <Select
-                value={viewPrefs.terminal}
-                disabled={busy}
-                onValueChange={(terminalId) => void chooseTerminal(terminalId)}
-              >
-                <SelectTrigger size="sm" className="!h-10 w-[120px] px-3 text-xs">
-                  <Terminal className="h-3.5 w-3.5" />
-                  <SelectValue placeholder={selectedTerminal?.label ?? t("Terminal")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {viewPrefs.options.map((option) => (
-                    <SelectItem
-                      key={option.id}
-                      value={option.id}
-                      disabled={!option.installed}
-                      className="text-xs"
-                    >
-                      {option.installed
-                        ? option.label
-                        : t("{{label}} (not installed)", { label: option.label })}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <TooltipButton
-                type="button"
-                disabled={busy || !canResume || !selectionLaunchable}
-                disabledReason={resumeDisabledReason}
-                onClick={() => void launchResume()}
-                size="lg"
-                variant="outline"
-                className="min-w-[160px] justify-center text-xs font-semibold"
-              >
-                <History className="h-3.5 w-3.5" />
-                {t("Resume Session")}
-              </TooltipButton>
-              <TooltipButton
-                type="button"
-                disabled={busy || !selectionLaunchable}
-                disabledReason={quickLaunchDisabledReason}
-                onClick={() => void launchNew()}
-                size="lg"
-                className="min-w-[160px] justify-center text-xs font-semibold"
-              >
-                <Rocket className="h-3.5 w-3.5" />
-                {t("Quick Launch")}
-              </TooltipButton>
-            </footer>
           </div>
         </main>
       </div>

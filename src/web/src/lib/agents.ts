@@ -16,6 +16,7 @@ const AGENT_DISPLAY_NAMES: Record<AgentId, string> = {
   gemini: "Gemini CLI",
   opencode: "Opencode",
   codex: "Codex CLI",
+  pi: "Pi",
   cursor: "Cursor",
   kiro: "Kiro",
   "qwen-code": "Qwen Code",
@@ -38,7 +39,13 @@ export function agentIdToToolType(agentId: string): ToolType {
   const normalized = agentId.toLowerCase();
   // ToolType is a subset of AgentId (plus "generic"). Widen here and let
   // the theme layer treat any kind it doesn't recognize as "generic".
-  if (normalized === "claude" || normalized === "codex" || normalized === "gemini" || normalized === "opencode") {
+  if (
+    normalized === "claude" ||
+    normalized === "codex" ||
+    normalized === "gemini" ||
+    normalized === "opencode" ||
+    normalized === "pi"
+  ) {
     return normalized;
   }
   return "generic";

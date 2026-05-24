@@ -128,13 +128,16 @@ impl SseMapState {
             return;
         }
 
-        let raw = match serde_json::from_str::<Value>(&data) {
+        let mut raw = match serde_json::from_str::<Value>(&data) {
             Ok(value) => value,
             Err(e) => {
                 self.fail(format!("upstream sent invalid SSE JSON: {e}"));
                 return;
             }
         };
+        if self.upstream_protocol == BridgeProtocol::OpenAiChat {
+            self.provider_adapter.normalize_chat_response(&mut raw);
+        }
         let mut events = match self
             .upstream_protocol
             .decode_upstream_stream_chunk(raw, &mut self.decode_state)

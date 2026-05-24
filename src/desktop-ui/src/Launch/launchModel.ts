@@ -15,10 +15,11 @@ import {
 } from "./connections";
 import type { ConnectionAgentId, ProfileSummary } from "./types";
 
-const PROXY_AGENTS = new Set<string>(["claude", "codex", "gemini", "opencode"]);
+const PROXY_AGENTS = new Set<string>(["claude", "codex", "gemini", "opencode", "pi"]);
 const SESSION_RESUME_AGENTS = new Set<string>([
   "claude",
   "codex",
+  "pi",
   "cursor",
   "gemini",
   "opencode",
@@ -216,7 +217,7 @@ export function profileSummary(
         title: profile.label,
         detail: profile.providerLabel,
         bridge: true,
-        route: `${apiTypeProtocolDisplayLabel(resolved.selectedApiType)} -> ${profile.providerLabel} ${apiTypeRouteDisplayLabel(resolved.selected.targetApiType)}`,
+        route: `${agentLabel(agentId)} ${apiTypeProtocolDisplayLabel(resolved.selectedApiType)} -> ${profile.providerLabel} ${apiTypeProtocolDisplayLabel(resolved.selected.targetApiType)}`,
       };
     }
     if (resolved.status === "native") {
@@ -280,13 +281,9 @@ export function resolveSelectedSession(
   sessions: LaunchSessionSummary[],
 ): LaunchSessionSummary | null {
   if (choice?.kind === "session") {
-    return (
-      sessions.find((session) => session.sessionId === choice.sessionId) ??
-      sessions[0] ??
-      null
-    );
+    return sessions.find((session) => session.sessionId === choice.sessionId) ?? null;
   }
-  return sessions[0] ?? null;
+  return null;
 }
 
 export function apiTypeProtocolDisplayLabel(apiType: string): string {
@@ -324,6 +321,8 @@ export function agentLabel(agentId: string): string {
       return "Claude";
     case "codex":
       return "Codex";
+    case "pi":
+      return "Pi";
     case "gemini":
       return "Gemini";
     case "cursor":

@@ -39,7 +39,14 @@ function mapApiStatus(s: PtyRunState): TerminalStatus {
 
 function mapApiTool(s: string): ToolType {
   const t = s.toLowerCase();
-  if (t === "claude" || t === "codex" || t === "gemini" || t === "opencode" || t === "generic") {
+  if (
+    t === "claude" ||
+    t === "codex" ||
+    t === "gemini" ||
+    t === "opencode" ||
+    t === "pi" ||
+    t === "generic"
+  ) {
     return t as ToolType;
   }
   return "generic";

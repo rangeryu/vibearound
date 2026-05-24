@@ -104,10 +104,14 @@ async function authedDashboardUrl(url: string): Promise<string> {
  */
 export async function openDashboardUrl(url: string): Promise<void> {
   const withToken = await authedDashboardUrl(url);
+  await openExternalUrl(withToken);
+}
+
+export async function openExternalUrl(url: string): Promise<void> {
   try {
-    await invoke("open_external_url", { url: withToken });
+    await invoke("open_external_url", { url });
   } catch (e) {
     console.warn("[desktop-ui] open_external_url failed, falling back:", e);
-    window.open(withToken, "_blank", "noopener,noreferrer");
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 }

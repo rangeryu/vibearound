@@ -32,7 +32,7 @@ use common::pty::{PtyRunState, PtyTool};
 /// ```
 ///
 /// - `id`: an agent ID from `resources/agents.json` (e.g. `"claude"`,
-///   `"gemini"`, `"qwen-code"`).
+///   `"codex"`, `"pi"`, `"gemini"`, `"qwen-code"`).
 /// - `name` / `description`: copied from that file's `display_name` and
 ///   `description` fields.
 #[derive(Debug, Clone, Serialize)]

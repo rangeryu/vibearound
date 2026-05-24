@@ -46,6 +46,22 @@
     }
   },
   {
+    "id": "pi",
+    "display_name": "Pi",
+    "description": "Pi Coding Agent",
+    "aliases": ["pi", "pi-agent", "pi-coding-agent"],
+    "install": { "type": "npm" },
+    "acp": {
+      "program": "node",
+      "npm_package": "pi-acp@0.0.27",
+      "bin_name": "pi-acp"
+    },
+    "pty": {
+      "command": "pi"
+    },
+    "resume_template": "cd {cwd} && pi --session {session_id}"
+  },
+  {
     "id": "gemini",
     "display_name": "Gemini CLI",
     "description": "Google Gemini CLI",

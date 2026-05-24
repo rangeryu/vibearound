@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  Bot,
   Globe,
   MessageSquare,
+  Network,
   RotateCw,
   Settings as SettingsIcon,
   WandSparkles,
@@ -14,6 +16,7 @@ import { StepTunnel } from "../Onboarding/components/StepTunnel";
 import { useChannelAuth } from "../Onboarding/hooks/useChannelAuth";
 import type { TunnelProvider } from "../Onboarding/constants";
 import type {
+  AgentSummary,
   ChannelVerboseConfig,
   ConfigSchemaProperty,
   DiscoveredChannelPlugin,
@@ -23,6 +26,10 @@ import type {
 } from "../Onboarding/types";
 import { apiFetch } from "../lib/api";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { BrandIcon } from "@/components/brand-icon";
 import {
   Dialog,
   DialogContent,
@@ -45,10 +52,23 @@ type Notice = {
 
 type SaveState =
   | "idle"
+  | "agents"
+  | "proxy"
   | "im"
   | "tunnel"
   | "tunnel-restart"
   | "restart-services";
+
+const AGENT_DISPLAY_ORDER = [
+  "claude",
+  "codex",
+  "pi",
+  "gemini",
+  "opencode",
+  "cursor",
+  "kiro",
+  "qwen-code",
+];
 
 export function SettingsDialog({
   open,
@@ -57,11 +77,15 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({});
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [pluginRegistry, setPluginRegistry] = useState<PluginRegistryEntry[]>([]);
   const [discoveredPlugins, setDiscoveredPlugins] = useState<
     DiscoveredChannelPlugin[]
   >([]);
   const [tunnels, setTunnels] = useState<TunnelSummary[]>([]);
+  const [enabledAgents, setEnabledAgents] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(
     () => new Set(),
   );
@@ -73,6 +97,9 @@ export function SettingsDialog({
   >({});
   const [tunnelProvider, setTunnelProvider] =
     useState<TunnelProvider>("none");
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [proxyHttp, setProxyHttp] = useState("");
+  const [proxyNoProxy, setProxyNoProxy] = useState("");
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
@@ -122,6 +149,19 @@ export function SettingsDialog({
     [],
   );
 
+  const hydrateAgents = useCallback(
+    (loadedSettings: AppSettings, loadedAgents: AgentSummary[]) => {
+      const knownIds = new Set(loadedAgents.map((agent) => agent.id));
+      const enabled = Array.isArray(loadedSettings.enabled_agents)
+        ? loadedSettings.enabled_agents
+            .filter((id): id is string => typeof id === "string")
+            .filter((id) => knownIds.has(id))
+        : loadedAgents.map((agent) => agent.id);
+      setEnabledAgents(new Set(enabled));
+    },
+    [],
+  );
+
   const hydrateTunnel = useCallback((loadedSettings: AppSettings) => {
     const tunnel = loadedSettings.tunnel;
     setTunnelProvider(tunnel?.provider ?? "none");
@@ -131,24 +171,36 @@ export function SettingsDialog({
     setCfHostname(tunnel?.cloudflare?.hostname ?? "");
   }, []);
 
+  const hydrateProxy = useCallback((loadedSettings: AppSettings) => {
+    const proxy = loadedSettings.proxy;
+    setProxyEnabled(Boolean(proxy?.enabled ?? proxy?.http_proxy));
+    setProxyHttp(proxy?.http_proxy ?? "");
+    setProxyNoProxy(proxy?.no_proxy ?? "");
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setSettingsLoaded(false);
     setNotice(null);
     try {
-      const [loadedSettings, registry, discovered, tunnelDefs] =
+      const [loadedSettings, agentDefs, registry, discovered, tunnelDefs] =
         await Promise.all([
           invoke<AppSettings>("get_settings"),
+          invoke<AgentSummary[]>("list_agents"),
           invoke<PluginRegistryEntry[]>("list_plugin_registry"),
           invoke<DiscoveredChannelPlugin[]>("list_channel_plugins"),
           invoke<TunnelSummary[]>("list_tunnels"),
         ]);
+      const orderedAgents = orderAgents(agentDefs);
       setSettings(loadedSettings);
+      setAgents(orderedAgents);
       setPluginRegistry(registry);
       setDiscoveredPlugins(discovered);
       setTunnels(tunnelDefs);
+      hydrateAgents(loadedSettings, orderedAgents);
       hydrateChannels(loadedSettings, registry, discovered);
       hydrateTunnel(loadedSettings);
+      hydrateProxy(loadedSettings);
       setSettingsLoaded(true);
     } catch (error) {
       setNotice({
@@ -158,7 +210,7 @@ export function SettingsDialog({
     } finally {
       setLoading(false);
     }
-  }, [hydrateChannels, hydrateTunnel]);
+  }, [hydrateAgents, hydrateChannels, hydrateProxy, hydrateTunnel]);
 
   useEffect(() => {
     if (open) void load();
@@ -203,6 +255,15 @@ export function SettingsDialog({
         prev[pluginId] ? prev : { ...prev, [pluginId]: defaultChannelVerbose() },
       );
     }
+  }, []);
+
+  const toggleAgent = useCallback((agentId: string) => {
+    setEnabledAgents((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
   }, []);
 
   const installPlugin = useCallback(
@@ -259,6 +320,57 @@ export function SettingsDialog({
       setSaving("idle");
     }
   }, [onServicesRestarted]);
+
+  const applyAgentSettings = useCallback(async () => {
+    setSaving("agents");
+    setNotice(null);
+    try {
+      const nextSettings = buildAgentSettings({
+        settings,
+        agents,
+        enabledAgents,
+      });
+      await invoke("save_settings", { settings: nextSettings });
+      setSettings(nextSettings);
+      const response = await apiFetch("/api/settings/reload", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "Agent settings applied." });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving("idle");
+    }
+  }, [settings, agents, enabledAgents, onServicesRestarted]);
+
+  const applyProxySettings = useCallback(async () => {
+    setSaving("proxy");
+    setNotice(null);
+    try {
+      const nextSettings = buildProxySettings({
+        settings,
+        proxyEnabled,
+        proxyHttp,
+        proxyNoProxy,
+      });
+      await invoke("save_settings", { settings: nextSettings });
+      setSettings(nextSettings);
+      const response = await apiFetch("/api/settings/reload", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "Proxy settings applied." });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving("idle");
+    }
+  }, [settings, proxyEnabled, proxyHttp, proxyNoProxy, onServicesRestarted]);
 
   const applyImSettings = useCallback(async () => {
     setSaving("im");
@@ -359,6 +471,13 @@ export function SettingsDialog({
                 {t("General")}
               </TabsTrigger>
               <TabsTrigger
+                value="agents"
+                className="!h-8 w-full justify-start gap-2 px-2 text-xs data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Bot className="h-3 w-3" />
+                {t("Agents")}
+              </TabsTrigger>
+              <TabsTrigger
                 value="im"
                 className="!h-8 w-full justify-start gap-2 px-2 text-xs data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
               >
@@ -372,18 +491,17 @@ export function SettingsDialog({
                 <Globe className="h-3 w-3" />
                 {t("Tunnel")}
               </TabsTrigger>
+              <TabsTrigger
+                value="proxy"
+                className="!h-8 w-full justify-start gap-2 px-2 text-xs data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Network className="h-3 w-3" />
+                {t("Proxy")}
+              </TabsTrigger>
             </TabsList>
           </aside>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            {notice && (
-              <div className="shrink-0 px-5 pt-4">
-                <StatusBanner variant={notice.variant}>
-                  {t(notice.message)}
-                </StatusBanner>
-              </div>
-            )}
-
             <TabsContent
               value="general"
               className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
@@ -397,6 +515,7 @@ export function SettingsDialog({
                   <p className="mt-1 text-xs text-muted-foreground">
                     {t("Manage local service controls and rerun setup when needed.")}
                   </p>
+                  <SettingsNotice notice={notice} />
                 </div>
                 <div className="rounded-md border border-border">
                   <SettingsActionRow
@@ -462,6 +581,7 @@ export function SettingsDialog({
                       onStartAuth={(pluginId) => void startAuth(pluginId)}
                       onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
                       switchSize="sm"
+                      notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
                   <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
@@ -472,6 +592,77 @@ export function SettingsDialog({
                       onClick={() => void applyImSettings()}
                     >
                       {saving === "im" ? t("Applying…") : t("Apply IM Settings")}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent
+              value="agents"
+              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+            >
+              {loading ? (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <LoadingBlock />
+                </div>
+              ) : (
+                <>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                    <AgentSettingsPanel
+                      agents={agents}
+                      enabledAgents={enabledAgents}
+                      onToggle={toggleAgent}
+                      notice={<SettingsNotice notice={notice} />}
+                    />
+                  </div>
+                  <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!canSubmit}
+                      onClick={() => void applyAgentSettings()}
+                    >
+                      {saving === "agents"
+                        ? t("Applying…")
+                        : t("Apply Agent Settings")}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent
+              value="proxy"
+              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+            >
+              {loading ? (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <LoadingBlock />
+                </div>
+              ) : (
+                <>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                    <ProxySettingsPanel
+                      proxyEnabled={proxyEnabled}
+                      proxyHttp={proxyHttp}
+                      proxyNoProxy={proxyNoProxy}
+                      onProxyEnabledChange={setProxyEnabled}
+                      onProxyHttpChange={setProxyHttp}
+                      onProxyNoProxyChange={setProxyNoProxy}
+                      notice={<SettingsNotice notice={notice} />}
+                    />
+                  </div>
+                  <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!canSubmit}
+                      onClick={() => void applyProxySettings()}
+                    >
+                      {saving === "proxy"
+                        ? t("Applying…")
+                        : t("Apply Proxy Settings")}
                     </Button>
                   </div>
                 </>
@@ -501,6 +692,7 @@ export function SettingsDialog({
                       onCfToken={setCfToken}
                       cfHostname={cfHostname}
                       onCfHostname={setCfHostname}
+                      notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
                   <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border px-5 py-3">
@@ -535,6 +727,167 @@ export function SettingsDialog({
   );
 }
 
+function AgentSettingsPanel({
+  agents,
+  enabledAgents,
+  onToggle,
+  notice,
+}: {
+  agents: AgentSummary[];
+  enabledAgents: Set<string>;
+  onToggle: (agentId: string) => void;
+  notice?: ReactNode;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <Bot className="h-4 w-4 text-primary" />
+          {t("Agents")}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t(
+            "Choose which CLIs appear in Launch and new IM sessions. Running sessions continue.",
+          )}
+        </p>
+        {notice}
+      </div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(178px,220px))] gap-2">
+        {agents.map((agent) => {
+          const isEnabled = enabledAgents.has(agent.id);
+          return (
+            <button
+              key={agent.id}
+              type="button"
+              role="checkbox"
+              aria-checked={isEnabled}
+              className={`relative flex min-h-[54px] items-center gap-2 rounded-md border p-2 pr-8 text-left transition-colors ${
+                isEnabled
+                  ? "border-primary/40 bg-primary/5"
+                  : "border-border hover:border-border/80"
+              }`}
+              onClick={() => onToggle(agent.id)}
+            >
+              <BrandIcon
+                kind="cli"
+                id={agent.id}
+                label={agent.display_name}
+                className="h-7 w-7"
+              />
+              <span className="flex min-w-0 flex-1 items-center">
+                <span
+                  className={`truncate text-[13px] font-medium ${
+                    isEnabled ? "text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {agent.display_name}
+                </span>
+              </span>
+              <Checkbox
+                checked={isEnabled}
+                aria-hidden="true"
+                tabIndex={-1}
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"
+              />
+            </button>
+          );
+        })}
+      </div>
+      {enabledAgents.size === 0 && (
+        <StatusBanner variant="warning">
+          {t(
+            "No agents are enabled. Launch will stay hidden until at least one agent is selected.",
+          )}
+        </StatusBanner>
+      )}
+    </div>
+  );
+}
+
+function ProxySettingsPanel({
+  proxyEnabled,
+  proxyHttp,
+  proxyNoProxy,
+  onProxyEnabledChange,
+  onProxyHttpChange,
+  onProxyNoProxyChange,
+  notice,
+}: {
+  proxyEnabled: boolean;
+  proxyHttp: string;
+  proxyNoProxy: string;
+  onProxyEnabledChange: (value: boolean) => void;
+  onProxyHttpChange: (value: string) => void;
+  onProxyNoProxyChange: (value: string) => void;
+  notice?: ReactNode;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <Network className="h-4 w-4 text-primary" />
+          {t("Proxy")}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t(
+            "Configure the HTTP proxy used by API bridge routes that opt in from profile connection settings.",
+          )}
+        </p>
+        {notice}
+      </div>
+      <div className="rounded-md border border-border">
+        <SettingsActionRow
+          label={t("Enable Settings proxy")}
+          description={t("Allow profile API bridge routes to opt in to this HTTP proxy.")}
+          action={
+            <Switch
+              checked={proxyEnabled}
+              onCheckedChange={onProxyEnabledChange}
+              aria-label={t("Enable Settings proxy")}
+            />
+          }
+        />
+        <div className="grid gap-3 border-b border-border px-4 py-3 last:border-b-0">
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium">{t("HTTP proxy URL")}</span>
+            <Input
+              type="text"
+              value={proxyHttp}
+              onChange={(event) => onProxyHttpChange(event.currentTarget.value)}
+              placeholder="http://127.0.0.1:7890"
+              className="h-8 font-mono text-xs"
+            />
+          </label>
+        </div>
+        <div className="grid gap-3 border-b border-border px-4 py-3 last:border-b-0">
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium">{t("No proxy")}</span>
+            <Input
+              type="text"
+              value={proxyNoProxy}
+              onChange={(event) => onProxyNoProxyChange(event.currentTarget.value)}
+              placeholder="localhost,127.0.0.1,::1"
+              className="h-8 font-mono text-xs"
+            />
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsNotice({ notice }: { notice: Notice | null }) {
+  const { t } = useI18n();
+  if (!notice) return null;
+  return (
+    <div className="mt-3">
+      <StatusBanner variant={notice.variant}>{t(notice.message)}</StatusBanner>
+    </div>
+  );
+}
+
 function SettingsActionRow({
   label,
   description,
@@ -566,6 +919,49 @@ function LoadingBlock() {
       {t("Loading…")}
     </p>
   );
+}
+
+function buildAgentSettings({
+  settings,
+  agents,
+  enabledAgents,
+}: {
+  settings: AppSettings;
+  agents: AgentSummary[];
+  enabledAgents: Set<string>;
+}): AppSettings {
+  const result: AppSettings = { ...settings };
+  result.enabled_agents = agents
+    .map((agent) => agent.id)
+    .filter((id) => enabledAgents.has(id));
+  return result;
+}
+
+function buildProxySettings({
+  settings,
+  proxyEnabled,
+  proxyHttp,
+  proxyNoProxy,
+}: {
+  settings: AppSettings;
+  proxyEnabled: boolean;
+  proxyHttp: string;
+  proxyNoProxy: string;
+}): AppSettings {
+  const result: AppSettings = { ...settings };
+  const proxy: NonNullable<AppSettings["proxy"]> = {};
+  const trimmedHttp = proxyHttp.trim();
+  const trimmedNoProxy = proxyNoProxy.trim();
+  const hasValues = Boolean(trimmedHttp || trimmedNoProxy);
+  proxy.enabled = proxyEnabled;
+  if (trimmedHttp) proxy.http_proxy = trimmedHttp;
+  if (trimmedNoProxy) proxy.no_proxy = trimmedNoProxy;
+  if (proxyEnabled || hasValues) {
+    result.proxy = proxy;
+  } else {
+    delete result.proxy;
+  }
+  return result;
 }
 
 function buildChannelSettings({
@@ -697,4 +1093,11 @@ function parseChannelVerbose(value: unknown): ChannelVerboseConfig {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function orderAgents(agents: AgentSummary[]): AgentSummary[] {
+  const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));
+  return [...agents].sort(
+    (a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999),
+  );
 }

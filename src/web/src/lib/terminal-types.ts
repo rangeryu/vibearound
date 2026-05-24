@@ -1,10 +1,17 @@
 /** Terminal session status. */
 export type TerminalStatus = "running" | "idle" | "stopped" | "error";
 
-/** Tool type: determines panel and xterm theme (claude/codex/gemini/opencode/generic). */
-export type ToolType = "claude" | "codex" | "gemini" | "opencode" | "generic";
+/** Tool type: determines panel and xterm theme. */
+export type ToolType = "claude" | "codex" | "gemini" | "opencode" | "pi" | "generic";
 
-export const TOOL_OPTIONS: ToolType[] = ["generic", "claude", "codex", "gemini", "opencode"];
+export const TOOL_OPTIONS: ToolType[] = [
+  "generic",
+  "claude",
+  "codex",
+  "gemini",
+  "opencode",
+  "pi",
+];
 
 export interface TerminalSession {
   id: string;
@@ -94,6 +101,16 @@ const toolThemes: Record<ToolType, Omit<ToolTheme, "bg" | "headerBg"> & { bg: st
     label: "Opencode",
     cursorColor: "#71717a",
     selectionBg: "#71717a33",
+  },
+  pi: {
+    accent: "#7c3aed",
+    accentFg: "#ede9fe",
+    bg: TERMINAL_BG_DARK,
+    headerBg: TERMINAL_HEADER_BG_DARK,
+    borderColor: "#7c3aed40",
+    label: "Pi",
+    cursorColor: "#7c3aed",
+    selectionBg: "#7c3aed33",
   },
   generic: {
     accent: "#64748b",

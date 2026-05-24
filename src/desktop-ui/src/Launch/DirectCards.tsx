@@ -6,7 +6,16 @@ import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import { listAgents, type AgentSummary } from "./api";
 
-const AGENT_DISPLAY_ORDER = ["claude", "codex", "gemini", "opencode", "cursor", "kiro", "qwen-code"];
+const AGENT_DISPLAY_ORDER = [
+  "claude",
+  "codex",
+  "pi",
+  "gemini",
+  "opencode",
+  "cursor",
+  "kiro",
+  "qwen-code",
+];
 
 interface Props {
   onLaunch: (agentId: string) => Promise<void>;

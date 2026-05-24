@@ -98,6 +98,38 @@ fn bridge_launch_target_carries_bridge_hint() {
 }
 
 #[test]
+fn bridge_sanitization_preserves_proxy_toggle_when_enabled() {
+    let profile = profile(&["anthropic"]);
+    let sanitized = sanitize_profile_connection_preference(
+        &profile,
+        "codex",
+        agent_state::ProfileConnectionPreference {
+            selected_api_type: Some("openai-responses".to_string()),
+            bridge: [(
+                "openai-responses".to_string(),
+                agent_state::ProfileBridgePreference {
+                    enabled: true,
+                    use_proxy: true,
+                    target_api_type: Some("anthropic".to_string()),
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        },
+    )
+    .expect("bridge preference sanitizes");
+
+    assert!(
+        sanitized
+            .bridge
+            .get("openai-responses")
+            .expect("bridge preference")
+            .use_proxy
+    );
+}
+
+#[test]
 fn unsupported_without_native_or_bridge_route() {
     let profile = profile(&["anthropic"]);
 
@@ -115,6 +147,23 @@ fn gemini_profile_has_native_launch_target() {
     assert_eq!(targets[0].id, "gemini");
     assert_eq!(targets[0].api_type, "gemini");
     assert_eq!(targets[0].bridge_target_api_type, None);
+}
+
+#[test]
+fn pi_can_launch_openai_chat_profile_natively() {
+    let profile = profile(&["openai-chat"]);
+    let route = resolve_profile_agent_route_with_connections(&profile, "pi", &BTreeMap::new())
+        .expect("pi route");
+
+    assert_eq!(route.client_api_type, "openai-chat");
+    assert_eq!(route.bridge_target_api_type, None);
+
+    let targets = launch_targets_for_profile_with_connections(&profile, &BTreeMap::new());
+    assert!(targets.iter().any(|target| {
+        target.id == "pi"
+            && target.api_type == "openai-chat"
+            && target.bridge_target_api_type.is_none()
+    }));
 }
 
 #[test]
@@ -145,4 +194,53 @@ fn gemini_cli_can_launch_openai_chat_profile_via_bridge() {
     assert_eq!(route.client_api_type, "gemini");
     assert_eq!(route.bridge_target_api_type.as_deref(), Some("openai-chat"));
     assert_eq!(route.bridge_upstream_model.as_deref(), Some("gpt-test"));
+}
+
+#[test]
+fn bridge_route_carries_model_list() {
+    let profile = profile(&["openai-chat"]);
+    let prefs = connections(
+        &profile.id,
+        "codex",
+        agent_state::ProfileConnectionPreference {
+            selected_api_type: Some("openai-responses".to_string()),
+            bridge: [(
+                "openai-responses".to_string(),
+                agent_state::ProfileBridgePreference {
+                    enabled: true,
+                    target_api_type: Some("openai-chat".to_string()),
+                    models: vec![
+                        agent_state::ProfileBridgeModelPreference {
+                            upstream_model: Some("gpt-real".to_string()),
+                            fake_model_id: Some("gpt-fake".to_string()),
+                        },
+                        agent_state::ProfileBridgeModelPreference {
+                            upstream_model: Some("provider-extra".to_string()),
+                            fake_model_id: None,
+                        },
+                    ],
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        },
+    );
+
+    let route = resolve_profile_agent_route_with_connections(&profile, "codex", &prefs)
+        .expect("codex bridge route");
+
+    assert_eq!(
+        route.bridge_models,
+        vec![
+            ProfileBridgeModelRoute {
+                upstream_model: "gpt-real".to_string(),
+                agent_model: "gpt-fake".to_string(),
+            },
+            ProfileBridgeModelRoute {
+                upstream_model: "provider-extra".to_string(),
+                agent_model: "provider-extra".to_string(),
+            },
+        ]
+    );
 }

@@ -160,8 +160,10 @@ pub fn list_channel_plugins() -> Result<Vec<plugins::DiscoveredPluginSummary>, S
 }
 
 #[tauri::command]
-pub fn save_settings(settings: Value) -> Result<(), String> {
-    write_settings_value(&settings)
+pub fn save_settings<R: Runtime>(app: AppHandle<R>, settings: Value) -> Result<(), String> {
+    write_settings_value(&settings)?;
+    let _ = app.emit(crate::tray::LAUNCH_CONFIG_CHANGED_EVENT, ());
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

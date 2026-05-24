@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 const CLI_LOGOS: Record<string, string> = {
   claude: "/brand/cli-claude.svg",
   codex: "/brand/cli-openai.svg",
+  pi: "/brand/cli-pi.svg",
   gemini: "/brand/cli-gemini.svg",
   opencode: "/brand/cli-opencode.svg",
   cursor: "/brand/cli-cursor.svg",
@@ -17,9 +18,12 @@ const PROVIDER_LOGOS: Record<string, string> = {
   dashscope: "/brand/provider-dashscope.svg",
   deepseek: "/brand/provider-deepseek-color.svg",
   gemini: "/brand/provider-gemini-color.svg",
+  mimo: "/brand/provider-mimo.svg",
   minimax: "/brand/provider-minimax-color.svg",
   moonshot: "/brand/provider-moonshot.webp",
+  nvidia: "/brand/provider-nvidia.svg",
   openrouter: "/brand/provider-openrouter-color.svg",
+  xai: "/brand/provider-xai.svg",
   zai: "/brand/provider-zai-color.svg",
 };
 

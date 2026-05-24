@@ -37,6 +37,8 @@ import { Launch } from "./Launch";
 import { SettingsDialog } from "./Settings";
 import { getLauncherPreferences, type LauncherPreferences } from "./Launch/api";
 import { LanguageMenu } from "./components/LanguageMenu";
+import { cn } from "./lib/utils";
+import { UpdateIndicator } from "./UpdateIndicator";
 
 // ---------------------------------------------------------------------------
 // Per-domain status presentation — each manager has its own natural status
@@ -329,11 +331,14 @@ type DashboardPage = "launch" | "status" | "previews";
 
 function Dashboard() {
   const { t } = useI18n();
+  const isMacTitlebar =
+    typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
   const [page, setPage] = useState<DashboardPage>("launch");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [launcherPrefs, setLauncherPrefs] =
     useState<LauncherPreferences | null>(null);
   const [launcherPrefsLoaded, setLauncherPrefsLoaded] = useState(false);
+  const [launchRefreshToken, setLaunchRefreshToken] = useState(0);
 
   const channels = useChannelsState();
   const tunnels = useTunnelsState();
@@ -361,6 +366,11 @@ function Dashboard() {
     void agents.refresh();
     refreshLauncherPrefs();
   }, [channels, tunnels, agents, refreshLauncherPrefs]);
+
+  const handleRuntimeSettingsChanged = useCallback(() => {
+    refreshAll();
+    setLaunchRefreshToken((token) => token + 1);
+  }, [refreshAll]);
 
   const everHadData = useRef(false);
   const [startTime] = useState(() => Date.now());
@@ -430,68 +440,86 @@ function Dashboard() {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
-        <Tabs
-          value={effectivePage}
-          onValueChange={(value) => {
-            if (value === "launch" && !launchEnabled) return;
-            setPage(value as DashboardPage);
-          }}
-          className="contents"
-        >
-          <TabsList className="!h-8 rounded-md p-1">
-            <TooltipProvider>
-              {launchDisabledReason ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      className="inline-flex cursor-not-allowed"
-                      tabIndex={0}
-                      role="button"
-                      aria-disabled="true"
-                      aria-label={launchDisabledReason}
-                      title={launchDisabledReason}
-                    >
-                      <TabsTrigger
-                        value="launch"
-                        disabled
-                        className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
-                      >
-                        <Rocket /> {t("Launch")}
-                      </TabsTrigger>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    {launchDisabledReason}
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <TabsTrigger
-                  value="launch"
-                  className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
-                >
-                  <Rocket /> {t("Launch")}
-                </TabsTrigger>
-              )}
-            </TooltipProvider>
-            <TabsTrigger
-              value="status"
-              className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
-            >
-              <Activity /> {t("Status")}
-            </TabsTrigger>
-            <TabsTrigger
-              value="previews"
-              className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
-            >
-              <Eye /> {t("Previews")}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-muted-foreground/60">
-            v{__APP_VERSION_LABEL__}
+      <header
+        className={cn(
+          "relative flex h-12 items-center justify-between pr-3 border-b border-border shrink-0",
+          isMacTitlebar ? "pl-[82px]" : "pl-3",
+        )}
+      >
+        <div
+          data-tauri-drag-region
+          aria-hidden="true"
+          className="absolute inset-0 z-0"
+        />
+        <div className="relative z-10 flex min-w-0 items-baseline gap-1.5 whitespace-nowrap">
+          <span className="text-[13px] font-semibold text-foreground">
+            VibeAround
           </span>
+          <span className="font-mono text-[10px] text-muted-foreground/60">
+            @{__APP_VERSION_LABEL__}
+          </span>
+          <UpdateIndicator />
+        </div>
+        <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
+          <Tabs
+            value={effectivePage}
+            onValueChange={(value) => {
+              if (value === "launch" && !launchEnabled) return;
+              setPage(value as DashboardPage);
+            }}
+            className="contents"
+          >
+            <TabsList className="!h-8 rounded-md p-1">
+              <TooltipProvider>
+                {launchDisabledReason ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="inline-flex cursor-not-allowed"
+                        tabIndex={0}
+                        role="button"
+                        aria-disabled="true"
+                        aria-label={launchDisabledReason}
+                        title={launchDisabledReason}
+                      >
+                        <TabsTrigger
+                          value="launch"
+                          disabled
+                          className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+                        >
+                          <Rocket /> {t("Launch")}
+                        </TabsTrigger>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {launchDisabledReason}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <TabsTrigger
+                    value="launch"
+                    className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+                  >
+                    <Rocket /> {t("Launch")}
+                  </TabsTrigger>
+                )}
+              </TooltipProvider>
+              <TabsTrigger
+                value="status"
+                className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Activity /> {t("Status")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="previews"
+                className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Eye /> {t("Previews")}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+        <div className="relative z-10 flex items-center gap-2">
           <LanguageMenu />
           <Button
             onClick={() => setSettingsOpen(true)}
@@ -506,7 +534,7 @@ function Dashboard() {
             }
           >
             <Settings
-              className={`w-3.5 h-3.5 ${
+              className={`size-4 ${
                 settingsOpen
                   ? "text-accent-foreground"
                   : "text-muted-foreground"
@@ -519,7 +547,7 @@ function Dashboard() {
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        onServicesRestarted={refreshAll}
+        onServicesRestarted={handleRuntimeSettingsChanged}
       />
 
       {firstError && (
@@ -534,7 +562,7 @@ function Dashboard() {
         </div>
       ) : effectivePage === "launch" ? (
         <div className="flex-1 min-h-0">
-          <Launch />
+          <Launch refreshToken={launchRefreshToken} />
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">

@@ -3,6 +3,7 @@ import type {
   ProfileConnectionPreference,
   ProfileConnections,
   ProfileBridgePreference,
+  ProfileBridgeModelPreference,
   ProfileSummary,
 } from "./types";
 import { apiTypeBadge } from "./types";
@@ -21,6 +22,7 @@ export interface ResolvedClientApiConnection {
   targetApiType: string | null;
   upstreamModel: string | null;
   fakeModelId: string | null;
+  models: ProfileBridgeModelPreference[];
   agentModel: string | null;
   targetOptions: string[];
   status: "native" | "via_bridge" | "unsupported";
@@ -47,6 +49,12 @@ export const CONNECTION_AGENTS: ConnectionAgentDef[] = [
     label: "Codex CLI",
     supportedApiTypes: ["openai-responses"],
     defaultApiType: "openai-responses",
+  },
+  {
+    id: "pi",
+    label: "Pi",
+    supportedApiTypes: ["anthropic", "openai-responses", "openai-chat"],
+    defaultApiType: "anthropic",
   },
   {
     id: "gemini",
@@ -101,12 +109,17 @@ export function emptyConnectionDraft(
         const current = connections?.[profile.id]?.[agent.id]?.bridge?.[item.apiType];
         bridge[item.apiType] = {
           enabled: item.bridgeEnabled,
+          useProxy: current?.useProxy ?? false,
           targetApiType:
             current?.targetApiType && item.targetOptions.includes(current.targetApiType)
               ? current.targetApiType
               : item.targetApiType,
           upstreamModel: current?.upstreamModel ?? item.upstreamModel,
           fakeModelId: current?.fakeModelId ?? item.fakeModelId,
+          models:
+            cleanBridgeModels(current?.models).length > 0
+              ? cleanBridgeModels(current?.models)
+              : defaultBridgeModels(profile, item.targetApiType, item.upstreamModel, item.fakeModelId),
           headers: current?.headers ?? {},
         };
       }
@@ -144,7 +157,8 @@ export function recommendedBridgeTarget(
     agentId === "gemini" && clientApiType === "gemini"
       ? ["openai-chat", "openai-responses", "anthropic"]
       : (agentId === "claude" && clientApiType === "anthropic") ||
-          (agentId === "opencode" && clientApiType === "anthropic")
+          (agentId === "opencode" && clientApiType === "anthropic") ||
+          (agentId === "pi" && clientApiType === "anthropic")
         ? ["openai-responses", "openai-chat", "anthropic"]
         : ["anthropic", "openai-chat", "openai-responses"];
   return order.find((apiType) => profile.apiTypes.includes(apiType)) ?? null;
@@ -197,6 +211,7 @@ function resolveClientApiConnection(
     cleanModelId(bridgePreference?.upstreamModel) ??
     (targetApiType ? cleanModelId(profile.apiTypeModels[targetApiType]) : null);
   const fakeModelId = cleanModelId(bridgePreference?.fakeModelId);
+  const models = cleanBridgeModels(bridgePreference?.models);
 
   return {
     apiType,
@@ -205,10 +220,49 @@ function resolveClientApiConnection(
     targetApiType,
     upstreamModel,
     fakeModelId,
+    models:
+      models.length > 0
+        ? models
+        : defaultBridgeModels(profile, targetApiType, upstreamModel, fakeModelId),
     agentModel: fakeModelId ?? upstreamModel,
     targetOptions,
     status,
   };
+}
+
+export function defaultBridgeModels(
+  profile: ProfileSummary,
+  targetApiType: string | null,
+  upstreamModel?: string | null,
+  fakeModelId?: string | null,
+): ProfileBridgeModelPreference[] {
+  const preferred = cleanModelId(upstreamModel);
+  const fake = cleanModelId(fakeModelId);
+  const models: ProfileBridgeModelPreference[] = [];
+  if (preferred) {
+    models.push({ upstreamModel: preferred, fakeModelId: fake });
+  }
+  if (targetApiType) {
+    for (const model of profile.apiTypeModelOptions[targetApiType] ?? []) {
+      const id = cleanModelId(model.id);
+      if (!id || models.some((entry) => cleanModelId(entry.upstreamModel) === id)) {
+        continue;
+      }
+      models.push({ upstreamModel: id });
+    }
+  }
+  return models.length > 0 ? models : [{ upstreamModel: "" }];
+}
+
+export function cleanBridgeModels(
+  models: ProfileBridgeModelPreference[] | null | undefined,
+): ProfileBridgeModelPreference[] {
+  return (models ?? [])
+    .map((model) => ({
+      upstreamModel: cleanModelId(model.upstreamModel),
+      fakeModelId: cleanModelId(model.fakeModelId),
+    }))
+    .filter((model) => model.upstreamModel);
 }
 
 function cleanModelId(value: string | null | undefined): string | null {

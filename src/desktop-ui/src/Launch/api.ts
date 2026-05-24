@@ -11,6 +11,7 @@ import type {
   ProfileConnections,
   ProfileSummary,
 } from "./types";
+import type { Settings } from "../Onboarding/types";
 
 export function listProfiles(): Promise<ProfileSummary[]> {
   return invoke<ProfileSummary[]>("profiles_list");
@@ -121,6 +122,10 @@ export interface WorkspaceOption {
 
 export function getLauncherPreferences(): Promise<LauncherPreferences> {
   return invoke<LauncherPreferences>("launcher_get_preferences");
+}
+
+export function getSettings(): Promise<Settings> {
+  return invoke<Settings>("get_settings");
 }
 
 export function listLauncherWorkspaces(agentId?: string): Promise<WorkspaceOption[]> {

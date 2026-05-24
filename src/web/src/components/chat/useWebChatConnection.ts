@@ -59,6 +59,9 @@ interface UseWebChatConnectionOptions {
 const CACHE_WRITE_DEBOUNCE_MS = 350;
 const RESUME_REPLAY_SETTLE_MS = 700;
 const USER_CONTENT_PART_ID_PREFIX = "user-content";
+const COMPACTION_NOTICE_DROP_RATIO = 0.55;
+const COMPACTION_NOTICE_MIN_WINDOW_RATIO = 0.25;
+const COMPACTION_NOTICE_MIN_DROP = 128;
 
 interface SendChatMessageRequest {
   text: string;
@@ -77,6 +80,75 @@ interface ResumeChatSessionRequest {
 }
 
 type MessageUpdate = (prev: ChatMessage[]) => ChatMessage[];
+
+type UsageSnapshot = {
+  used: number;
+  size: number;
+};
+
+type SessionUpdateLike = {
+  sessionUpdate?: unknown;
+  _meta?: unknown;
+  used?: unknown;
+  size?: unknown;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function sessionUpdateName(update: unknown): string | undefined {
+  const record = asRecord(update);
+  const name = record?.sessionUpdate;
+  return typeof name === "string" ? name : undefined;
+}
+
+function hasCompactionSignal(value: unknown, depth = 0): boolean {
+  if (depth > 4 || value === null || value === undefined) return false;
+  if (typeof value === "string") {
+    return value.toLowerCase().includes("compact");
+  }
+  if (typeof value !== "object") return false;
+  if (Array.isArray(value)) {
+    return value.some((item) => hasCompactionSignal(item, depth + 1));
+  }
+  return Object.entries(value).some(
+    ([key, item]) =>
+      key.toLowerCase().includes("compact") ||
+      hasCompactionSignal(item, depth + 1),
+  );
+}
+
+function isCompactionUpdate(update: unknown): boolean {
+  const name = sessionUpdateName(update);
+  if (name?.toLowerCase().includes("compact")) return true;
+  return hasCompactionSignal(asRecord(update)?._meta);
+}
+
+function usageSnapshot(update: unknown): UsageSnapshot | null {
+  const record = asRecord(update) as SessionUpdateLike | null;
+  if (!record || record.sessionUpdate !== "usage_update") return null;
+  if (typeof record.used !== "number" || typeof record.size !== "number") return null;
+  if (!Number.isFinite(record.used) || !Number.isFinite(record.size)) return null;
+  if (record.used < 0 || record.size <= 0) return null;
+  return { used: record.used, size: record.size };
+}
+
+function isCompactionUsageDrop(
+  previous: UsageSnapshot | undefined,
+  current: UsageSnapshot,
+): boolean {
+  if (!previous || previous.size !== current.size || previous.used <= current.used) {
+    return false;
+  }
+  const drop = previous.used - current.used;
+  const enoughDrop = drop >= Math.max(COMPACTION_NOTICE_MIN_DROP, current.size * 0.02);
+  const enoughPriorContext =
+    previous.used >= current.size * COMPACTION_NOTICE_MIN_WINDOW_RATIO;
+  const sharpReset = current.used / previous.used <= COMPACTION_NOTICE_DROP_RATIO;
+  return enoughDrop && enoughPriorContext && sharpReset;
+}
 
 interface TranscriptCacheContext {
   sessionId?: string;
@@ -118,6 +190,8 @@ export function useWebChatConnection({
     messages: ChatMessage[];
   } | null>(null);
   const ignoredReplaySessionsRef = useRef<Set<string>>(new Set());
+  const usageBySessionRef = useRef<Map<string, UsageSnapshot>>(new Map());
+  const compactionNoticeKeysRef = useRef<Set<string>>(new Set());
   const resumeReplayDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -442,6 +516,26 @@ export function useWebChatConnection({
       const replaySessionId = replaying ? notif.sessionId : undefined;
 
       const update = notif.update;
+      const usage = usageSnapshot(update);
+      if (usage) {
+        const previous = usageBySessionRef.current.get(notif.sessionId);
+        usageBySessionRef.current.set(notif.sessionId, usage);
+        if (isCompactionUsageDrop(previous, usage)) {
+          appendCompactionNotice(
+            notif.sessionId,
+            `usage:${previous?.used}->${usage.used}/${usage.size}`,
+            replaySessionId,
+          );
+        }
+      }
+      if (isCompactionUpdate(update)) {
+        appendCompactionNotice(
+          notif.sessionId,
+          `update:${sessionUpdateName(update) ?? "meta"}:${usage?.used ?? ""}/${usage?.size ?? ""}`,
+          replaySessionId,
+        );
+      }
+
       switch (update.sessionUpdate) {
         case "user_message_chunk": {
           appendUserMessage(update.content, update.messageId, {
@@ -511,6 +605,20 @@ export function useWebChatConnection({
           if (replaying) scheduleResumeReplayDone(notif.sessionId);
           break;
       }
+    }
+
+    function appendCompactionNotice(
+      sessionId: string,
+      noticeKey: string,
+      replaySessionId?: string,
+    ) {
+      const key = `${sessionId}:${noticeKey}`;
+      if (compactionNoticeKeysRef.current.has(key)) return;
+      compactionNoticeKeysRef.current.add(key);
+      appendStandaloneAssistant(
+        t("Context compacted. Continuing from a compressed summary."),
+        replaySessionId,
+      );
     }
 
     function appendStandaloneAssistant(text: string, replaySessionId?: string) {

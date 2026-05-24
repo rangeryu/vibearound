@@ -148,6 +148,32 @@ export function buildManualSetting(
     };
   }
 
+  if (agentId === "pi") {
+    const providerName = piProviderName(profile.id, clientApiType);
+    const providerConfig = JSON.stringify(
+      {
+        name: `VibeAround ${profile.providerLabel}`,
+        baseUrl: manualConfig.baseUrl,
+        apiKey: PLACEHOLDER_API_KEY,
+        api: piApiName(clientApiType),
+        models: [{ id: model, name: model }],
+      },
+      null,
+      2,
+    ).replace(/\n/g, "\n  ");
+    return {
+      agentId,
+      agentLabel,
+      copyKey: `${manualConfig.copyKey}:pi-extension`,
+      filePath: "Pi extension file used with pi --extension <path>",
+      snippet: [
+        "export default function (pi) {",
+        `  pi.registerProvider(${JSON.stringify(providerName)}, ${providerConfig});`,
+        "}",
+      ].join("\n"),
+    };
+  }
+
   const claudeEnv: Record<string, string> = {
     ANTHROPIC_API_KEY: PLACEHOLDER_API_KEY,
     ANTHROPIC_AUTH_TOKEN: PLACEHOLDER_API_KEY,
@@ -179,6 +205,7 @@ export function ManualSettingDialog({
   const isCodex = setting.agentId === "codex";
   const isOpenCode = setting.agentId === "opencode";
   const isGemini = setting.agentId === "gemini";
+  const isPi = setting.agentId === "pi";
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -190,6 +217,8 @@ export function ManualSettingDialog({
           <DialogDescription>
             {isGemini
               ? t("Copy the matching parts into the Gemini CLI settings and env files yourself. VibeAround does not edit them automatically.")
+              : isPi
+                ? t("Copy this extension into a local file and pass it to pi with --extension yourself. VibeAround does not edit Pi global config automatically.")
               : t("Copy this snippet into the CLI config file yourself. VibeAround does not edit the file automatically.")}
           </DialogDescription>
         </DialogHeader>
@@ -220,6 +249,12 @@ export function ManualSettingDialog({
                   <li>{t("If Gemini keeps using OAuth, run /auth in Gemini CLI and choose Gemini API key.")}</li>
                   <li>{t("Use any non-empty API key value when the local API bridge is already running with a saved profile key.")}</li>
                 </>
+              ) : isPi ? (
+                <>
+                  <li>{t("Save this snippet as a local Pi extension file.")}</li>
+                  <li>{t("Start Pi with --extension pointing at that file, plus the provider and model shown in the snippet.")}</li>
+                  <li>{t("Use any non-empty API key value when the local API bridge is already running with a saved profile key.")}</li>
+                </>
               ) : (
                 <>
                   <li>{t("Paste this property inside the root JSON object of Claude settings.")}</li>
@@ -238,6 +273,8 @@ export function ManualSettingDialog({
                   ? t("OpenCode config snippet")
                   : isGemini
                     ? t("Gemini config snippet")
+                    : isPi
+                      ? t("Pi extension snippet")
                   : t("Config snippet")
             }
             snippet={setting.snippet}
@@ -352,4 +389,28 @@ function safeConfigKey(value: string): string {
 
 function tomlString(value: string): string {
   return JSON.stringify(value);
+}
+
+function piProviderName(profileId: string, clientApiType: string): string {
+  return `vibearound-${safePiId(profileId)}-${safePiId(clientApiType)}`;
+}
+
+function safePiId(value: string): string {
+  return (
+    value
+      .trim()
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "profile"
+  );
+}
+
+function piApiName(apiType: string): string {
+  switch (apiType) {
+    case "anthropic":
+      return "anthropic-messages";
+    case "openai-responses":
+      return "openai-responses";
+    default:
+      return "openai-completions";
+  }
 }

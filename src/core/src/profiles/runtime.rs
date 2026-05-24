@@ -69,6 +69,7 @@ pub fn render_for_agent_route(
             target_api_type,
             route.bridge_upstream_model.as_deref(),
             route.bridge_fake_model_id.as_deref(),
+            &route.bridge_models,
         ),
         None => render_for_launch_api_type(profile, launch_target, &route.client_api_type),
     }
@@ -120,6 +121,9 @@ pub fn launch_targets_for_api_types(
     if has("gemini") {
         out.push(("gemini", "Gemini CLI", "gemini"));
     }
+    if let Some(api_type) = pi_api_type_for(api_types) {
+        out.push(("pi", "Pi", api_type));
+    }
     if has("openai-responses") {
         out.push(("opencode", "OpenCode", "openai-responses"));
     } else if has("openai-chat") {
@@ -136,6 +140,7 @@ pub fn agent_id_for(launch_target: &str) -> anyhow::Result<&'static str> {
         "codex" => Ok("codex"),
         "gemini" => Ok("gemini"),
         "opencode" => Ok("opencode"),
+        "pi" => Ok("pi"),
         other => bail!("unsupported launch target: '{}'", other),
     }
 }
@@ -169,8 +174,15 @@ fn api_types_for_launch_target(launch_target: &str) -> &'static [&'static str] {
         "codex" => &["openai-responses"],
         "gemini" => &["gemini"],
         "opencode" => &["openai-responses", "openai-chat", "anthropic"],
+        "pi" => &["anthropic", "openai-responses", "openai-chat"],
         _ => &[],
     }
+}
+
+fn pi_api_type_for(api_types: &[String]) -> Option<&'static str> {
+    ["anthropic", "openai-responses", "openai-chat"]
+        .into_iter()
+        .find(|candidate| api_types.iter().any(|api_type| api_type == candidate))
 }
 
 #[cfg(test)]
@@ -188,6 +200,14 @@ mod tests {
         assert!(launch_targets_for_api_types(&responses)
             .iter()
             .any(|(id, _, api_type)| *id == "codex" && *api_type == "openai-responses"));
+        assert!(launch_targets_for_api_types(&responses)
+            .iter()
+            .any(|(id, _, api_type)| *id == "pi" && *api_type == "openai-responses"));
+
+        let chat = vec!["openai-chat".to_string()];
+        assert!(launch_targets_for_api_types(&chat)
+            .iter()
+            .any(|(id, _, api_type)| *id == "pi" && *api_type == "openai-chat"));
     }
 }
 
