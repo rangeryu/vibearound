@@ -1172,7 +1172,7 @@ export function AgentLaunchBuilder({
               </div>
             </header>
 
-            <section className="min-h-0 flex-1 overflow-y-auto p-3">
+            <section className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
               <ProfilePanel
                 agentId={agentId}
                 prefs={viewPrefs}
