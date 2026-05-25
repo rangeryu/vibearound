@@ -20,9 +20,11 @@
 
 </div>
 
-VibeAround 让真正的执行继续留在本机：Agent 运行在你的电脑上，而桌面 Launch、浏览器 Dashboard、移动端友好的 Web Chat、Web Terminal、IM 频道和 API bridge profile 让同一组会话可以从更多入口触达。
+VibeAround 把执行留在本机。Claude Code、Codex CLI、Gemini CLI、Pi Agent 等工具仍然运行在你的电脑、项目目录、shell、文件系统、凭证和权限环境里。VibeAround 负责给这些本地会话提供统一入口：桌面 Launch、浏览器 Dashboard、移动端友好的 Web Chat、Web Terminal、IM 频道和短时预览。
 
-它适合已经在使用 Claude Code、Codex CLI、Gemini CLI、Pi Agent、OpenCode、Cursor、Kiro、Qwen Code 等工具的人：你仍然保留本地环境和本地权限，但不再被某一个终端窗口困住。
+Profile 也可以接第三方 provider API。VibeAround 可以维护模型列表、自定义模型名、context metadata，并在 OpenAI Responses、OpenAI Chat Completions、Anthropic Messages、Gemini Generate Content 等 API 形态之间做 bridge，让 Agent 可以使用 DeepSeek、Kimi、DashScope、xAI/Grok、MiniMax、NVIDIA NIM，或者你自己的 OpenAI-compatible endpoint。
+
+这里的远程访问不必依赖 Agent 厂商自己的订阅远程能力。Agent 继续在本机运行，VibeAround 通过自己的 tunnel 和 channel 层，让同一个本地 session 可以从 Web、移动端或消息平台继续访问。底层 CLI 支持 API key/provider 配置时，也可以走普通 provider API 计费，而不是被单一 Agent 订阅绑定。
 
 ## 解决什么问题
 
@@ -31,9 +33,10 @@ VibeAround 让真正的执行继续留在本机：Agent 运行在你的电脑上
 | 问题 | VibeAround 提供 |
 |---|---|
 | Agent CLI 和模型配置太多 | 一个桌面 Launch 页面管理 Agent、Profile、Workspace、Session 和 Terminal |
+| 想使用 Agent 默认列表之外的 provider | 第三方 provider API key、模型列表、自定义模型名、context metadata 和 bridge route |
 | Provider API 形态和 Agent 不匹配 | 在 OpenAI Responses、Chat Completions、Anthropic Messages、Gemini Generate Content 之间做本地 bridge |
 | 不想每次重新开始会话 | Workspace/Session 选择、host session 发现，以及 handover 命令 |
-| 想离开终端也能继续看进展 | Web Chat、Web Terminal、IM 频道和短时预览链接 |
+| 想远程访问，但不想把执行搬到厂商云端 | Web Chat、Web Terminal、IM 频道、tunnel 和连接本地 session 的短时预览链接 |
 | 希望配置可复现 | 首次引导、频道插件安装、MCP/Skill 注入和本地设置管理 |
 
 ## 产品地图

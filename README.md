@@ -20,9 +20,11 @@ Launch Claude Code, Codex CLI, Gemini CLI, Pi Agent, and more from one place —
 
 </div>
 
-VibeAround keeps the real work local: agents run on your machine, while desktop launch, browser dashboard, mobile-friendly Web Chat, Web Terminal, messaging channels, and API bridge profiles make the same sessions reachable from the surfaces you already use.
+VibeAround keeps execution local. Claude Code, Codex CLI, Gemini CLI, Pi Agent, and other agents still run on your machine, inside your projects, with your shell, filesystem, credentials, and permissions. VibeAround gives those local sessions shared entry points: desktop Launch, browser dashboard, mobile-friendly Web Chat, Web Terminal, messaging channels, and authenticated previews.
 
-It is built for people who already use tools like Claude Code, Codex CLI, Gemini CLI, Pi Agent, OpenCode, Cursor, Kiro, or Qwen Code and want one reliable place to launch, resume, bridge, preview, and hand off those sessions.
+Profiles can also connect third-party provider APIs. VibeAround can expose model lists, custom model names, context metadata, and bridge routes across OpenAI Responses, OpenAI Chat Completions, Anthropic Messages, and Gemini Generate Content, so agents can work with providers such as DeepSeek, Kimi, DashScope, xAI/Grok, MiniMax, NVIDIA NIM, or your own OpenAI-compatible endpoint.
+
+Remote access does not have to depend on an agent vendor's subscription-only remote feature. Your agent keeps running locally, and VibeAround lets you reach the same session from web, mobile, or messaging through its own tunnel and channel layer. When the underlying CLI supports API-key/provider configuration, you can use normal provider API billing instead of being locked into a single agent subscription.
 
 ## What It Solves
 
@@ -31,9 +33,10 @@ Coding agents are powerful, but their working state is usually trapped inside on
 | Problem | VibeAround gives you |
 |---|---|
 | Too many agent CLIs and model configs | One desktop Launch page with saved agents, profiles, workspaces, sessions, and terminal choices |
+| You want more provider choices than an agent exposes | Third-party provider API keys, model lists, custom model names, context metadata, and bridge routes |
 | Provider APIs do not match the agent you want to run | Local bridge routes across OpenAI Responses, Chat Completions, Anthropic Messages, and Gemini Generate Content |
 | You want to resume work instead of starting from scratch | Workspace/session selectors, host session discovery, and handover commands |
-| You want to check work away from the terminal | Web Chat, Web Terminal, messaging channels, and short-lived preview links |
+| You want remote access without moving execution to a vendor cloud | Web Chat, Web Terminal, messaging channels, tunnels, and short-lived preview links attached to local sessions |
 | You want setup to be repeatable | Onboarding, channel plugin install, MCP/skill injection, and local settings management |
 
 ## Product Map
