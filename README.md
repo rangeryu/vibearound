@@ -4,7 +4,9 @@
 
 # VibeAround
 
-**A local launch hub for Claude Code, Codex CLI, Pi, Gemini CLI, and the agent sessions you want to reach from desktop, web, and messaging.**
+**Keep your AI coding agents around.**
+
+Launch Claude Code, Codex CLI, Gemini CLI, Pi Agent, and more from one place. Run them side by side, then pick up where you left off from anywhere — across web, mobile, and messaging.
 
 [Download](https://github.com/jazzenchen/VibeAround/releases/latest) | [Demo](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [WeChat](#community) | [简体中文](README_CN.md)
 
@@ -18,9 +20,9 @@
 
 </div>
 
-VibeAround keeps coding agents on your own machine, then gives them more places to live: a desktop launcher, a browser dashboard, mobile-friendly web chat, web terminal access, messaging channels, and local API bridge profiles for model routing.
+VibeAround keeps the real work local: agents run on your machine, while desktop launch, browser dashboard, mobile-friendly Web Chat, Web Terminal, messaging channels, and API bridge profiles make the same sessions reachable from the surfaces you already use.
 
-It is built for people who already use tools like Claude Code, Codex CLI, Pi, Gemini CLI, OpenCode, Cursor, Kiro, or Qwen Code and want one reliable place to launch, resume, bridge, preview, and hand off those sessions.
+It is built for people who already use tools like Claude Code, Codex CLI, Gemini CLI, Pi Agent, OpenCode, Cursor, Kiro, or Qwen Code and want one reliable place to launch, resume, bridge, preview, and hand off those sessions.
 
 ## What It Solves
 

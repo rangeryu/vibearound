@@ -4,7 +4,9 @@
 
 # VibeAround
 
-**本地编程 Agent 的启动中枢：从桌面、网页和 IM 继续使用 Claude Code、Codex CLI、Pi、Gemini CLI 以及你的工作会话。**
+**让你的 AI 编程 Agent 一直在身边。**
+
+从一个地方启动 Claude Code、Codex CLI、Gemini CLI、Pi Agent 等工具。让它们并排运行，然后从 Web、移动端和消息平台随时接上刚才的工作。
 
 [下载](https://github.com/jazzenchen/VibeAround/releases/latest) | [演示](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [English](README.md)
 
@@ -18,9 +20,9 @@
 
 </div>
 
-VibeAround 让编程 Agent 继续运行在你的电脑上，但把入口扩展到桌面启动器、浏览器 Dashboard、移动端友好的 Web Chat、Web Terminal、IM 频道，以及用于模型路由的本地 API bridge profile。
+VibeAround 让真正的执行继续留在本机：Agent 运行在你的电脑上，而桌面 Launch、浏览器 Dashboard、移动端友好的 Web Chat、Web Terminal、IM 频道和 API bridge profile 让同一组会话可以从更多入口触达。
 
-它适合已经在使用 Claude Code、Codex CLI、Pi、Gemini CLI、OpenCode、Cursor、Kiro、Qwen Code 等工具的人：你仍然保留本地环境和本地权限，但不再被某一个终端窗口困住。
+它适合已经在使用 Claude Code、Codex CLI、Gemini CLI、Pi Agent、OpenCode、Cursor、Kiro、Qwen Code 等工具的人：你仍然保留本地环境和本地权限，但不再被某一个终端窗口困住。
 
 ## 解决什么问题
 
