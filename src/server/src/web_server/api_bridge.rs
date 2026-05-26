@@ -2,9 +2,13 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use common::profiles::headers::merged_upstream_headers;
+use common::profiles::schema::ProfileDef;
 use common::profiles::{catalog, connections};
 use common::{agent_state, config};
 use serde_json::{json, Value};
+use va_ai_api_bridge::{
+    DeepSeekBridgeSettings, ProviderBridgeAdapter, ProviderBridgeAdapterConfig,
+};
 
 mod completion;
 mod content_policy;
@@ -15,8 +19,6 @@ mod protocol;
 mod routes;
 mod stream;
 mod upstream;
-
-use crate::openai_bridge::providers::ProviderBridgeAdapter;
 
 use completion::translated_completion_response;
 use content_policy::validate_request_content;
@@ -61,7 +63,7 @@ pub(super) async fn bridge_handler(
         }
     }
     let mut provider_adapter =
-        ProviderBridgeAdapter::for_profile(&upstream.profile, &target_api_type);
+        provider_adapter_for_profile(&upstream.profile, upstream.protocol, &target_api_type);
     let manual_profile_api_key = manual_scope
         .as_ref()
         .and_then(|_| upstream.profile.credentials.get("api_key").cloned());
@@ -83,7 +85,9 @@ pub(super) async fn bridge_handler(
         if let Err(message) = normalize_target_request(&mut agent_request, upstream.protocol) {
             return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
         }
-        if upstream.protocol == BridgeProtocol::OpenAiChat {
+        if upstream.protocol == BridgeProtocol::OpenAiResponses {
+            provider_adapter.prepare_responses_request(&mut agent_request);
+        } else if upstream.protocol == BridgeProtocol::OpenAiChat {
             provider_adapter.prepare_chat_request(
                 client_protocol.provider_request_source(),
                 &original_agent_request,
@@ -196,7 +200,9 @@ pub(super) async fn bridge_handler(
     if let Err(message) = normalize_target_request(&mut upstream_request, upstream.protocol) {
         return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message);
     }
-    if upstream.protocol == BridgeProtocol::OpenAiChat {
+    if upstream.protocol == BridgeProtocol::OpenAiResponses {
+        provider_adapter.prepare_responses_request(&mut upstream_request);
+    } else if upstream.protocol == BridgeProtocol::OpenAiChat {
         provider_adapter.prepare_chat_request(
             client_protocol.provider_request_source(),
             &agent_request,
@@ -450,6 +456,56 @@ fn bridge_model_metadata(
         image_input: capabilities.image_input,
         file_input: capabilities.file_input,
     }
+}
+
+fn provider_adapter_for_profile(
+    profile: &ProfileDef,
+    target_protocol: BridgeProtocol,
+    target_api_type: &str,
+) -> ProviderBridgeAdapter {
+    let provider_id = if is_moonshot_kimi_coding(profile, target_api_type) {
+        "kimi"
+    } else {
+        profile.provider.as_str()
+    };
+    ProviderBridgeAdapter::for_provider(
+        provider_id,
+        target_protocol.wire_protocol(),
+        ProviderBridgeAdapterConfig {
+            deepseek: DeepSeekBridgeSettings {
+                thinking: profile.provider_settings.deepseek.thinking,
+                replay_reasoning_content: profile
+                    .provider_settings
+                    .deepseek
+                    .replay_reasoning_content,
+            },
+            thinking_enabled: profile_reasoning_enabled(profile, "openai-chat"),
+        },
+    )
+}
+
+fn is_moonshot_kimi_coding(profile: &ProfileDef, target_api_type: &str) -> bool {
+    target_api_type == "anthropic"
+        && profile
+            .overrides
+            .get("anthropic")
+            .and_then(|overrides| overrides.endpoint_id.as_deref())
+            == Some("kimi-coding")
+}
+
+fn profile_reasoning_enabled(profile: &ProfileDef, api_type: &str) -> Option<bool> {
+    profile
+        .overrides
+        .get(api_type)
+        .and_then(|overrides| overrides.reasoning_effort.as_deref())
+        .map(reasoning_effort_enabled)
+}
+
+fn reasoning_effort_enabled(value: &str) -> bool {
+    !matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "off" | "none" | "disabled" | "disable" | "false"
+    )
 }
 
 fn client_api_type_from_scope(scope: &str) -> Option<&str> {

@@ -117,15 +117,26 @@ export function Launch({ refreshToken = 0 }: { refreshToken?: number }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {error && (
-        <div className="shrink-0 bg-destructive/10 px-3 py-1 text-xs text-destructive">
-          {error}
-        </div>
-      )}
-      {toast && (
-        <div className="shrink-0 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-600">
-          {toast}
+    <div className="relative flex h-full flex-col">
+      {(error || toast) && (
+        <div className="pointer-events-none absolute inset-x-3 top-3 z-40 flex flex-col items-center gap-2">
+          {error && (
+            <div
+              role="alert"
+              className="max-w-[min(720px,100%)] rounded-md border border-destructive/25 bg-background/95 px-3 py-2 text-xs text-destructive shadow-lg shadow-destructive/10 backdrop-blur"
+            >
+              {error}
+            </div>
+          )}
+          {toast && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="max-w-[min(520px,100%)] rounded-md border border-emerald-500/20 bg-background/95 px-3 py-2 text-xs text-emerald-600 shadow-lg shadow-emerald-500/10 backdrop-blur"
+            >
+              {toast}
+            </div>
+          )}
         </div>
       )}
 

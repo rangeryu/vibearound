@@ -1,10 +1,9 @@
 use serde_json::Value;
 use va_ai_api_bridge::{
     AnthropicMessagesTranslator, DecodeState, EncodeState, GeminiGenerateContentTranslator,
-    OpenAiChatTranslator, OpenAiResponsesTranslator, UniversalEvent, WireEvent, WireTranslator,
+    OpenAiChatTranslator, OpenAiResponsesTranslator, ProviderRequestSource, UniversalEvent,
+    WireEvent, WireProtocol, WireTranslator,
 };
-
-use crate::openai_bridge::providers::ProviderRequestSource;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::web_server) enum BridgeProtocol {
@@ -105,11 +104,15 @@ impl BridgeProtocol {
     }
 
     pub(super) fn provider_request_source(self) -> ProviderRequestSource {
+        ProviderRequestSource::from_protocol(self.wire_protocol())
+    }
+
+    pub(super) fn wire_protocol(self) -> WireProtocol {
         match self {
-            Self::OpenAiResponses => ProviderRequestSource::OpenAiResponses,
-            Self::OpenAiChat => ProviderRequestSource::OpenAiChat,
-            Self::AnthropicMessages => ProviderRequestSource::AnthropicMessages,
-            Self::GeminiGenerateContent => ProviderRequestSource::GeminiGenerateContent,
+            Self::OpenAiResponses => WireProtocol::OpenAiResponses,
+            Self::OpenAiChat => WireProtocol::OpenAiChat,
+            Self::AnthropicMessages => WireProtocol::AnthropicMessages,
+            Self::GeminiGenerateContent => WireProtocol::GeminiGenerateContent,
         }
     }
 }

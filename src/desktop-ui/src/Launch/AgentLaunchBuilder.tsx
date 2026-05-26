@@ -24,8 +24,10 @@ import {
   type SelectorPopupId,
 } from "./LaunchSummary";
 import {
+  createProfile,
   deleteProfile,
   getLauncherPreferences,
+  getProfile,
   launchDirect,
   launchDirectResume,
   launchProfile,
@@ -48,6 +50,7 @@ import {
   type LauncherPreferences,
   type WorkspaceOption,
 } from "./api";
+import { buildProfileCopyDraft } from "./profileClone";
 import {
   agentLabel,
   agentProfileId,
@@ -68,7 +71,11 @@ import {
   type ProfileChoice,
   type SessionChoice,
 } from "./launchModel";
-import type { ConnectionAgentId, ProfileSummary } from "./types";
+import type {
+  ConnectionAgentId,
+  ProfileConnectionPreference,
+  ProfileSummary,
+} from "./types";
 
 const AGENT_ORDER = [
   "codex",
@@ -80,6 +87,11 @@ const AGENT_ORDER = [
   "qwen-code",
   "opencode",
 ];
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 interface Props {
   profiles: ProfileSummary[];
   prefs: LauncherPreferences | null;
@@ -106,7 +118,7 @@ export function AgentLaunchBuilder({
   onError,
   onToast,
 }: Props) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agentId, setAgentId] = useState<string>("");
   const [profileChoiceAgentId, setProfileChoiceAgentId] = useState<string>("");
@@ -514,6 +526,59 @@ export function AgentLaunchBuilder({
     }
   }
 
+  async function duplicateProfile(profile: ProfileSummary) {
+    if (!prefs) return;
+    setBusy(true);
+    onError(null);
+    let copiedProfileId: string | null = null;
+    try {
+      const fullProfile = await getProfile(profile.id);
+      const copiedProfile = await createProfile(
+        buildProfileCopyDraft(
+          fullProfile,
+          locale === "zh-CN" ? "副本" : "Copy",
+          profiles.map((candidate) => candidate.label),
+        ),
+      );
+      copiedProfileId = copiedProfile.id;
+      const sourceConnections = prefs.profileConnections[profile.id] ?? {};
+      const connectionCopies = Object.entries(sourceConnections)
+        .filter((entry): entry is [ConnectionAgentId, ProfileConnectionPreference] =>
+          Boolean(entry[1]),
+        )
+        .map(([connectionAgentId, preference]) =>
+          setProfileConnection(
+            copiedProfile.id,
+            connectionAgentId,
+            structuredClone(preference),
+          ),
+        );
+      const connectionResults = await Promise.allSettled(connectionCopies);
+      const failedConnection = connectionResults.find(
+        (result) => result.status === "rejected",
+      );
+      if (failedConnection) {
+        throw failedConnection.reason;
+      }
+      copiedProfileId = null;
+      await Promise.all([refreshProfiles(), refreshPrefs()]);
+      onToast(t("Profile duplicated"));
+    } catch (error) {
+      let message = errorMessage(error);
+      if (copiedProfileId) {
+        try {
+          await deleteProfile(copiedProfileId);
+        } catch (rollbackError) {
+          message = `${message}. ${t("Rollback failed")}: ${errorMessage(rollbackError)}`;
+        }
+        await Promise.allSettled([refreshProfiles(), refreshPrefs()]);
+      }
+      onError(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function reorderProfile(fromId: string, toId: string) {
     if (fromId === toId) return;
     const visibleIds = profileOptions.map((profile) => profile.id);
@@ -784,9 +849,9 @@ export function AgentLaunchBuilder({
                     disabledReason={launchDisabledReason}
                     onClick={() => void launchSelected()}
                     size="lg"
-                    className="h-full min-h-[115px] w-full rounded-md justify-center text-[22px] font-semibold tracking-[0.12em] shadow-md shadow-primary/15 transition-none"
+                    className="h-full min-h-[115px] w-full justify-center gap-4 rounded-md text-[28px] font-semibold tracking-[0.12em] shadow-md shadow-primary/15 transition-none"
                   >
-                    <Rocket className="h-8 w-8" />
+                    <Rocket className="size-8" />
                     {t("LAUNCH")}
                   </TooltipButton>
                 </div>
@@ -805,6 +870,7 @@ export function AgentLaunchBuilder({
                 }
                 onMakeDefault={makeDefault}
                 onEditProfile={onEditProfile}
+                onDuplicateProfile={(profile) => void duplicateProfile(profile)}
                 onConnectionSettings={onConnectionSettings}
                 onDeleteProfile={(profile) => void removeProfile(profile)}
                 onReorderProfile={(fromId, toId) =>

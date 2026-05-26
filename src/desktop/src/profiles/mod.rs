@@ -288,7 +288,7 @@ pub fn launcher_set_profile_connection(
 
 fn validate_connection_agent_id(agent_id: String) -> Result<String, String> {
     match agent_id.as_str() {
-        "claude" | "codex" | "gemini" | "opencode" => Ok(agent_id),
+        "claude" | "codex" | "gemini" | "opencode" | "pi" => Ok(agent_id),
         other => Err(format!("unsupported connection target: '{other}'")),
     }
 }
@@ -306,10 +306,17 @@ mod tests {
     use super::validate_connection_agent_id;
 
     #[test]
-    fn accepts_gemini_profile_connection_target() {
-        assert_eq!(
-            validate_connection_agent_id("gemini".to_string()).unwrap(),
-            "gemini"
-        );
+    fn accepts_supported_profile_connection_targets() {
+        for agent_id in ["claude", "codex", "gemini", "opencode", "pi"] {
+            assert_eq!(
+                validate_connection_agent_id(agent_id.to_string()).unwrap(),
+                agent_id
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_profile_connection_target() {
+        assert!(validate_connection_agent_id("cursor".to_string()).is_err());
     }
 }

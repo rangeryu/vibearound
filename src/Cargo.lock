@@ -687,7 +687,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.6.5"
+version = "0.6.6"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -4244,13 +4244,12 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.6.5"
+version = "0.6.6"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
  "async-trait",
  "axum",
- "base64 0.22.1",
  "bytes",
  "chrono",
  "common",
@@ -5673,10 +5672,11 @@ dependencies = [
 
 [[package]]
 name = "va-ai-api-bridge"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ca8dae95c676246e9ccc4ad29881870d383354db058b819354dd6ba9a26d0c9"
+checksum = "28866f96fd1216714e5dae5afdbad92df35ef7dacf46f36da2ed1536b65e7648"
 dependencies = [
+ "base64 0.22.1",
  "serde",
  "serde_json",
 ]
@@ -5701,7 +5701,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibearound-desktop"
-version = "0.6.5"
+version = "0.6.6"
 dependencies = [
  "anyhow",
  "common",
@@ -5724,7 +5724,7 @@ dependencies = [
 
 [[package]]
 name = "vibearound-hook"
-version = "0.6.5"
+version = "0.6.6"
 dependencies = [
  "anyhow",
  "serde_json",
