@@ -7,7 +7,6 @@
 
 mod chat_to_responses;
 mod error;
-pub mod providers;
 mod reasoning_blob;
 mod responses_to_chat;
 mod sse;

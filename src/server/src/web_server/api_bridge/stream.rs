@@ -8,9 +8,9 @@ use axum::response::Response;
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
-use va_ai_api_bridge::{DecodeState, EncodeState, UniversalEvent, WireEvent};
-
-use crate::openai_bridge::providers::ProviderBridgeAdapter;
+use va_ai_api_bridge::{
+    DecodeState, EncodeState, ProviderBridgeAdapter, UniversalEvent, WireEvent,
+};
 
 use super::{json_error, BridgeProtocol};
 

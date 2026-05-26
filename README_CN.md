@@ -85,13 +85,13 @@ VibeAround 是一个面向本地 AI 编程 Agent 的桌面中枢。它把 Claude
 
 ## 下载
 
-最新版本：[VibeAround v0.6.4](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.4)。
+最新版本：[VibeAround v0.6.5](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.5)。
 
 | 平台 | 推荐下载 |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.6.4_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.4/VibeAround_0.6.4_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.4/VibeAround_0.6.4_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.4/VibeAround_0.6.4_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.4/VibeAround-win-0.6.4-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.4/VibeAround_0.6.4_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.4/VibeAround_0.6.4_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.6.5_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.5/VibeAround_0.6.5_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.5/VibeAround_0.6.5_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.5/VibeAround_0.6.5_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.5/VibeAround-win-0.6.5-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.5/VibeAround_0.6.5_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.5/VibeAround_0.6.5_amd64.deb) |
 
 macOS 当前发布 Apple Silicon 版本。Windows 和 Linux 桌面包由 GitHub Actions 构建；macOS DMG 已签名并完成 notarization。
 

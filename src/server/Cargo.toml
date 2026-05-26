@@ -1,6 +1,6 @@
 [package]
 name = "server"
-version = "0.6.4"
+version = "0.6.5"
 description = "VibeAround HTTP/WebSocket server: SPA, /ws, /ws/chat, /mcp"
 edition = "2021"
 rust-version = "1.82"
@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 common = { path = "../core" }
-va-ai-api-bridge = "0.1.0"
+va-ai-api-bridge = "0.1.1"
 axum = { version = "0.8", features = ["json", "ws", "tokio"] }
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 tokio = { version = "1.49", features = ["full"] }
@@ -27,4 +27,3 @@ agent-client-protocol = { version = "=0.11.1", features = ["unstable_session_usa
 async-trait = "0.1"
 anyhow = "1"
 tracing = "0.1"
-base64 = "0.22"
