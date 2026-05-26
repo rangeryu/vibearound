@@ -5,10 +5,9 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
 use va_ai_api_bridge::{
-    ContentBlock, FinishReason, UniversalEvent, UniversalItem, UniversalResponse, Usage,
+    ContentBlock, FinishReason, ProviderBridgeAdapter, UniversalEvent, UniversalItem,
+    UniversalResponse, Usage,
 };
-
-use crate::openai_bridge::providers::ProviderBridgeAdapter;
 
 use super::{json_error, BridgeProtocol};
 
