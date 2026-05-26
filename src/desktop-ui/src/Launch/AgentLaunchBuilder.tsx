@@ -87,6 +87,11 @@ const AGENT_ORDER = [
   "qwen-code",
   "opencode",
 ];
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 interface Props {
   profiles: ProfileSummary[];
   prefs: LauncherPreferences | null;
@@ -113,7 +118,7 @@ export function AgentLaunchBuilder({
   onError,
   onToast,
 }: Props) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agentId, setAgentId] = useState<string>("");
   const [profileChoiceAgentId, setProfileChoiceAgentId] = useState<string>("");
@@ -521,28 +526,54 @@ export function AgentLaunchBuilder({
     }
   }
 
-  async function copyProfile(profile: ProfileSummary) {
+  async function duplicateProfile(profile: ProfileSummary) {
     if (!prefs) return;
     setBusy(true);
     onError(null);
+    let copiedProfileId: string | null = null;
     try {
       const fullProfile = await getProfile(profile.id);
       const copiedProfile = await createProfile(
-        buildProfileCopyDraft(fullProfile, t("Copy")),
+        buildProfileCopyDraft(
+          fullProfile,
+          locale === "zh-CN" ? "副本" : "Copy",
+          profiles.map((candidate) => candidate.label),
+        ),
       );
+      copiedProfileId = copiedProfile.id;
       const sourceConnections = prefs.profileConnections[profile.id] ?? {};
       const connectionCopies = Object.entries(sourceConnections)
         .filter((entry): entry is [ConnectionAgentId, ProfileConnectionPreference] =>
           Boolean(entry[1]),
         )
         .map(([connectionAgentId, preference]) =>
-          setProfileConnection(copiedProfile.id, connectionAgentId, preference),
+          setProfileConnection(
+            copiedProfile.id,
+            connectionAgentId,
+            structuredClone(preference),
+          ),
         );
-      await Promise.all(connectionCopies);
+      const connectionResults = await Promise.allSettled(connectionCopies);
+      const failedConnection = connectionResults.find(
+        (result) => result.status === "rejected",
+      );
+      if (failedConnection) {
+        throw failedConnection.reason;
+      }
+      copiedProfileId = null;
       await Promise.all([refreshProfiles(), refreshPrefs()]);
-      onToast(t("Profile copied"));
+      onToast(t("Profile duplicated"));
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      let message = errorMessage(error);
+      if (copiedProfileId) {
+        try {
+          await deleteProfile(copiedProfileId);
+        } catch (rollbackError) {
+          message = `${message}. ${t("Rollback failed")}: ${errorMessage(rollbackError)}`;
+        }
+        await Promise.allSettled([refreshProfiles(), refreshPrefs()]);
+      }
+      onError(message);
     } finally {
       setBusy(false);
     }
@@ -839,7 +870,7 @@ export function AgentLaunchBuilder({
                 }
                 onMakeDefault={makeDefault}
                 onEditProfile={onEditProfile}
-                onCopyProfile={(profile) => void copyProfile(profile)}
+                onDuplicateProfile={(profile) => void duplicateProfile(profile)}
                 onConnectionSettings={onConnectionSettings}
                 onDeleteProfile={(profile) => void removeProfile(profile)}
                 onReorderProfile={(fromId, toId) =>
@@ -848,7 +879,6 @@ export function AgentLaunchBuilder({
                 onNewProfile={onNewProfile}
                 busy={busy}
               />
-
             </section>
           </div>
         </main>

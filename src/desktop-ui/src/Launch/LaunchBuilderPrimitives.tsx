@@ -304,20 +304,22 @@ export function TooltipButton({
 export function ProfileActionsMenu({
   profile,
   bridgeAvailable,
+  disabled = false,
   onMakeDefault,
   makeDefaultDisabled = false,
   onConnectionSettings,
   onEditProfile,
-  onCopyProfile,
+  onDuplicateProfile,
   onDeleteProfile,
 }: {
   profile: ProfileSummary;
   bridgeAvailable: boolean;
+  disabled?: boolean;
   onMakeDefault?: () => void;
   makeDefaultDisabled?: boolean;
   onConnectionSettings: (profile: ProfileSummary) => void;
   onEditProfile: (profile: ProfileSummary) => void;
-  onCopyProfile: (profile: ProfileSummary) => void;
+  onDuplicateProfile: (profile: ProfileSummary) => void;
   onDeleteProfile: (profile: ProfileSummary) => void;
 }) {
   const { t } = useI18n();
@@ -329,6 +331,7 @@ export function ProfileActionsMenu({
           size="icon-xs"
           variant="ghost"
           className="h-7 w-7 text-muted-foreground"
+          disabled={disabled}
           aria-label={t("More")}
         >
           <MoreVertical className="h-3.5 w-3.5" />
@@ -338,7 +341,7 @@ export function ProfileActionsMenu({
         {onMakeDefault && (
           <DropdownMenuItem
             className="text-xs"
-            disabled={makeDefaultDisabled}
+            disabled={disabled || makeDefaultDisabled}
             onSelect={() => onMakeDefault()}
           >
             <Star className="h-3 w-3" />
@@ -349,6 +352,7 @@ export function ProfileActionsMenu({
         {bridgeAvailable && (
           <DropdownMenuItem
             className="text-xs"
+            disabled={disabled}
             onSelect={() => onConnectionSettings(profile)}
           >
             <Plug className="h-3 w-3" />
@@ -357,6 +361,7 @@ export function ProfileActionsMenu({
         )}
         <DropdownMenuItem
           className="text-xs"
+          disabled={disabled}
           onSelect={() => onEditProfile(profile)}
         >
           <Pencil className="h-3 w-3" />
@@ -364,15 +369,17 @@ export function ProfileActionsMenu({
         </DropdownMenuItem>
         <DropdownMenuItem
           className="text-xs"
-          onSelect={() => onCopyProfile(profile)}
+          disabled={disabled}
+          onSelect={() => onDuplicateProfile(profile)}
         >
           <Copy className="h-3 w-3" />
-          {t("Copy")}
+          {t("Duplicate")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-xs"
           variant="destructive"
+          disabled={disabled}
           onSelect={() => onDeleteProfile(profile)}
         >
           <Trash2 className="h-3 w-3" />

@@ -154,7 +154,7 @@ export function ProfilePanel({
   onSelectApiType,
   onMakeDefault,
   onEditProfile,
-  onCopyProfile,
+  onDuplicateProfile,
   onConnectionSettings,
   onDeleteProfile,
   onReorderProfile,
@@ -169,7 +169,7 @@ export function ProfilePanel({
   onSelectApiType: (profile: ProfileSummary, apiType: string) => void;
   onMakeDefault: (choice: ProfileChoice) => Promise<void>;
   onEditProfile: (profile: ProfileSummary) => void;
-  onCopyProfile: (profile: ProfileSummary) => void;
+  onDuplicateProfile: (profile: ProfileSummary) => void;
   onConnectionSettings: (
     profile: ProfileSummary,
     agentId: ConnectionAgentId,
@@ -370,6 +370,7 @@ export function ProfilePanel({
                         <ProfileActionsMenu
                           profile={profile}
                           bridgeAvailable={isBridgeAgent(agentId)}
+                          disabled={busy}
                           onMakeDefault={
                             globalDefaultForProfile
                               ? undefined
@@ -386,7 +387,7 @@ export function ProfilePanel({
                             }
                           }}
                           onEditProfile={onEditProfile}
-                          onCopyProfile={onCopyProfile}
+                          onDuplicateProfile={onDuplicateProfile}
                           onDeleteProfile={onDeleteProfile}
                         />
                       </div>

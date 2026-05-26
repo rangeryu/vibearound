@@ -17,6 +17,7 @@ export const zhCNShared: Record<string, string> = {
   "Create profile": "创建配置",
   "Saving…": "保存中…",
   Copy: "复制",
+  Duplicate: "创建副本",
   Edit: "编辑",
   Delete: "删除",
   More: "更多",
