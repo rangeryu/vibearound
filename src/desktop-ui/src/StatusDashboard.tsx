@@ -15,6 +15,10 @@ import {
   RuntimeSection,
 } from "./status-dashboard/primitives";
 import {
+  AgentIconBadge,
+  ServiceIconBadge,
+} from "./status-dashboard/serviceIcon";
+import {
   RuntimeStatusCard,
   type RuntimeStatusItem,
 } from "./status-dashboard/statusCard";
@@ -27,8 +31,6 @@ import {
 } from "./status-dashboard/presentation";
 import {
   AgentRuntimeRow,
-  ChannelRuntimeRow,
-  TunnelRuntimeRow,
 } from "./status-dashboard/runtimeRows";
 import type { StatusDashboardProps, Tone } from "./status-dashboard/types";
 
@@ -96,25 +98,61 @@ export function StatusDashboard({
   const tunnelStatuses: RuntimeStatusItem[] = tunnels.tunnels.map((tunnel) => {
     const presentation = tunnelPresentation(tunnel.status, t);
     return {
+      id: tunnel.provider,
+      kind: "tunnel",
       name: t("{{provider}} tunnel", { provider: capitalize(tunnel.provider) }),
       status: presentation.label,
       tone: presentation.tone,
+      icon: (
+        <ServiceIconBadge
+          id={tunnel.provider}
+          kind="tunnel"
+          label={t("{{provider}} tunnel", { provider: capitalize(tunnel.provider) })}
+          status={presentation.label}
+          tone={presentation.tone}
+        />
+      ),
     };
   });
   const channelStatuses: RuntimeStatusItem[] = channels.channels.map((channel) => {
     const presentation = channelPresentation(channel.status, t);
+    const name = channelDisplayName(channel.kind);
     return {
-      name: channelDisplayName(channel.kind),
+      id: channel.kind,
+      kind: "channel",
+      name,
       status: presentation.label,
       tone: presentation.tone,
+      icon: (
+        <ServiceIconBadge
+          id={channel.kind}
+          kind="channel"
+          label={name}
+          status={presentation.label}
+          tone={presentation.tone}
+        />
+      ),
     };
   });
   const agentStatuses: RuntimeStatusItem[] = agents.agents.map((agent) => {
     const failed = Boolean(agent.failed);
+    const status = failed ? t("Failed") : agent.busy ? t("Busy") : t("Idle");
+    const tone: Tone = failed ? "danger" : agent.busy ? "busy" : "good";
+    const name = agentDisplayName(agent, t);
     return {
-      name: agentDisplayName(agent, t),
-      status: failed ? t("Failed") : agent.busy ? t("Busy") : t("Idle"),
-      tone: failed ? "danger" : agent.busy ? "busy" : "good",
+      id: agent.route_key,
+      kind: "agent",
+      name,
+      status,
+      tone,
+      icon: (
+        <AgentIconBadge
+          cliKind={agent.cli_kind}
+          label={name}
+          status={status}
+          tone={tone}
+        />
+      ),
     };
   });
 
@@ -191,58 +229,6 @@ export function StatusDashboard({
             statuses={agentStatuses}
             emptyStatus={t("Off")}
           />
-        </div>
-
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-          <RuntimeSection
-            icon={<MessageSquare className="h-4 w-4" />}
-            title={t("Messaging apps")}
-            subtitle={t("Bot connectors and restart health.")}
-            count={channels.channels.length}
-          >
-            {channels.channels.length === 0 ? (
-              <EmptyRuntime
-                title={t("No messaging apps running")}
-                description={t("Enable a messaging app in Settings to receive commands.")}
-              />
-            ) : (
-              <div className="grid gap-2">
-                {channels.channels.map((channel) => (
-                  <ChannelRuntimeRow
-                    key={channel.kind}
-                    channel={channel}
-                    onStart={() => channels.start(channel.kind)}
-                    onStop={() => channels.stop(channel.kind)}
-                    onRestart={() => channels.restart(channel.kind)}
-                    t={t}
-                  />
-                ))}
-              </div>
-            )}
-          </RuntimeSection>
-
-          <RuntimeSection
-            icon={<Globe className="h-4 w-4" />}
-            title={t("Remote access")}
-            subtitle={t("Public routes and tunnel process state.")}
-            count={tunnels.tunnels.length}
-          >
-            {tunnels.tunnels.length === 0 ? (
-              <EmptyRuntime
-                title={t("No active tunnel")}
-                description={t("Remote access is off until a tunnel starts.")}
-              />
-            ) : (
-              tunnels.tunnels.map((tunnel) => (
-                <TunnelRuntimeRow
-                  key={tunnel.provider}
-                  tunnel={tunnel}
-                  onKill={() => tunnels.kill(tunnel.provider)}
-                  t={t}
-                />
-              ))
-            )}
-          </RuntimeSection>
         </div>
 
         <div className="grid gap-3">

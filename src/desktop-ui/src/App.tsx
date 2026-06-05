@@ -173,7 +173,8 @@ function Dashboard() {
           aria-hidden="true"
           className="absolute inset-0 z-0"
         />
-        <div className="relative z-10 flex min-w-0 items-baseline gap-1.5 whitespace-nowrap">
+        <div className="relative z-10 flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+          <VibeAroundMark />
           <span className="text-[13px] font-semibold text-foreground">
             VibeAround
           </span>
@@ -299,3 +300,14 @@ function Dashboard() {
 }
 
 export default App;
+
+function VibeAroundMark() {
+  return (
+    <span
+      className="grid h-5 w-5 shrink-0 place-items-center rounded-md border border-primary/25 bg-primary/10 text-[9px] font-black leading-none text-primary"
+      aria-hidden="true"
+    >
+      VA
+    </span>
+  );
+}

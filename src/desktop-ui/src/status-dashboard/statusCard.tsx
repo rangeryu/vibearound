@@ -5,9 +5,12 @@ import { toneDot, toneText } from "./primitives";
 import type { Tone } from "./types";
 
 export interface RuntimeStatusItem {
+  id: string;
+  kind: "agent" | "channel" | "tunnel";
   name: string;
   status: string;
   tone: Tone;
+  icon?: ReactNode;
 }
 
 export function RuntimeStatusCard({
@@ -56,6 +59,50 @@ export function RuntimeStatusCard({
           {detail}
         </div>
       </div>
+      <RuntimeStatusItems
+        emptyStatus={emptyStatus}
+        items={statuses}
+        title={title}
+        tone={tone}
+      />
+    </div>
+  );
+}
+
+function RuntimeStatusItems({
+  emptyStatus,
+  items,
+  title,
+  tone,
+}: {
+  emptyStatus: string;
+  items: RuntimeStatusItem[];
+  title: string;
+  tone: Tone;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <span className={cn("h-2.5 w-2.5 rounded-full", toneDot(tone))} />
+        <span>{`${title}: ${emptyStatus}`}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {items.map((item) => (
+        <span
+          key={`${item.kind}-${item.id}`}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/80 px-1.5 py-1"
+          title={`${item.name}: ${item.status}`}
+        >
+          {item.icon}
+          <span className="max-w-[84px] truncate text-[11px] text-muted-foreground">
+            {item.name}
+          </span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -74,20 +121,32 @@ function StatusDotCluster({
   const visibleItems =
     items.length > 0
       ? items.slice(0, 6)
-      : [{ name: title, status: emptyStatus, tone: fallbackTone }];
+      : [{
+          id: title,
+          kind: "channel" as const,
+          name: title,
+          status: emptyStatus,
+          tone: fallbackTone,
+        }];
   const summary =
     items.length > 0
       ? items.map((item) => `${item.name}: ${item.status}`).join("\n")
       : `${title}: ${emptyStatus}`;
 
   return (
-    <div className="flex max-w-[120px] flex-wrap justify-end gap-1" title={summary}>
+    <div className="flex max-w-[144px] flex-wrap justify-end gap-1.5" title={summary}>
       {visibleItems.map((item, index) => (
-        <span
-          key={`${item.name}-${index}`}
-          className={cn("h-2.5 w-2.5 rounded-full", toneDot(item.tone))}
-          title={`${item.name}: ${item.status}`}
-        />
+        item.icon ? (
+          <span key={`${item.name}-${index}`} className="inline-flex">
+            {item.icon}
+          </span>
+        ) : (
+          <span
+            key={`${item.name}-${index}`}
+            className={cn("h-2.5 w-2.5 rounded-full", toneDot(item.tone))}
+            title={`${item.name}: ${item.status}`}
+          />
+        )
       ))}
       {items.length > visibleItems.length && (
         <span
