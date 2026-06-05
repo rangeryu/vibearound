@@ -1,42 +1,27 @@
-import {
-  Cloud,
-  Gamepad2,
-  Hash,
-  MessageCircle,
-  MessagesSquare,
-  Navigation,
-  RadioTower,
-  Send,
-  Waypoints,
-} from "lucide-react";
-import type { ComponentType, SVGProps } from "react";
-
 import { BrandIcon } from "@/components/brand-icon";
 import { cn } from "@/lib/utils";
 import { toneDot } from "./primitives";
 import type { Tone } from "./types";
 
-type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
-
 interface ServiceIconMeta {
-  Icon: IconComponent;
-  className: string;
+  src: string;
+  fallback: string;
 }
 
 const CHANNEL_ICONS: Record<string, ServiceIconMeta> = {
-  dingtalk: { Icon: RadioTower, className: "bg-[#1677ff]/10 text-[#1677ff]" },
-  discord: { Icon: Gamepad2, className: "bg-[#5865f2]/10 text-[#5865f2]" },
-  feishu: { Icon: MessagesSquare, className: "bg-[#00b96b]/10 text-[#00a870]" },
-  slack: { Icon: Hash, className: "bg-[#611f69]/10 text-[#611f69]" },
-  telegram: { Icon: Send, className: "bg-[#229ed9]/10 text-[#229ed9]" },
-  wechat: { Icon: MessageCircle, className: "bg-[#07c160]/10 text-[#07a84f]" },
-  wecom: { Icon: MessagesSquare, className: "bg-[#2f7dff]/10 text-[#2f7dff]" },
+  dingtalk: { src: "/brand/channel-dingtalk.svg", fallback: "D" },
+  discord: { src: "/brand/channel-discord.svg", fallback: "D" },
+  feishu: { src: "/brand/channel-feishu.svg", fallback: "F" },
+  slack: { src: "/brand/channel-slack.svg", fallback: "S" },
+  telegram: { src: "/brand/channel-telegram.svg", fallback: "T" },
+  wechat: { src: "/brand/channel-wechat.svg", fallback: "W" },
+  wecom: { src: "/brand/channel-wecom.svg", fallback: "W" },
 };
 
 const TUNNEL_ICONS: Record<string, ServiceIconMeta> = {
-  cloudflare: { Icon: Cloud, className: "bg-[#f6821f]/10 text-[#f6821f]" },
-  localtunnel: { Icon: Navigation, className: "bg-primary/10 text-primary" },
-  ngrok: { Icon: Waypoints, className: "bg-[#1f1f1f]/10 text-[#1f1f1f]" },
+  cloudflare: { src: "/brand/tunnel-cloudflare.svg", fallback: "C" },
+  localtunnel: { src: "/brand/tunnel-localtunnel.svg", fallback: "L" },
+  ngrok: { src: "/brand/tunnel-ngrok.svg", fallback: "N" },
 };
 
 export function ServiceIconBadge({
@@ -54,22 +39,27 @@ export function ServiceIconBadge({
 }) {
   const meta =
     kind === "channel"
-      ? CHANNEL_ICONS[id] ?? { Icon: MessageCircle, className: "bg-primary/10 text-primary" }
-      : TUNNEL_ICONS[id] ?? { Icon: Cloud, className: "bg-primary/10 text-primary" };
-  const { Icon } = meta;
+      ? CHANNEL_ICONS[id] ?? { src: "", fallback: id.slice(0, 1).toUpperCase() }
+      : TUNNEL_ICONS[id] ?? { src: "", fallback: id.slice(0, 1).toUpperCase() };
 
   return (
     <span
       className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-card"
       title={`${label}: ${status}`}
     >
-      <span
-        className={cn(
-          "flex h-full w-full items-center justify-center rounded-[inherit]",
-          meta.className,
+      <span className="flex h-full w-full items-center justify-center rounded-[inherit] bg-background">
+        {meta.src ? (
+          <img
+            src={meta.src}
+            alt=""
+            draggable={false}
+            className="h-[68%] w-[68%] object-contain"
+          />
+        ) : (
+          <span className="text-[11px] font-semibold text-primary">
+            {meta.fallback}
+          </span>
         )}
-      >
-        <Icon className="h-3.5 w-3.5" />
       </span>
       <span
         className={cn(

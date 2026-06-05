@@ -41,12 +41,6 @@ export function RuntimeStatusCard({
         >
           {icon}
         </div>
-        <StatusDotCluster
-          emptyStatus={emptyStatus}
-          fallbackTone={tone}
-          items={statuses}
-          title={title}
-        />
       </div>
       <div className="mt-3 text-[11px] font-medium text-muted-foreground">
         {title}
@@ -103,59 +97,6 @@ function RuntimeStatusItems({
           </span>
         </span>
       ))}
-    </div>
-  );
-}
-
-function StatusDotCluster({
-  fallbackTone,
-  items,
-  title,
-  emptyStatus,
-}: {
-  emptyStatus: string;
-  fallbackTone: Tone;
-  items: RuntimeStatusItem[];
-  title: string;
-}) {
-  const visibleItems =
-    items.length > 0
-      ? items.slice(0, 6)
-      : [{
-          id: title,
-          kind: "channel" as const,
-          name: title,
-          status: emptyStatus,
-          tone: fallbackTone,
-        }];
-  const summary =
-    items.length > 0
-      ? items.map((item) => `${item.name}: ${item.status}`).join("\n")
-      : `${title}: ${emptyStatus}`;
-
-  return (
-    <div className="flex max-w-[144px] flex-wrap justify-end gap-1.5" title={summary}>
-      {visibleItems.map((item, index) => (
-        item.icon ? (
-          <span key={`${item.name}-${index}`} className="inline-flex">
-            {item.icon}
-          </span>
-        ) : (
-          <span
-            key={`${item.name}-${index}`}
-            className={cn("h-2.5 w-2.5 rounded-full", toneDot(item.tone))}
-            title={`${item.name}: ${item.status}`}
-          />
-        )
-      ))}
-      {items.length > visibleItems.length && (
-        <span
-          className="text-[10px] leading-none text-muted-foreground"
-          title={summary}
-        >
-          +{items.length - visibleItems.length}
-        </span>
-      )}
     </div>
   );
 }
