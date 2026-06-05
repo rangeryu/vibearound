@@ -1,66 +1,23 @@
 import type { ReactNode } from "react";
-import { useI18n } from "@va/i18n";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Tone } from "./types";
 
-export function MetricTile({
-  icon,
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  detail: string;
-  tone: Tone;
-}) {
-  return (
-    <div className="rounded-md border border-border bg-card px-3 py-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className={cn("text-muted-foreground", toneText(tone))}>
-          {icon}
-        </div>
-        <StatusPulse tone={tone} small />
-      </div>
-      <div className="mt-3 text-[11px] font-medium text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-0.5 flex min-h-7 items-end gap-2">
-        <div className="truncate text-lg font-semibold leading-none text-foreground">
-          {value}
-        </div>
-        <div className="truncate pb-0.5 text-[10px] text-muted-foreground">
-          {detail}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function RuntimeSection({
   icon,
   title,
   subtitle,
   count,
-  connected,
-  loading,
   children,
 }: {
   icon: ReactNode;
   title: string;
   subtitle: string;
   count: number;
-  connected: boolean;
-  loading: boolean;
   children: ReactNode;
 }) {
-  const { t } = useI18n();
-
   return (
     <section className="overflow-hidden rounded-md border border-border bg-card">
       <div className="flex items-center gap-3 border-b border-border bg-muted/25 px-3 py-2.5">
@@ -78,9 +35,6 @@ export function RuntimeSection({
             {subtitle}
           </p>
         </div>
-        <StatusPill tone={connected ? "good" : loading ? "warning" : "muted"}>
-          {connected ? t("Live") : loading ? t("Loading") : t("Polling")}
-        </StatusPill>
       </div>
       <div className="space-y-2 p-2.5">{children}</div>
     </section>
@@ -208,7 +162,7 @@ export function StatusPill({
   );
 }
 
-function toneDot(tone: Tone) {
+export function toneDot(tone: Tone) {
   switch (tone) {
     case "good":
       return "bg-emerald-500";
@@ -223,7 +177,7 @@ function toneDot(tone: Tone) {
   }
 }
 
-function toneText(tone: Tone) {
+export function toneText(tone: Tone) {
   switch (tone) {
     case "good":
       return "text-emerald-600";

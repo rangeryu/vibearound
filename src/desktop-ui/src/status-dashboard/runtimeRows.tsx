@@ -5,6 +5,7 @@ import type { AgentRuntime } from "../hooks/useAgentsRuntime";
 import type { ChannelRuntime } from "../hooks/useChannelsState";
 import type { TunnelRuntime } from "../hooks/useTunnelsState";
 import {
+  agentDisplayName,
   basename,
   capitalize,
   channelDisplayName,
@@ -75,8 +76,7 @@ export function AgentRuntimeRow({
 }) {
   const failed = Boolean(agent.failed);
   const tone: Tone = failed ? "danger" : agent.busy ? "busy" : "good";
-  const title =
-    agent.agent_title ?? agent.agent_name ?? agent.cli_kind ?? t("Coding Agent");
+  const title = agentDisplayName(agent, t);
   const subagentCount = agent.subagents.length + agent.multi_agent_turns.length;
   const details = [
     agent.cli_kind ?? null,

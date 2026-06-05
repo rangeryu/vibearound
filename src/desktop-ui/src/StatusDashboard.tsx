@@ -1,5 +1,4 @@
 import {
-  Activity,
   Bot,
   ExternalLink,
   Globe,
@@ -8,17 +7,24 @@ import {
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DAEMON_PORT, openDashboardUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   EmptyRuntime,
-  MetricTile,
   RuntimeSection,
-  StatusPill,
-  StatusPulse,
 } from "./status-dashboard/primitives";
+import {
+  RuntimeStatusCard,
+  type RuntimeStatusItem,
+} from "./status-dashboard/statusCard";
+import {
+  agentDisplayName,
+  capitalize,
+  channelDisplayName,
+  channelPresentation,
+  tunnelPresentation,
+} from "./status-dashboard/presentation";
 import {
   AgentRuntimeRow,
   ChannelRuntimeRow,
@@ -40,7 +46,6 @@ export function StatusDashboard({
     (channel) => channel.status === "crashed",
   ).length;
   const agentIssues = agents.agents.filter((agent) => agent.failed).length;
-  const issueCount = tunnelIssues + channelIssues + agentIssues;
   const runningTunnels = tunnels.tunnels.filter(
     (tunnel) => tunnel.status.state === "running",
   ).length;
@@ -48,18 +53,10 @@ export function StatusDashboard({
     (channel) => channel.status === "running" || channel.status === "spawning",
   ).length;
   const runningAgents = agents.agents.length;
-  const liveConnections =
-    Number(channels.connected) + Number(tunnels.connected) + Number(agents.connected);
   const anyLoading = channels.loading || tunnels.loading || agents.loading;
-  const activeRuntimeCount = runningTunnels + runningChannels + runningAgents;
-  const overallTone: Tone =
-    issueCount > 0 ? "danger" : activeRuntimeCount > 0 ? "good" : "muted";
-  const overallLabel =
-    issueCount > 0
-      ? t("Needs attention")
-      : activeRuntimeCount > 0
-        ? t("Operational")
-        : t("Standby");
+  const tunnelTone = runtimeTone(tunnelIssues, runningTunnels);
+  const channelTone = runtimeTone(channelIssues, runningChannels);
+  const agentTone = runtimeTone(agentIssues, runningAgents);
   const tunnelMetric =
     runningTunnels > 0
       ? {
@@ -86,6 +83,40 @@ export function StatusDashboard({
               ? t("{{count}} enabled", { count: channels.channels.length })
               : t("No apps enabled"),
         };
+  const agentMetric =
+    runningAgents > 0
+      ? {
+          value: t("{{count}} active", { count: runningAgents }),
+          detail: t("active sessions"),
+        }
+      : {
+          value: t("Off"),
+          detail: t("No active agents"),
+        };
+  const tunnelStatuses: RuntimeStatusItem[] = tunnels.tunnels.map((tunnel) => {
+    const presentation = tunnelPresentation(tunnel.status, t);
+    return {
+      name: t("{{provider}} tunnel", { provider: capitalize(tunnel.provider) }),
+      status: presentation.label,
+      tone: presentation.tone,
+    };
+  });
+  const channelStatuses: RuntimeStatusItem[] = channels.channels.map((channel) => {
+    const presentation = channelPresentation(channel.status, t);
+    return {
+      name: channelDisplayName(channel.kind),
+      status: presentation.label,
+      tone: presentation.tone,
+    };
+  });
+  const agentStatuses: RuntimeStatusItem[] = agents.agents.map((agent) => {
+    const failed = Boolean(agent.failed);
+    return {
+      name: agentDisplayName(agent, t),
+      status: failed ? t("Failed") : agent.busy ? t("Busy") : t("Idle"),
+      tone: failed ? "danger" : agent.busy ? "busy" : "good",
+    };
+  });
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -93,15 +124,13 @@ export function StatusDashboard({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <StatusPulse tone={overallTone} />
               <h2 className="text-[15px] font-semibold text-foreground">
-                {t("Runtime console")}
+                {t("Runtime Status")}
               </h2>
-              <StatusPill tone={overallTone}>{overallLabel}</StatusPill>
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
               {t(
-                "Live health across local services, remote access, and messaging entry points.",
+                "Status across messaging apps, remote access, and coding agents.",
               )}
             </p>
           </div>
@@ -134,69 +163,69 @@ export function StatusDashboard({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-          <MetricTile
-            icon={<Activity className="h-4 w-4" />}
-            label={t("Overall")}
-            value={overallLabel}
-            detail={
-              issueCount > 0
-                ? t("{{count}} needs attention", { count: issueCount })
-                : t("{{count}} active runtimes", {
-                    count: activeRuntimeCount,
-                  })
-            }
-            tone={overallTone}
-          />
-          <MetricTile
-            icon={<Globe className="h-4 w-4" />}
-            label={t("Remote access")}
-            value={tunnelMetric.value}
-            detail={tunnelMetric.detail}
-            tone={tunnelIssues > 0 ? "danger" : runningTunnels > 0 ? "good" : "muted"}
-          />
-          <MetricTile
-            icon={<Bot className="h-4 w-4" />}
-            label={t("Coding Agents")}
-            value={String(agents.agents.length)}
-            detail={
-              agentIssues > 0
-                ? t("{{count}} needs attention", { count: agentIssues })
-                : agents.agents.length > 0
-                  ? t("active sessions")
-                  : t("No active agents")
-            }
-            tone={
-              agentIssues > 0
-                ? "danger"
-                : agents.agents.length > 0
-                  ? "busy"
-                  : "muted"
-            }
-          />
-          <MetricTile
+        <div className="grid gap-2 md:grid-cols-3">
+          <RuntimeStatusCard
             icon={<MessageSquare className="h-4 w-4" />}
-            label={t("Messaging apps")}
+            title={t("Messaging apps")}
             value={channelMetric.value}
             detail={channelMetric.detail}
-            tone={
-              channelIssues > 0
-                ? "danger"
-                : runningChannels > 0
-                  ? "good"
-                  : "muted"
-            }
+            tone={channelTone}
+            statuses={channelStatuses}
+            emptyStatus={t("Off")}
+          />
+          <RuntimeStatusCard
+            icon={<Globe className="h-4 w-4" />}
+            title={t("Remote access")}
+            value={tunnelMetric.value}
+            detail={tunnelMetric.detail}
+            tone={tunnelTone}
+            statuses={tunnelStatuses}
+            emptyStatus={t("Off")}
+          />
+          <RuntimeStatusCard
+            icon={<Bot className="h-4 w-4" />}
+            title={t("Coding Agents")}
+            value={agentMetric.value}
+            detail={agentMetric.detail}
+            tone={agentTone}
+            statuses={agentStatuses}
+            emptyStatus={t("Off")}
           />
         </div>
 
         <div className="grid gap-3 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
           <RuntimeSection
+            icon={<MessageSquare className="h-4 w-4" />}
+            title={t("Messaging apps")}
+            subtitle={t("Bot connectors and restart health.")}
+            count={channels.channels.length}
+          >
+            {channels.channels.length === 0 ? (
+              <EmptyRuntime
+                title={t("No messaging apps running")}
+                description={t("Enable a messaging app in Settings to receive commands.")}
+              />
+            ) : (
+              <div className="grid gap-2">
+                {channels.channels.map((channel) => (
+                  <ChannelRuntimeRow
+                    key={channel.kind}
+                    channel={channel}
+                    onStart={() => channels.start(channel.kind)}
+                    onStop={() => channels.stop(channel.kind)}
+                    onRestart={() => channels.restart(channel.kind)}
+                    t={t}
+                  />
+                ))}
+              </div>
+            )}
+          </RuntimeSection>
+
+          <RuntimeSection
             icon={<Globe className="h-4 w-4" />}
             title={t("Remote access")}
             subtitle={t("Public routes and tunnel process state.")}
             count={tunnels.tunnels.length}
-            connected={tunnels.connected}
-            loading={tunnels.loading}
           >
             {tunnels.tunnels.length === 0 ? (
               <EmptyRuntime
@@ -214,14 +243,14 @@ export function StatusDashboard({
               ))
             )}
           </RuntimeSection>
+        </div>
 
+        <div className="grid gap-3">
           <RuntimeSection
             icon={<Bot className="h-4 w-4" />}
             title={t("Coding Agents")}
-            subtitle={t("Live agent hosts started by Launch or messaging apps.")}
+            subtitle={t("Agent sessions started by Launch or messaging apps.")}
             count={agents.agents.length}
-            connected={agents.connected}
-            loading={agents.loading}
           >
             {agents.agents.length === 0 ? (
               <EmptyRuntime
@@ -242,43 +271,13 @@ export function StatusDashboard({
             )}
           </RuntimeSection>
         </div>
-
-        <RuntimeSection
-          icon={<MessageSquare className="h-4 w-4" />}
-          title={t("Messaging apps")}
-          subtitle={t("Bot connectors and restart health.")}
-          count={channels.channels.length}
-          connected={channels.connected}
-          loading={channels.loading}
-        >
-          {channels.channels.length === 0 ? (
-            <EmptyRuntime
-              title={t("No messaging apps running")}
-              description={t("Enable a messaging app in Settings to receive commands.")}
-            />
-          ) : (
-            <div className="grid gap-2 xl:grid-cols-2">
-              {channels.channels.map((channel) => (
-                <ChannelRuntimeRow
-                  key={channel.kind}
-                  channel={channel}
-                  onStart={() => channels.start(channel.kind)}
-                  onStop={() => channels.stop(channel.kind)}
-                  onRestart={() => channels.restart(channel.kind)}
-                  t={t}
-                />
-              ))}
-            </div>
-          )}
-        </RuntimeSection>
-
-        <div className="flex items-center justify-end gap-2 text-[11px] text-muted-foreground">
-          <span>{t("Data source")}</span>
-          <Badge variant="secondary" className="h-5 rounded-md px-2 text-[10px]">
-            {t("{{count}} of 3 live", { count: liveConnections })}
-          </Badge>
-        </div>
       </div>
     </div>
   );
+}
+
+function runtimeTone(issueCount: number, runningCount: number): Tone {
+  if (issueCount > 0) return "danger";
+  if (runningCount > 0) return "good";
+  return "muted";
 }

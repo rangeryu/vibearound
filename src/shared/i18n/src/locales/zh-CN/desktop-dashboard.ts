@@ -106,8 +106,11 @@ export const zhCNDesktopDashboard: Record<string, string> = {
   "Runtime health for tunnels, agents, and messaging channels.":
     "查看隧道、Agent 和消息频道的运行状态。",
   "Runtime console": "运行控制台",
+  "Runtime Status": "运行状态",
   "Live health across local services, remote access, and messaging entry points.":
     "查看本地服务、远程访问和聊天入口的实时运行状态。",
+  "Status across messaging apps, remote access, and coding agents.":
+    "查看聊天工具、远程访问和 Coding Agent 的运行状态。",
   Overall: "整体",
   Operational: "运行正常",
   Standby: "待机",
@@ -127,6 +130,8 @@ export const zhCNDesktopDashboard: Record<string, string> = {
     "查看公开访问地址和隧道进程状态。",
   "Live agent hosts started by Launch or messaging apps.":
     "查看由启动页或聊天工具拉起的 Agent 运行实例。",
+  "Agent sessions started by Launch or messaging apps.":
+    "查看由启动页或聊天工具拉起的 Agent 会话。",
   "Bot connectors and restart health.": "查看聊天机器人连接和重启状态。",
   "No active tunnel": "没有活跃隧道",
   "Remote access is off until a tunnel starts.":

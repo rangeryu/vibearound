@@ -1,5 +1,6 @@
 import type { TunnelStatus } from "@va/client";
 
+import type { AgentRuntime } from "../hooks/useAgentsRuntime";
 import type { ChannelRuntime } from "../hooks/useChannelsState";
 import type { Tone, Translate } from "./types";
 
@@ -57,6 +58,10 @@ export function channelDisplayName(kind: string) {
     wecom: "WeCom",
   };
   return known[kind] ?? capitalize(kind);
+}
+
+export function agentDisplayName(agent: AgentRuntime, t: Translate) {
+  return agent.agent_title ?? agent.agent_name ?? agent.cli_kind ?? t("Coding Agent");
 }
 
 export function capitalize(value: string): string {
