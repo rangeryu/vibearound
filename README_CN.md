@@ -80,13 +80,13 @@ Profile 也可以接第三方 provider API。VibeAround 可以维护模型列表
 
 ## 下载
 
-最新版本：[VibeAround v0.6.10](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.10)。
+最新版本：[VibeAround v0.6.11](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.11)。
 
 | 平台 | 推荐下载 |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.6.10_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.10/VibeAround_0.6.10_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.10/VibeAround_0.6.10_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.10/VibeAround_0.6.10_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.10/VibeAround-win-0.6.10-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.10/VibeAround_0.6.10_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.10/VibeAround_0.6.10_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.6.11_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround-win-0.6.11-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_amd64.deb) |
 
 Windows 和 Linux 包由 GitHub Actions 构建。macOS 当前发布 Apple Silicon 版本。
 
