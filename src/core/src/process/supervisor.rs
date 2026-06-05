@@ -25,7 +25,7 @@
 //! only drives the happy-path cancel + drop sequence.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -111,53 +111,6 @@ impl SpawnSpec {
     }
 }
 
-/// Delay policy for repeated restarts.
-#[derive(Debug, Clone, Copy)]
-pub enum RestartBackoff {
-    Fixed(Duration),
-    Exponential {
-        initial: Duration,
-        max: Duration,
-        factor: u32,
-    },
-}
-
-impl RestartBackoff {
-    pub const fn fixed(delay: Duration) -> Self {
-        Self::Fixed(delay)
-    }
-
-    pub const fn exponential(initial: Duration, max: Duration) -> Self {
-        Self::Exponential {
-            initial,
-            max,
-            factor: 2,
-        }
-    }
-
-    fn delay_for_attempt(&self, attempt: u32) -> Duration {
-        match self {
-            Self::Fixed(delay) => *delay,
-            Self::Exponential {
-                initial,
-                max,
-                factor,
-            } => {
-                let mut secs = initial.as_secs().max(1);
-                let cap = max.as_secs().max(secs);
-                let steps = attempt.saturating_sub(1).min(32);
-                for _ in 0..steps {
-                    secs = secs.saturating_mul((*factor).max(1) as u64).min(cap);
-                    if secs == cap {
-                        break;
-                    }
-                }
-                Duration::from_secs(secs.min(cap))
-            }
-        }
-    }
-}
-
 /// What to do when a supervised process dies.
 #[derive(Debug, Clone, Copy)]
 pub enum RestartPolicy {
@@ -165,21 +118,21 @@ pub enum RestartPolicy {
     /// to re-register. Used by `AcpAgent` and `Pty`.
     Never,
     /// On unintended exit (crash / protocol error), schedule a respawn
-    /// after `backoff`. If `watchdog` is `Some`, the supervisor kills
+    /// after `restart_delay`. If `watchdog` is `Some`, the supervisor kills
     /// processes whose `touch()` timestamp is older than the watchdog
     /// window — this catches frozen plugins that aren't emitting
     /// heartbeats. Used by `ChannelPlugin`.
     OnCrash {
-        backoff: RestartBackoff,
+        restart_delay: Duration,
         watchdog: Option<Duration>,
     },
 }
 
 impl RestartPolicy {
-    fn backoff_delay(&self, attempt: u32) -> Option<Duration> {
+    fn restart_delay(&self) -> Option<Duration> {
         match self {
             RestartPolicy::Never => None,
-            RestartPolicy::OnCrash { backoff, .. } => Some(backoff.delay_for_attempt(attempt)),
+            RestartPolicy::OnCrash { restart_delay, .. } => Some(*restart_delay),
         }
     }
 
@@ -257,9 +210,6 @@ pub struct ProcessSnapshot {
     pub label: String,
     pub status: ProcessStatus,
     pub reason: String,
-    pub crash_count: u32,
-    pub last_seen_age_secs: u64,
-    pub restart_in_secs: u64,
 }
 
 /// Broadcast payload for status changes. Subscribers receive which process
@@ -288,10 +238,8 @@ struct SupervisedProcess {
     intent: AtomicU8,
     reason: RwLock<String>,
 
-    last_seen_ts: AtomicU64,
-    last_crash_ts: AtomicU64,
-    crash_count: AtomicU32,
-    restart_at: AtomicU64,
+    last_heartbeat_ts: AtomicU64,
+    next_spawn_at: AtomicU64,
 
     /// Cancel signal for the currently-running bridge. `None` between runs.
     cancel_tx: RwLock<Option<watch::Sender<bool>>>,
@@ -389,10 +337,8 @@ impl Supervisor {
             status: AtomicU8::new(ProcessStatus::NotStarted as u8),
             intent: AtomicU8::new(TransitionIntent::None as u8),
             reason: RwLock::new(String::new()),
-            last_seen_ts: AtomicU64::new(now_secs()),
-            last_crash_ts: AtomicU64::new(0),
-            crash_count: AtomicU32::new(0),
-            restart_at: AtomicU64::new(0),
+            last_heartbeat_ts: AtomicU64::new(now_secs()),
+            next_spawn_at: AtomicU64::new(0),
             cancel_tx: RwLock::new(None),
             current_registry_id: parking_lot::Mutex::new(None),
         });
@@ -409,12 +355,12 @@ impl Supervisor {
         id
     }
 
-    /// Bump `last_seen_ts` to now. Managers call this on every heartbeat
+    /// Bump the heartbeat timestamp. Managers call this on every heartbeat
     /// or keepalive from the remote end of the bridge — channel plugins
     /// on `_va/heartbeat`, ACP agents on any notification, etc.
     pub fn touch(&self, id: ProcessId) {
         if let Some(proc) = self.processes.read().get(&id).cloned() {
-            proc.last_seen_ts.store(now_secs(), Ordering::Relaxed);
+            proc.last_heartbeat_ts.store(now_secs(), Ordering::Relaxed);
         }
     }
 
@@ -428,9 +374,8 @@ impl Supervisor {
         Ok(())
     }
 
-    /// Cancel the current bridge and force an immediate respawn (ignoring
-    /// backoff). No-op if policy is `Never` and the process is already
-    /// stopped.
+    /// Cancel the current bridge and force an immediate respawn. No-op if
+    /// policy is `Never` and the process is already stopped.
     pub async fn force_restart(&self, id: ProcessId) -> ProcessResult<()> {
         let proc = self.get_proc(id)?;
         proc.intent
@@ -447,7 +392,7 @@ impl Supervisor {
             ProcessStatus::Stopped | ProcessStatus::Crashed | ProcessStatus::NotStarted => {
                 proc.set_status(ProcessStatus::Crashed);
                 proc.set_reason("started by user");
-                proc.restart_at.store(now_secs(), Ordering::Relaxed);
+                proc.next_spawn_at.store(now_secs(), Ordering::Relaxed);
                 self.notify_change(&proc);
             }
             _ => {}
@@ -457,24 +402,16 @@ impl Supervisor {
 
     /// Snapshot of every registered process, sorted by label.
     pub fn snapshot(&self) -> Vec<ProcessSnapshot> {
-        let now = now_secs();
         let mut out: Vec<_> = self
             .processes
             .read()
             .values()
-            .map(|proc| {
-                let last_seen = proc.last_seen_ts.load(Ordering::Relaxed);
-                let restart_at = proc.restart_at.load(Ordering::Relaxed);
-                ProcessSnapshot {
-                    id: proc.id,
-                    kind: proc.kind,
-                    label: proc.label.clone(),
-                    status: proc.status(),
-                    reason: proc.reason.read().clone(),
-                    crash_count: proc.crash_count.load(Ordering::Relaxed),
-                    last_seen_age_secs: now.saturating_sub(last_seen),
-                    restart_in_secs: restart_at.saturating_sub(now),
-                }
+            .map(|proc| ProcessSnapshot {
+                id: proc.id,
+                kind: proc.kind,
+                label: proc.label.clone(),
+                status: proc.status(),
+                reason: proc.reason.read().clone(),
             })
             .collect();
         out.sort_by(|a, b| a.label.cmp(&b.label));
@@ -576,14 +513,14 @@ impl Supervisor {
             match proc.status() {
                 ProcessStatus::NotStarted => to_spawn.push(proc),
                 ProcessStatus::Crashed => {
-                    let at = proc.restart_at.load(Ordering::Relaxed);
+                    let at = proc.next_spawn_at.load(Ordering::Relaxed);
                     if at != 0 && now >= at {
                         to_spawn.push(proc);
                     }
                 }
                 ProcessStatus::Running => {
                     if let Some(watchdog) = proc.policy.watchdog() {
-                        let last = proc.last_seen_ts.load(Ordering::Relaxed);
+                        let last = proc.last_heartbeat_ts.load(Ordering::Relaxed);
                         if now.saturating_sub(last) > watchdog.as_secs() {
                             to_watchdog.push(proc);
                         }
@@ -594,13 +531,13 @@ impl Supervisor {
         }
 
         for proc in to_watchdog {
-            let age = now.saturating_sub(proc.last_seen_ts.load(Ordering::Relaxed));
+            let age = now.saturating_sub(proc.last_heartbeat_ts.load(Ordering::Relaxed));
             proc_log!(
                 info,
                 kind = proc.kind,
                 label = proc.label,
                 event = "watchdog_fired",
-                last_seen_age_secs = age
+                heartbeat_age_secs = age
             );
             self.cancel_current_bridge(&proc);
         }
@@ -621,7 +558,7 @@ impl Supervisor {
         if matches!(ProcessStatus::from_u8(prev), ProcessStatus::Spawning) {
             return;
         }
-        proc.restart_at.store(0, Ordering::Relaxed);
+        proc.next_spawn_at.store(0, Ordering::Relaxed);
         proc.set_reason("spawning");
         self.notify_change(&proc);
 
@@ -650,7 +587,7 @@ impl Supervisor {
                     return;
                 }
                 proc.set_reason("");
-                proc.last_seen_ts.store(now_secs(), Ordering::Relaxed);
+                proc.last_heartbeat_ts.store(now_secs(), Ordering::Relaxed);
                 proc_log!(
                     info,
                     kind = proc.kind,
@@ -691,11 +628,9 @@ impl Supervisor {
                     return;
                 }
                 proc.set_reason(format!("spawn failed: {}", reason));
-                let attempt = proc.crash_count.fetch_add(1, Ordering::Relaxed) + 1;
-                proc.last_crash_ts.store(now_secs(), Ordering::Relaxed);
-                if let Some(backoff) = proc.policy.backoff_delay(attempt) {
-                    proc.restart_at
-                        .store(now_secs() + backoff.as_secs(), Ordering::Relaxed);
+                if let Some(delay) = proc.policy.restart_delay() {
+                    proc.next_spawn_at
+                        .store(now_secs() + delay.as_secs(), Ordering::Relaxed);
                 }
                 proc_log!(
                     error,
@@ -830,7 +765,7 @@ impl Supervisor {
         match intent {
             TransitionIntent::Stop => {
                 proc.set_status(ProcessStatus::Stopped);
-                proc.restart_at.store(0, Ordering::Relaxed);
+                proc.next_spawn_at.store(0, Ordering::Relaxed);
                 proc.set_reason(&reason);
                 proc_log!(
                     info,
@@ -842,7 +777,7 @@ impl Supervisor {
             }
             TransitionIntent::Restart => {
                 proc.set_status(ProcessStatus::Crashed);
-                proc.restart_at.store(now_secs(), Ordering::Relaxed);
+                proc.next_spawn_at.store(now_secs(), Ordering::Relaxed);
                 proc.set_reason(&reason);
                 proc_log!(
                     info,
@@ -855,11 +790,9 @@ impl Supervisor {
             TransitionIntent::None => match proc.policy {
                 RestartPolicy::Never => {
                     proc.set_status(ProcessStatus::Stopped);
-                    proc.restart_at.store(0, Ordering::Relaxed);
+                    proc.next_spawn_at.store(0, Ordering::Relaxed);
                     proc.set_reason(&reason);
                     if was_crash {
-                        proc.crash_count.fetch_add(1, Ordering::Relaxed);
-                        proc.last_crash_ts.store(now_secs(), Ordering::Relaxed);
                         proc_log!(
                             warn,
                             kind = proc.kind,
@@ -879,11 +812,9 @@ impl Supervisor {
                 }
                 RestartPolicy::OnCrash { .. } => {
                     proc.set_status(ProcessStatus::Crashed);
-                    let attempt = proc.crash_count.fetch_add(1, Ordering::Relaxed) + 1;
-                    proc.last_crash_ts.store(now_secs(), Ordering::Relaxed);
-                    let backoff = proc.policy.backoff_delay(attempt).unwrap_or(Duration::ZERO);
-                    proc.restart_at
-                        .store(now_secs() + backoff.as_secs(), Ordering::Relaxed);
+                    let delay = proc.policy.restart_delay().unwrap_or(Duration::ZERO);
+                    proc.next_spawn_at
+                        .store(now_secs() + delay.as_secs(), Ordering::Relaxed);
                     proc.set_reason(&reason);
                     proc_log!(
                         warn,
@@ -891,7 +822,7 @@ impl Supervisor {
                         label = proc.label,
                         event = "crashed",
                         reason = %reason,
-                        respawn_in_secs = backoff.as_secs()
+                        respawn_in_secs = delay.as_secs()
                     );
                 }
             },
@@ -970,7 +901,7 @@ mod tests {
     }
 
     /// Bridge that immediately returns `ProtocolError` — used to exercise
-    /// the crash-then-backoff path without waiting for a real child to die.
+    /// the crash path without waiting for a real child to die.
     struct InstantErrorBridge;
 
     impl ProcessBridge for InstantErrorBridge {
@@ -1089,7 +1020,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn on_crash_policy_schedules_respawn() {
+    async fn on_crash_policy_marks_process_crashed() {
         let registry = Arc::new(ChildRegistry::new());
         let sup = Supervisor::new(registry);
 
@@ -1098,7 +1029,7 @@ mod tests {
             "test-crasher",
             cat_spec(),
             RestartPolicy::OnCrash {
-                backoff: RestartBackoff::fixed(Duration::from_secs(30)),
+                restart_delay: Duration::from_secs(30),
                 watchdog: None,
             },
             Box::new(|| Box::new(InstantErrorBridge)),
@@ -1107,21 +1038,7 @@ mod tests {
         wait_for_status(&sup, id, ProcessStatus::Crashed).await;
         let snap = sup.snapshot();
         let p = snap.iter().find(|p| p.id == id).unwrap();
-        assert!(p.crash_count >= 1);
-        assert!(
-            p.restart_in_secs > 0,
-            "backoff should schedule a future respawn"
-        );
-    }
-
-    #[test]
-    fn exponential_backoff_grows_until_cap() {
-        let backoff = RestartBackoff::exponential(Duration::from_secs(5), Duration::from_secs(60));
-
-        assert_eq!(backoff.delay_for_attempt(1), Duration::from_secs(5));
-        assert_eq!(backoff.delay_for_attempt(2), Duration::from_secs(10));
-        assert_eq!(backoff.delay_for_attempt(3), Duration::from_secs(20));
-        assert_eq!(backoff.delay_for_attempt(10), Duration::from_secs(60));
+        assert_eq!(p.status, ProcessStatus::Crashed);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1159,7 +1076,7 @@ mod tests {
     async fn shutdown_all_drains_but_keeps_loop_alive() {
         // Regression: `shutdown_all` used to take the tick-loop shutdown
         // sender and exit the loop, so after a daemon restart no new
-        // OnCrash backoffs or watchdog checks would ever fire. The fix
+        // OnCrash restarts or watchdog checks would ever fire. The fix
         // keeps the loop alive for the process lifetime and only drains
         // the process table.
         let registry = Arc::new(ChildRegistry::new());

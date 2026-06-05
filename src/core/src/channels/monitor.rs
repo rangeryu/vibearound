@@ -8,8 +8,8 @@
 //! - The mapping from the user-facing `channel_kind` string (`"feishu"`)
 //!   to the opaque `ProcessId` returned by the supervisor.
 //! - The conversion from the generic `ProcessSnapshot` into the
-//!   Dashboard-facing `ChannelStatusSnapshot` (status string + age in
-//!   seconds, etc.).
+//!   Dashboard-facing `ChannelStatusSnapshot` (status string, reason,
+//!   plugin version).
 //! - A small forwarder task that fans the supervisor's typed
 //!   `ProcessEvent` stream down to the `()` channel that
 //!   [`StateSource::subscribe_changes`] exposes.
@@ -27,9 +27,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::process::bridge::{BridgeFactory, ProcessBridge};
 use crate::process::registry::ProcessKind;
-use crate::process::supervisor::{
-    ProcessEvent, ProcessId, RestartBackoff, RestartPolicy, SpawnSpec, Supervisor,
-};
+use crate::process::supervisor::{ProcessEvent, ProcessId, RestartPolicy, SpawnSpec, Supervisor};
 use crate::workspace::WorkspaceThreadManager;
 
 use super::manifest::ChannelPluginManifest;
@@ -39,11 +37,10 @@ use super::transport_stdio::StdioPluginRuntime;
 use super::ChannelInput;
 
 // ---------------------------------------------------------------------------
-// Tunables — kept at module scope so the Dashboard can display them.
+// Tunables for channel plugin self-recovery.
 // ---------------------------------------------------------------------------
 
-pub const RESTART_BACKOFF_INITIAL: Duration = Duration::from_secs(5);
-pub const RESTART_BACKOFF_MAX: Duration = Duration::from_secs(300);
+pub const RESTART_DELAY: Duration = Duration::from_secs(5);
 pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(90);
 
 // ---------------------------------------------------------------------------
@@ -87,12 +84,9 @@ impl ChannelRunStatus {
 #[derive(Debug, Clone)]
 pub struct ChannelStatusSnapshot {
     pub kind: String,
+    pub version: Option<String>,
     pub status: ChannelRunStatus,
     pub reason: String,
-    pub crash_count: u32,
-    pub last_seen_age_secs: u64,
-    pub restart_in_secs: u64,
-    pub started_at: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +96,7 @@ pub struct ChannelStatusSnapshot {
 pub struct ChannelMonitor {
     supervisor: Arc<Supervisor>,
     kinds: DashMap<String, ProcessId>,
+    versions: DashMap<String, String>,
     workspace_thread_manager: Arc<WorkspaceThreadManager>,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     plugin_host: Arc<PluginHost>,
@@ -131,6 +126,7 @@ impl ChannelMonitor {
         Arc::new(Self {
             supervisor,
             kinds: DashMap::new(),
+            versions: DashMap::new(),
             workspace_thread_manager,
             input_tx,
             plugin_host,
@@ -140,10 +136,11 @@ impl ChannelMonitor {
 
     /// Register a channel plugin. The supervisor spawns immediately
     /// (no wait for the next tick) and keeps it alive under an
-    /// `OnCrash` policy with a short exponential backoff capped at five
-    /// minutes and a 90-second heartbeat watchdog.
+    /// `OnCrash` policy with a short fixed restart delay and a 90-second
+    /// heartbeat watchdog.
     pub fn register(self: &Arc<Self>, manifest: ChannelPluginManifest) {
         let kind = manifest.channel_kind.clone();
+        let version = manifest.version.clone();
 
         let spec = SpawnSpec::new("node")
             .arg(manifest.entry_path.to_string_lossy().to_string())
@@ -161,12 +158,13 @@ impl ChannelMonitor {
             kind.clone(),
             spec,
             RestartPolicy::OnCrash {
-                backoff: RestartBackoff::exponential(RESTART_BACKOFF_INITIAL, RESTART_BACKOFF_MAX),
+                restart_delay: RESTART_DELAY,
                 watchdog: Some(HEARTBEAT_TIMEOUT),
             },
             factory,
         );
-        self.kinds.insert(kind, id);
+        self.kinds.insert(kind.clone(), id);
+        self.versions.insert(kind, version);
     }
 
     /// Bump the liveness timestamp — called on every `_va/heartbeat`
@@ -210,16 +208,13 @@ impl ChannelMonitor {
             .into_iter()
             .filter(|p| p.kind == ProcessKind::ChannelPlugin)
             .map(|p| ChannelStatusSnapshot {
+                version: self
+                    .versions
+                    .get(&p.label)
+                    .map(|entry| entry.value().clone()),
                 kind: p.label,
                 status: ChannelRunStatus::from_process(p.status),
                 reason: p.reason,
-                crash_count: p.crash_count,
-                last_seen_age_secs: p.last_seen_age_secs,
-                restart_in_secs: p.restart_in_secs,
-                // `started_at` historically held the last_seen_ts. The
-                // supervisor exposes the age instead, so back-compute an
-                // absolute timestamp for the Dashboard.
-                started_at: now_secs().saturating_sub(p.last_seen_age_secs),
             })
             .collect()
     }
@@ -341,12 +336,4 @@ fn build_bridge_factory(
             plugin_host: Arc::clone(&plugin_host),
         }) as Box<dyn ProcessBridge>
     })
-}
-
-fn now_secs() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
 }

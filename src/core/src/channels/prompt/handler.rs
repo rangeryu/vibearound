@@ -261,7 +261,7 @@ async fn handle_command(
             send_system_text(
                 plugin_host,
                 route,
-                "Commands: /switch workspace <id|path>, /switch host <agent> [profile], /pair <code>, /pickup <code>, /new, /close. You can also prefix commands with /va or /vibearound. Reply with a listed number or thread id after switching workspace.",
+                "Commands: /switch <agent> [profile], /switch workspace <id|path>, /switch host <agent> [profile], /pair <code>, /pickup <code>, /new, /close. You can also prefix commands with /va or /vibearound. Reply with a listed number or thread id after switching workspace.",
             )
             .await;
         }
@@ -491,15 +491,42 @@ fn parse_thread_command(text: &str) -> Option<ThreadCommand> {
         }
     }
     if let Some(rest) = normalized.strip_prefix("/switch host ") {
-        let mut parts = rest.split_whitespace();
-        if let Some(agent) = parts.next() {
-            return Some(ThreadCommand::SwitchHost {
-                agent: agent.to_string(),
-                profile: parts.next().map(ToOwned::to_owned),
-            });
+        if let Some(command) = parse_switch_host(rest) {
+            return Some(command);
+        }
+    }
+    if let Some(rest) = normalized.strip_prefix("/switch ") {
+        let rest = rest.trim();
+        if rest != "host" && rest != "workspace" {
+            if let Some(command) = parse_switch_host(rest) {
+                return Some(command);
+            }
         }
     }
     Some(ThreadCommand::Unknown(normalized.to_string()))
+}
+
+fn parse_switch_host(rest: &str) -> Option<ThreadCommand> {
+    let mut parts = rest.split_whitespace();
+    let agent_token = parts.next()?;
+    let explicit_profile = parts.next().map(ToOwned::to_owned);
+    let (agent, profile) = match agent_token.split_once('+') {
+        Some((agent, profile)) => {
+            let profile = explicit_profile.or_else(|| {
+                let profile = profile.trim();
+                (!profile.is_empty()).then(|| profile.to_string())
+            });
+            (agent.trim(), profile)
+        }
+        None => (agent_token.trim(), explicit_profile),
+    };
+    if agent.is_empty() {
+        return None;
+    }
+    Some(ThreadCommand::SwitchHost {
+        agent: agent.to_string(),
+        profile,
+    })
 }
 
 fn canonical_thread_command(normalized: &str) -> String {
@@ -599,6 +626,34 @@ mod tests {
             Some(ThreadCommand::SwitchHost {
                 agent: "codex".to_string(),
                 profile: Some("profileA".to_string())
+            })
+        );
+        assert_eq!(
+            parse_thread_command("/switch codex"),
+            Some(ThreadCommand::SwitchHost {
+                agent: "codex".to_string(),
+                profile: None
+            })
+        );
+        assert_eq!(
+            parse_thread_command("/switch codex profileA"),
+            Some(ThreadCommand::SwitchHost {
+                agent: "codex".to_string(),
+                profile: Some("profileA".to_string())
+            })
+        );
+        assert_eq!(
+            parse_thread_command("/switch codex+profileA"),
+            Some(ThreadCommand::SwitchHost {
+                agent: "codex".to_string(),
+                profile: Some("profileA".to_string())
+            })
+        );
+        assert_eq!(
+            parse_thread_command("/va switch codex"),
+            Some(ThreadCommand::SwitchHost {
+                agent: "codex".to_string(),
+                profile: None
             })
         );
     }

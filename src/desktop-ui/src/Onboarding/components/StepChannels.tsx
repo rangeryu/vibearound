@@ -37,6 +37,7 @@ export function StepChannels({
   onStartAuth,
   onCancelAuth,
   switchSize = "default",
+  description,
   notice,
 }: StepChannelsProps) {
   const { t } = useI18n();
@@ -47,10 +48,11 @@ export function StepChannels({
       <div>
         <h2 className="text-base font-semibold flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-primary" />
-          {t("IM Channel")}
+          {t("Messaging apps")}
         </h2>
         <p className="text-xs text-muted-foreground mt-1">
-          {t("Connect messaging bots to vibe code from your phone. Install plugins from the registry, then configure and enable them.")}
+          {description ??
+            t("Connect messaging apps to vibe code from your phone. Install plugins from the registry, then configure and enable them.")}
         </p>
         {notice}
       </div>
@@ -229,7 +231,7 @@ function PluginCard({
 
           <div className="rounded-md border border-border bg-muted/20 px-3 py-3">
             <div className="mb-2 text-xs font-medium text-foreground">
-              {t("IM message detail")}
+              {t("Message detail")}
             </div>
             <div className="space-y-2">
               <label className="flex items-center justify-between gap-3">

@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-import type { AgentId, OnboardingGoal, TunnelProvider } from "./constants";
-import type { ProfileSummary } from "../Launch/types";
+import type { TunnelProvider } from "./constants";
 
-// Resource types — returned by Tauri commands
+// Resource types returned by Tauri commands.
 export interface AgentSummary {
   id: string;
   display_name: string;
@@ -48,6 +47,11 @@ export interface Settings {
       max_retries?: number | null;
       delay_seconds?: number;
     };
+  };
+  startkit?: {
+    source?: string;
+    toolchain_mode?: "auto" | "managed" | "system" | string;
+    shell_path?: boolean;
   };
   tunnel?: {
     provider?: string;
@@ -97,7 +101,7 @@ export interface DiscoveredChannelPlugin {
   runtime: string;
   entry: string;
   source: "user" | "project";
-  /** Directory name on disk — may differ from id when plugin.json declares a different id. */
+  /** Directory name on disk; may differ from id when plugin.json declares a different id. */
   dirName: string;
   supportsQrcodeLogin: boolean;
   configSchema?: ConfigSchema;
@@ -121,15 +125,6 @@ export interface AuthFlowState {
   resultData?: Record<string, unknown>;
 }
 
-export interface StepAgentsProps {
-  agents: AgentSummary[];
-  profiles: ProfileSummary[];
-  enabled: Set<AgentId>;
-  onToggle: (id: AgentId) => void;
-  onCreateProfile: () => void;
-  onDeleteProfile: (id: string) => void;
-}
-
 export interface StepChannelsProps {
   pluginRegistry: PluginRegistryEntry[];
   discoveredPlugins: DiscoveredChannelPlugin[];
@@ -149,6 +144,7 @@ export interface StepChannelsProps {
   onStartAuth: (pluginId: string) => void;
   onCancelAuth: (pluginId: string) => void;
   switchSize?: "sm" | "default";
+  description?: ReactNode;
   notice?: ReactNode;
 }
 
@@ -167,31 +163,92 @@ export interface StepTunnelProps {
   notice?: ReactNode;
 }
 
-export interface StepConfirmProps {
-  agents: AgentSummary[];
-  tunnels: TunnelSummary[];
-  pluginRegistry: PluginRegistryEntry[];
-  selectedGoals: Set<OnboardingGoal>;
-  enabledAgents: Set<AgentId>;
-  tunnelProvider: TunnelProvider;
-  enabledChannels: Set<string>;
-  // Install progress state
-  isInstalling: boolean;
-  installComplete: boolean;
-  installTasks: InstallTaskProgress[];
+export type StartkitStatus =
+  | "pending"
+  | "running"
+  | "ok"
+  | "missing"
+  | "outdated"
+  | "broken"
+  | "needs_config"
+  | "blocked"
+  | "error"
+  | "skipped";
+
+export interface StartkitChoices {
+  agents: string[];
+  tunnel: string;
+  channels: string[];
+  source: string;
+  toolchainMode: "auto" | "managed" | "system" | string;
+  shellPath: boolean;
 }
 
-export type InstallTaskStatus = "pending" | "running" | "done" | "error" | "skipped" | "cancelled";
+export interface StartkitSource {
+  label: string;
+  node_index: string;
+  node_dist: string;
+  npm_registry: string;
+}
 
-export interface InstallTaskProgress {
+export interface StartkitItemSummary {
   id: string;
   label: string;
-  status: InstallTaskStatus;
+  group: string;
+  category: string;
+  description?: string;
+  severity?: string;
+  kind?: string;
+  managed: boolean;
+  hasRepair: boolean;
+  secret: boolean;
+  settingsKey?: string;
+}
+
+export interface StartkitManifestSummary {
+  id: string;
+  name: string;
+  schema: number;
+  version: string;
+  sources: Record<string, StartkitSource>;
+  items: StartkitItemSummary[];
+}
+
+export interface StartkitPlan {
+  platform: string;
+  source: string;
+  itemIds: string[];
+  items: StartkitItemSummary[];
+}
+
+export interface StartkitItemReport {
+  id: string;
+  label: string;
+  group: string;
+  category: string;
+  status: StartkitStatus;
+  severity?: string;
+  version?: string;
+  path?: string;
   message?: string;
-  logs?: string[];
+  actions: string[];
+  secret: boolean;
+  settingsKey?: string;
 }
 
-export interface InstallTaskInfo {
+export interface StartkitScanReport {
+  plan: StartkitPlan;
+  reports: StartkitItemReport[];
+}
+
+export interface StartkitProgressEvent {
   id: string;
   label: string;
+  status: StartkitStatus;
+  message?: string;
+  report?: StartkitItemReport;
+}
+
+export interface StartkitCompleteEvent {
+  status: string;
 }

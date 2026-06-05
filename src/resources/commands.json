@@ -5,7 +5,7 @@
     { "name": "agent", "args": "--list", "description": "List available agent launch targets" },
     { "name": "agent", "args": "--switch <agent[+profile]>", "description": "Switch agent launch target" },
     { "name": "agent", "args": "--help", "description": "Show current agent commands" },
-    { "name": "switch", "args": "<agent[+profile]>", "description": "Switch agent launch target" },
+    { "name": "switch", "args": "<agent> [profile]", "description": "Switch agent launch target" },
     { "name": "new", "description": "Reset session" },
     { "name": "mode", "args": "<default|plan|acceptEdits|bypassPermissions|dontAsk>", "description": "Set session permission mode" },
     { "name": "plan", "description": "Switch to plan mode" },

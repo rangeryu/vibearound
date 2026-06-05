@@ -1,106 +1,69 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronLeft, ChevronRight, Rocket } from "lucide-react";
+import {
+  ArrowRight,
+  Download,
+  Loader2,
+  Rocket,
+} from "lucide-react";
 import { useI18n } from "@va/i18n";
 
-import { Button } from "@/components/ui/button";
 import { LanguageMenu } from "@/components/LanguageMenu";
 import { cn } from "@/lib/utils";
 
-import { STEPS } from "./constants";
-import { StepAgents } from "./components/StepAgents";
-import { StepChannels } from "./components/StepChannels";
-import { StepConfirm } from "./components/StepConfirm";
-import { StepTunnel } from "./components/StepTunnel";
-import { StepWelcome } from "./components/StepWelcome";
-import { useChannelAuth } from "./hooks/useChannelAuth";
-import { useInstallFlow } from "./hooks/useInstallFlow";
-import { buildSettings } from "./lib/buildSettings";
 import {
-  createProfile,
-  deleteProfile,
-  listCatalog,
-  listProfiles,
-  upsertProfile,
-} from "../Launch/api";
-import { ProfileFormDialog } from "../Launch/ProfileFormDialog";
-import type { ProfileFormSubmit } from "../Launch/ProfileFormDialog";
-import type { CatalogEntry, ProfileSummary } from "../Launch/types";
+  OnboardingFooter,
+  type PrimaryAction,
+} from "./components/OnboardingFooter";
+import { OnboardingStepContent } from "./components/OnboardingStepContent";
+import { StartkitAdvancedMenu } from "./components/StartkitAdvancedMenu";
+import { ProgressStepper, QuestionPane } from "./components/WizardChrome";
+import { groupReports, reportNeedsInstall } from "./components/startkitPresentation";
+import { useChannelAuth } from "./hooks/useChannelAuth";
+import { useStartkitFlow } from "./hooks/useStartkitFlow";
+import { defaultChannelVerbose } from "./lib/channelConfig";
+import { buildSettings } from "./lib/buildSettings";
+import { useOnboardingInitialLoad } from "./hooks/useOnboardingInitialLoad";
+import { WIZARD_STEPS, type WizardStepId } from "./wizardTypes";
 import type {
   AgentSummary,
   ChannelVerboseConfig,
   DiscoveredChannelPlugin,
   PluginRegistryEntry,
   Settings,
+  StartkitChoices,
+  StartkitItemReport,
+  StartkitManifestSummary,
   TunnelSummary,
 } from "./types";
-import type {
-  AgentId,
-  OnboardingGoal,
-  OnboardingStep,
-  TunnelProvider,
-} from "./constants";
-
-const DEFAULT_ENABLED_AGENT_IDS = new Set<AgentId>(["claude", "codex"]);
-const AGENT_DISPLAY_ORDER = [
-  "claude",
-  "codex",
-  "pi",
-  "gemini",
-  "opencode",
-  "cursor",
-  "kiro",
-  "qwen-code",
-];
-const STEP_GOALS: Partial<Record<OnboardingStep, OnboardingGoal>> = {
-  "Quick Launch": "agents",
-  Channels: "channels",
-  Tunnel: "tunnel",
-};
-
-function orderAgents(agentDefs: AgentSummary[]): AgentSummary[] {
-  const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));
-  return [...agentDefs].sort(
-    (a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999),
-  );
-}
-
-function visibleStepsForGoals(
-  selectedGoals: Set<OnboardingGoal>,
-): OnboardingStep[] {
-  return STEPS.filter((candidate) => {
-    const goal = STEP_GOALS[candidate];
-    return !goal || selectedGoals.has(goal);
-  });
-}
+import type { AgentId, TunnelProvider } from "./constants";
 
 export default function Onboarding() {
   const { t } = useI18n();
   const isMacTitlebar =
     typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
-  const [step, setStep] = useState(0);
-  const [selectedGoals, setSelectedGoals] = useState<Set<OnboardingGoal>>(
-    () => new Set<OnboardingGoal>(),
-  );
-  const [settings, setSettings] = useState<Settings>({});
-  const [discoveredPlugins, setDiscoveredPlugins] = useState<
-    DiscoveredChannelPlugin[]
-  >([]);
-  const [loaded, setLoaded] = useState(false);
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
-  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
-  const [profileEditorOpen, setProfileEditorOpen] = useState(false);
 
-  // Resource data from backend
+  const [settings, setSettings] = useState<Settings>({});
+  const [loaded, setLoaded] = useState(false);
+  const [activeStep, setActiveStep] = useState<WizardStepId>("agents");
+  const [manifest, setManifest] = useState<StartkitManifestSummary | null>(
+    null,
+  );
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [tunnels, setTunnels] = useState<TunnelSummary[]>([]);
   const [pluginRegistry, setPluginRegistry] = useState<PluginRegistryEntry[]>(
     [],
   );
+  const [discoveredPlugins, setDiscoveredPlugins] = useState<
+    DiscoveredChannelPlugin[]
+  >([]);
 
-  // Agents
+  const [downloadSource, setDownloadSource] = useState("global");
+  const [toolchainMode, setToolchainMode] = useState<
+    "auto" | "managed" | "system"
+  >("auto");
+  const [shellPath, setShellPath] = useState(false);
   const [enabledAgents, setEnabledAgents] = useState<Set<AgentId>>(new Set());
-  // Channels
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(
     new Set(),
   );
@@ -114,115 +77,215 @@ export default function Onboarding() {
     new Set(),
   );
 
-  // Tunnel
   const [tunnelProvider, setTunnelProvider] =
     useState<TunnelProvider>("cloudflare");
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
   const [cfHostname, setCfHostname] = useState("");
+  const [finishError, setFinishError] = useState<string | null>(null);
+  const [finishing, setFinishing] = useState(false);
 
-  const visibleSteps = useMemo(
-    () => visibleStepsForGoals(selectedGoals),
-    [selectedGoals],
+  const startkit = useStartkitFlow();
+  const autoScanSignatureRef = useRef<string | null>(null);
+  const agentScanSignatureRef = useRef<string | null>(null);
+  const refreshedPluginsAfterInstallRef = useRef(false);
+  const [agentInstallReports, setAgentInstallReports] = useState<
+    StartkitItemReport[]
+  >([]);
+  const [agentStatusScanning, setAgentStatusScanning] = useState(false);
+
+  useOnboardingInitialLoad({
+    setSettings,
+    setLoaded,
+    setManifest,
+    setAgents,
+    setTunnels,
+    setPluginRegistry,
+    setDiscoveredPlugins,
+    setDownloadSource,
+    setToolchainMode,
+    setShellPath,
+    setEnabledAgents,
+    setEnabledChannels,
+    setChannelConfigs,
+    setChannelVerbose,
+    setTunnelProvider,
+    setNgrokToken,
+    setNgrokDomain,
+    setCfToken,
+    setCfHostname,
+  });
+
+  useEffect(() => {
+    if (toolchainMode !== "auto") setToolchainMode("auto");
+  }, [toolchainMode]);
+
+  const registryPluginIds = useMemo(
+    () => new Set(pluginRegistry.map((plugin) => plugin.id)),
+    [pluginRegistry],
   );
-  const currentStep =
-    visibleSteps[Math.min(step, visibleSteps.length - 1)] ?? "Goals";
 
-  useEffect(() => {
-    setStep((previous) => Math.min(previous, visibleSteps.length - 1));
-  }, [visibleSteps.length]);
+  const choices: StartkitChoices = useMemo(
+    () => ({
+      agents: Array.from(enabledAgents),
+      tunnel: tunnelProvider,
+      channels: Array.from(enabledChannels),
+      source: downloadSource,
+      toolchainMode,
+      shellPath: toolchainMode === "system" ? false : shellPath,
+    }),
+    [
+      enabledAgents,
+      tunnelProvider,
+      enabledChannels,
+      downloadSource,
+      toolchainMode,
+      shellPath,
+    ],
+  );
 
-  // ---- Load existing settings + resources ----
-  useEffect(() => {
-    Promise.all([
-      invoke<Settings>("get_settings"),
-      invoke<DiscoveredChannelPlugin[]>("list_channel_plugins"),
-      invoke<AgentSummary[]>("list_agents"),
-      invoke<TunnelSummary[]>("list_tunnels"),
-      invoke<PluginRegistryEntry[]>("list_plugin_registry"),
-      listCatalog(),
-      listProfiles(),
-    ])
-      .then(
-        ([
-          loadedSettings,
-          plugins,
-          agentDefs,
-          tunnelDefs,
-          pluginDefs,
-          catalogDefs,
-          profileDefs,
-        ]) => {
-          const orderedAgents = orderAgents(agentDefs);
-          setSettings(loadedSettings);
-          setDiscoveredPlugins(plugins);
-          setAgents(orderedAgents);
-          setTunnels(tunnelDefs);
-          setPluginRegistry(pluginDefs);
-          setCatalog(catalogDefs);
-          setProfiles(profileDefs);
-
-          const registryPluginIds = new Set(pluginDefs.map((p) => p.id));
-
-          if (Array.isArray(loadedSettings.enabled_agents)) {
-            setEnabledAgents(
-              new Set(loadedSettings.enabled_agents as AgentId[]),
-            );
-          } else {
-            setEnabledAgents(
-              new Set(
-                orderedAgents
-                  .map((agent) => agent.id)
-                  .filter((id) => DEFAULT_ENABLED_AGENT_IDS.has(id)),
-              ),
-            );
-          }
-          const channels = loadedSettings.channels ?? {};
-          const enabled = new Set<string>();
-          const configs: Record<string, Record<string, string>> = {};
-          const verbose: Record<string, ChannelVerboseConfig> = {};
-          for (const [id, channelConfig] of Object.entries(channels)) {
-            if (!registryPluginIds.has(id)) continue;
-            enabled.add(id);
-            const configMap: Record<string, string> = {};
-            for (const [key, value] of Object.entries(channelConfig)) {
-              if (key !== "verbose" && typeof value === "string") {
-                configMap[key] = value;
-              }
-            }
-            configs[id] = configMap;
-            verbose[id] = parseChannelVerbose(channelConfig.verbose);
-          }
-          setEnabledChannels(enabled);
-          setChannelConfigs(configs);
-          setChannelVerbose(verbose);
-
-          const provider = loadedSettings.tunnel?.provider;
-          if (
-            provider === "none" ||
-            provider === "cloudflare" ||
-            provider === "ngrok" ||
-            provider === "localtunnel"
-          ) {
-            setTunnelProvider(provider);
-          }
-          if (loadedSettings.tunnel?.ngrok?.auth_token)
-            setNgrokToken(loadedSettings.tunnel.ngrok.auth_token);
-          if (loadedSettings.tunnel?.ngrok?.domain)
-            setNgrokDomain(loadedSettings.tunnel.ngrok.domain);
-          if (loadedSettings.tunnel?.cloudflare?.tunnel_token)
-            setCfToken(loadedSettings.tunnel.cloudflare.tunnel_token);
-          if (loadedSettings.tunnel?.cloudflare?.hostname)
-            setCfHostname(loadedSettings.tunnel.cloudflare.hostname);
-
-          setLoaded(true);
+  const finalSettings = useMemo(
+    () => {
+      const built = buildSettings({
+        settings,
+        configureAgents: true,
+        configureChannels: true,
+        configureTunnel: true,
+        enabledAgents,
+        enabledChannels,
+        registryPluginIds,
+        channelConfigs,
+        channelVerbose,
+        discoveredPlugins,
+        tunnelProvider,
+        ngrokToken,
+        ngrokDomain,
+        cfToken,
+        cfHostname,
+      });
+      return {
+        ...built,
+        startkit: {
+          ...(typeof built.startkit === "object" && built.startkit !== null
+            ? built.startkit
+            : {}),
+          source: downloadSource,
+          toolchain_mode: toolchainMode,
+          shell_path: toolchainMode === "system" ? false : shellPath,
         },
-      )
-      .catch(() => setLoaded(true));
+      };
+    },
+    [
+      settings,
+      enabledAgents,
+      enabledChannels,
+      registryPluginIds,
+      channelConfigs,
+      channelVerbose,
+      discoveredPlugins,
+      tunnelProvider,
+      ngrokToken,
+      ngrokDomain,
+      cfToken,
+      cfHostname,
+      downloadSource,
+      toolchainMode,
+      shellPath,
+    ],
+  );
+
+  const scanSignature = useMemo(() => JSON.stringify(choices), [choices]);
+  const agentStatusChoices = useMemo<StartkitChoices>(
+    () => ({
+      agents: agents.map((agent) => agent.id),
+      tunnel: "none",
+      channels: [],
+      source: downloadSource,
+      toolchainMode,
+      shellPath: false,
+    }),
+    [agents, downloadSource, toolchainMode],
+  );
+  const agentStatusSignature = useMemo(
+    () =>
+      JSON.stringify({
+        agents: agentStatusChoices.agents,
+        source: agentStatusChoices.source,
+        toolchainMode: agentStatusChoices.toolchainMode,
+        installComplete: startkit.complete,
+      }),
+    [agentStatusChoices, startkit.complete],
+  );
+
+  useEffect(() => {
+    if (!loaded || startkit.running) return;
+    if (autoScanSignatureRef.current === scanSignature) return;
+    autoScanSignatureRef.current = scanSignature;
+
+    const timer = window.setTimeout(() => {
+      void startkit.scan(finalSettings, choices);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [loaded, scanSignature, startkit.running, startkit.scan, finalSettings, choices]);
+
+  useEffect(() => {
+    if (!loaded || agents.length === 0 || startkit.running) return;
+    if (agentScanSignatureRef.current === agentStatusSignature) return;
+    agentScanSignatureRef.current = agentStatusSignature;
+    let cancelled = false;
+
+    setAgentStatusScanning(true);
+    void invoke<StartkitItemReport[]>("scan_agent_install_status", {
+      settings,
+      choices: agentStatusChoices,
+    })
+      .then((reports) => {
+        if (!cancelled) setAgentInstallReports(reports);
+      })
+      .catch((error) => {
+        console.error("failed to scan agent install status", error);
+      })
+      .finally(() => {
+        if (!cancelled) setAgentStatusScanning(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    loaded,
+    agents.length,
+    startkit.running,
+    agentStatusSignature,
+    settings,
+    agentStatusChoices,
+  ]);
+
+  useEffect(() => {
+    if (startkit.running) {
+      refreshedPluginsAfterInstallRef.current = false;
+      return;
+    }
+    if (!startkit.complete || refreshedPluginsAfterInstallRef.current) return;
+    refreshedPluginsAfterInstallRef.current = true;
+
+    void invoke<DiscoveredChannelPlugin[]>("list_channel_plugins")
+      .then(setDiscoveredPlugins)
+      .catch((error) => {
+        console.error("failed to refresh channel plugins", error);
+      });
+  }, [startkit.complete, startkit.running]);
+
+  const toggleAgent = useCallback((id: AgentId) => {
+    setEnabledAgents((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }, []);
 
-  // ---- Channel handlers ----
   const toggleChannel = useCallback((pluginId: string, enabled: boolean) => {
     setEnabledChannels((prev) => {
       const next = new Set(prev);
@@ -286,135 +349,152 @@ export default function Onboarding() {
     [],
   );
 
-  // ---- Auth flow + install orchestration (extracted hooks) ----
   const { authStates, startAuth, cancelAuth } = useChannelAuth({
-    currentStep,
+    active: activeStep === "configure",
     discoveredPlugins,
     channelConfigs,
     onConfigChange: updateChannelConfig,
   });
 
-  const {
-    finishing,
-    isInstalling,
-    installComplete,
-    installTasks,
-    startInstall,
-    cancelInstall,
-    completeInstall,
-  } = useInstallFlow();
-
-  const handleFinish = useCallback(() => {
-    const configureAgents = selectedGoals.has("agents");
-    const configureChannels = selectedGoals.has("channels");
-    const configureTunnel = selectedGoals.has("tunnel");
-    const installScope = {
-      agents: configureAgents,
-      channels: configureChannels,
-    };
-    const finalSettings = buildSettings({
-      settings,
-      configureAgents,
-      configureChannels,
-      configureTunnel,
-      enabledAgents,
-      enabledChannels,
-      registryPluginIds: new Set(pluginRegistry.map((plugin) => plugin.id)),
-      channelConfigs,
-      channelVerbose,
-      discoveredPlugins,
-      tunnelProvider,
-      ngrokToken,
-      ngrokDomain,
-      cfToken,
-      cfHostname,
-    });
-    void startInstall(finalSettings, installScope);
-  }, [
-    settings,
-    selectedGoals,
-    enabledAgents,
-    enabledChannels,
-    channelConfigs,
-    channelVerbose,
-    discoveredPlugins,
-    tunnelProvider,
-    ngrokToken,
-    ngrokDomain,
-    cfToken,
-    cfHostname,
-    startInstall,
-  ]);
-
-  const toggleAgent = useCallback((id: AgentId) => {
-    setEnabledAgents((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, []);
-
-  const toggleGoal = useCallback((goal: OnboardingGoal) => {
-    setSelectedGoals((previous) => {
-      const next = new Set(previous);
-      if (next.has(goal)) {
-        next.delete(goal);
-      } else {
-        next.add(goal);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleSaveProfile = useCallback(async (submit: ProfileFormSubmit) => {
-    if (submit.type === "create") {
-      await createProfile(submit.draft);
-    } else {
-      await upsertProfile(submit.profile);
+  const finishOnboarding = useCallback(async () => {
+    setFinishing(true);
+    setFinishError(null);
+    try {
+      await invoke("save_settings", { settings: finalSettings });
+      await startkit.finish();
+    } catch (error) {
+      setFinishError(String(error));
+      setFinishing(false);
     }
-    const nextProfiles = await listProfiles();
-    setProfiles(nextProfiles);
-  }, []);
+  }, [finalSettings, startkit.finish]);
 
-  const handleDeleteProfile = useCallback(
-    async (id: string) => {
-      const profile = profiles.find((item) => item.id === id);
-      if (
-        profile &&
-        !window.confirm(
-          t('Delete profile "{{label}}"?', { label: profile.label }),
-        )
-      )
-        return;
-      await deleteProfile(id);
-      const nextProfiles = await listProfiles();
-      setProfiles(nextProfiles);
-    },
-    [profiles, t],
+  const groupedReports = useMemo(
+    () => groupReports(startkit.plan?.items ?? [], startkit.reportById),
+    [startkit.plan, startkit.reportById],
   );
+  const agentReportsById = useMemo(() => {
+    const reports = new Map(agentInstallReports.map((report) => [report.id, report]));
+    for (const [id, report] of startkit.reportById.entries()) {
+      if (id.startsWith("agents.")) reports.set(id, report);
+    }
+    return reports;
+  }, [agentInstallReports, startkit.reportById]);
+  const hasScanned = startkit.reports.some((report) => report.status !== "pending");
+  const hasInstallWork = startkit.reports.some(reportNeedsInstall);
+  const hasBlockingReport = startkit.reports.some((report) =>
+    ["blocked", "error"].includes(report.status),
+  );
+  const canContinueFromInstall =
+    startkit.complete || (hasScanned && !hasInstallWork && !hasBlockingReport);
+  const activeIndex = WIZARD_STEPS.findIndex((step) => step.id === activeStep);
+
+  const goNext = useCallback(() => {
+    if (activeStep === "agents") setActiveStep("im");
+    else if (activeStep === "im") setActiveStep("remote");
+    else if (activeStep === "remote") setActiveStep("install");
+    else if (activeStep === "install") setActiveStep("configure");
+  }, [activeStep]);
+
+  const goBack = useCallback(() => {
+    if (activeStep === "im") setActiveStep("agents");
+    else if (activeStep === "remote") setActiveStep("im");
+    else if (activeStep === "install") setActiveStep("remote");
+    else if (activeStep === "configure") setActiveStep("install");
+  }, [activeStep]);
+
+  const skipStep = useCallback(() => {
+    if (activeStep === "im") {
+      setEnabledChannels(new Set());
+      setActiveStep("remote");
+    } else if (activeStep === "remote") {
+      setTunnelProvider("none");
+      setActiveStep("install");
+    }
+  }, [activeStep]);
+
+  const primaryAction = useMemo<PrimaryAction>(() => {
+    if (activeStep === "install") {
+      if (startkit.running) {
+        return {
+          label: t("Installing..."),
+          icon: <Loader2 className="h-4 w-4 animate-spin" />,
+          disabled: true,
+          run: () => {},
+        };
+      }
+      if (startkit.scanning && !hasScanned) {
+        return {
+          label: t("Checking..."),
+          icon: <Loader2 className="h-4 w-4 animate-spin" />,
+          disabled: true,
+          run: () => {},
+        };
+      }
+      if (canContinueFromInstall) {
+        return {
+          label: t("Continue"),
+          icon: <ArrowRight className="h-4 w-4" />,
+          disabled: false,
+          run: () => setActiveStep("configure"),
+        };
+      }
+      return {
+        label: t("Install selected"),
+        icon: <Download className="h-4 w-4" />,
+        disabled: startkit.scanning,
+        run: () => void startkit.start(finalSettings, choices),
+      };
+    }
+
+    if (activeStep === "configure") {
+      return {
+        label: finishing ? t("Launching...") : t("Launch VibeAround"),
+        icon: finishing ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Rocket className="h-4 w-4" />
+        ),
+        disabled: finishing,
+        run: () => void finishOnboarding(),
+      };
+    }
+
+    return {
+      label: t("Continue"),
+      icon: <ArrowRight className="h-4 w-4" />,
+      disabled: activeStep === "agents" && enabledAgents.size === 0,
+      run: goNext,
+    };
+  }, [
+    activeStep,
+    canContinueFromInstall,
+    choices,
+    finalSettings,
+    finishOnboarding,
+    finishing,
+    goNext,
+    hasScanned,
+    enabledAgents,
+    startkit,
+    t,
+  ]);
 
   if (!loaded) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex h-full items-center justify-center">
         <span className="text-sm text-muted-foreground animate-pulse">
-          {t("Loading…")}
+          {t("Loading...")}
         </span>
       </div>
     );
   }
 
-  const isLast = step === visibleSteps.length - 1;
-
   return (
-    <div className="flex flex-col h-full bg-background">
-      <div
+    <div className="flex h-full flex-col bg-background">
+      <header
         className={cn(
-          "relative flex h-12 items-center gap-3 pr-6",
-          isMacTitlebar ? "pl-[82px]" : "pl-6",
+          "relative flex h-12 items-center gap-4 border-b border-border pr-3",
+          isMacTitlebar ? "pl-[82px]" : "pl-3",
         )}
       >
         <div
@@ -430,185 +510,79 @@ export default function Onboarding() {
             @{__APP_VERSION_LABEL__}
           </span>
         </div>
-        <div className="relative z-10 flex items-center gap-1 flex-1">
-          {visibleSteps.map((label, index) => (
-            <div key={label} className="flex items-center gap-1 flex-1">
-              <div
-                className={`h-1 flex-1 rounded-full transition-colors ${
-                  index <= step ? "bg-primary" : "bg-border"
-                }`}
-              />
-            </div>
-          ))}
+        <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
+          <ProgressStepper activeIndex={activeIndex} />
         </div>
-        <div className="relative z-10">
+        <div className="relative z-10 ml-auto flex shrink-0 items-center gap-1">
+          <StartkitAdvancedMenu
+            sources={manifest?.sources ?? {}}
+            downloadSource={downloadSource}
+            onDownloadSource={setDownloadSource}
+            shellPath={shellPath && toolchainMode !== "system"}
+            shellPathDisabled={toolchainMode === "system"}
+            onShellPath={setShellPath}
+          />
           <LanguageMenu />
         </div>
-      </div>
-      <div className="px-6 pb-3">
-        <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
-          {t("Step {{current}} of {{total}} — {{step}}", {
-            current: step + 1,
-            total: visibleSteps.length,
-            step: t(currentStep),
-          })}
-        </span>
-      </div>
+      </header>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-4">
-        {currentStep === "Goals" && (
-          <StepWelcome
-            selectedGoals={selectedGoals}
-            onToggleGoal={toggleGoal}
-          />
-        )}
-        {currentStep === "Quick Launch" && (
-          <StepAgents
-            agents={agents}
-            profiles={profiles}
-            enabled={enabledAgents}
-            onToggle={toggleAgent}
-            onCreateProfile={() => setProfileEditorOpen(true)}
-            onDeleteProfile={(id) => {
-              void handleDeleteProfile(id);
-            }}
-          />
-        )}
-        {currentStep === "Channels" && (
-          <StepChannels
-            pluginRegistry={pluginRegistry}
-            discoveredPlugins={discoveredPlugins}
-            enabledChannels={enabledChannels}
-            channelConfigs={channelConfigs}
-            channelVerbose={channelVerbose}
-            installingPlugins={installingPlugins}
-            authStates={authStates}
-            onToggleChannel={toggleChannel}
-            onConfigChange={updateChannelConfig}
-            onVerboseChange={updateChannelVerbose}
-            onInstallPlugin={installPlugin}
-            onStartAuth={startAuth}
-            onCancelAuth={cancelAuth}
-          />
-        )}
-        {currentStep === "Tunnel" && (
-          <StepTunnel
-            tunnels={tunnels}
-            provider={tunnelProvider}
-            onProvider={setTunnelProvider}
-            ngrokToken={ngrokToken}
-            onNgrokToken={setNgrokToken}
-            ngrokDomain={ngrokDomain}
-            onNgrokDomain={setNgrokDomain}
-            cfToken={cfToken}
-            onCfToken={setCfToken}
-            cfHostname={cfHostname}
-            onCfHostname={setCfHostname}
-          />
-        )}
-        {currentStep === "Confirm" && (
-          <StepConfirm
-            agents={agents}
-            tunnels={tunnels}
-            pluginRegistry={pluginRegistry}
-            selectedGoals={selectedGoals}
-            enabledAgents={enabledAgents}
-            tunnelProvider={tunnelProvider}
-            enabledChannels={enabledChannels}
-            isInstalling={isInstalling}
-            installComplete={installComplete}
-            installTasks={installTasks}
-          />
-        )}
-      </div>
-
-      <div className="flex items-center justify-between px-6 py-4 border-t border-border shrink-0">
-        {isInstalling ? (
-          <>
-            <div />
-            {installComplete ? (
-              <Button onClick={completeInstall}>
-                <Rocket className="w-4 h-4" />
-                {installTasks.some(
-                  (task) =>
-                    task.status === "error" || task.status === "cancelled",
-                )
-                  ? t("Continue Anyway")
-                  : t("Open VibeAround")}
-              </Button>
-            ) : (
-              <Button onClick={cancelInstall} variant="outline">
-                {t("Cancel")}
-              </Button>
-            )}
-          </>
-        ) : (
-          <>
-            <Button
-              onClick={() => setStep((v) => Math.max(0, v - 1))}
-              disabled={step === 0}
-              variant="ghost"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              {t("Back")}
-            </Button>
-            {isLast ? (
-              <Button onClick={handleFinish} disabled={finishing}>
-                {finishing ? (
-                  <>{t("Confirming…")}</>
-                ) : (
-                  <>
-                    <Rocket className="w-4 h-4" />
-                    {t("Confirm")}
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button
-                onClick={() =>
-                  setStep((v) => Math.min(visibleSteps.length - 1, v + 1))
-                }
-              >
-                {currentStep === "Goals" ? t("Get Started") : t("Next")}
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            )}
-          </>
-        )}
-      </div>
-
-      {profileEditorOpen && (
-        <ProfileFormDialog
-          catalog={catalog}
-          initial={null}
-          onClose={() => setProfileEditorOpen(false)}
-          onSave={handleSaveProfile}
+      <main className="grid min-h-0 flex-1 grid-cols-[minmax(320px,430px)_1fr] overflow-hidden">
+        <QuestionPane
+          step={activeStep}
         />
-      )}
+
+        <OnboardingStepContent
+          activeStep={activeStep}
+          agents={agents}
+          enabledAgents={enabledAgents}
+          reportsById={agentReportsById}
+          scanning={agentStatusScanning}
+          onToggleAgent={toggleAgent}
+          pluginRegistry={pluginRegistry}
+          discoveredPlugins={discoveredPlugins}
+          enabledChannels={enabledChannels}
+          onToggleChannel={toggleChannel}
+          tunnels={tunnels}
+          tunnelProvider={tunnelProvider}
+          onTunnelProvider={setTunnelProvider}
+          groupedReports={groupedReports}
+          reports={startkit.reports}
+          running={startkit.running}
+          complete={startkit.complete}
+          finalStatus={startkit.finalStatus}
+          startkitError={startkit.error}
+          choices={choices}
+          channelConfigs={channelConfigs}
+          channelVerbose={channelVerbose}
+          installingPlugins={installingPlugins}
+          authStates={authStates}
+          ngrokToken={ngrokToken}
+          ngrokDomain={ngrokDomain}
+          cfToken={cfToken}
+          cfHostname={cfHostname}
+          finishError={finishError}
+          onConfigChange={updateChannelConfig}
+          onVerboseChange={updateChannelVerbose}
+          onInstallPlugin={installPlugin}
+          onStartAuth={startAuth}
+          onCancelAuth={cancelAuth}
+          onNgrokToken={setNgrokToken}
+          onNgrokDomain={setNgrokDomain}
+          onCfToken={setCfToken}
+          onCfHostname={setCfHostname}
+        />
+      </main>
+
+      <OnboardingFooter
+        activeStep={activeStep}
+        activeIndex={activeIndex}
+        running={startkit.running}
+        finishing={finishing}
+        primaryAction={primaryAction}
+        onBack={goBack}
+        onSkip={skipStep}
+        onCancel={() => void startkit.cancel()}
+      />
     </div>
   );
-}
-
-function defaultChannelVerbose(): ChannelVerboseConfig {
-  return {
-    show_thinking: false,
-    show_tool_use: false,
-  };
-}
-
-function parseChannelVerbose(value: unknown): ChannelVerboseConfig {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return defaultChannelVerbose();
-  }
-  const verbose = value as Record<string, unknown>;
-  return {
-    show_thinking:
-      typeof verbose.show_thinking === "boolean"
-        ? verbose.show_thinking
-        : false,
-    show_tool_use:
-      typeof verbose.show_tool_use === "boolean"
-        ? verbose.show_tool_use
-        : false,
-  };
 }

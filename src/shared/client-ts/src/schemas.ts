@@ -232,12 +232,9 @@ export type ChannelStatus = z.infer<typeof ChannelStatusSchema>;
 
 export const ChannelRuntimeSchema = z.object({
   kind: z.string(),
+  version: z.string().nullable().optional().default(null),
   status: ChannelStatusSchema,
   reason: z.string().nullable(),
-  crash_count: z.number(),
-  last_seen_age_secs: z.number(),
-  restart_in_secs: z.number(),
-  started_at: z.number(),
 });
 export type ChannelRuntime = z.infer<typeof ChannelRuntimeSchema>;
 export const ChannelRuntimeListSchema = z.array(ChannelRuntimeSchema);

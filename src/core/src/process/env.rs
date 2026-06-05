@@ -18,6 +18,9 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+const NPM_REGISTRY_GLOBAL: &str = "https://registry.npmjs.org";
+const NPM_REGISTRY_CN: &str = "https://registry.npmmirror.com";
+
 /// Cached full environment from the user's login shell.
 static ENRICHED_ENV: OnceLock<HashMap<String, String>> = OnceLock::new();
 
@@ -37,13 +40,25 @@ pub fn enriched_env() -> &'static HashMap<String, String> {
     })
 }
 
+/// Return the environment VibeAround should pass to child processes.
+///
+/// This is the cached shell environment plus the Startkit-managed toolchain
+/// paths unless the user explicitly selected `system` mode.
+pub fn child_env() -> HashMap<String, String> {
+    let mut env = enriched_env().clone();
+    if vibearound_managed_paths_enabled() {
+        prepend_vibearound_managed_paths(&mut env);
+    }
+    env
+}
+
 /// Create a `tokio::process::Command` with the enriched environment pre-set.
 /// Drop-in replacement for `tokio::process::Command::new(program)`.
 pub fn command(program: &str) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(program);
     hide_windows_console(&mut cmd);
     cmd.env_clear();
-    cmd.envs(enriched_env());
+    cmd.envs(child_env());
     cmd
 }
 
@@ -52,8 +67,47 @@ pub fn std_command(program: &str) -> std::process::Command {
     let mut cmd = std::process::Command::new(program);
     hide_windows_console_std(&mut cmd);
     cmd.env_clear();
-    cmd.envs(enriched_env());
+    cmd.envs(child_env());
     cmd
+}
+
+/// Return npm registry flags for installs started from VibeAround.
+///
+/// Startkit lets users choose a download source during onboarding. Native
+/// Startkit scripts get the source through `STARTKIT_NPM_REGISTRY`; Rust-side
+/// npm installs for ACP adapters and channel plugins need the same policy.
+pub fn npm_registry_args() -> Vec<String> {
+    npm_registry_url()
+        .map(|registry| vec!["--registry".to_string(), registry])
+        .unwrap_or_default()
+}
+
+pub fn npm_registry_url() -> Option<String> {
+    for key in ["STARTKIT_NPM_REGISTRY", "VIBEAROUND_NPM_REGISTRY"] {
+        if let Ok(value) = std::env::var(key) {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+
+    let path = crate::config::data_dir().join("settings.json");
+    let contents = std::fs::read_to_string(path).ok()?;
+    let json = serde_json::from_str::<serde_json::Value>(&contents).ok()?;
+    let source = json
+        .get("startkit")
+        .and_then(|value| value.get("source"))
+        .and_then(serde_json::Value::as_str)?;
+    npm_registry_for_source(source).map(str::to_string)
+}
+
+fn npm_registry_for_source(source: &str) -> Option<&'static str> {
+    match source {
+        "cn" => Some(NPM_REGISTRY_CN),
+        "global" => Some(NPM_REGISTRY_GLOBAL),
+        _ => None,
+    }
 }
 
 #[cfg(windows)]
@@ -215,6 +269,58 @@ fn probe_enriched_env() -> HashMap<String, String> {
     env
 }
 
+/// Prepend binaries installed by Startkit into the app-managed toolchain.
+///
+/// Startkit installs Node.js, npm global CLIs, and helper binaries under
+/// `~/.vibearound` instead of mutating system directories. Every child
+/// process launched by VibeAround should see those tools first.
+fn prepend_vibearound_managed_paths(env: &mut HashMap<String, String>) {
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    let home = crate::config::data_dir();
+    let candidates = [
+        home.join("bin"),
+        home.join("runtime").join("node").join("bin"),
+        home.join("runtime").join("node"),
+        home.join("npm-global").join("bin"),
+        home.join("npm-global"),
+    ];
+
+    let current = env.get("PATH").cloned().unwrap_or_default();
+    let mut parts: Vec<String> = current
+        .split(sep)
+        .filter(|part| !part.trim().is_empty())
+        .map(String::from)
+        .collect();
+
+    for candidate in candidates.iter().rev() {
+        let value = candidate.to_string_lossy().to_string();
+        let exists = if cfg!(windows) {
+            parts.iter().any(|part| part.eq_ignore_ascii_case(&value))
+        } else {
+            parts.iter().any(|part| part == &value)
+        };
+        if !exists {
+            parts.insert(0, value);
+        }
+    }
+
+    env.insert("PATH".to_string(), parts.join(&sep.to_string()));
+}
+
+fn vibearound_managed_paths_enabled() -> bool {
+    let path = crate::config::data_dir().join("settings.json");
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return true;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) else {
+        return true;
+    };
+    json.get("startkit")
+        .and_then(|value| value.get("toolchain_mode"))
+        .and_then(serde_json::Value::as_str)
+        != Some("system")
+}
+
 /// Probe the user's login shell for their full environment.
 #[cfg(unix)]
 fn probe_unix_login_shell_env() -> Option<HashMap<String, String>> {
@@ -343,6 +449,21 @@ fn enrich_windows_path(env: &mut HashMap<String, String>) {
         }
     }
     env.insert("PATH".to_string(), parts.join(sep));
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+
+    #[test]
+    fn maps_startkit_sources_to_npm_registries() {
+        assert_eq!(npm_registry_for_source("cn"), Some(NPM_REGISTRY_CN));
+        assert_eq!(
+            npm_registry_for_source("global"),
+            Some(NPM_REGISTRY_GLOBAL)
+        );
+        assert_eq!(npm_registry_for_source("custom"), None);
+    }
 }
 
 #[cfg(all(test, windows))]

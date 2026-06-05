@@ -45,6 +45,7 @@ tests/
 .playwright-cli/
 out.txt
 output/
+outputs/
 
 # Temp & cache
 tmp/
@@ -57,14 +58,14 @@ demo*/
 # Tooling
 *.tsbuildinfo
 
-# Exclude from commit (tooling / temp)
+# Local agent/tooling state
 .claude/
+.codex/
 .gemini/
 .specstory/
 .docs/
 .cursorindexingignore
 .superpowers/
-.gemini/
 
 # Plugins (managed separately, not committed to main repo)
 src/plugins/

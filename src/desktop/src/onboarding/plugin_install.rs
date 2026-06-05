@@ -29,7 +29,7 @@ pub struct InstallPluginResponse {
 /// spawn directly. Locating npm-cli.js next to `node` and calling it via node
 /// works cross-platform without any PATH or shell workarounds.
 async fn npm_process(
-    args: &[&str],
+    args: &[String],
     cwd: &std::path::Path,
 ) -> std::io::Result<tokio::process::Command> {
     let node_info = common::process::env::command("node")
@@ -77,7 +77,7 @@ async fn npm_process(
         })?;
 
     let mut node_args: Vec<String> = vec![npm_cli.to_string_lossy().to_string()];
-    node_args.extend(args.iter().map(|s| s.to_string()));
+    node_args.extend(args.iter().cloned());
 
     tracing::info!(
         "[npm_command] node {} {}",
@@ -108,7 +108,7 @@ pub(super) async fn run_install_inner(
     run_install_inner_with_progress(request, |_| {}, || false).await
 }
 
-pub(super) async fn run_install_inner_with_progress<F, C>(
+pub(crate) async fn run_install_inner_with_progress<F, C>(
     request: InstallPluginRequest,
     mut on_log: F,
     is_cancelled: C,
@@ -193,8 +193,10 @@ where
         tracing::info!("[install_plugin] npm install in {:?}", target_dir);
         logs.push("Running: npm install".into());
         on_log("Running: npm install".into());
+        let mut install_args = vec!["install".to_string()];
+        install_args.extend(common::process::env::npm_registry_args());
         let output = command_streaming(
-            npm_process(&["install"], &target_dir).await?,
+            npm_process(&install_args, &target_dir).await?,
             &mut on_log,
             &is_cancelled,
         )
@@ -213,8 +215,9 @@ where
         tracing::info!("[install_plugin] npm run build in {:?}", target_dir);
         logs.push("Running: npm run build".into());
         on_log("Running: npm run build".into());
+        let build_args = vec!["run".to_string(), "build".to_string()];
         let output = command_streaming(
-            npm_process(&["run", "build"], &target_dir).await?,
+            npm_process(&build_args, &target_dir).await?,
             &mut on_log,
             &is_cancelled,
         )
@@ -277,16 +280,22 @@ where
 
 #[tauri::command]
 pub fn check_plugin_status(plugin_id: String) -> String {
-    // Check both user plugins dir (~/.vibearound/plugins/) and project plugins dir (src/plugins/)
-    // via the discovery system which searches both paths.
-    if plugins::find(&plugin_id).is_some() {
-        return "ready".to_string();
-    }
-
     let plugin_def = resources::plugin_by_id(&plugin_id);
     let plugin_kind = plugin_def
         .map(|plugin| plugin.kind.as_str())
         .unwrap_or("channel");
+
+    // Onboarding installs must verify the per-user plugin tree. Project plugins
+    // are useful in debug builds, but they should not satisfy Startkit's
+    // "installed" check for a fresh user's ~/.vibearound/plugins directory.
+    let ready = match plugin_kind {
+        "channel" => plugins::channel::find_user(&plugin_id).is_some(),
+        _ => plugins::find_user(&plugin_id).is_some(),
+    };
+    if ready {
+        return "ready".to_string();
+    }
+
     let target_dir = plugins::user_plugins_dir().join(
         plugin_def
             .map(resources::PluginDef::install_dir_name)

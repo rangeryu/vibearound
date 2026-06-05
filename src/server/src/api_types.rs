@@ -114,12 +114,9 @@ impl AgentInfo {
 /// ```json
 /// {
 ///   "kind": "telegram",
+///   "version": "0.1.0",
 ///   "status": "running",
-///   "reason": null,
-///   "crash_count": 0,
-///   "last_seen_age_secs": 3,
-///   "restart_in_secs": 0,
-///   "started_at": 1713460000
+///   "reason": null
 /// }
 /// ```
 ///
@@ -128,12 +125,9 @@ impl AgentInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct ChannelRuntime {
     pub kind: String,
+    pub version: Option<String>,
     pub status: &'static str,
     pub reason: Option<String>,
-    pub crash_count: u32,
-    pub last_seen_age_secs: u64,
-    pub restart_in_secs: u64,
-    pub started_at: u64,
 }
 
 /// One tunnel, as returned by `GET /api/tunnels`.

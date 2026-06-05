@@ -7,6 +7,7 @@ use crate::routing::ChannelKind;
 #[derive(Debug, Clone)]
 pub struct ChannelPluginManifest {
     pub channel_kind: ChannelKind,
+    pub version: String,
     pub runtime: String,
     pub plugin_dir: PathBuf,
     pub entry_path: PathBuf,
@@ -22,6 +23,7 @@ impl ChannelPluginManifest {
         let raw_config = config::ensure_loaded().channel_raw_config(&channel_kind)?;
         Some(Self {
             channel_kind,
+            version: plugin.manifest.version.clone(),
             runtime: plugin.manifest.runtime.clone(),
             plugin_dir: plugin.dir.clone(),
             entry_path: plugin.entry_path(),
