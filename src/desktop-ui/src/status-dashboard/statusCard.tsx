@@ -25,6 +25,7 @@ export interface RuntimeStatusItem {
   status: string;
   tone: Tone;
   icon?: ReactNode;
+  dialogIcon?: ReactNode;
   details?: Array<{ label: string; value: ReactNode }>;
   actions?: ReactNode;
 }
@@ -151,27 +152,23 @@ function RuntimeStatusDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(440px,calc(100vw-28px))] p-0 sm:max-w-[min(440px,calc(100vw-28px))]">
-        <DialogHeader className="border-b border-border px-5 py-4 pr-12">
+      <DialogContent className="w-[min(400px,calc(100vw-28px))] gap-0 overflow-hidden p-0 sm:max-w-[min(400px,calc(100vw-28px))]">
+        <DialogHeader className="border-b border-border px-5 py-3.5 pr-12">
           <div className="flex items-center gap-3">
-            {item.icon}
+            {item.dialogIcon ?? item.icon}
             <div className="min-w-0">
               <DialogTitle className="truncate text-base">{item.name}</DialogTitle>
               <DialogDescription className="sr-only">
                 Runtime details and controls.
               </DialogDescription>
-              <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className={cn("h-2 w-2 rounded-full", toneDot(item.tone))} />
-                {item.status}
-              </div>
             </div>
           </div>
         </DialogHeader>
-        <div className="space-y-2 px-5 py-4">
+        <div className="space-y-1.5 px-5 py-3.5">
           {(item.details ?? []).map((detail) => (
             <div
               key={detail.label}
-              className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 text-xs"
+              className="grid grid-cols-[84px_minmax(0,1fr)] gap-3 text-xs leading-5"
             >
               <div className="text-muted-foreground">{detail.label}</div>
               <div className="min-w-0 break-words text-foreground">
@@ -181,7 +178,7 @@ function RuntimeStatusDialog({
           ))}
         </div>
         {item.actions && (
-          <DialogFooter className="border-t border-border px-5 py-3">
+          <DialogFooter className="items-center justify-center border-t border-border px-5 py-3 sm:!justify-center">
             {item.actions}
           </DialogFooter>
         )}

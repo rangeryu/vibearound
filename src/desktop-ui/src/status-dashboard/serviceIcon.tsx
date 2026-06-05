@@ -28,10 +28,12 @@ export function ServiceIconBadge({
   id,
   kind,
   tone,
+  showStatus = true,
 }: {
   id: string;
   kind: "channel" | "tunnel";
   tone: Tone;
+  showStatus?: boolean;
 }) {
   const meta =
     kind === "channel"
@@ -54,12 +56,14 @@ export function ServiceIconBadge({
           </span>
         )}
       </span>
-      <span
-        className={cn(
-          "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-card",
-          toneDot(tone),
-        )}
-      />
+      {showStatus && (
+        <span
+          className={cn(
+            "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-card",
+            toneDot(tone),
+          )}
+        />
+      )}
     </span>
   );
 }
@@ -68,10 +72,12 @@ export function AgentIconBadge({
   cliKind,
   label,
   tone,
+  showStatus = true,
 }: {
   cliKind: string | null;
   label: string;
   tone: Tone;
+  showStatus?: boolean;
 }) {
   const id = cliKind?.toLowerCase() ?? "agent";
 
@@ -84,12 +90,14 @@ export function AgentIconBadge({
         framed={false}
         className="h-7 w-7"
       />
-      <span
-        className={cn(
-          "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-card",
-          toneDot(tone),
-        )}
-      />
+      {showStatus && (
+        <span
+          className={cn(
+            "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-card",
+            toneDot(tone),
+          )}
+        />
+      )}
     </span>
   );
 }

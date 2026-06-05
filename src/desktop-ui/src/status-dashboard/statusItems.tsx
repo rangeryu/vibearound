@@ -1,4 +1,4 @@
-import { ExternalLink, Play, RotateCw, Square, X } from "lucide-react";
+import { ExternalLink, Play, RotateCw, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { openDashboardUrl } from "@/lib/api";
@@ -18,6 +18,9 @@ import {
 import { AgentIconBadge, ServiceIconBadge } from "./serviceIcon";
 import type { RuntimeStatusItem } from "./statusCard";
 import type { Tone, Translate } from "./types";
+
+const stopButtonClass =
+  "border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive";
 
 export function buildTunnelStatusItems({
   tunnels,
@@ -71,6 +74,14 @@ export function buildTunnelStatusItems({
           tone={presentation.tone}
         />
       ),
+      dialogIcon: (
+        <ServiceIconBadge
+          id={tunnel.provider}
+          kind="tunnel"
+          tone={presentation.tone}
+          showStatus={false}
+        />
+      ),
       details,
       actions: (
         <>
@@ -79,6 +90,7 @@ export function buildTunnelStatusItems({
               type="button"
               variant="outline"
               size="sm"
+              className="text-primary hover:text-primary"
               onClick={() => void openDashboardUrl(tunnel.url!)}
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -90,9 +102,10 @@ export function buildTunnelStatusItems({
               type="button"
               variant="outline"
               size="sm"
+              className={stopButtonClass}
               onClick={() => kill(tunnel.provider)}
             >
-              <X className="h-3.5 w-3.5" />
+              <Square className="h-3.5 w-3.5" />
               {t("Stop")}
             </Button>
           )}
@@ -142,6 +155,14 @@ export function buildChannelStatusItems({
           tone={presentation.tone}
         />
       ),
+      dialogIcon: (
+        <ServiceIconBadge
+          id={channel.kind}
+          kind="channel"
+          tone={presentation.tone}
+          showStatus={false}
+        />
+      ),
       details,
       actions: (
         <>
@@ -150,6 +171,7 @@ export function buildChannelStatusItems({
               type="button"
               variant="outline"
               size="sm"
+              className={stopButtonClass}
               onClick={() => stop(channel.kind)}
             >
               <Square className="h-3.5 w-3.5" />
@@ -158,7 +180,7 @@ export function buildChannelStatusItems({
           ) : (
             <Button
               type="button"
-              variant="outline"
+              variant="default"
               size="sm"
               onClick={() => start(channel.kind)}
             >
@@ -168,7 +190,7 @@ export function buildChannelStatusItems({
           )}
           <Button
             type="button"
-            variant="outline"
+            variant="default"
             size="sm"
             onClick={() => restart(channel.kind)}
           >
@@ -232,15 +254,24 @@ export function buildAgentStatusItems({
           tone={tone}
         />
       ),
+      dialogIcon: (
+        <AgentIconBadge
+          cliKind={agent.cli_kind}
+          label={name}
+          tone={tone}
+          showStatus={false}
+        />
+      ),
       details,
       actions: !failed ? (
         <Button
           type="button"
           variant="outline"
           size="sm"
+          className={stopButtonClass}
           onClick={() => kill(agent.route_key)}
         >
-          <X className="h-3.5 w-3.5" />
+          <Square className="h-3.5 w-3.5" />
           {t("Stop")}
         </Button>
       ) : null,
