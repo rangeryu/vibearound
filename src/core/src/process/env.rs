@@ -31,9 +31,8 @@ pub fn enriched_env() -> &'static HashMap<String, String> {
         tracing::info!(
             "[env] enriched environment ({} vars, PATH has {} entries)",
             result.len(),
-            result
-                .get("PATH")
-                .map(|p| p.matches(':').count() + 1)
+            path_value(&result)
+                .map(|p| p.matches(path_separator()).count() + 1)
                 .unwrap_or(0)
         );
         result
@@ -285,7 +284,7 @@ fn prepend_vibearound_managed_paths(env: &mut HashMap<String, String>) {
         home.join("npm-global"),
     ];
 
-    let current = env.get("PATH").cloned().unwrap_or_default();
+    let current = path_value(env).unwrap_or_default();
     let mut parts: Vec<String> = current
         .split(sep)
         .filter(|part| !part.trim().is_empty())
@@ -304,7 +303,50 @@ fn prepend_vibearound_managed_paths(env: &mut HashMap<String, String>) {
         }
     }
 
-    env.insert("PATH".to_string(), parts.join(&sep.to_string()));
+    set_path_value(env, parts.join(&sep.to_string()));
+}
+
+#[cfg(windows)]
+pub fn path_value(env: &HashMap<String, String>) -> Option<String> {
+    env.iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+        .map(|(_, value)| value.clone())
+}
+
+#[cfg(not(windows))]
+pub fn path_value(env: &HashMap<String, String>) -> Option<String> {
+    env.get("PATH").cloned()
+}
+
+#[cfg(windows)]
+pub fn path_env_key() -> &'static str {
+    "Path"
+}
+
+#[cfg(not(windows))]
+pub fn path_env_key() -> &'static str {
+    "PATH"
+}
+
+#[cfg(windows)]
+fn path_separator() -> char {
+    ';'
+}
+
+#[cfg(not(windows))]
+fn path_separator() -> char {
+    ':'
+}
+
+#[cfg(windows)]
+pub fn set_path_value(env: &mut HashMap<String, String>, value: String) {
+    env.retain(|key, _| !key.eq_ignore_ascii_case("PATH"));
+    env.insert(path_env_key().to_string(), value);
+}
+
+#[cfg(not(windows))]
+pub fn set_path_value(env: &mut HashMap<String, String>, value: String) {
+    env.insert(path_env_key().to_string(), value);
 }
 
 fn vibearound_managed_paths_enabled() -> bool {
@@ -426,7 +468,7 @@ fn enrich_unix_path_fallback(env: &mut HashMap<String, String>) {
 /// Windows: append well-known Node.js install directories to PATH.
 #[cfg(windows)]
 fn enrich_windows_path(env: &mut HashMap<String, String>) {
-    let current = env.get("PATH").cloned().unwrap_or_default();
+    let current = path_value(env).unwrap_or_default();
     let sep = ";";
     let mut parts: Vec<String> = current.split(sep).map(String::from).collect();
     let candidates: Vec<String> = vec![
@@ -448,7 +490,7 @@ fn enrich_windows_path(env: &mut HashMap<String, String>) {
             parts.push(candidate);
         }
     }
-    env.insert("PATH".to_string(), parts.join(sep));
+    set_path_value(env, parts.join(sep));
 }
 
 #[cfg(test)]
@@ -458,11 +500,37 @@ mod registry_tests {
     #[test]
     fn maps_startkit_sources_to_npm_registries() {
         assert_eq!(npm_registry_for_source("cn"), Some(NPM_REGISTRY_CN));
-        assert_eq!(
-            npm_registry_for_source("global"),
-            Some(NPM_REGISTRY_GLOBAL)
-        );
+        assert_eq!(npm_registry_for_source("global"), Some(NPM_REGISTRY_GLOBAL));
         assert_eq!(npm_registry_for_source("custom"), None);
+    }
+}
+
+#[cfg(windows)]
+#[cfg(test)]
+mod windows_path_tests {
+    use super::*;
+
+    #[test]
+    fn path_value_reads_windows_path_case_insensitively() {
+        let mut env = HashMap::new();
+        env.insert("Path".to_string(), r"C:\Program Files\Git\cmd".to_string());
+
+        assert_eq!(
+            path_value(&env).as_deref(),
+            Some(r"C:\Program Files\Git\cmd")
+        );
+    }
+
+    #[test]
+    fn set_path_value_replaces_any_existing_path_casing() {
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), "old".to_string());
+        env.insert("Path".to_string(), "older".to_string());
+
+        set_path_value(&mut env, "new".to_string());
+
+        assert_eq!(env.len(), 1);
+        assert_eq!(env.get("Path").map(String::as_str), Some("new"));
     }
 }
 

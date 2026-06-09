@@ -1001,10 +1001,8 @@ fn apply_startkit_env(
         .or_else(|| manifest.sources.get("global"))
         .ok_or_else(|| anyhow!("startkit source '{}' not found", choices.source))?;
 
-    let current_path = common::process::env::enriched_env()
-        .get("PATH")
-        .cloned()
-        .unwrap_or_default();
+    let current_path =
+        common::process::env::path_value(common::process::env::enriched_env()).unwrap_or_default();
     let sep = if cfg!(windows) { ";" } else { ":" };
     let path = if choices.toolchain_mode == "system" {
         current_path
@@ -1017,7 +1015,7 @@ fn apply_startkit_env(
         path.join(sep)
     };
 
-    command.env("PATH", path);
+    command.env(common::process::env::path_env_key(), path);
     command.env("STARTKIT_HOME", &paths.home);
     command.env("STARTKIT_ROOT", &paths.root);
     command.env("STARTKIT_BIN_DIR", &paths.bin_dir);
