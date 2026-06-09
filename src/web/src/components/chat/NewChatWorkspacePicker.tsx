@@ -36,6 +36,16 @@ function pathSeparatorFor(path: string) {
   return path.includes("\\") && !path.includes("/") ? "\\" : "/";
 }
 
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2 px-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
+      <span className="h-px w-14 bg-border/70 sm:w-20" aria-hidden="true" />
+      <span>{label}</span>
+      <span className="h-px w-14 bg-border/70 sm:w-20" aria-hidden="true" />
+    </div>
+  );
+}
+
 export function NewChatWorkspacePicker({
   workspaces,
   defaultWorkspacePath,
@@ -65,12 +75,10 @@ export function NewChatWorkspacePicker({
 
   return (
     <section className={cn("w-full", !panelLayout && "mx-auto max-w-4xl", className)}>
-      <div className="mb-2 flex items-center justify-between gap-3 px-1">
-        <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
-          {t("Workspaces")}
-        </div>
+      <div className="relative mb-2">
+        <SectionDivider label={t("Workspaces")} />
         {loading && (
-          <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground/60">
+          <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-1.5 font-mono text-[10px] text-muted-foreground/60 sm:flex">
             <Loader2 className="h-3 w-3 animate-spin" />
             {t("Loading")}
           </div>

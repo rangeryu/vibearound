@@ -1266,6 +1266,7 @@ export function ChatView({
                 }
                 targetLabel={agentLabel}
                 variant="hero"
+                className="pb-1"
               />
               <div className="space-y-4">
                 <NewChatAgentPicker
