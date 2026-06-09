@@ -51,6 +51,7 @@ export const zhCNWebDashboard: Record<string, string> = {
   ALL: "全部",
   "All agents": "全部 Agent",
   Projects: "项目",
+  Workspaces: "工作区",
   "No projects": "没有项目",
   "No chats": "没有聊天",
   "Show less": "收起",

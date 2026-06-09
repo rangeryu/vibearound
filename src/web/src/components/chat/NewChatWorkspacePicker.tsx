@@ -67,7 +67,7 @@ export function NewChatWorkspacePicker({
     <section className={cn("w-full", !panelLayout && "mx-auto max-w-4xl", className)}>
       <div className="mb-2 flex items-center justify-between gap-3 px-1">
         <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
-          {t("Workspace")}
+          {t("Workspaces")}
         </div>
         {loading && (
           <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground/60">
@@ -126,7 +126,9 @@ export function NewChatWorkspacePicker({
         <div
           className={cn(
             "grid grid-cols-1 gap-2",
-            panelLayout ? "overflow-visible" : "max-h-44 overflow-y-auto pr-1 sm:grid-cols-2",
+            panelLayout
+              ? "max-h-56 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3"
+              : "max-h-44 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3",
           )}
         >
           {workspaces.map((workspace) => {
@@ -136,7 +138,7 @@ export function NewChatWorkspacePicker({
                 key={workspace.path}
                 type="button"
                 className={cn(
-                  "flex min-w-0 items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors",
+                  "flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors",
                   selected
                     ? "border-primary/50 bg-primary/5 text-foreground"
                     : "border-border bg-muted/20 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
@@ -145,12 +147,12 @@ export function NewChatWorkspacePicker({
                 aria-pressed={selected}
                 onClick={() => onWorkspaceChange(workspace.path)}
               >
-                <Folder className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium">
+                  <span className="block truncate text-[11px] font-medium leading-4">
                     {workspaceLabel(workspace.path)}
                   </span>
-                  <span className="block truncate text-[11px] leading-4 text-muted-foreground/70">
+                  <span className="block truncate text-[10px] leading-4 text-muted-foreground/70">
                     {workspace.path}
                   </span>
                 </span>

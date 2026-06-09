@@ -1267,7 +1267,7 @@ export function ChatView({
                 targetLabel={agentLabel}
                 variant="hero"
               />
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-4">
                 <NewChatAgentPicker
                   agents={agents}
                   profiles={profiles}
