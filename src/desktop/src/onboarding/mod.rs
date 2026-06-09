@@ -21,12 +21,18 @@ pub use plugin_session::PluginSession;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::{Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use anyhow::Context;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tokio::io::AsyncReadExt;
 use tokio::sync::{Mutex, Notify};
+use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use crate::{restart_daemon, OnboardingActive};
 use common::{config, plugins};
@@ -70,6 +76,19 @@ pub struct InstallProgressEvent {
     pub label: String,
     pub status: String,
     pub message: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentUpdateCheckRequest {
+    pub agent_ids: Vec<String>,
+    pub choices: StartkitChoices,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginUpdateCheckRequest {
+    pub plugin_ids: Vec<String>,
 }
 
 /// Task info returned by `get_install_manifest`.
@@ -214,43 +233,110 @@ pub async fn scan_agent_install_status(
     settings: Value,
     choices: StartkitChoices,
 ) -> Result<Vec<StartkitItemReport>, String> {
-    let all_agent_ids = common::resources::AGENTS
-        .iter()
-        .map(|agent| agent.id.clone())
-        .collect::<Vec<_>>();
-    let scan_choices = StartkitChoices {
-        agents: all_agent_ids,
-        tunnel: "none".to_string(),
-        channels: Vec::new(),
-        source: choices.source,
-        toolchain_mode: choices.toolchain_mode,
-        shell_path: false,
-    };
-    let startkit_report = crate::startkit::scan(&settings, &scan_choices, None)
+    Ok(agent_cli_reports(&settings, &choices, &choices.agents)
         .await
-        .map_err(|error| error.to_string())?;
-    let mut startkit_reports = startkit_report
-        .reports
+        .map_err(|error| error.to_string())?)
+}
+
+async fn agent_cli_reports(
+    settings: &Value,
+    choices: &StartkitChoices,
+    agent_ids: &[String],
+) -> anyhow::Result<Vec<StartkitItemReport>> {
+    let startkit_reports = crate::startkit::scan_agent_cli_reports(settings, choices, agent_ids)
+        .await?
         .into_iter()
         .map(|report| (report.id.clone(), report))
         .collect::<HashMap<_, _>>();
+    let mut reports = Vec::new();
 
-    Ok(common::resources::AGENTS
-        .iter()
-        .map(|agent| {
-            let report_id = format!("agents.{}.cli", agent.id);
-            startkit_reports
-                .remove(&report_id)
-                .unwrap_or_else(|| path_agent_report(agent, report_id))
-        })
-        .collect())
+    for agent_id in agent_ids {
+        let report_id = format!("agents.{agent_id}.cli");
+        if let Some(report) = startkit_reports.get(&report_id) {
+            reports.push(report.clone());
+            continue;
+        }
+        if let Some(agent) = common::resources::agent_by_id(agent_id) {
+            reports.push(agent_install_report(agent.clone(), &choices.toolchain_mode).await);
+        }
+    }
+
+    Ok(reports)
 }
 
-fn path_agent_report(agent: &common::resources::AgentDef, report_id: String) -> StartkitItemReport {
+#[tauri::command]
+pub async fn check_agent_updates(
+    request: AgentUpdateCheckRequest,
+) -> Result<Vec<StartkitItemReport>, String> {
+    let mut tasks = JoinSet::new();
+
+    for agent_id in request.agent_ids {
+        let choices = request.choices.clone();
+        tasks.spawn(async move { agent_update_report(agent_id, choices).await });
+    }
+
+    let mut reports = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        if let Some(report) = result.map_err(|error| error.to_string())? {
+            reports.push(report);
+        }
+    }
+    Ok(reports)
+}
+
+#[tauri::command]
+pub async fn check_plugin_updates(
+    request: PluginUpdateCheckRequest,
+) -> Result<Vec<StartkitItemReport>, String> {
+    let mut tasks = JoinSet::new();
+
+    for plugin_id in request.plugin_ids {
+        tasks.spawn(async move { plugin_update_report(plugin_id).await });
+    }
+
+    let mut reports = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        if let Some(report) = result.map_err(|error| error.to_string())? {
+            reports.push(report);
+        }
+    }
+    Ok(reports)
+}
+
+async fn agent_install_report(
+    agent: common::resources::AgentDef,
+    toolchain_mode: &str,
+) -> StartkitItemReport {
     let program =
         program_from_command(&agent.pty.command).unwrap_or_else(|| agent.acp.program.clone());
-    let path = resolve_program_path(&program);
+    let report_id = format!("agents.{}.cli", agent.id);
+    let path = resolve_program_path(&program, toolchain_mode).await;
     let installed = path.is_some();
+    let version = if installed {
+        match program_version(&program, toolchain_mode).await {
+            Ok(version) => version,
+            Err(error) => {
+                return StartkitItemReport {
+                    id: report_id,
+                    label: agent.display_name,
+                    group: "agents".to_string(),
+                    category: "agents".to_string(),
+                    status: StartkitItemStatus::Broken,
+                    severity: None,
+                    version: None,
+                    latest_version: None,
+                    path,
+                    message: Some(format!("{program} is present but not usable: {error}")),
+                    actions: vec!["install".to_string()],
+                    secret: false,
+                    settings_key: None,
+                };
+            }
+        }
+    } else {
+        None
+    };
+
     StartkitItemReport {
         id: report_id,
         label: agent.display_name.clone(),
@@ -262,7 +348,8 @@ fn path_agent_report(agent: &common::resources::AgentDef, report_id: String) -> 
             StartkitItemStatus::Missing
         },
         severity: None,
-        version: None,
+        version,
+        latest_version: None,
         path,
         message: Some(if installed {
             format!("{program} found")
@@ -275,6 +362,100 @@ fn path_agent_report(agent: &common::resources::AgentDef, report_id: String) -> 
     }
 }
 
+async fn agent_update_report(
+    agent_id: String,
+    choices: StartkitChoices,
+) -> Option<StartkitItemReport> {
+    let local = agent_cli_reports(&Value::Null, &choices, std::slice::from_ref(&agent_id))
+        .await
+        .ok()?
+        .into_iter()
+        .next()?;
+    let Some(target) = crate::startkit::agent_cli_update_target(&agent_id) else {
+        return Some(local);
+    };
+
+    let latest = match npm_latest_version(&target.npm_package, &choices.source).await {
+        Ok(Some(version)) => version,
+        _ => return Some(local),
+    };
+    let local_version = local_npm_package_version(&target.npm_package)
+        .or_else(|| local.version.as_deref().and_then(extract_semver));
+    let mut report = local;
+    report.label = target.label;
+    report.id = target.report_id;
+    report.latest_version = Some(latest.clone());
+
+    if report.status == StartkitItemStatus::Ok && local_version.as_deref() != Some(latest.as_str())
+    {
+        report.status = StartkitItemStatus::Outdated;
+        report.message = Some(format!("{} {} is available", target.program, latest));
+        report.actions = vec!["install".to_string()];
+    } else if report.status == StartkitItemStatus::Ok {
+        report.message = Some(format!("{} is up to date", target.program));
+    } else if report.status == StartkitItemStatus::Missing {
+        report.message = Some(format!("{} {} is available", target.program, latest));
+        report.actions = vec!["install".to_string()];
+    }
+    Some(report)
+}
+
+async fn plugin_update_report(plugin_id: String) -> Option<StartkitItemReport> {
+    let plugin_def = common::resources::plugin_by_id(&plugin_id)?;
+    let discovered = common::plugins::find_user(&plugin_id);
+    let local_version = discovered
+        .as_ref()
+        .map(|plugin| plugin.manifest.version.clone());
+
+    let mut report = StartkitItemReport {
+        id: format!("channels.plugins.{plugin_id}"),
+        label: plugin_def.name.clone(),
+        group: "messaging".to_string(),
+        category: "channels".to_string(),
+        status: if discovered.is_some() {
+            StartkitItemStatus::Ok
+        } else {
+            StartkitItemStatus::Missing
+        },
+        severity: None,
+        version: local_version.clone(),
+        latest_version: None,
+        path: discovered
+            .as_ref()
+            .map(|plugin| plugin.entry_path().to_string_lossy().to_string()),
+        message: Some(if discovered.is_some() {
+            "Plugin is installed".to_string()
+        } else {
+            "Plugin is not installed".to_string()
+        }),
+        actions: if discovered.is_some() {
+            Vec::new()
+        } else {
+            vec!["install".to_string()]
+        },
+        secret: false,
+        settings_key: None,
+    };
+
+    let latest = match github_plugin_version(&plugin_def.github).await {
+        Ok(Some(version)) => version,
+        _ => return Some(report),
+    };
+    report.latest_version = Some(latest.clone());
+    if local_version.as_deref() != Some(latest.as_str()) {
+        report.status = if discovered.is_some() {
+            StartkitItemStatus::Outdated
+        } else {
+            StartkitItemStatus::Missing
+        };
+        report.message = Some(format!("{} {} is available", plugin_def.name, latest));
+        report.actions = vec!["install".to_string()];
+    } else {
+        report.message = Some(format!("{} is up to date", plugin_def.name));
+    }
+    Some(report)
+}
+
 fn program_from_command(command: &str) -> Option<String> {
     command
         .split_whitespace()
@@ -283,11 +464,12 @@ fn program_from_command(command: &str) -> Option<String> {
         .filter(|program| !program.is_empty())
 }
 
-fn resolve_program_path(program: &str) -> Option<String> {
+async fn resolve_program_path(program: &str, toolchain_mode: &str) -> Option<String> {
     let lookup = if cfg!(windows) { "where" } else { "which" };
-    let output = common::process::env::std_command(lookup)
-        .arg(program)
-        .output()
+    let mut command = common::process::env::command_for_toolchain_mode(lookup, toolchain_mode);
+    command.arg(program);
+    let output = command_output_with_timeout(command, Duration::from_secs(2))
+        .await
         .ok()?;
     if !output.status.success() {
         return None;
@@ -297,6 +479,231 @@ fn resolve_program_path(program: &str) -> Option<String> {
         .map(str::trim)
         .find(|line| !line.is_empty())
         .map(str::to_string)
+}
+
+async fn program_version(program: &str, toolchain_mode: &str) -> Result<Option<String>, String> {
+    let mut command = common::process::env::command_for_toolchain_mode(program, toolchain_mode);
+    command.arg("--version");
+    let output = command_output_with_timeout(command, Duration::from_secs(3)).await?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let first_line = stdout
+        .lines()
+        .chain(stderr.lines())
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string);
+
+    if !output.status.success() {
+        return Err(first_line.unwrap_or_else(|| format!("exited with {}", output.status)));
+    }
+
+    Ok(first_line)
+}
+
+async fn command_output_with_timeout(
+    mut command: tokio::process::Command,
+    max_duration: Duration,
+) -> Result<Output, String> {
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+    command.kill_on_drop(true);
+
+    let mut child = command.spawn().map_err(|error| error.to_string())?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "stdout was not captured".to_string())?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "stderr was not captured".to_string())?;
+
+    let stdout_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        stdout.read_to_end(&mut buf).await.map(|_| buf)
+    });
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        stderr.read_to_end(&mut buf).await.map(|_| buf)
+    });
+
+    let started = Instant::now();
+    let status = loop {
+        if started.elapsed() >= max_duration {
+            let _ = child.kill().await;
+            return Err("version check timed out".to_string());
+        }
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            break status;
+        }
+        sleep(Duration::from_millis(50)).await;
+    };
+
+    let stdout = stdout_task
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+    let stderr = stderr_task
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+async fn npm_latest_version(package: &str, source: &str) -> anyhow::Result<Option<String>> {
+    if let Some(version) = requested_package_version(package) {
+        return Ok(Some(version));
+    }
+
+    let package_name = npm_package_name(package);
+    let encoded = encode_npm_package_for_url(&package_name);
+    let registry = npm_registry_for_source(source);
+    let url = format!("{}/{}", registry.trim_end_matches('/'), encoded);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .context("build npm metadata client")?;
+    let value: serde_json::Value = client
+        .get(url)
+        .header("accept", "application/vnd.npm.install-v1+json")
+        .send()
+        .await
+        .context("fetch npm package metadata")?
+        .error_for_status()
+        .context("npm package metadata status")?
+        .json()
+        .await
+        .context("parse npm package metadata")?;
+    Ok(value
+        .get("dist-tags")
+        .and_then(|tags| tags.get("latest"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string))
+}
+
+async fn github_plugin_version(github_url: &str) -> anyhow::Result<Option<String>> {
+    let Some(url) = github_raw_plugin_manifest_url(github_url) else {
+        return Ok(None);
+    };
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .context("build plugin metadata client")?;
+    let value: serde_json::Value = client
+        .get(url)
+        .header("accept", "application/json")
+        .send()
+        .await
+        .context("fetch plugin manifest")?
+        .error_for_status()
+        .context("plugin manifest status")?
+        .json()
+        .await
+        .context("parse plugin manifest")?;
+    Ok(value
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string))
+}
+
+fn npm_registry_for_source(source: &str) -> &'static str {
+    match source {
+        "cn" => "https://registry.npmmirror.com",
+        _ => "https://registry.npmjs.org",
+    }
+}
+
+fn npm_package_name(package: &str) -> String {
+    if let Some(rest) = package.strip_prefix('@') {
+        if let Some((scope, name_and_version)) = rest.split_once('/') {
+            let name = name_and_version
+                .rsplit_once('@')
+                .map(|(name, _)| name)
+                .unwrap_or(name_and_version);
+            return format!("@{scope}/{name}");
+        }
+    }
+    package
+        .rsplit_once('@')
+        .map(|(name, _)| name)
+        .unwrap_or(package)
+        .to_string()
+}
+
+fn requested_package_version(package: &str) -> Option<String> {
+    if let Some(rest) = package.strip_prefix('@') {
+        let (_, name_and_version) = rest.split_once('/')?;
+        return name_and_version
+            .rsplit_once('@')
+            .and_then(|(_, version)| (!version.is_empty()).then(|| version.to_string()));
+    }
+    package
+        .rsplit_once('@')
+        .and_then(|(_, version)| (!version.is_empty()).then(|| version.to_string()))
+}
+
+fn encode_npm_package_for_url(package: &str) -> String {
+    package.replace('@', "%40").replace('/', "%2F")
+}
+
+fn local_npm_package_version(package: &str) -> Option<String> {
+    let package = npm_package_name(package);
+    let prefix = common::config::data_dir().join("npm-global");
+    for root in [
+        prefix.join("node_modules"),
+        prefix.join("lib").join("node_modules"),
+    ] {
+        let package_json = package
+            .split('/')
+            .fold(root, |path, segment| path.join(segment))
+            .join("package.json");
+        let Ok(contents) = std::fs::read_to_string(package_json) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) else {
+            continue;
+        };
+        if let Some(version) = value.get("version").and_then(serde_json::Value::as_str) {
+            return Some(version.to_string());
+        }
+    }
+    None
+}
+
+fn extract_semver(value: &str) -> Option<String> {
+    for token in value.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')) {
+        let token = token.trim_start_matches('v');
+        let mut parts = token.split('.');
+        let major = parts.next()?;
+        let minor = parts.next()?;
+        let patch = parts.next()?;
+        if major.chars().all(|ch| ch.is_ascii_digit())
+            && minor.chars().all(|ch| ch.is_ascii_digit())
+            && patch.chars().next().is_some_and(|ch| ch.is_ascii_digit())
+        {
+            return Some(token.to_string());
+        }
+    }
+    None
+}
+
+fn github_raw_plugin_manifest_url(github_url: &str) -> Option<String> {
+    let trimmed = github_url.trim().trim_end_matches(".git");
+    let marker = "github.com/";
+    let (_, rest) = trimmed.split_once(marker)?;
+    let mut segments = rest.split('/').filter(|segment| !segment.is_empty());
+    let owner = segments.next()?;
+    let repo = segments.next()?;
+    Some(format!(
+        "https://raw.githubusercontent.com/{owner}/{repo}/HEAD/plugin.json"
+    ))
 }
 
 #[tauri::command]

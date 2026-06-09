@@ -229,6 +229,7 @@ export interface StartkitItemReport {
   status: StartkitStatus;
   severity?: string;
   version?: string;
+  latestVersion?: string;
   path?: string;
   message?: string;
   actions: string[];

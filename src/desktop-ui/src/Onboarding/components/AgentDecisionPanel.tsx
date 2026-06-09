@@ -127,6 +127,10 @@ function AgentGrid({
       {agents.map((agent) => {
         const selected = enabled.has(agent.id);
         const report = reports.get(`agents.${agent.id}.cli`);
+        const visibleReport =
+          !selected && (report?.status === "running" || report?.status === "outdated")
+            ? { ...report, status: "ok" as const, latestVersion: undefined, message: undefined }
+            : report;
         return (
           <button
             key={agent.id}
@@ -150,7 +154,11 @@ function AgentGrid({
                 {agent.display_name}
               </span>
               <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                {report ? compactReportLabel(report, t) : scanning ? t("Checking") : t("Not installed")}
+                {visibleReport
+                  ? compactReportLabel(visibleReport, t)
+                  : scanning
+                    ? t("Waiting for check")
+                    : t("Not installed")}
               </span>
             </span>
             <Checkbox

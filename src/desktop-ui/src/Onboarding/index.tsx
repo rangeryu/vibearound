@@ -88,12 +88,17 @@ export default function Onboarding() {
 
   const startkit = useStartkitFlow();
   const autoScanSignatureRef = useRef<string | null>(null);
-  const agentScanSignatureRef = useRef<string | null>(null);
+  const checkedAgentSignaturesRef = useRef<Set<string>>(new Set());
+  const checkedAgentUpdateSignaturesRef = useRef<Set<string>>(new Set());
+  const checkedPluginSignaturesRef = useRef<Set<string>>(new Set());
   const refreshedPluginsAfterInstallRef = useRef(false);
   const [agentInstallReports, setAgentInstallReports] = useState<
     StartkitItemReport[]
   >([]);
   const [agentStatusScanning, setAgentStatusScanning] = useState(false);
+  const [pluginUpdateReports, setPluginUpdateReports] = useState<
+    StartkitItemReport[]
+  >([]);
 
   useOnboardingInitialLoad({
     setSettings,
@@ -116,10 +121,6 @@ export default function Onboarding() {
     setCfToken,
     setCfHostname,
   });
-
-  useEffect(() => {
-    if (toolchainMode !== "auto") setToolchainMode("auto");
-  }, [toolchainMode]);
 
   const registryPluginIds = useMemo(
     () => new Set(pluginRegistry.map((plugin) => plugin.id)),
@@ -198,28 +199,57 @@ export default function Onboarding() {
   const scanSignature = useMemo(() => JSON.stringify(choices), [choices]);
   const agentStatusChoices = useMemo<StartkitChoices>(
     () => ({
-      agents: agents.map((agent) => agent.id),
+      agents: [],
       tunnel: "none",
       channels: [],
       source: downloadSource,
       toolchainMode,
       shellPath: false,
     }),
-    [agents, downloadSource, toolchainMode],
+    [downloadSource, toolchainMode],
   );
-  const agentStatusSignature = useMemo(
-    () =>
-      JSON.stringify({
-        agents: agentStatusChoices.agents,
-        source: agentStatusChoices.source,
-        toolchainMode: agentStatusChoices.toolchainMode,
-        installComplete: startkit.complete,
-      }),
-    [agentStatusChoices, startkit.complete],
+
+  const checkAgentUpdates = useCallback(
+    (agentIds: string[]) => {
+      const pendingAgentIds = agentIds.filter((agentId) => {
+        const signature = itemCheckSignature(agentId, downloadSource, toolchainMode);
+        return !checkedAgentUpdateSignaturesRef.current.has(signature);
+      });
+      if (pendingAgentIds.length === 0) return;
+      for (const agentId of pendingAgentIds) {
+        checkedAgentUpdateSignaturesRef.current.add(
+          itemCheckSignature(agentId, downloadSource, toolchainMode),
+        );
+      }
+
+      const reportIds = new Set(pendingAgentIds.map((id) => `agents.${id}.cli`));
+      setAgentInstallReports((previous) =>
+        markReportsUpdating(previous, reportIds, t("Checking updates")),
+      );
+
+      void invoke<StartkitItemReport[]>("check_agent_updates", {
+        request: {
+          agentIds: pendingAgentIds,
+          choices: {
+            ...agentStatusChoices,
+            agents: pendingAgentIds,
+          },
+        },
+      })
+        .then((reports) => {
+          setAgentInstallReports((previous) =>
+            mergeReportsById(previous, reports),
+          );
+        })
+        .catch((error) => {
+          console.error("failed to check agent updates", error);
+        });
+    },
+    [agentStatusChoices, downloadSource, t, toolchainMode],
   );
 
   useEffect(() => {
-    if (!loaded || startkit.running) return;
+    if (!loaded || activeStep !== "install" || startkit.running) return;
     if (autoScanSignatureRef.current === scanSignature) return;
     autoScanSignatureRef.current = scanSignature;
 
@@ -227,39 +257,120 @@ export default function Onboarding() {
       void startkit.scan(finalSettings, choices);
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [loaded, scanSignature, startkit.running, startkit.scan, finalSettings, choices]);
+  }, [
+    activeStep,
+    loaded,
+    scanSignature,
+    startkit.running,
+    startkit.scan,
+    finalSettings,
+    choices,
+  ]);
 
   useEffect(() => {
-    if (!loaded || agents.length === 0 || startkit.running) return;
-    if (agentScanSignatureRef.current === agentStatusSignature) return;
-    agentScanSignatureRef.current = agentStatusSignature;
-    let cancelled = false;
-
+    if (!loaded || activeStep !== "agents" || agents.length === 0 || startkit.running) return;
+    const agentIds = Array.from(enabledAgents).sort();
+    const pendingAgentIds = agentIds.filter((agentId) => {
+      const signature = itemCheckSignature(agentId, downloadSource, toolchainMode);
+      return !checkedAgentSignaturesRef.current.has(signature);
+    });
+    if (pendingAgentIds.length === 0) return;
+    for (const agentId of pendingAgentIds) {
+      checkedAgentSignaturesRef.current.add(
+        itemCheckSignature(agentId, downloadSource, toolchainMode),
+      );
+    }
     setAgentStatusScanning(true);
     void invoke<StartkitItemReport[]>("scan_agent_install_status", {
       settings,
-      choices: agentStatusChoices,
+      choices: {
+        ...agentStatusChoices,
+        agents: pendingAgentIds,
+      },
     })
       .then((reports) => {
-        if (!cancelled) setAgentInstallReports(reports);
+        setAgentInstallReports((previous) =>
+          mergeReportsById(previous, reports),
+        );
+        const updateAgentIds = reports
+          .filter((report) =>
+            report.status === "ok" ||
+            report.status === "missing" ||
+            report.status === "outdated"
+          )
+          .map(agentIdFromReport)
+          .filter((id): id is string => Boolean(id));
+        if (updateAgentIds.length > 0) {
+          void checkAgentUpdates(updateAgentIds);
+        }
       })
       .catch((error) => {
         console.error("failed to scan agent install status", error);
       })
       .finally(() => {
-        if (!cancelled) setAgentStatusScanning(false);
+        setAgentStatusScanning(false);
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [
-    loaded,
-    agents.length,
-    startkit.running,
-    agentStatusSignature,
-    settings,
+    activeStep,
     agentStatusChoices,
+    checkAgentUpdates,
+    downloadSource,
+    enabledAgents,
+    agents.length,
+    loaded,
+    settings,
+    startkit.running,
+    toolchainMode,
+  ]);
+
+  useEffect(() => {
+    if (!loaded || activeStep !== "im") return;
+    const pluginIds = Array.from(enabledChannels).sort();
+    if (pluginIds.length === 0) return;
+    const pendingPluginIds = pluginIds.filter((id) => {
+      const discovered = discoveredPlugins.find((plugin) => plugin.id === id);
+      const signature = itemCheckSignature(
+        id,
+        discovered?.version ?? "not-installed",
+        "plugin",
+      );
+      return !checkedPluginSignaturesRef.current.has(signature);
+    });
+    if (pendingPluginIds.length === 0) return;
+    for (const id of pendingPluginIds) {
+      const discovered = discoveredPlugins.find((plugin) => plugin.id === id);
+      checkedPluginSignaturesRef.current.add(
+        itemCheckSignature(id, discovered?.version ?? "not-installed", "plugin"),
+      );
+    }
+
+    setPluginUpdateReports((previous) =>
+      mergeReportsById(
+        previous,
+        pendingPluginIds.map((id) =>
+          pluginCheckingReport(id, pluginRegistry, discoveredPlugins, t),
+        ),
+      ),
+    );
+
+    void invoke<StartkitItemReport[]>("check_plugin_updates", {
+      request: { pluginIds: pendingPluginIds },
+    })
+      .then((reports) => {
+        setPluginUpdateReports((previous) =>
+          mergeReportsById(previous, reports),
+        );
+      })
+      .catch((error) => {
+        console.error("failed to check plugin updates", error);
+      });
+  }, [
+    activeStep,
+    discoveredPlugins,
+    enabledChannels,
+    loaded,
+    pluginRegistry,
+    t,
   ]);
 
   useEffect(() => {
@@ -380,7 +491,13 @@ export default function Onboarding() {
     return reports;
   }, [agentInstallReports, startkit.reportById]);
   const hasScanned = startkit.reports.some((report) => report.status !== "pending");
-  const hasInstallWork = startkit.reports.some(reportNeedsInstall);
+  const hasAgentUpdateWork = agentInstallReports.some(
+    (report) =>
+      report.status === "outdated" &&
+      choices.agents.includes(report.id.replace(/^agents\./, "").replace(/\.cli$/, "")),
+  );
+  const hasInstallWork =
+    startkit.reports.some(reportNeedsInstall) || hasAgentUpdateWork;
   const hasBlockingReport = startkit.reports.some((report) =>
     ["blocked", "error"].includes(report.status),
   );
@@ -536,10 +653,11 @@ export default function Onboarding() {
           agents={agents}
           enabledAgents={enabledAgents}
           reportsById={agentReportsById}
-          scanning={agentStatusScanning}
+          scanning={activeStep === "install" ? startkit.scanning : agentStatusScanning}
           onToggleAgent={toggleAgent}
           pluginRegistry={pluginRegistry}
           discoveredPlugins={discoveredPlugins}
+          pluginReports={pluginUpdateReports}
           enabledChannels={enabledChannels}
           onToggleChannel={toggleChannel}
           tunnels={tunnels}
@@ -585,4 +703,57 @@ export default function Onboarding() {
       />
     </div>
   );
+}
+
+function mergeReportsById(
+  previous: StartkitItemReport[],
+  incoming: StartkitItemReport[],
+): StartkitItemReport[] {
+  const merged = new Map(previous.map((report) => [report.id, report]));
+  for (const report of incoming) merged.set(report.id, report);
+  return Array.from(merged.values());
+}
+
+function markReportsUpdating(
+  reports: StartkitItemReport[],
+  reportIds: Set<string>,
+  message: string,
+): StartkitItemReport[] {
+  return reports.map((report) =>
+    reportIds.has(report.id) &&
+    (report.status === "ok" || report.status === "missing" || report.status === "outdated")
+      ? { ...report, status: "running", message }
+      : report,
+  );
+}
+
+function agentIdFromReport(report: StartkitItemReport): string | null {
+  const match = /^agents\.(.+)\.cli$/.exec(report.id);
+  return match?.[1] ?? null;
+}
+
+function itemCheckSignature(id: string, ...parts: string[]): string {
+  return JSON.stringify([id, ...parts]);
+}
+
+function pluginCheckingReport(
+  pluginId: string,
+  registry: PluginRegistryEntry[],
+  discoveredPlugins: DiscoveredChannelPlugin[],
+  t: (key: string, params?: Record<string, string | number>) => string,
+): StartkitItemReport {
+  const entry = registry.find((plugin) => plugin.id === pluginId);
+  const discovered = discoveredPlugins.find((plugin) => plugin.id === pluginId);
+  return {
+    id: `channels.plugins.${pluginId}`,
+    label: entry?.name ?? discovered?.name ?? pluginId,
+    group: "messaging",
+    category: "channels",
+    status: "running",
+    version: discovered?.version,
+    path: discovered?.entry,
+    message: t("Checking updates"),
+    actions: [],
+    secret: false,
+  };
 }

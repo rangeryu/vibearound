@@ -25,6 +25,7 @@ export function OnboardingStepContent({
   onToggleAgent,
   pluginRegistry,
   discoveredPlugins,
+  pluginReports,
   enabledChannels,
   onToggleChannel,
   tunnels,
@@ -64,6 +65,7 @@ export function OnboardingStepContent({
   onToggleAgent: (id: AgentId) => void;
   pluginRegistry: PluginRegistryEntry[];
   discoveredPlugins: DiscoveredChannelPlugin[];
+  pluginReports: StartkitItemReport[];
   enabledChannels: Set<string>;
   onToggleChannel: (pluginId: string, enabled: boolean) => void;
   tunnels: TunnelSummary[];
@@ -118,6 +120,7 @@ export function OnboardingStepContent({
         <ImDecisionPanel
           pluginRegistry={pluginRegistry}
           discoveredPlugins={discoveredPlugins}
+          pluginReports={pluginReports}
           enabledChannels={enabledChannels}
           onToggleChannel={onToggleChannel}
         />

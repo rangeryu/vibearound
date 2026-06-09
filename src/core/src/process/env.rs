@@ -45,8 +45,21 @@ pub fn enriched_env() -> &'static HashMap<String, String> {
 /// This is the cached shell environment plus the Startkit-managed toolchain
 /// paths unless the user explicitly selected `system` mode.
 pub fn child_env() -> HashMap<String, String> {
+    let mode = if vibearound_managed_paths_enabled() {
+        "auto"
+    } else {
+        "system"
+    };
+    child_env_for_toolchain_mode(mode)
+}
+
+/// Return the child environment for an explicit Startkit toolchain mode.
+///
+/// Onboarding uses this before settings are saved, so detection reflects the
+/// user's current UI choice instead of the last persisted value.
+pub fn child_env_for_toolchain_mode(toolchain_mode: &str) -> HashMap<String, String> {
     let mut env = enriched_env().clone();
-    if vibearound_managed_paths_enabled() {
+    if toolchain_mode != "system" {
         prepend_vibearound_managed_paths(&mut env);
     }
     env
@@ -59,6 +72,15 @@ pub fn command(program: &str) -> tokio::process::Command {
     hide_windows_console(&mut cmd);
     cmd.env_clear();
     cmd.envs(child_env());
+    cmd
+}
+
+/// Create a `tokio::process::Command` for an explicit Startkit toolchain mode.
+pub fn command_for_toolchain_mode(program: &str, toolchain_mode: &str) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    hide_windows_console(&mut cmd);
+    cmd.env_clear();
+    cmd.envs(child_env_for_toolchain_mode(toolchain_mode));
     cmd
 }
 
@@ -458,10 +480,7 @@ mod registry_tests {
     #[test]
     fn maps_startkit_sources_to_npm_registries() {
         assert_eq!(npm_registry_for_source("cn"), Some(NPM_REGISTRY_CN));
-        assert_eq!(
-            npm_registry_for_source("global"),
-            Some(NPM_REGISTRY_GLOBAL)
-        );
+        assert_eq!(npm_registry_for_source("global"), Some(NPM_REGISTRY_GLOBAL));
         assert_eq!(npm_registry_for_source("custom"), None);
     }
 }

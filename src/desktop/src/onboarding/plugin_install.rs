@@ -134,16 +134,58 @@ where
 
     if has_step(&install_steps, "git_clone") {
         // If a previous install left a partial directory, wipe it for a clean clone.
+        // Complete git installs are refreshed to the registry HEAD so "Install"
+        // also acts as "Update" for already-installed plugins.
         let needs_clone = if target_dir.exists() {
             if installed_tree_complete(&target_dir, plugin_kind) {
-                tracing::info!(
-                    "[install_plugin] {} already installed at {:?}, skipping clone",
-                    request.plugin_id,
-                    target_dir
-                );
-                logs.push("Existing plugin directory is complete; skipping git clone".into());
-                on_log("Existing plugin directory is complete; skipping git clone".into());
-                false
+                if target_dir.join(".git").exists() {
+                    tracing::info!(
+                        "[install_plugin] {} already installed at {:?}, refreshing git HEAD",
+                        request.plugin_id,
+                        target_dir
+                    );
+                    let message = "Refreshing existing plugin checkout".to_string();
+                    logs.push(message.clone());
+                    on_log(message);
+
+                    let mut fetch = common::process::env::command("git");
+                    fetch.args(["fetch", "--depth", "1", "origin", "HEAD"]);
+                    fetch.current_dir(&target_dir);
+                    let output = command_streaming(fetch, &mut on_log, &is_cancelled)
+                        .await
+                        .context("git fetch")?;
+                    push_output_logs(&mut logs, "git fetch", &output);
+                    if !output.status.success() {
+                        bail!(
+                            "git fetch failed: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+
+                    let mut reset = common::process::env::command("git");
+                    reset.args(["reset", "--hard", "FETCH_HEAD"]);
+                    reset.current_dir(&target_dir);
+                    let output = command_streaming(reset, &mut on_log, &is_cancelled)
+                        .await
+                        .context("git reset")?;
+                    push_output_logs(&mut logs, "git reset", &output);
+                    if !output.status.success() {
+                        bail!(
+                            "git reset failed: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+                    false
+                } else {
+                    tracing::info!(
+                        "[install_plugin] {} exists without git metadata at {:?}, re-cloning",
+                        request.plugin_id,
+                        target_dir
+                    );
+                    std::fs::remove_dir_all(&target_dir)
+                        .context("removing non-git plugin directory")?;
+                    true
+                }
             } else {
                 tracing::info!(
                     "[install_plugin] {} has a stale install at {:?}, re-cloning",

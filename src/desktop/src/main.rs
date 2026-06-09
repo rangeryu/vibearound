@@ -208,6 +208,8 @@ fn main() {
             onboarding::finish_onboarding,
             onboarding::list_agents,
             onboarding::scan_agent_install_status,
+            onboarding::check_agent_updates,
+            onboarding::check_plugin_updates,
             onboarding::list_tunnels,
             onboarding::list_plugin_registry,
             onboarding::get_install_manifest,

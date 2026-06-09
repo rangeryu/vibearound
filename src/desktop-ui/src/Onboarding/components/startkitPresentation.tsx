@@ -156,14 +156,25 @@ export function reportNeedsInstall(report: StartkitItemReport): boolean {
 }
 
 export function compactReportLabel(report: StartkitItemReport, t: Translate): string {
+  if (report.status === "running") {
+    return report.message ? t(report.message) : t("Checking");
+  }
   if (report.status === "ok") {
     return report.version
       ? t("Installed {{version}}", { version: report.version })
       : t("Installed");
   }
   if (report.status === "pending") return t("Checking");
-  if (report.status === "missing") return t("Not installed");
-  if (report.status === "outdated") return t("Outdated");
+  if (report.status === "missing") {
+    return report.latestVersion
+      ? t("Available {{version}}", { version: report.latestVersion })
+      : t("Not installed");
+  }
+  if (report.status === "outdated") {
+    return report.latestVersion
+      ? t("Update available {{version}}", { version: report.latestVersion })
+      : t("Outdated");
+  }
   if (report.status === "broken") return t("Needs repair");
   if (report.status === "needs_config") return t("Needs config");
   return statusLabel(report.status, t);

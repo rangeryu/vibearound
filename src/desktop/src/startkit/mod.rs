@@ -7,16 +7,17 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+use tokio::task::JoinSet;
 use tokio::time::sleep;
 
 const SETTINGS_TOML: &str = include_str!("../../../resources/startkit/settings.toml");
@@ -210,7 +211,7 @@ pub struct StartkitPlan {
     pub items: Vec<StartkitItemSummary>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StartkitItemStatus {
     Pending,
@@ -254,6 +255,8 @@ pub struct StartkitItemReport {
     pub status: StartkitItemStatus,
     pub severity: Option<String>,
     pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_version: Option<String>,
     pub path: Option<String>,
     pub message: Option<String>,
     #[serde(default)]
@@ -292,6 +295,8 @@ struct ScriptOutput {
     status: String,
     #[serde(default)]
     version: Option<String>,
+    #[serde(default)]
+    latest_version: Option<String>,
     #[serde(default)]
     path: Option<String>,
     #[serde(default)]
@@ -417,6 +422,50 @@ pub async fn scan(
     scan_with_progress::<tauri::Wry>(None, settings, choices, platform).await
 }
 
+pub(crate) async fn scan_agent_cli_reports(
+    settings: &Value,
+    choices: &StartkitChoices,
+    agent_ids: &[String],
+) -> anyhow::Result<Vec<StartkitItemReport>> {
+    let manifest = load_manifest()?;
+    let platform = current_platform().to_string();
+    let paths = StartkitPaths::new(startkit_root());
+    let mut tasks = JoinSet::new();
+
+    for (index, agent_id) in agent_ids.iter().enumerate() {
+        let item_id = format!("agents.{agent_id}.cli");
+        let Ok(item) = find_item(&manifest, &item_id).cloned() else {
+            continue;
+        };
+        let manifest = manifest.clone();
+        let paths = paths.clone();
+        let settings = settings.clone();
+        let choices = choices.clone();
+        let platform = platform.clone();
+        tasks.spawn(async move {
+            let report = tokio::time::timeout(
+                Duration::from_secs(8),
+                scan_item(&manifest, &paths, &item, &settings, &choices, &platform),
+            )
+            .await
+            .unwrap_or_else(|_| StartkitItemReport {
+                status: StartkitItemStatus::Broken,
+                message: Some(format!("{} version check timed out", item.label)),
+                actions: vec!["install".to_string()],
+                ..base_report(&item)
+            });
+            (index, report)
+        });
+    }
+
+    let mut reports = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        reports.push(result?);
+    }
+    reports.sort_by_key(|(index, _)| *index);
+    Ok(reports.into_iter().map(|(_, report)| report).collect())
+}
+
 async fn scan_with_progress<R: Runtime>(
     app: Option<&AppHandle<R>>,
     settings: &Value,
@@ -484,8 +533,10 @@ async fn execute_item_with_cancel(
         );
     }
     let before = scan_item(&manifest, &paths, item, settings, choices, platform).await;
+    let refresh_managed_npm =
+        item.managed && item.npm_package.is_some() && choices.toolchain_mode != "system";
 
-    if !before.status.needs_install() {
+    if !before.status.needs_install() && !refresh_managed_npm {
         return Ok(before);
     }
 
@@ -1091,10 +1142,31 @@ pub fn managed_path_entries() -> Vec<PathBuf> {
     entries
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct AgentCliUpdateTarget {
+    pub report_id: String,
+    pub label: String,
+    pub program: String,
+    pub npm_package: String,
+}
+
+pub(crate) fn agent_cli_update_target(agent_id: &str) -> Option<AgentCliUpdateTarget> {
+    let manifest = load_manifest().ok()?;
+    let report_id = format!("agents.{agent_id}.cli");
+    let item = manifest.items.iter().find(|item| item.id == report_id)?;
+    Some(AgentCliUpdateTarget {
+        report_id,
+        label: item.label.clone(),
+        program: item.program.clone()?,
+        npm_package: item.npm_package.clone()?,
+    })
+}
+
 fn report_from_script(item: &StartkitItem, output: ScriptOutput) -> StartkitItemReport {
     StartkitItemReport {
         status: StartkitItemStatus::from_script(&output.status),
         version: output.version,
+        latest_version: output.latest_version,
         path: output.path,
         message: output.message,
         actions: output.actions,
@@ -1111,6 +1183,7 @@ fn base_report(item: &StartkitItem) -> StartkitItemReport {
         status: StartkitItemStatus::Pending,
         severity: item.severity.clone(),
         version: None,
+        latest_version: None,
         path: None,
         message: None,
         actions: Vec::new(),
