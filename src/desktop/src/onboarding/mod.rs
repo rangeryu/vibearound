@@ -312,7 +312,23 @@ pub async fn scan_agent_sdk_status(
         .iter()
         .filter_map(|agent_id| {
             let agent = common::resources::agent_by_id(agent_id)?;
-            let npm_pkg = agent.acp.npm_package.as_deref()?;
+            let Some(npm_pkg) = agent.acp.npm_package.as_deref() else {
+                return Some(StartkitItemReport {
+                    id: format!("agents.{agent_id}.sdk"),
+                    label: format!("{} ACP mode", agent.display_name),
+                    group: "agents".to_string(),
+                    category: "agent_sdk".to_string(),
+                    status: StartkitItemStatus::Skipped,
+                    severity: None,
+                    version: None,
+                    latest_version: None,
+                    path: None,
+                    message: Some("Uses the agent CLI's built-in ACP mode".to_string()),
+                    actions: Vec::new(),
+                    secret: false,
+                    settings_key: None,
+                });
+            };
             let default_bin_name = common::agent::npm_package_bin_name(npm_pkg);
             let bin_name = agent.acp.bin_name.as_deref().unwrap_or(&default_bin_name);
             let installed = common::agent::npm_package_installed(npm_pkg, bin_name);
@@ -435,8 +451,11 @@ async fn agent_update_report(
         Ok(Some(version)) => version,
         _ => return Some(local),
     };
-    let local_version = local_npm_package_version(&target.npm_package)
-        .or_else(|| local.version.as_deref().and_then(extract_semver));
+    let local_version = local
+        .version
+        .as_deref()
+        .and_then(extract_semver)
+        .or_else(|| local_npm_package_version(&target.npm_package));
     let mut report = local;
     report.label = target.label;
     report.id = target.report_id;
