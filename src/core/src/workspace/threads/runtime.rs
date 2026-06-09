@@ -1146,6 +1146,9 @@ fn host_startup_session(
         return StartupSession::Fresh;
     };
     if route_allows_startup_replay(route) {
+        if thread.host_binding.agent_id == "gemini" {
+            return StartupSession::ResumeOnly(session_id);
+        }
         StartupSession::Load(session_id)
     } else if im_auto_continue_last_session {
         StartupSession::Resume(session_id)
@@ -1376,14 +1379,22 @@ mod tests {
     }
 
     fn thread_with_sessions() -> WorkspaceThread {
-        let host = HostBinding::new("codex", Some("profile_a".to_string()));
+        thread_with_host_session("codex", Some("profile_a"), "session-old")
+    }
+
+    fn thread_with_host_session(
+        agent_id: &str,
+        profile_id: Option<&str>,
+        session_id: &str,
+    ) -> WorkspaceThread {
+        let host = HostBinding::new(agent_id, profile_id.map(ToOwned::to_owned));
         let mut sessions = BTreeMap::new();
         sessions.insert(
             host.clone(),
             vec![super::super::store::AgentSessionRef {
-                agent_id: "codex".to_string(),
-                profile_id: Some("profile_a".to_string()),
-                session_id: "session-old".to_string(),
+                agent_id: agent_id.to_string(),
+                profile_id: profile_id.map(ToOwned::to_owned),
+                session_id: session_id.to_string(),
                 observed_at: "2026-01-01T00:00:00.000Z".to_string(),
             }],
         );
@@ -1423,6 +1434,19 @@ mod tests {
         assert_eq!(
             startup_session,
             StartupSession::Load("session-old".to_string())
+        );
+    }
+
+    #[test]
+    fn web_gemini_routes_resume_without_load_fallback() {
+        let route = RouteKey::new("web", "chat-1");
+        let thread = thread_with_host_session("gemini", None, "gemini-session");
+
+        let startup_session = host_startup_session(&route, None, &thread, true);
+
+        assert_eq!(
+            startup_session,
+            StartupSession::ResumeOnly("gemini-session".to_string())
         );
     }
 

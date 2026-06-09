@@ -89,6 +89,24 @@ function isOptimisticUserMessage(message: ChatMessage | undefined) {
   return message?.role === "user" && message.optimistic === true;
 }
 
+function stableValueKey(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableValueKey).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableValueKey(record[key])}`)
+    .join(",")}}`;
+}
+
+function contentBlockKey(block: ContentBlock) {
+  return `${block.type}:${stableValueKey(block)}`;
+}
+
 function canonicalTailIndex(messages: ChatMessage[]) {
   let index = messages.length;
   while (index > 0 && isOptimisticUserMessage(messages[index - 1])) {
@@ -204,7 +222,7 @@ function messageHasSameBlock(
   return message.parts?.some(
     (part) =>
       part.kind === "content" &&
-      JSON.stringify(part.block) === JSON.stringify(block),
+      contentBlockKey(part.block) === contentBlockKey(block),
   );
 }
 
@@ -228,13 +246,13 @@ function withMergedUserTextBlock(message: ChatMessage, text: string): ChatMessag
 function semanticPartKey(part: ChatMessagePart) {
   switch (part.kind) {
     case "content":
-      return `content:${JSON.stringify(part.block)}`;
+      return `content:${contentBlockKey(part.block)}`;
     case "plan":
-      return `plan:${JSON.stringify(part.plan)}`;
+      return `plan:${stableValueKey(part.plan)}`;
     case "thought":
-      return `thought:${part.active === false ? "done" : "active"}:${JSON.stringify(part.blocks)}`;
+      return `thought:${part.active === false ? "done" : "active"}:${part.blocks.map(contentBlockKey).join("|")}`;
     case "tool_call":
-      return `tool:${part.toolCallId}:${part.title}:${part.status ?? ""}:${part.active === false ? "done" : "active"}:${JSON.stringify(part.locations ?? null)}:${JSON.stringify(part.content ?? null)}:${JSON.stringify(part.rawInput ?? null)}:${JSON.stringify(part.rawOutput ?? null)}`;
+      return `tool:${part.toolCallId}:${part.title}:${part.status ?? ""}:${part.active === false ? "done" : "active"}:${stableValueKey(part.locations ?? null)}:${stableValueKey(part.content ?? null)}:${stableValueKey(part.rawInput ?? null)}:${stableValueKey(part.rawOutput ?? null)}`;
   }
 }
 
