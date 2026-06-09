@@ -21,13 +21,11 @@ export function AgentDecisionPanel({
   agents,
   enabledAgents,
   reports,
-  scanning,
   onToggleAgent,
 }: {
   agents: AgentSummary[];
   enabledAgents: Set<AgentId>;
   reports: Map<string, StartkitItemReport>;
-  scanning: boolean;
   onToggleAgent: (id: AgentId) => void;
 }) {
   const { t } = useI18n();
@@ -62,7 +60,6 @@ export function AgentDecisionPanel({
             agents={recommendedAgents}
             enabled={enabledAgents}
             reports={reports}
-            scanning={scanning}
             onToggle={onToggleAgent}
             t={t}
           />
@@ -95,7 +92,6 @@ export function AgentDecisionPanel({
                 agents={otherAgents}
                 enabled={enabledAgents}
                 reports={reports}
-                scanning={scanning}
                 onToggle={onToggleAgent}
                 t={t}
               />
@@ -111,14 +107,12 @@ function AgentGrid({
   agents,
   enabled,
   reports,
-  scanning,
   onToggle,
   t,
 }: {
   agents: AgentSummary[];
   enabled: Set<string>;
   reports: Map<string, StartkitItemReport>;
-  scanning: boolean;
   onToggle: (id: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
@@ -128,8 +122,17 @@ function AgentGrid({
         const selected = enabled.has(agent.id);
         const report = reports.get(`agents.${agent.id}.cli`);
         const visibleReport =
-          !selected && (report?.status === "running" || report?.status === "outdated")
+          !selected && report?.status === "outdated"
             ? { ...report, status: "ok" as const, latestVersion: undefined, message: undefined }
+            : !selected &&
+                report?.status === "running" &&
+                report.message === "Checking updates"
+              ? {
+                  ...report,
+                  status: "ok" as const,
+                  latestVersion: undefined,
+                  message: undefined,
+                }
             : report;
         return (
           <button
@@ -156,9 +159,7 @@ function AgentGrid({
               <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
                 {visibleReport
                   ? compactReportLabel(visibleReport, t)
-                  : scanning
-                    ? t("Waiting for check")
-                    : t("Not installed")}
+                  : t("Not installed")}
               </span>
             </span>
             <Checkbox

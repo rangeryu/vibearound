@@ -427,14 +427,63 @@ pub(crate) async fn scan_agent_cli_reports(
     choices: &StartkitChoices,
     agent_ids: &[String],
 ) -> anyhow::Result<Vec<StartkitItemReport>> {
+    let item_ids = agent_ids
+        .iter()
+        .map(|agent_id| format!("agents.{agent_id}.cli"))
+        .collect::<Vec<_>>();
+    scan_startkit_item_reports(settings, choices, &item_ids, Duration::from_secs(8)).await
+}
+
+pub(crate) async fn scan_tunnel_reports(
+    settings: &Value,
+    choices: &StartkitChoices,
+) -> anyhow::Result<Vec<StartkitItemReport>> {
+    match choices.tunnel.as_str() {
+        "none" => Ok(Vec::new()),
+        "ngrok" => Ok(vec![StartkitItemReport {
+            id: "tunnels.ngrok.sdk".to_string(),
+            label: "Ngrok".to_string(),
+            group: "remote".to_string(),
+            category: "tunnels".to_string(),
+            status: StartkitItemStatus::Ok,
+            severity: None,
+            version: None,
+            latest_version: None,
+            path: None,
+            message: Some("Ngrok uses the built-in SDK".to_string()),
+            actions: Vec::new(),
+            secret: false,
+            settings_key: None,
+        }]),
+        "localtunnel" => {
+            scan_startkit_item_reports(
+                settings,
+                choices,
+                &["essentials.node".to_string()],
+                Duration::from_secs(8),
+            )
+            .await
+        }
+        _ => {
+            let item_id = format!("tunnels.{}.binary", choices.tunnel);
+            scan_startkit_item_reports(settings, choices, &[item_id], Duration::from_secs(8)).await
+        }
+    }
+}
+
+async fn scan_startkit_item_reports(
+    settings: &Value,
+    choices: &StartkitChoices,
+    item_ids: &[String],
+    max_duration: Duration,
+) -> anyhow::Result<Vec<StartkitItemReport>> {
     let manifest = load_manifest()?;
     let platform = current_platform().to_string();
     let paths = StartkitPaths::new(startkit_root());
     let mut tasks = JoinSet::new();
 
-    for (index, agent_id) in agent_ids.iter().enumerate() {
-        let item_id = format!("agents.{agent_id}.cli");
-        let Ok(item) = find_item(&manifest, &item_id).cloned() else {
+    for (index, item_id) in item_ids.iter().enumerate() {
+        let Ok(item) = find_item(&manifest, item_id).cloned() else {
             continue;
         };
         let manifest = manifest.clone();
@@ -444,7 +493,7 @@ pub(crate) async fn scan_agent_cli_reports(
         let platform = platform.clone();
         tasks.spawn(async move {
             let report = tokio::time::timeout(
-                Duration::from_secs(8),
+                max_duration,
                 scan_item(&manifest, &paths, &item, &settings, &choices, &platform),
             )
             .await

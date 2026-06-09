@@ -30,6 +30,7 @@ export function OnboardingStepContent({
   onToggleChannel,
   tunnels,
   tunnelProvider,
+  tunnelReports,
   onTunnelProvider,
   groupedReports,
   reports,
@@ -70,6 +71,7 @@ export function OnboardingStepContent({
   onToggleChannel: (pluginId: string, enabled: boolean) => void;
   tunnels: TunnelSummary[];
   tunnelProvider: TunnelProvider;
+  tunnelReports: StartkitItemReport[];
   onTunnelProvider: (value: TunnelProvider) => void;
   groupedReports: Array<{ id: string; reports: StartkitItemReport[] }>;
   reports: StartkitItemReport[];
@@ -111,7 +113,6 @@ export function OnboardingStepContent({
           agents={agents}
           enabledAgents={enabledAgents}
           reports={reportsById}
-          scanning={scanning}
           onToggleAgent={onToggleAgent}
         />
       )}
@@ -130,6 +131,7 @@ export function OnboardingStepContent({
         <RemoteDecisionPanel
           tunnels={tunnels}
           provider={tunnelProvider}
+          reports={tunnelReports}
           onProvider={onTunnelProvider}
         />
       )}
