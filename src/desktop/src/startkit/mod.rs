@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::process::Output;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -19,6 +20,8 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
+
+use crate::agent_detection;
 
 const SETTINGS_TOML: &str = include_str!("../../../resources/startkit/settings.toml");
 const STARTKIT_PROGRESS_EVENT: &str = "startkit-progress";
@@ -594,11 +597,15 @@ async fn execute_item_with_cancel(
     let platform = current_platform();
     let paths = StartkitPaths::new(startkit_root());
     let item = find_item(&manifest, item_id)?;
+    if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
+        return execute_agent_cli_item(
+            &manifest, &paths, item, agent_id, choices, cancelled, progress,
+        )
+        .await;
+    }
     let before = scan_item(&manifest, &paths, item, settings, choices, platform).await;
-    let refresh_managed_npm =
-        item.managed && item.npm_package.is_some() && choices.toolchain_mode != "system";
 
-    if !before.status.needs_install() && !refresh_managed_npm {
+    if !before.status.needs_install() {
         return Ok(before);
     }
 
@@ -998,6 +1005,10 @@ async fn scan_item(
     choices: &StartkitChoices,
     platform: &str,
 ) -> StartkitItemReport {
+    if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
+        return scan_agent_cli_item(item, agent_id).await;
+    }
+
     if item.kind.as_deref() == Some("config") {
         return scan_config_item(item, settings);
     }
@@ -1058,6 +1069,156 @@ async fn scan_item(
             ..base_report(item)
         },
     }
+}
+
+async fn scan_agent_cli_item(item: &StartkitItem, agent_id: &str) -> StartkitItemReport {
+    let detected = agent_detection::scan_and_persist().await.ok();
+    let selected = detected
+        .as_ref()
+        .and_then(|detected| detected.agents.get(agent_id))
+        .and_then(|detection| detection.selected.clone());
+
+    match selected {
+        Some(candidate) => StartkitItemReport {
+            status: StartkitItemStatus::Ok,
+            version: candidate.version,
+            path: Some(candidate.path),
+            message: Some(format!(
+                "{} selected from {}",
+                item.label, candidate.source_label
+            )),
+            actions: Vec::new(),
+            ..base_report(item)
+        },
+        None => {
+            let can_install = agent_detection::default_install_source(agent_id)
+                .and_then(|source| {
+                    agent_detection::source_command_template(agent_id, &source, "install")
+                })
+                .is_some();
+            StartkitItemReport {
+                status: StartkitItemStatus::Missing,
+                message: Some(format!(
+                    "{} was not found in the user's default PATH",
+                    item.label
+                )),
+                actions: if can_install {
+                    vec!["install".to_string()]
+                } else {
+                    Vec::new()
+                },
+                ..base_report(item)
+            }
+        }
+    }
+}
+
+async fn execute_agent_cli_item(
+    manifest: &Manifest,
+    paths: &StartkitPaths,
+    item: &StartkitItem,
+    agent_id: &str,
+    choices: &StartkitChoices,
+    cancelled: Option<&Arc<AtomicBool>>,
+    progress: Option<&(dyn Fn(&StartkitItem, StartkitItemStatus, Option<String>) + Sync)>,
+) -> anyhow::Result<StartkitItemReport> {
+    let before = scan_agent_cli_item(item, agent_id).await;
+    if !before.status.needs_install() {
+        return Ok(before);
+    }
+
+    let Some(source) = agent_detection::default_install_source(agent_id) else {
+        return Ok(StartkitItemReport {
+            status: StartkitItemStatus::Blocked,
+            message: Some("No automatic install action is available".to_string()),
+            ..base_report(item)
+        });
+    };
+    let Some(template) = agent_detection::source_command_template(agent_id, &source, "install")
+    else {
+        return Ok(StartkitItemReport {
+            status: StartkitItemStatus::Blocked,
+            message: Some("No automatic install action is available".to_string()),
+            ..base_report(item)
+        });
+    };
+    let command = render_agent_command_template(manifest, paths, choices, &template)?;
+
+    if let Some(progress) = progress {
+        progress(
+            item,
+            StartkitItemStatus::Running,
+            Some(format!("Installing {} via {}", item.label, source)),
+        );
+    }
+
+    let output =
+        run_shell_command_with_cancel(&command, manifest.runner.default_timeout_secs, cancelled)
+            .await;
+
+    match output {
+        Ok(_) => Ok(scan_agent_cli_item(item, agent_id).await),
+        Err(error) => Ok(StartkitItemReport {
+            status: StartkitItemStatus::Error,
+            message: Some(error.to_string()),
+            actions: vec!["install".to_string()],
+            ..base_report(item)
+        }),
+    }
+}
+
+fn agent_id_from_cli_item(item_id: &str) -> Option<&str> {
+    item_id
+        .strip_prefix("agents.")
+        .and_then(|value| value.strip_suffix(".cli"))
+}
+
+fn render_agent_command_template(
+    manifest: &Manifest,
+    paths: &StartkitPaths,
+    choices: &StartkitChoices,
+    template: &str,
+) -> anyhow::Result<String> {
+    let source = manifest
+        .sources
+        .get(&choices.source)
+        .or_else(|| manifest.sources.get("global"))
+        .ok_or_else(|| anyhow!("startkit source '{}' not found", choices.source))?;
+    Ok(template
+        .replace(
+            "{managed_npm_prefix}",
+            &shell_arg(&paths.npm_prefix.to_string_lossy()),
+        )
+        .replace("{npm_registry}", &shell_arg(&source.npm_registry)))
+}
+
+fn shell_arg(value: &str) -> String {
+    if cfg!(windows) {
+        format!("\"{}\"", value.replace('"', "\\\""))
+    } else {
+        shell_escape::unix::escape(std::borrow::Cow::Borrowed(value)).into_owned()
+    }
+}
+
+async fn run_shell_command_with_cancel(
+    command: &str,
+    timeout_secs: u64,
+    cancelled: Option<&Arc<AtomicBool>>,
+) -> anyhow::Result<Output> {
+    let mut child = if cfg!(windows) {
+        let mut cmd = Command::new("powershell.exe");
+        cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]);
+        cmd.arg(command);
+        cmd
+    } else {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c");
+        cmd.arg(command);
+        cmd
+    };
+    child.env_clear();
+    child.envs(common::process::env::enriched_env().clone());
+    run_command_with_cancel(child, Duration::from_secs(timeout_secs), cancelled).await
 }
 
 fn scan_config_item(item: &StartkitItem, settings: &Value) -> StartkitItemReport {
@@ -1285,26 +1446,6 @@ pub fn managed_path_entries() -> Vec<PathBuf> {
     entries.push(home.join("npm-global").join("bin"));
     entries.push(home.join("npm-global"));
     entries
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AgentCliUpdateTarget {
-    pub report_id: String,
-    pub label: String,
-    pub program: String,
-    pub npm_package: String,
-}
-
-pub(crate) fn agent_cli_update_target(agent_id: &str) -> Option<AgentCliUpdateTarget> {
-    let manifest = load_manifest().ok()?;
-    let report_id = format!("agents.{agent_id}.cli");
-    let item = manifest.items.iter().find(|item| item.id == report_id)?;
-    Some(AgentCliUpdateTarget {
-        report_id,
-        label: item.label.clone(),
-        program: item.program.clone()?,
-        npm_package: item.npm_package.clone()?,
-    })
 }
 
 fn report_from_script(item: &StartkitItem, output: ScriptOutput) -> StartkitItemReport {

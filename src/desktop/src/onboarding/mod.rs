@@ -33,7 +33,7 @@ use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
-use crate::{restart_daemon, OnboardingActive};
+use crate::{agent_detection, restart_daemon, OnboardingActive};
 use common::{config, plugins};
 
 use crate::startkit::{StartkitChoices, StartkitItemReport, StartkitItemStatus};
@@ -417,36 +417,128 @@ async fn agent_update_report(
         .ok()?
         .into_iter()
         .next()?;
-    let Some(target) = crate::startkit::agent_cli_update_target(&agent_id) else {
-        return Some(local);
-    };
-
-    let latest = match npm_latest_version(&target.npm_package, &choices.source).await {
-        Ok(Some(version)) => version,
-        _ => return Some(local),
-    };
+    let agent = common::resources::agent_by_id(&agent_id)?;
+    let program = agent_detection::configured_program(&agent_id)
+        .or_else(|| program_from_command(&agent.pty.command))
+        .unwrap_or_else(|| agent.id.clone());
+    let source = agent_detection::selected_candidate_for(&agent_id)
+        .map(|candidate| candidate.source)
+        .or_else(|| agent_detection::default_install_source(&agent_id))
+        .unwrap_or_else(|| "path".to_string());
+    let latest = latest_version_for_agent_source(&agent_id, &source, &choices)
+        .await
+        .ok()
+        .flatten();
     let local_version = local
         .version
         .as_deref()
         .and_then(extract_semver)
-        .or_else(|| local_npm_package_version(&target.npm_package));
+        .or_else(|| {
+            agent_detection::source_package(&agent_id, &source)
+                .as_deref()
+                .and_then(local_npm_package_version)
+        });
     let mut report = local;
-    report.label = target.label;
-    report.id = target.report_id;
-    report.latest_version = Some(latest.clone());
+    report.label = agent.display_name.clone();
+    report.id = format!("agents.{agent_id}.cli");
+    report.latest_version = latest.clone();
 
-    if report.status == StartkitItemStatus::Ok && local_version.as_deref() != Some(latest.as_str())
+    let upgrade_available =
+        agent_detection::source_command_template(&agent_id, &source, "upgrade").is_some();
+
+    if report.status == StartkitItemStatus::Ok
+        && latest
+            .as_deref()
+            .is_some_and(|latest| local_version.as_deref() != Some(latest))
     {
         report.status = StartkitItemStatus::Outdated;
-        report.message = Some(format!("{} {} is available", target.program, latest));
-        report.actions = vec!["install".to_string()];
+        report.message = Some(match latest {
+            Some(version) if upgrade_available => {
+                format!("{program} {version} is available via {source}")
+            }
+            Some(version) => format!("{program} {version} is available; update manually"),
+            None => format!("{program} may have an update; update manually"),
+        });
+        report.actions = if upgrade_available {
+            vec!["install".to_string()]
+        } else {
+            Vec::new()
+        };
     } else if report.status == StartkitItemStatus::Ok {
-        report.message = Some(format!("{} is up to date", target.program));
+        report.message = Some(format!("{program} is up to date"));
     } else if report.status == StartkitItemStatus::Missing {
-        report.message = Some(format!("{} {} is available", target.program, latest));
-        report.actions = vec!["install".to_string()];
+        let install_available =
+            agent_detection::default_install_source(&agent_id).is_some_and(|source| {
+                agent_detection::source_command_template(&agent_id, &source, "install").is_some()
+            });
+        report.message = Some(match latest {
+            Some(version) => format!("{program} {version} is available"),
+            None => format!("{program} is not installed"),
+        });
+        report.actions = if install_available {
+            vec!["install".to_string()]
+        } else {
+            Vec::new()
+        };
     }
     Some(report)
+}
+
+async fn latest_version_for_agent_source(
+    agent_id: &str,
+    source: &str,
+    choices: &StartkitChoices,
+) -> anyhow::Result<Option<String>> {
+    if let Some(package) = agent_detection::source_package(agent_id, source) {
+        return npm_latest_version(&package, &choices.source).await;
+    }
+    if source == "homebrew_formula" || source == "homebrew_cask" {
+        return homebrew_latest_version(agent_id, source).await;
+    }
+    Ok(None)
+}
+
+async fn homebrew_latest_version(agent_id: &str, source: &str) -> anyhow::Result<Option<String>> {
+    let Some(template) = agent_detection::source_command_template(agent_id, source, "upgrade")
+    else {
+        return Ok(None);
+    };
+    let Some(token) = template.split_whitespace().last() else {
+        return Ok(None);
+    };
+    let kind = if source == "homebrew_cask" {
+        "--cask"
+    } else {
+        "--formula"
+    };
+    let mut command = tokio::process::Command::new("brew");
+    command.args(["info", "--json=v2", kind, token]);
+    let output = command_output_with_timeout(command, Duration::from_secs(8))
+        .await
+        .map_err(anyhow::Error::msg)?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).context("parse brew info")?;
+    if source == "homebrew_cask" {
+        Ok(value
+            .get("casks")
+            .and_then(|items| items.as_array())
+            .and_then(|items| items.first())
+            .and_then(|item| item.get("version"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string))
+    } else {
+        Ok(value
+            .get("formulae")
+            .and_then(|items| items.as_array())
+            .and_then(|items| items.first())
+            .and_then(|item| item.get("versions"))
+            .and_then(|versions| versions.get("stable"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string))
+    }
 }
 
 async fn plugin_update_report(plugin_id: String) -> Option<StartkitItemReport> {

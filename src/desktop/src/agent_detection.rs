@@ -19,11 +19,11 @@ pub struct AgentSourceCatalog {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AgentSourceDefaults {
-    #[serde(default = "default_install_source")]
+    #[serde(default = "default_install_source_id")]
     pub install_source: String,
 }
 
-fn default_install_source() -> String {
+fn default_install_source_id() -> String {
     "npm_managed".to_string()
 }
 
@@ -124,6 +124,56 @@ pub fn selected_candidate_for(agent_id: &str) -> Option<AgentCandidate> {
         .agents
         .get(agent_id)
         .and_then(|detection| detection.selected.clone())
+}
+
+pub fn source_command_template(agent_id: &str, source: &str, action: &str) -> Option<String> {
+    let catalog = source_catalog().ok()?;
+    let spec = catalog.agents.get(agent_id)?;
+    let source = spec.sources.get(source)?;
+    let command = match action {
+        "install" => &source.install,
+        "upgrade" => &source.upgrade,
+        _ => return None,
+    };
+    command.for_current_platform().map(str::to_string)
+}
+
+pub fn default_install_source(agent_id: &str) -> Option<String> {
+    let catalog = source_catalog().ok()?;
+    let spec = catalog.agents.get(agent_id)?;
+    if let Some(source) = spec.sources.get(&catalog.defaults.install_source) {
+        if source.install.for_current_platform().is_some() {
+            return Some(catalog.defaults.install_source);
+        }
+    }
+    spec.sources
+        .iter()
+        .find(|(_, source)| source.install.for_current_platform().is_some())
+        .map(|(id, _)| id.clone())
+}
+
+pub fn source_package(agent_id: &str, source: &str) -> Option<String> {
+    let catalog = source_catalog().ok()?;
+    let spec = catalog.agents.get(agent_id)?;
+    spec.sources.get(source).and_then(|source_spec| {
+        source_spec.package.clone().or_else(|| {
+            if source == "npm_managed" || source == "npm_global" || source == "bun_global" {
+                spec.sources
+                    .values()
+                    .find_map(|source_spec| source_spec.package.clone())
+            } else {
+                None
+            }
+        })
+    })
+}
+
+pub fn configured_program(agent_id: &str) -> Option<String> {
+    let catalog = source_catalog().ok()?;
+    catalog
+        .agents
+        .get(agent_id)
+        .map(|spec| spec.program.clone())
 }
 
 pub async fn scan_and_persist() -> anyhow::Result<AgentDetectionFile> {
