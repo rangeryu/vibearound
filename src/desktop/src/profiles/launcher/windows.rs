@@ -373,6 +373,7 @@ mod tests {
             args,
             window_label: "Codex Test".to_string(),
             workspace: PathBuf::from(r"C:\Users\tester\project"),
+            macos_app_probe: None,
         }
     }
 

@@ -109,6 +109,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                 args: terminal_launch_args_for_agent(agent_id),
                 window_label: format!("{} (direct)", agent.display_name),
                 workspace,
+                macos_app_probe: macos_app_probe_for_direct_agent(&agent),
             });
         };
 
@@ -121,6 +122,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             args,
             window_label: format!("{} (resume)", agent.display_name),
             workspace,
+            macos_app_probe: macos_app_probe_for_direct_agent(&agent),
         })
     }
 
@@ -146,6 +148,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             args: command_args,
             window_label: profile.label.clone(),
             workspace,
+            macos_app_probe: None,
         })
     }
 
@@ -174,8 +177,25 @@ impl<'a> LaunchPlanBuilder<'a> {
             args,
             window_label: format!("{} (resume)", profile.label),
             workspace,
+            macos_app_probe: None,
         })
     }
+}
+
+fn macos_app_probe_for_direct_agent(agent: &resources::AgentDef) -> Option<String> {
+    if !cfg!(target_os = "macos") || !agent.direct_only {
+        return None;
+    }
+    open_app_name(agent.pty_command_for_current_platform())
+}
+
+fn open_app_name(command: &str) -> Option<String> {
+    command
+        .trim()
+        .strip_prefix("open -a ")
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| name.trim_matches('"').to_string())
 }
 
 fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> String {

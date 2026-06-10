@@ -8,6 +8,7 @@ pub(super) struct LaunchPlan {
     pub args: Vec<String>,
     pub window_label: String,
     pub workspace: PathBuf,
+    pub macos_app_probe: Option<String>,
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -82,11 +83,34 @@ pub(super) fn build_bash_script(plan: &LaunchPlan) -> String {
     let workspace = plan.workspace.to_string_lossy();
     let cwd = shell_escape::unix::escape(std::borrow::Cow::Borrowed(workspace.as_ref()));
     out.push_str(&format!("cd {}\n", cwd));
-    out.push_str(&format!(
-        "exec {}\n",
-        command_with_unix_args(&plan.command, &plan.args)
-    ));
+    let command = command_with_unix_args(&plan.command, &plan.args);
+    if let Some(app_name) = &plan.macos_app_probe {
+        append_macos_app_launch(&mut out, &command, app_name);
+    } else {
+        out.push_str(&format!("exec {command}\n"));
+    }
     out
+}
+
+fn append_macos_app_launch(out: &mut String, command: &str, app_name: &str) {
+    let app_script = format!(
+        "application \"{}\" is running",
+        app_name.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    let app_script = shell_escape::unix::escape(std::borrow::Cow::Owned(app_script));
+    out.push_str(&format!("{command}\n"));
+    out.push_str("status=$?\n");
+    out.push_str("if [ \"$status\" -eq 0 ]; then\n");
+    out.push_str("  for attempt in 1 2 3 4 5 6 7 8 9 10; do\n");
+    out.push_str("    sleep 0.5\n");
+    out.push_str(&format!(
+        "    if [ \"$attempt\" -ge 4 ] && [ \"$(osascript -e {app_script} 2>/dev/null)\" = \"true\" ]; then\n",
+    ));
+    out.push_str("      break\n");
+    out.push_str("    fi\n");
+    out.push_str("  done\n");
+    out.push_str("fi\n");
+    out.push_str("exit \"$status\"\n");
 }
 
 fn command_with_unix_args(command: &str, args: &[String]) -> String {
@@ -125,6 +149,7 @@ mod tests {
             args,
             window_label: "Test".to_string(),
             workspace: Path::new("/tmp/work dir").to_path_buf(),
+            macos_app_probe: None,
         }
     }
 
@@ -183,6 +208,21 @@ mod tests {
 
         assert!(script.contains("exec codex -c 'hooks.SessionStart="));
         assert!(script.contains("--agent codex"));
+    }
+
+    #[test]
+    fn build_bash_script_waits_for_macos_app_probe() {
+        let mut plan = plan(Vec::new(), "open -a Codex", Vec::new());
+        plan.macos_app_probe = Some("Codex".to_string());
+        let script = build_bash_script(&plan);
+
+        assert!(script.contains("open -a Codex\nstatus=$?\n"));
+        assert!(script.contains("for attempt in 1 2 3 4 5 6 7 8 9 10; do"));
+        assert!(script.contains("sleep 0.5"));
+        assert!(script.contains("[ \"$attempt\" -ge 4 ]"));
+        assert!(script.contains("application \"Codex\" is running"));
+        assert!(script.contains("exit \"$status\""));
+        assert!(!script.contains("exec open -a Codex"));
     }
 
     #[test]
