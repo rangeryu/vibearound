@@ -752,9 +752,13 @@ export function AgentLaunchBuilder({
     ? profileSummary(selectedProfile, agentId, viewPrefs, t)
     : {
         title: t("Direct"),
-        detail: t("Use existing CLI login"),
+        detail: selectedAgent.direct_only
+          ? t("Open desktop app")
+          : t("Use existing CLI login"),
         bridge: false,
-        route: t("Native CLI login"),
+        route: selectedAgent.direct_only
+          ? t("Desktop app")
+          : t("Native CLI login"),
       };
   const sessionTitle = selectedSession?.title ?? t("New session");
   const selectedAgentPreference = viewPrefs.agentPreferences[agentId];

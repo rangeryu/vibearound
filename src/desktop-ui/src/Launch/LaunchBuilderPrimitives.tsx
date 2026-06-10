@@ -13,6 +13,7 @@ import {
   Pencil,
   Plug,
   Star,
+  Terminal,
   Trash2,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
@@ -520,18 +521,24 @@ export function AgentRailButton({
         id={agent.id}
         label={agent.display_name}
         framed={false}
-        className="h-9 w-9"
+        className={
+          agent.direct_only
+            ? "absolute inset-0 h-full w-full rounded-[inherit]"
+            : "h-9 w-9"
+        }
       />
       {isDefault && (
-        <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-amber-500/40 bg-background text-amber-600 shadow-sm dark:text-amber-300">
+        <span className="absolute -right-1 -top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-amber-500/40 bg-background text-amber-600 shadow-sm dark:text-amber-300">
           <Star className="h-2.5 w-2.5" />
         </span>
       )}
-      {agent.direct_only && (
-        <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm">
+      <span className="absolute -bottom-1 -right-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm">
+        {agent.direct_only ? (
           <Monitor className="h-2.5 w-2.5" />
-        </span>
-      )}
+        ) : (
+          <Terminal className="h-2.5 w-2.5" />
+        )}
+      </span>
     </button>
   );
 }

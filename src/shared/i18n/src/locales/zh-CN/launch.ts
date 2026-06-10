@@ -44,6 +44,8 @@ export const zhCNLaunch: Record<string, string> = {
   "Quick Launch will start a new session": "快速启动会开启新会话",
   "Use existing CLI login": "使用 CLI 已有登录态",
   "Native CLI login": "CLI 原生登录",
+  "Open desktop app": "打开桌面应用",
+  "Desktop app": "桌面应用",
   Direct: "直接",
   "API bridge on": "API 转接开启",
   "API bridge": "API 转接",

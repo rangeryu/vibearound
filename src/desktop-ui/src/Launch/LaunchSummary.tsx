@@ -312,7 +312,7 @@ export function ProfileInfoPanel({
             {summary.bridge && <BridgeBadge />}
           </span>
           <span className="block truncate text-[11px] text-muted-foreground">
-            {profile ? profile.providerLabel : t("Use existing CLI login")}
+            {profile ? profile.providerLabel : summary.detail}
           </span>
         </span>
       </div>
