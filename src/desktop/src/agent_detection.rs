@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
+use tokio::task::JoinSet;
 
 const AGENT_SOURCES_TOML: &str = include_str!("../../resources/agent-sources.toml");
 const DETECTION_SCHEMA_VERSION: u32 = 1;
@@ -220,14 +221,23 @@ pub async fn scan_agent_and_persist(agent_id: &str) -> anyhow::Result<AgentDetec
 }
 
 pub async fn scan_agents(catalog: &AgentSourceCatalog) -> anyhow::Result<AgentDetectionFile> {
-    let mut agents = BTreeMap::new();
+    let mut tasks = JoinSet::new();
     for agent in common::resources::AGENTS.iter() {
         if agent.direct_only || !agent.supports_current_platform() {
             continue;
         }
         let spec = agent_command_spec(catalog, &agent.id)?;
-        let detection = scan_agent(&agent.id, &spec).await;
-        agents.insert(agent.id.clone(), detection);
+        let agent_id = agent.id.clone();
+        tasks.spawn(async move {
+            let detection = scan_agent(&agent_id, &spec).await;
+            (agent_id, detection)
+        });
+    }
+
+    let mut agents = BTreeMap::new();
+    while let Some(result) = tasks.join_next().await {
+        let (agent_id, detection) = result?;
+        agents.insert(agent_id, detection);
     }
 
     Ok(AgentDetectionFile {
