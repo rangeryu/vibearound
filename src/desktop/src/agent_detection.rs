@@ -218,6 +218,12 @@ async fn scan_agent(agent_id: &str, spec: &AgentCommandSpec) -> AgentDetection {
         }
     }
 
+    for path in package_manager_candidate_paths(&spec.program).await {
+        if seen.insert(normalize_path_key(&path)) {
+            paths.push((path, false));
+        }
+    }
+
     for path in system_candidate_paths(&spec.program) {
         if seen.insert(normalize_path_key(&path)) {
             paths.push((path, false));
@@ -318,33 +324,82 @@ async fn windows_where_paths(program: &str) -> Vec<PathBuf> {
     output_lines(command, Duration::from_secs(6)).await
 }
 
+async fn package_manager_candidate_paths(program: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    paths.extend(npm_candidate_paths(program).await);
+    paths.extend(global_bin_command_candidate_paths("bun", &["pm", "bin", "-g"], program).await);
+    paths.extend(global_bin_command_candidate_paths("pnpm", &["bin", "-g"], program).await);
+    paths.extend(global_bin_command_candidate_paths("yarn", &["global", "bin"], program).await);
+    paths.extend(homebrew_candidate_paths(program).await);
+    paths.extend(windows_package_manager_candidate_paths(program));
+    dedupe_paths(paths)
+}
+
+async fn npm_candidate_paths(program: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for prefix in command_stdout_lines("npm", &["prefix", "-g"], Duration::from_secs(4)).await {
+        let prefix = PathBuf::from(prefix);
+        let bin_dir = if cfg!(windows) {
+            prefix
+        } else {
+            prefix.join("bin")
+        };
+        paths.extend(program_candidates_in_dir(bin_dir, program));
+    }
+    for root in command_stdout_lines("npm", &["root", "-g"], Duration::from_secs(4)).await {
+        let root = PathBuf::from(root);
+        if let Some(bin_dir) = root.parent().and_then(Path::parent).map(|prefix| {
+            if cfg!(windows) {
+                prefix.to_path_buf()
+            } else {
+                prefix.join("bin")
+            }
+        }) {
+            paths.extend(program_candidates_in_dir(bin_dir, program));
+        }
+    }
+    paths
+}
+
+async fn homebrew_candidate_paths(program: &str) -> Vec<PathBuf> {
+    if !cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    let mut paths = Vec::new();
+    for prefix in command_stdout_lines("brew", &["--prefix"], Duration::from_secs(4)).await {
+        let prefix = PathBuf::from(prefix);
+        paths.extend(program_candidates_in_dir(prefix.join("bin"), program));
+        paths.extend(program_candidates_in_dir(prefix.join("sbin"), program));
+    }
+    paths
+}
+
+async fn global_bin_command_candidate_paths(
+    command: &str,
+    args: &[&str],
+    program: &str,
+) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for dir in command_stdout_lines(command, args, Duration::from_secs(4)).await {
+        paths.extend(program_candidates_in_dir(PathBuf::from(dir), program));
+    }
+    paths
+}
+
+async fn command_stdout_lines(command: &str, args: &[&str], max_duration: Duration) -> Vec<String> {
+    let mut command = Command::new(command);
+    command.args(args);
+    output_lines(command, max_duration)
+        .await
+        .into_iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect()
+}
+
 fn system_candidate_paths(program: &str) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if cfg!(windows) {
-        let home = common::config::home_dir();
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            paths.extend(program_candidates_in_dir(
-                Path::new(&appdata).join("npm"),
-                program,
-            ));
-        }
-        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-            paths.extend(program_candidates_in_dir(
-                Path::new(&localappdata)
-                    .join("Programs")
-                    .join("Git")
-                    .join("cmd"),
-                program,
-            ));
-        }
-        paths.extend(program_candidates_in_dir(
-            home.join(".bun").join("bin"),
-            program,
-        ));
-        paths.extend(program_candidates_in_dir(
-            home.join(".local").join("bin"),
-            program,
-        ));
+        paths.extend(windows_known_candidate_paths(program));
         return paths;
     }
 
@@ -362,6 +417,70 @@ fn system_candidate_paths(program: &str) -> Vec<PathBuf> {
     ] {
         paths.extend(program_candidates_in_dir(dir, program));
     }
+    paths
+}
+
+fn windows_package_manager_candidate_paths(program: &str) -> Vec<PathBuf> {
+    if !cfg!(windows) {
+        return Vec::new();
+    }
+    let mut paths = Vec::new();
+    if let Ok(chocolatey) = std::env::var("ChocolateyInstall") {
+        paths.extend(program_candidates_in_dir(
+            Path::new(&chocolatey).join("bin"),
+            program,
+        ));
+    }
+    if let Ok(scoop) = std::env::var("SCOOP") {
+        paths.extend(program_candidates_in_dir(
+            Path::new(&scoop).join("shims"),
+            program,
+        ));
+    }
+    if let Ok(scoop_global) = std::env::var("SCOOP_GLOBAL") {
+        paths.extend(program_candidates_in_dir(
+            Path::new(&scoop_global).join("shims"),
+            program,
+        ));
+    }
+    paths
+}
+
+fn windows_known_candidate_paths(program: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let home = common::config::home_dir();
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        paths.extend(program_candidates_in_dir(
+            Path::new(&appdata).join("npm"),
+            program,
+        ));
+    }
+    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+        let localappdata = Path::new(&localappdata);
+        paths.extend(program_candidates_in_dir(
+            localappdata
+                .join("Microsoft")
+                .join("WinGet")
+                .join("Packages"),
+            program,
+        ));
+        paths.extend(program_candidates_in_dir(
+            localappdata.join("Programs").join("Git").join("cmd"),
+            program,
+        ));
+    }
+    paths.extend(program_candidates_in_dir(
+        home.join("scoop").join("shims"),
+        program,
+    ));
+    paths.extend(program_candidates_in_dir(
+        home.join(".bun").join("bin"),
+        program,
+    ));
+    paths.extend(program_candidates_in_dir(
+        home.join(".local").join("bin"),
+        program,
+    ));
     paths
 }
 
@@ -596,6 +715,17 @@ fn normalize_path_key(path: &Path) -> String {
     canonicalize_to_string(path).unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = BTreeSet::new();
+    let mut deduped = Vec::new();
+    for path in paths {
+        if seen.insert(normalize_path_key(&path)) {
+            deduped.push(path);
+        }
+    }
+    deduped
+}
+
 fn program_from_command(command: &str) -> Option<String> {
     command.split_whitespace().next().map(str::to_string)
 }
@@ -668,5 +798,16 @@ mod tests {
     #[test]
     fn managed_candidates_rank_after_user_shell_hits() {
         assert!(candidate_rank(0, true, "npm_global") < candidate_rank(0, false, "npm_managed"));
+    }
+
+    #[test]
+    fn dedupe_paths_uses_realpath_when_available() {
+        let first = common::config::home_dir()
+            .join(".bun")
+            .join("bin")
+            .join("codex");
+        let second = first.clone();
+        let paths = dedupe_paths(vec![first, second]);
+        assert_eq!(paths.len(), 1);
     }
 }
