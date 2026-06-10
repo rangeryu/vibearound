@@ -1007,7 +1007,7 @@ async fn scan_item(
     platform: &str,
 ) -> StartkitItemReport {
     if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
-        return scan_agent_cli_item(item, agent_id).await;
+        return scan_agent_cli_item(item, agent_id, choices).await;
     }
 
     if item.kind.as_deref() == Some("config") {
@@ -1072,7 +1072,11 @@ async fn scan_item(
     }
 }
 
-async fn scan_agent_cli_item(item: &StartkitItem, agent_id: &str) -> StartkitItemReport {
+async fn scan_agent_cli_item(
+    item: &StartkitItem,
+    agent_id: &str,
+    choices: &StartkitChoices,
+) -> StartkitItemReport {
     let detected = agent_detection::scan_and_persist().await.ok();
     let selected = detected
         .as_ref()
@@ -1092,11 +1096,14 @@ async fn scan_agent_cli_item(item: &StartkitItem, agent_id: &str) -> StartkitIte
             ..base_report(item)
         },
         None => {
-            let can_install = agent_detection::default_install_source(agent_id)
-                .and_then(|source| {
-                    agent_detection::source_command_template(agent_id, &source, "install")
-                })
-                .is_some();
+            let can_install = agent_detection::install_source_for_toolchain_mode(
+                agent_id,
+                &choices.toolchain_mode,
+            )
+            .and_then(|source| {
+                agent_detection::source_command_template(agent_id, &source, "install")
+            })
+            .is_some();
             StartkitItemReport {
                 status: StartkitItemStatus::Missing,
                 message: Some(format!(
@@ -1123,12 +1130,14 @@ async fn execute_agent_cli_item(
     cancelled: Option<&Arc<AtomicBool>>,
     progress: Option<&(dyn Fn(&StartkitItem, StartkitItemStatus, Option<String>) + Sync)>,
 ) -> anyhow::Result<StartkitItemReport> {
-    let before = scan_agent_cli_item(item, agent_id).await;
+    let before = scan_agent_cli_item(item, agent_id, choices).await;
     if !before.status.needs_install() {
         return Ok(before);
     }
 
-    let Some(source) = agent_detection::default_install_source(agent_id) else {
+    let Some(source) =
+        agent_detection::install_source_for_toolchain_mode(agent_id, &choices.toolchain_mode)
+    else {
         return Ok(StartkitItemReport {
             status: StartkitItemStatus::Blocked,
             message: Some("No automatic install action is available".to_string()),
@@ -1158,7 +1167,7 @@ async fn execute_agent_cli_item(
             .await;
 
     match output {
-        Ok(_) => Ok(scan_agent_cli_item(item, agent_id).await),
+        Ok(_) => Ok(scan_agent_cli_item(item, agent_id, choices).await),
         Err(error) => Ok(StartkitItemReport {
             status: StartkitItemStatus::Error,
             message: Some(error.to_string()),

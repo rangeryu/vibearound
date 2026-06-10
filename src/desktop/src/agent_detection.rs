@@ -152,6 +152,29 @@ pub fn default_install_source(agent_id: &str) -> Option<String> {
         .map(|(id, _)| id.clone())
 }
 
+pub fn install_source_for_toolchain_mode(agent_id: &str, toolchain_mode: &str) -> Option<String> {
+    if toolchain_mode == "system" {
+        return first_install_source(
+            agent_id,
+            &[
+                "npm_global",
+                "native",
+                "homebrew_cask",
+                "homebrew_formula",
+                "bun_global",
+            ],
+        );
+    }
+    default_install_source(agent_id)
+}
+
+fn first_install_source(agent_id: &str, source_ids: &[&str]) -> Option<String> {
+    source_ids
+        .iter()
+        .find(|source| source_command_template(agent_id, source, "install").is_some())
+        .map(|source| (*source).to_string())
+}
+
 pub fn source_package(agent_id: &str, source: &str) -> Option<String> {
     let catalog = source_catalog().ok()?;
     let spec = catalog.agents.get(agent_id)?;
@@ -760,6 +783,18 @@ mod tests {
             .install
             .for_current_platform()
             .is_some());
+    }
+
+    #[test]
+    fn system_toolchain_prefers_non_managed_installs() {
+        assert_eq!(
+            install_source_for_toolchain_mode("codex", "system").as_deref(),
+            Some("npm_global")
+        );
+        assert_eq!(
+            install_source_for_toolchain_mode("codex", "auto").as_deref(),
+            Some("npm_managed")
+        );
     }
 
     #[test]

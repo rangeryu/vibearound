@@ -423,7 +423,9 @@ async fn agent_update_report(
         .unwrap_or_else(|| agent.id.clone());
     let source = agent_detection::selected_candidate_for(&agent_id)
         .map(|candidate| candidate.source)
-        .or_else(|| agent_detection::default_install_source(&agent_id))
+        .or_else(|| {
+            agent_detection::install_source_for_toolchain_mode(&agent_id, &choices.toolchain_mode)
+        })
         .unwrap_or_else(|| "path".to_string());
     let latest = latest_version_for_agent_source(&agent_id, &source, &choices)
         .await
@@ -468,9 +470,11 @@ async fn agent_update_report(
         report.message = Some(format!("{program} is up to date"));
     } else if report.status == StartkitItemStatus::Missing {
         let install_available =
-            agent_detection::default_install_source(&agent_id).is_some_and(|source| {
-                agent_detection::source_command_template(&agent_id, &source, "install").is_some()
-            });
+            agent_detection::install_source_for_toolchain_mode(&agent_id, &choices.toolchain_mode)
+                .is_some_and(|source| {
+                    agent_detection::source_command_template(&agent_id, &source, "install")
+                        .is_some()
+                });
         report.message = Some(match latest {
             Some(version) => format!("{program} {version} is available"),
             None => format!("{program} is not installed"),
