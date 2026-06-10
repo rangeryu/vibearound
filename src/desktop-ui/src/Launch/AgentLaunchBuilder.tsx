@@ -396,6 +396,7 @@ export function AgentLaunchBuilder({
   }, [agentId, viewPrefs?.workspaceOptions]);
 
   const selectedAgent = agents.find((agent) => agent.id === agentId);
+  const selectedAgentIsDirectOnly = Boolean(selectedAgent?.direct_only);
   const selectedProfile =
     profileChoice.kind === "profile"
       ? profileById(profiles, profileChoice.profileId)
@@ -410,10 +411,11 @@ export function AgentLaunchBuilder({
   );
   const selectedWorkspace = currentWorkspace(viewPrefs);
   const selectedTerminal = currentTerminal(viewPrefs);
-  const selectedSession = resolveSelectedSession(
+  const resolvedSelectedSession = resolveSelectedSession(
     sessionChoice,
     visibleSessions,
   );
+  const selectedSession = selectedAgentIsDirectOnly ? null : resolvedSelectedSession;
   const selectionLaunchable = viewPrefs
     ? isSelectionLaunchable(profileChoice, selectedProfile, agentId, viewPrefs)
     : false;
@@ -426,7 +428,8 @@ export function AgentLaunchBuilder({
         t,
       )
     : t("Loading…");
-  const sessionResumeSupported = agentSupportsSessionResume(agentId);
+  const sessionResumeSupported =
+    !selectedAgentIsDirectOnly && agentSupportsSessionResume(agentId);
   const sessionResumeUnsupportedReason = t(
     "{{agent}} does not support selecting a session to resume",
     { agent: agentLabel(agentId) },
@@ -752,17 +755,18 @@ export function AgentLaunchBuilder({
     ? profileSummary(selectedProfile, agentId, viewPrefs, t)
     : {
         title: t("Direct"),
-        detail: selectedAgent.direct_only
+        detail: selectedAgentIsDirectOnly
           ? t("Open desktop app")
           : t("Use existing CLI login"),
         bridge: false,
-        route: selectedAgent.direct_only
+        route: selectedAgentIsDirectOnly
           ? t("Desktop app")
           : t("Native CLI login"),
       };
   const sessionTitle = selectedSession?.title ?? t("New session");
   const selectedAgentPreference = viewPrefs.agentPreferences[agentId];
   const terminalArgCount = agentLaunchArgCount(selectedAgentPreference);
+  const showLaunchControls = !selectedAgentIsDirectOnly;
 
   return (
     <TooltipProvider>
@@ -790,24 +794,26 @@ export function AgentLaunchBuilder({
                     agentId={agentId}
                     agentLabelText={selectedAgent.display_name}
                     action={
-                      <div className="flex items-center gap-1.5 pt-1">
-                        {terminalArgCount > 0 && (
-                          <span className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                            {t("{{count}} args", { count: terminalArgCount })}
-                          </span>
-                        )}
-                        <TooltipButton
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={busy}
-                          aria-label={t("Agent settings")}
-                          title={t("Agent settings")}
-                          onClick={() => setSettingsAgent(selectedAgent)}
-                        >
-                          <Settings2 className="h-4 w-4" />
-                        </TooltipButton>
-                      </div>
+                      showLaunchControls ? (
+                        <div className="flex items-center gap-1.5 pt-1">
+                          {terminalArgCount > 0 && (
+                            <span className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                              {t("{{count}} args", { count: terminalArgCount })}
+                            </span>
+                          )}
+                          <TooltipButton
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={busy}
+                            aria-label={t("Agent settings")}
+                            title={t("Agent settings")}
+                            onClick={() => setSettingsAgent(selectedAgent)}
+                          >
+                            <Settings2 className="h-4 w-4" />
+                          </TooltipButton>
+                        </div>
+                      ) : undefined
                     }
                   >
                     <SelectorPopup
@@ -848,129 +854,135 @@ export function AgentLaunchBuilder({
                       />
                     </SelectorPopup>
                   </AgentSummaryHeader>
-                  <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
-                    <SelectorPopup
-                      id="terminal"
-                      openSelector={openSelector}
-                      onOpenChange={setOpenSelector}
-                      widthClassName="w-[min(300px,calc(100vw-1rem))]"
-                      widthPx={300}
-                      trigger={
-                        <LaunchSummaryPill
-                          active={openSelector === "terminal"}
-                          chevron
-                          disabled={busy}
-                          className="w-[160px]"
-                          icon={<Terminal className="h-4 w-4" />}
-                          onClick={() =>
-                            setOpenSelector(
-                              openSelector === "terminal" ? null : "terminal",
-                            )
-                          }
-                          label={t("Terminal")}
-                          title={selectedTerminal?.label ?? t("Terminal")}
-                        />
-                      }
-                    >
-                      <TerminalPanel
-                        options={viewPrefs.options}
-                        selected={viewPrefs.terminal}
-                        busy={busy}
-                        onSelect={(terminalId) => {
-                          setOpenSelector(null);
-                          void chooseTerminal(terminalId);
-                        }}
-                      />
-                    </SelectorPopup>
-                    <SelectorPopup
-                      id="workspace"
-                      openSelector={openSelector}
-                      onOpenChange={setOpenSelector}
-                      widthClassName="w-[min(400px,calc(100vw-1rem))]"
-                      widthPx={400}
-                      trigger={
-                        <LaunchSummaryPill
-                          active={openSelector === "workspace"}
-                          chevron
-                          className="w-[250px]"
-                          icon={<FolderOpen className="h-4 w-4" />}
-                          onClick={() =>
-                            setOpenSelector(
-                              openSelector === "workspace" ? null : "workspace",
-                            )
-                          }
-                          label={t("Workspace")}
-                          title={selectedWorkspace.label}
-                          detail={workspacesLoading ? t("Loading…") : undefined}
-                        />
-                      }
-                    >
-                      <WorkspacePanel
-                        prefs={viewPrefs}
-                        loading={workspacesLoading}
-                        onSelect={(path) => {
-                          setOpenSelector(null);
-                          void chooseWorkspace(path);
-                        }}
-                        onDelete={(path, label) =>
-                          void removeWorkspace(path, label)
+                  {showLaunchControls && (
+                    <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+                      <SelectorPopup
+                        id="terminal"
+                        openSelector={openSelector}
+                        onOpenChange={setOpenSelector}
+                        widthClassName="w-[min(300px,calc(100vw-1rem))]"
+                        widthPx={300}
+                        trigger={
+                          <LaunchSummaryPill
+                            active={openSelector === "terminal"}
+                            chevron
+                            disabled={busy}
+                            className="w-[160px]"
+                            icon={<Terminal className="h-4 w-4" />}
+                            onClick={() =>
+                              setOpenSelector(
+                                openSelector === "terminal" ? null : "terminal",
+                              )
+                            }
+                            label={t("Terminal")}
+                            title={selectedTerminal?.label ?? t("Terminal")}
+                          />
                         }
-                        onReorder={(fromPath, toPath) =>
-                          void reorderWorkspace(fromPath, toPath)
-                        }
-                        onCreate={() => {
-                          setOpenSelector(null);
-                          void chooseFolder();
-                        }}
-                        sessionCounts={workspaceSessionCounts}
-                        busy={busy}
-                      />
-                    </SelectorPopup>
-                    <SelectorPopup
-                      id="session"
-                      openSelector={openSelector}
-                      onOpenChange={setOpenSelector}
-                      widthClassName="w-[min(420px,calc(100vw-1rem))]"
-                      widthPx={420}
-                      trigger={
-                        <LaunchSummaryPill
-                          active={openSelector === "session"}
-                          chevron
-                          disabled={!sessionResumeSupported}
-                          className="w-[210px]"
-                          icon={<MessageCircle className="h-4 w-4" />}
-                          onClick={() =>
-                            setOpenSelector(
-                              openSelector === "session" ? null : "session",
-                            )
-                          }
-                          label={t("Session")}
-                          title={
-                            !sessionResumeSupported
-                              ? t("Session resume unavailable")
-                              : sessionsLoading
-                                ? t("Loading…")
-                                : sessionTitle
-                          }
-                          detail={selectedSession ? t("resume") : undefined}
+                      >
+                        <TerminalPanel
+                          options={viewPrefs.options}
+                          selected={viewPrefs.terminal}
+                          busy={busy}
+                          onSelect={(terminalId) => {
+                            setOpenSelector(null);
+                            void chooseTerminal(terminalId);
+                          }}
                         />
-                      }
-                    >
-                      <SessionPanel
-                        sessions={visibleSessions}
-                        selected={sessionChoice}
-                        archiveFilterAvailable={agentId === "codex"}
-                        resumeSupported={sessionResumeSupported}
-                        unsupportedReason={sessionResumeUnsupportedReason}
-                        showArchived={showArchivedSessions}
-                        onShowArchivedChange={setShowArchivedSessions}
-                        onSelect={(choice) => {
-                          setOpenSelector(null);
-                          setSessionChoice(choice);
-                        }}
-                      />
-                    </SelectorPopup>
-                  </div>
+                      </SelectorPopup>
+                      <SelectorPopup
+                        id="workspace"
+                        openSelector={openSelector}
+                        onOpenChange={setOpenSelector}
+                        widthClassName="w-[min(400px,calc(100vw-1rem))]"
+                        widthPx={400}
+                        trigger={
+                          <LaunchSummaryPill
+                            active={openSelector === "workspace"}
+                            chevron
+                            className="w-[250px]"
+                            icon={<FolderOpen className="h-4 w-4" />}
+                            onClick={() =>
+                              setOpenSelector(
+                                openSelector === "workspace"
+                                  ? null
+                                  : "workspace",
+                              )
+                            }
+                            label={t("Workspace")}
+                            title={selectedWorkspace.label}
+                            detail={
+                              workspacesLoading ? t("Loading…") : undefined
+                            }
+                          />
+                        }
+                      >
+                        <WorkspacePanel
+                          prefs={viewPrefs}
+                          loading={workspacesLoading}
+                          onSelect={(path) => {
+                            setOpenSelector(null);
+                            void chooseWorkspace(path);
+                          }}
+                          onDelete={(path, label) =>
+                            void removeWorkspace(path, label)
+                          }
+                          onReorder={(fromPath, toPath) =>
+                            void reorderWorkspace(fromPath, toPath)
+                          }
+                          onCreate={() => {
+                            setOpenSelector(null);
+                            void chooseFolder();
+                          }}
+                          sessionCounts={workspaceSessionCounts}
+                          busy={busy}
+                        />
+                      </SelectorPopup>
+                      <SelectorPopup
+                        id="session"
+                        openSelector={openSelector}
+                        onOpenChange={setOpenSelector}
+                        widthClassName="w-[min(420px,calc(100vw-1rem))]"
+                        widthPx={420}
+                        trigger={
+                          <LaunchSummaryPill
+                            active={openSelector === "session"}
+                            chevron
+                            disabled={!sessionResumeSupported}
+                            className="w-[210px]"
+                            icon={<MessageCircle className="h-4 w-4" />}
+                            onClick={() =>
+                              setOpenSelector(
+                                openSelector === "session" ? null : "session",
+                              )
+                            }
+                            label={t("Session")}
+                            title={
+                              !sessionResumeSupported
+                                ? t("Session resume unavailable")
+                                : sessionsLoading
+                                  ? t("Loading…")
+                                  : sessionTitle
+                            }
+                            detail={selectedSession ? t("resume") : undefined}
+                          />
+                        }
+                      >
+                        <SessionPanel
+                          sessions={visibleSessions}
+                          selected={sessionChoice}
+                          archiveFilterAvailable={agentId === "codex"}
+                          resumeSupported={sessionResumeSupported}
+                          unsupportedReason={sessionResumeUnsupportedReason}
+                          showArchived={showArchivedSessions}
+                          onShowArchivedChange={setShowArchivedSessions}
+                          onSelect={(choice) => {
+                            setOpenSelector(null);
+                            setSessionChoice(choice);
+                          }}
+                        />
+                      </SelectorPopup>
+                    </div>
+                  )}
                 </div>
                 <div className="col-span-1 flex">
                   <TooltipButton

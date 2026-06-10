@@ -521,11 +521,7 @@ export function AgentRailButton({
         id={agent.id}
         label={agent.display_name}
         framed={false}
-        className={
-          agent.direct_only
-            ? "absolute inset-0 h-full w-full rounded-[inherit]"
-            : "h-9 w-9"
-        }
+        className="h-12 w-12 rounded-[10px]"
       />
       {isDefault && (
         <span className="absolute -right-1 -top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-amber-500/40 bg-background text-amber-600 shadow-sm dark:text-amber-300">
