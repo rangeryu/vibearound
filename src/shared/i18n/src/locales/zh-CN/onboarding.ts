@@ -136,6 +136,7 @@ export const zhCNOnboarding: Record<string, string> = {
   Installed: "已安装",
   "Installed {{version}}": "已安装 {{version}}",
   Checking: "检测中",
+  "Check timed out": "检测超时",
   "Checking updates": "检查更新中",
   "Not installed": "未安装",
   "Available {{version}}": "可安装 {{version}}",

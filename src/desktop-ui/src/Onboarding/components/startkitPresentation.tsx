@@ -159,6 +159,9 @@ export function compactReportLabel(report: StartkitItemReport, t: Translate): st
   if (report.status === "running") {
     return report.message ? t(report.message) : t("Checking");
   }
+  if ((report.status === "error" || report.status === "blocked") && report.message) {
+    return t(report.message);
+  }
   if (report.status === "ok") {
     return report.version
       ? t("Installed {{version}}", { version: report.version })

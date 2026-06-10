@@ -26,6 +26,8 @@ use crate::agent_detection;
 const SETTINGS_TOML: &str = include_str!("../../../resources/startkit/settings.toml");
 const STARTKIT_PROGRESS_EVENT: &str = "startkit-progress";
 const STARTKIT_COMPLETE_EVENT: &str = "startkit-complete";
+const STARTKIT_ITEM_SCAN_TIMEOUT: Duration = Duration::from_secs(8);
+const AGENT_CLI_SCAN_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct StartkitRunState {
     cancelled: Arc<AtomicBool>,
@@ -435,7 +437,7 @@ pub(crate) async fn scan_agent_cli_reports(
         .iter()
         .map(|agent_id| format!("agents.{agent_id}.cli"))
         .collect::<Vec<_>>();
-    scan_startkit_item_reports(settings, choices, &item_ids, Duration::from_secs(8)).await
+    scan_startkit_item_reports(settings, choices, &item_ids, AGENT_CLI_SCAN_TIMEOUT).await
 }
 
 pub(crate) async fn scan_tunnel_reports(
@@ -464,13 +466,14 @@ pub(crate) async fn scan_tunnel_reports(
                 settings,
                 choices,
                 &["essentials.node".to_string()],
-                Duration::from_secs(8),
+                STARTKIT_ITEM_SCAN_TIMEOUT,
             )
             .await
         }
         _ => {
             let item_id = format!("tunnels.{}.binary", choices.tunnel);
-            scan_startkit_item_reports(settings, choices, &[item_id], Duration::from_secs(8)).await
+            scan_startkit_item_reports(settings, choices, &[item_id], STARTKIT_ITEM_SCAN_TIMEOUT)
+                .await
         }
     }
 }
@@ -492,7 +495,7 @@ pub(crate) async fn scan_computer_reports(
             )
         })
         .collect::<Vec<_>>();
-    scan_startkit_item_reports(settings, choices, &item_ids, Duration::from_secs(8)).await
+    scan_startkit_item_reports(settings, choices, &item_ids, STARTKIT_ITEM_SCAN_TIMEOUT).await
 }
 
 async fn scan_startkit_item_reports(
@@ -522,9 +525,9 @@ async fn scan_startkit_item_reports(
             )
             .await
             .unwrap_or_else(|_| StartkitItemReport {
-                status: StartkitItemStatus::Broken,
-                message: Some(format!("{} version check timed out", item.label)),
-                actions: vec!["install".to_string()],
+                status: StartkitItemStatus::Error,
+                message: Some("Check timed out".to_string()),
+                actions: Vec::new(),
                 ..base_report(&item)
             });
             (index, report)
