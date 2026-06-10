@@ -27,7 +27,6 @@ const SETTINGS_TOML: &str = include_str!("../../../resources/startkit/settings.t
 const STARTKIT_PROGRESS_EVENT: &str = "startkit-progress";
 const STARTKIT_COMPLETE_EVENT: &str = "startkit-complete";
 const STARTKIT_ITEM_SCAN_TIMEOUT: Duration = Duration::from_secs(8);
-const AGENT_CLI_SCAN_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct StartkitRunState {
     cancelled: Arc<AtomicBool>,
@@ -433,11 +432,29 @@ pub(crate) async fn scan_agent_cli_reports(
     choices: &StartkitChoices,
     agent_ids: &[String],
 ) -> anyhow::Result<Vec<StartkitItemReport>> {
-    let item_ids = agent_ids
-        .iter()
-        .map(|agent_id| format!("agents.{agent_id}.cli"))
-        .collect::<Vec<_>>();
-    scan_startkit_item_reports(settings, choices, &item_ids, AGENT_CLI_SCAN_TIMEOUT).await
+    let _ = settings;
+    let manifest = load_manifest()?;
+    let mut tasks = JoinSet::new();
+
+    for (index, agent_id) in agent_ids.iter().enumerate() {
+        let item_id = format!("agents.{agent_id}.cli");
+        let Ok(item) = find_item(&manifest, &item_id).cloned() else {
+            continue;
+        };
+        let agent_id = agent_id.clone();
+        let choices = choices.clone();
+        tasks.spawn(async move {
+            let report = scan_agent_cli_item(&item, &agent_id, &choices).await;
+            (index, report)
+        });
+    }
+
+    let mut reports = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        reports.push(result?);
+    }
+    reports.sort_by_key(|(index, _)| *index);
+    Ok(reports.into_iter().map(|(_, report)| report).collect())
 }
 
 pub(crate) async fn scan_tunnel_reports(

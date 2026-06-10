@@ -375,29 +375,30 @@ export default function Onboarding() {
         itemCheckSignature(agentId, "local", toolchainMode),
       );
     }
-    for (const agentId of pendingAgentIds) {
-      setAgentInstallReports((previous) =>
-        mergeReportsById(previous, [
+    setAgentInstallReports((previous) =>
+      mergeReportsById(
+        previous,
+        pendingAgentIds.map((agentId) =>
           agentCheckingReport(agentId, agents, "Checking local version"),
-        ]),
-      );
+        ),
+      ),
+    );
 
-      void invoke<StartkitItemReport[]>("scan_agent_install_status", {
-        settings,
-        choices: {
-          ...agentStatusChoices,
-          agents: [agentId],
-        },
+    void invoke<StartkitItemReport[]>("scan_agent_install_status", {
+      settings,
+      choices: {
+        ...agentStatusChoices,
+        agents: pendingAgentIds,
+      },
+    })
+      .then((reports) => {
+        setAgentInstallReports((previous) =>
+          mergeReportsById(previous, reports),
+        );
       })
-        .then((reports) => {
-          setAgentInstallReports((previous) =>
-            mergeReportsById(previous, reports),
-          );
-        })
-        .catch((error) => {
-          console.error(`failed to scan ${agentId} install status`, error);
-        });
-    }
+      .catch((error) => {
+        console.error("failed to scan agent install status", error);
+      });
   }, [
     activeStep,
     agentStatusChoices,

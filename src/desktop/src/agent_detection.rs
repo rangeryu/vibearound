@@ -8,6 +8,7 @@ use tokio::process::Command;
 
 const AGENT_SOURCES_TOML: &str = include_str!("../../resources/agent-sources.toml");
 const DETECTION_SCHEMA_VERSION: u32 = 1;
+const VERSION_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentSourceCatalog {
@@ -584,7 +585,7 @@ async fn output_lines(mut command: Command, max_duration: Duration) -> Vec<PathB
 
 async fn command_version(path: &Path, version_arg: &str) -> Option<String> {
     let mut command = command_for_version_check(path, version_arg);
-    let output = tokio::time::timeout(Duration::from_secs(6), command.output())
+    let output = tokio::time::timeout(VERSION_CHECK_TIMEOUT, command.output())
         .await
         .ok()?
         .ok()?;
