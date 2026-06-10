@@ -8,6 +8,8 @@ use ::common::{agent as agent_integrations, profiles, resources};
 use anyhow::{anyhow, Context};
 use profiles::ProfileDef;
 
+use crate::agent_detection;
+
 use super::common::LaunchPlan;
 use super::{bridge, codex};
 
@@ -97,7 +99,7 @@ impl<'a> LaunchPlanBuilder<'a> {
         let Some(session_id) = self.session_id else {
             return Ok(LaunchPlan {
                 env: Vec::new(),
-                command: agent.pty.command.clone(),
+                command: launch_command_for_agent(agent_id, &agent.pty.command),
                 args: terminal_launch_args_for_agent(agent_id),
                 window_label: format!("{} (direct)", agent.display_name),
                 workspace,
@@ -109,7 +111,7 @@ impl<'a> LaunchPlanBuilder<'a> {
         args.extend(resume_args);
         Ok(LaunchPlan {
             env: Vec::new(),
-            command,
+            command: launch_command_for_agent(agent_id, &command),
             args,
             window_label: format!("{} (resume)", agent.display_name),
             workspace,
@@ -134,7 +136,7 @@ impl<'a> LaunchPlanBuilder<'a> {
 
         Ok(LaunchPlan {
             env,
-            command: agent.pty.command.clone(),
+            command: launch_command_for_agent(agent_id, &agent.pty.command),
             args: command_args,
             window_label: profile.label.clone(),
             workspace,
@@ -162,11 +164,50 @@ impl<'a> LaunchPlanBuilder<'a> {
 
         Ok(LaunchPlan {
             env,
-            command,
+            command: launch_command_for_agent(agent_id, &command),
             args,
             window_label: format!("{} (resume)", profile.label),
             workspace,
         })
+    }
+}
+
+fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> String {
+    let Some(candidate) = agent_detection::selected_candidate_for(agent_id) else {
+        return fallback_command.to_string();
+    };
+    replace_launch_program(fallback_command, &candidate.path)
+}
+
+fn replace_launch_program(command: &str, program_path: &str) -> String {
+    let mut parts = command.splitn(2, char::is_whitespace);
+    let Some(program) = parts.next().filter(|part| !part.is_empty()) else {
+        return command.to_string();
+    };
+    let quoted = quote_launch_program_path(program_path);
+    match parts.next() {
+        Some(rest) => {
+            let rest = rest.trim_start();
+            if rest.is_empty() {
+                quoted
+            } else {
+                format!("{quoted} {rest}")
+            }
+        }
+        None if program.is_empty() => command.to_string(),
+        None => quoted,
+    }
+}
+
+fn quote_launch_program_path(path: &str) -> String {
+    if cfg!(windows) {
+        if path.chars().any(char::is_whitespace) {
+            format!("\"{}\"", path.replace('"', "\\\""))
+        } else {
+            path.to_string()
+        }
+    } else {
+        shell_escape::unix::escape(std::borrow::Cow::Borrowed(path)).into_owned()
     }
 }
 
@@ -318,6 +359,25 @@ mod tests {
             agent_id: agent_id.to_string(),
             _lock: lock,
         }
+    }
+
+    #[test]
+    fn replace_launch_program_preserves_command_tail() {
+        assert_eq!(
+            replace_launch_program("claude code --permission-mode acceptEdits", "/tmp/claude"),
+            "/tmp/claude code --permission-mode acceptEdits"
+        );
+    }
+
+    #[test]
+    fn replace_launch_program_quotes_paths_with_spaces_on_unix() {
+        if cfg!(windows) {
+            return;
+        }
+        assert_eq!(
+            replace_launch_program("codex", "/Applications/My Codex.app/Contents/codex"),
+            "'/Applications/My Codex.app/Contents/codex'"
+        );
     }
 
     fn minimax_anthropic_profile() -> ProfileDef {
