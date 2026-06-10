@@ -6,7 +6,7 @@ const CLI_LOGOS: Record<string, string> = {
   claude: "/brand/cli-claude.svg",
   "claude-desktop": "/brand/cli-claude.svg",
   codex: "/brand/cli-openai.svg",
-  "codex-desktop": "/brand/cli-openai.svg",
+  "codex-desktop": "/brand/cli-codex-desktop.png",
   pi: "/brand/cli-pi.svg",
   gemini: "/brand/cli-gemini.svg",
   opencode: "/brand/cli-opencode.svg",

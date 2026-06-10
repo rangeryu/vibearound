@@ -8,6 +8,7 @@ import { useSortable } from "@dnd-kit/react/sortable";
 import {
   Copy,
   GripVertical,
+  Monitor,
   MoreVertical,
   Pencil,
   Plug,
@@ -524,6 +525,11 @@ export function AgentRailButton({
       {isDefault && (
         <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-amber-500/40 bg-background text-amber-600 shadow-sm dark:text-amber-300">
           <Star className="h-2.5 w-2.5" />
+        </span>
+      )}
+      {agent.direct_only && (
+        <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm">
+          <Monitor className="h-2.5 w-2.5" />
         </span>
       )}
     </button>
