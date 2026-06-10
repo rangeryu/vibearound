@@ -114,6 +114,7 @@ pub struct AgentSummary {
     pub description: String,
     pub install_type: Option<String>,
     pub pty_command: String,
+    pub direct_only: bool,
     pub acp_program: String,
     pub acp_args: Vec<String>,
     pub acp_npm_package: Option<String>,
@@ -178,12 +179,14 @@ pub async fn uninstall_agent_integrations(
 pub fn list_agents() -> Vec<AgentSummary> {
     common::resources::AGENTS
         .iter()
+        .filter(|a| a.supports_current_platform())
         .map(|a| AgentSummary {
             id: a.id.clone(),
             display_name: a.display_name.clone(),
             description: a.description.clone(),
             install_type: a.install.as_ref().map(|i| i.install_type.clone()),
-            pty_command: a.pty.command.clone(),
+            pty_command: a.pty_command_for_current_platform().to_string(),
+            direct_only: a.direct_only,
             acp_program: a.acp.program.clone(),
             acp_args: a.acp.args.clone(),
             acp_npm_package: a.acp.npm_package.clone(),
@@ -353,8 +356,8 @@ async fn agent_install_report(
     agent: common::resources::AgentDef,
     toolchain_mode: &str,
 ) -> StartkitItemReport {
-    let program =
-        program_from_command(&agent.pty.command).unwrap_or_else(|| agent.acp.program.clone());
+    let program = program_from_command(agent.pty_command_for_current_platform())
+        .unwrap_or_else(|| agent.acp.program.clone());
     let report_id = format!("agents.{}.cli", agent.id);
     let path = resolve_program_path(&program, toolchain_mode).await;
     let installed = path.is_some();
@@ -419,7 +422,7 @@ async fn agent_update_report(
         .next()?;
     let agent = common::resources::agent_by_id(&agent_id)?;
     let program = agent_detection::configured_program(&agent_id)
-        .or_else(|| program_from_command(&agent.pty.command))
+        .or_else(|| program_from_command(agent.pty_command_for_current_platform()))
         .unwrap_or_else(|| agent.id.clone());
     let source = agent_detection::selected_candidate_for(&agent_id)
         .map(|candidate| candidate.source)

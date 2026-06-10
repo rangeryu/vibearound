@@ -94,13 +94,18 @@ impl<'a> LaunchPlanBuilder<'a> {
         let agent = resources::agent_by_id(agent_id)
             .ok_or_else(|| anyhow!("agent '{}' not found in agents.json", agent_id))?;
         let workspace = crate::profiles::resolve_launch_workspace(agent_id)?;
-        agent_integrations::auto_install_project_integrations(agent_id, &workspace)
-            .with_context(|| format!("install project integrations for {}", agent_id))?;
+        if !agent.direct_only {
+            agent_integrations::auto_install_project_integrations(agent_id, &workspace)
+                .with_context(|| format!("install project integrations for {}", agent_id))?;
+        }
 
         let Some(session_id) = self.session_id else {
             return Ok(LaunchPlan {
                 env: Vec::new(),
-                command: launch_command_for_agent(agent_id, &agent.pty.command),
+                command: launch_command_for_agent(
+                    agent_id,
+                    agent.pty_command_for_current_platform(),
+                ),
                 args: terminal_launch_args_for_agent(agent_id),
                 window_label: format!("{} (direct)", agent.display_name),
                 workspace,
@@ -137,7 +142,7 @@ impl<'a> LaunchPlanBuilder<'a> {
 
         Ok(LaunchPlan {
             env,
-            command: launch_command_for_agent(agent_id, &agent.pty.command),
+            command: launch_command_for_agent(agent_id, agent.pty_command_for_current_platform()),
             args: command_args,
             window_label: profile.label.clone(),
             workspace,

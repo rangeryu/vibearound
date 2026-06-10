@@ -7,6 +7,7 @@ export interface AgentSummary {
   display_name: string;
   description: string;
   install_type?: "npm" | "script" | "path";
+  direct_only?: boolean;
 }
 
 export interface TunnelSummary {

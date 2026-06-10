@@ -229,6 +229,9 @@ pub async fn scan_agent_and_persist(agent_id: &str) -> anyhow::Result<AgentDetec
 pub async fn scan_agents(catalog: &AgentSourceCatalog) -> anyhow::Result<AgentDetectionFile> {
     let mut agents = BTreeMap::new();
     for agent in common::resources::AGENTS.iter() {
+        if agent.direct_only || !agent.supports_current_platform() {
+            continue;
+        }
         let spec = agent_command_spec(catalog, &agent.id)?;
         let detection = scan_agent(&agent.id, &spec).await;
         agents.insert(agent.id.clone(), detection);
@@ -252,7 +255,8 @@ fn agent_command_spec(
     let agent = common::resources::agent_by_id(agent_id)
         .ok_or_else(|| anyhow::anyhow!("agent '{}' not found", agent_id))?;
     Ok(AgentCommandSpec {
-        program: program_from_command(&agent.pty.command).unwrap_or_else(|| agent.id.clone()),
+        program: program_from_command(agent.pty_command_for_current_platform())
+            .unwrap_or_else(|| agent.id.clone()),
         version_arg: "--version".to_string(),
         sources: BTreeMap::new(),
     })

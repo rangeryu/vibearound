@@ -84,7 +84,9 @@ import type {
 
 const AGENT_ORDER = [
   "codex",
+  "codex-desktop",
   "claude",
+  "claude-desktop",
   "pi",
   "gemini",
   "cursor",
@@ -168,7 +170,7 @@ export function AgentLaunchBuilder({
       .then((items) => {
         const rank = new Map(AGENT_ORDER.map((id, index) => [id, index]));
         const visible = enabledAgents
-          ? items.filter((agent) => enabledAgents.has(agent.id))
+          ? items.filter((agent) => enabledAgents.has(agent.id) || agent.direct_only)
           : items;
         const ordered = [...visible].sort(
           (a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999),

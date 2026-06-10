@@ -163,9 +163,10 @@ export function AgentLaunchSettingsDialog({
   const previewWindowLabel =
     windowLabel?.trim() || `${agent.display_name} (direct)`;
   const clientOs = detectClientOs();
+  const canConfigureAcp = !agent.direct_only;
   const dirty =
     !sameArgs(terminalArgs, initialArgs.terminal ?? []) ||
-    !sameArgs(acpArgs, initialArgs.acp ?? []);
+    (canConfigureAcp && !sameArgs(acpArgs, initialArgs.acp ?? []));
 
   function parseErrorMessage(error: LaunchArgParseError): string {
     switch (error) {
@@ -184,7 +185,7 @@ export function AgentLaunchSettingsDialog({
       await onSave({
         ...initialArgs,
         terminal: terminalArgs,
-        acp: acpArgs,
+        acp: canConfigureAcp ? acpArgs : initialArgs.acp,
       });
       onClose();
     } catch (error) {
@@ -210,13 +211,19 @@ export function AgentLaunchSettingsDialog({
             onValueChange={(value) => setActiveTab(value as LaunchArgTab)}
             className="gap-3"
           >
-            <TabsList className="grid h-8 w-full grid-cols-2 rounded-md p-0.5">
+            <TabsList
+              className={`grid h-8 w-full rounded-md p-0.5 ${
+                canConfigureAcp ? "grid-cols-2" : "grid-cols-1"
+              }`}
+            >
               <TabsTrigger value="terminal" className="h-7 text-xs">
                 {t("Terminal")}
               </TabsTrigger>
-              <TabsTrigger value="acp" className="h-7 text-xs">
-                {t("Agent protocol")}
-              </TabsTrigger>
+              {canConfigureAcp && (
+                <TabsTrigger value="acp" className="h-7 text-xs">
+                  {t("Agent protocol")}
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="terminal" className="mt-0 space-y-3">
@@ -238,24 +245,26 @@ export function AgentLaunchSettingsDialog({
               />
             </TabsContent>
 
-            <TabsContent value="acp" className="mt-0">
-              <ArgsEditor
-                label={t("Agent protocol arguments")}
-                previewKind="acp"
-                commandWords={acpCommandWords(agent, clientOs)}
-                clientOs={clientOs}
-                workspacePath={previewWorkspace}
-                windowLabel={previewWindowLabel}
-                args={acpArgs}
-                draftArg={acpDraftArg}
-                busy={busy}
-                error={acpError}
-                onChangeArgs={setAcpArgs}
-                onChangeDraftArg={setAcpDraftArg}
-                onError={setAcpError}
-                parseErrorMessage={parseErrorMessage}
-              />
-            </TabsContent>
+            {canConfigureAcp && (
+              <TabsContent value="acp" className="mt-0">
+                <ArgsEditor
+                  label={t("Agent protocol arguments")}
+                  previewKind="acp"
+                  commandWords={acpCommandWords(agent, clientOs)}
+                  clientOs={clientOs}
+                  workspacePath={previewWorkspace}
+                  windowLabel={previewWindowLabel}
+                  args={acpArgs}
+                  draftArg={acpDraftArg}
+                  busy={busy}
+                  error={acpError}
+                  onChangeArgs={setAcpArgs}
+                  onChangeDraftArg={setAcpDraftArg}
+                  onError={setAcpError}
+                  parseErrorMessage={parseErrorMessage}
+                />
+              </TabsContent>
+            )}
           </Tabs>
 
           {saveError && <div className="mt-3 text-xs text-destructive">{saveError}</div>}

@@ -90,6 +90,7 @@ export interface AgentSummary {
   description: string;
   install_type: string | null;
   pty_command: string;
+  direct_only: boolean;
   acp_program: string;
   acp_args: string[];
   acp_npm_package?: string | null;

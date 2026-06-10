@@ -8,7 +8,9 @@ import { listAgents, type AgentSummary } from "./api";
 
 const AGENT_DISPLAY_ORDER = [
   "claude",
+  "claude-desktop",
   "codex",
+  "codex-desktop",
   "pi",
   "gemini",
   "opencode",
@@ -59,7 +61,7 @@ export function DirectCards({
       .then((items) => {
         const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));
         const visible = enabledAgentSet
-          ? items.filter((agent) => enabledAgentSet.has(agent.id))
+          ? items.filter((agent) => enabledAgentSet.has(agent.id) || agent.direct_only)
           : items;
         setAgents([...visible].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999)));
       })

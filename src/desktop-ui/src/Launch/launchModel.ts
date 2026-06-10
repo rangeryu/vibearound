@@ -319,8 +319,12 @@ export function agentLabel(agentId: string): string {
   switch (agentId) {
     case "claude":
       return "Claude";
+    case "claude-desktop":
+      return "Claude Desktop";
     case "codex":
       return "Codex";
+    case "codex-desktop":
+      return "Codex Desktop";
     case "pi":
       return "Pi";
     case "gemini":
