@@ -206,19 +206,30 @@ pub async fn scan_and_persist() -> anyhow::Result<AgentDetectionFile> {
     Ok(detected)
 }
 
+pub async fn scan_agent_and_persist(agent_id: &str) -> anyhow::Result<AgentDetection> {
+    let catalog = source_catalog()?;
+    let spec = agent_command_spec(&catalog, agent_id)?;
+    let detection = scan_agent(agent_id, &spec).await;
+    let mut detected = read_detected_agents().unwrap_or_else(|| AgentDetectionFile {
+        schema_version: DETECTION_SCHEMA_VERSION,
+        platform: current_platform().to_string(),
+        scanned_at_unix_ms: now_unix_ms(),
+        agents: BTreeMap::new(),
+    });
+    detected.schema_version = DETECTION_SCHEMA_VERSION;
+    detected.platform = current_platform().to_string();
+    detected.scanned_at_unix_ms = now_unix_ms();
+    detected
+        .agents
+        .insert(agent_id.to_string(), detection.clone());
+    write_detected_agents(&detected)?;
+    Ok(detection)
+}
+
 pub async fn scan_agents(catalog: &AgentSourceCatalog) -> anyhow::Result<AgentDetectionFile> {
     let mut agents = BTreeMap::new();
     for agent in common::resources::AGENTS.iter() {
-        let spec = catalog
-            .agents
-            .get(&agent.id)
-            .cloned()
-            .unwrap_or_else(|| AgentCommandSpec {
-                program: program_from_command(&agent.pty.command)
-                    .unwrap_or_else(|| agent.id.clone()),
-                version_arg: "--version".to_string(),
-                sources: BTreeMap::new(),
-            });
+        let spec = agent_command_spec(catalog, &agent.id)?;
         let detection = scan_agent(&agent.id, &spec).await;
         agents.insert(agent.id.clone(), detection);
     }
@@ -228,6 +239,22 @@ pub async fn scan_agents(catalog: &AgentSourceCatalog) -> anyhow::Result<AgentDe
         platform: current_platform().to_string(),
         scanned_at_unix_ms: now_unix_ms(),
         agents,
+    })
+}
+
+fn agent_command_spec(
+    catalog: &AgentSourceCatalog,
+    agent_id: &str,
+) -> anyhow::Result<AgentCommandSpec> {
+    if let Some(spec) = catalog.agents.get(agent_id) {
+        return Ok(spec.clone());
+    }
+    let agent = common::resources::agent_by_id(agent_id)
+        .ok_or_else(|| anyhow::anyhow!("agent '{}' not found", agent_id))?;
+    Ok(AgentCommandSpec {
+        program: program_from_command(&agent.pty.command).unwrap_or_else(|| agent.id.clone()),
+        version_arg: "--version".to_string(),
+        sources: BTreeMap::new(),
     })
 }
 

@@ -1077,11 +1077,10 @@ async fn scan_agent_cli_item(
     agent_id: &str,
     choices: &StartkitChoices,
 ) -> StartkitItemReport {
-    let detected = agent_detection::scan_and_persist().await.ok();
-    let selected = detected
-        .as_ref()
-        .and_then(|detected| detected.agents.get(agent_id))
-        .and_then(|detection| detection.selected.clone());
+    let selected = agent_detection::scan_agent_and_persist(agent_id)
+        .await
+        .ok()
+        .and_then(|detection| detection.selected);
 
     match selected {
         Some(candidate) => StartkitItemReport {
