@@ -41,7 +41,7 @@ export function markReportsUpdating(
     (report.status === "ok" ||
       report.status === "missing" ||
       report.status === "outdated")
-      ? { ...report, status: "running", message }
+      ? { ...report, message }
       : report,
   );
 }

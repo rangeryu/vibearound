@@ -38,6 +38,8 @@ use common::{config, plugins};
 
 use crate::startkit::{StartkitChoices, StartkitItemReport, StartkitItemStatus};
 
+const AGENT_UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+
 // ---------------------------------------------------------------------------
 // Shared state types
 // ---------------------------------------------------------------------------
@@ -415,78 +417,62 @@ async fn agent_update_report(
     agent_id: String,
     choices: StartkitChoices,
 ) -> Option<StartkitItemReport> {
-    let local = agent_cli_reports(&Value::Null, &choices, std::slice::from_ref(&agent_id))
-        .await
-        .ok()?
-        .into_iter()
-        .next()?;
     let agent = common::resources::agent_by_id(&agent_id)?;
-    let program = agent_detection::configured_program(&agent_id)
-        .or_else(|| program_from_command(agent.pty_command_for_current_platform()))
-        .unwrap_or_else(|| agent.id.clone());
-    let source = agent_detection::selected_candidate_for(&agent_id)
-        .map(|candidate| candidate.source)
-        .or_else(|| {
-            agent_detection::install_source_for_toolchain_mode(&agent_id, &choices.toolchain_mode)
-        })
-        .unwrap_or_else(|| "path".to_string());
-    let latest = latest_version_for_agent_source(&agent_id, &source, &choices)
-        .await
-        .ok()
-        .flatten();
-    let local_version = local
-        .version
-        .as_deref()
-        .and_then(extract_semver)
-        .or_else(|| {
-            agent_detection::source_package(&agent_id, &source)
-                .as_deref()
-                .and_then(local_npm_package_version)
-        });
-    let mut report = local;
+    let candidate = agent_detection::selected_candidate_for(&agent_id)?;
+    let source = candidate.source.clone();
+    let local_version = candidate.version.as_deref().and_then(extract_semver);
+    let mut report = StartkitItemReport {
+        id: format!("agents.{agent_id}.cli"),
+        label: agent.display_name.clone(),
+        group: "agents".to_string(),
+        category: "agents".to_string(),
+        status: StartkitItemStatus::Ok,
+        severity: None,
+        version: candidate.version.clone(),
+        latest_version: None,
+        path: Some(candidate.path.clone()),
+        message: None,
+        actions: Vec::new(),
+        secret: false,
+        settings_key: None,
+    };
+    let Some(local_version) = local_version else {
+        report.message = Some("Unable to check updates".to_string());
+        return Some(report);
+    };
+
+    let latest = match tokio::time::timeout(
+        AGENT_UPDATE_CHECK_TIMEOUT,
+        latest_version_for_agent_source(&agent_id, &source, &choices),
+    )
+    .await
+    {
+        Ok(Ok(Some(version))) => version,
+        Ok(_) => {
+            report.message = Some("Unable to check updates".to_string());
+            return Some(report);
+        }
+        Err(_) => {
+            report.message = Some("Update check timed out".to_string());
+            return Some(report);
+        }
+    };
+
     report.label = agent.display_name.clone();
     report.id = format!("agents.{agent_id}.cli");
-    report.latest_version = latest.clone();
+    report.latest_version = Some(latest.clone());
 
     let upgrade_available =
         agent_detection::source_command_template(&agent_id, &source, "upgrade").is_some();
 
-    if report.status == StartkitItemStatus::Ok
-        && latest
-            .as_deref()
-            .is_some_and(|latest| local_version.as_deref() != Some(latest))
-    {
-        report.status = StartkitItemStatus::Outdated;
-        report.message = Some(match latest {
-            Some(version) if upgrade_available => {
-                format!("{program} {version} is available via {source}")
-            }
-            Some(version) => format!("{program} {version} is available; update manually"),
-            None => format!("{program} may have an update; update manually"),
-        });
-        report.actions = if upgrade_available {
-            vec!["install".to_string()]
+    if local_version != latest {
+        report.message = Some(if upgrade_available {
+            format!("Update available {latest}")
         } else {
-            Vec::new()
-        };
-    } else if report.status == StartkitItemStatus::Ok {
-        report.message = Some(format!("{program} is up to date"));
-    } else if report.status == StartkitItemStatus::Missing {
-        let install_available =
-            agent_detection::install_source_for_toolchain_mode(&agent_id, &choices.toolchain_mode)
-                .is_some_and(|source| {
-                    agent_detection::source_command_template(&agent_id, &source, "install")
-                        .is_some()
-                });
-        report.message = Some(match latest {
-            Some(version) => format!("{program} {version} is available"),
-            None => format!("{program} is not installed"),
+            format!("Manual update required {latest}")
         });
-        report.actions = if install_available {
-            vec!["install".to_string()]
-        } else {
-            Vec::new()
-        };
+    } else {
+        report.message = Some("Already up to date".to_string());
     }
     Some(report)
 }
@@ -520,7 +506,7 @@ async fn homebrew_latest_version(agent_id: &str, source: &str) -> anyhow::Result
     };
     let mut command = tokio::process::Command::new("brew");
     command.args(["info", "--json=v2", kind, token]);
-    let output = command_output_with_timeout(command, Duration::from_secs(8))
+    let output = command_output_with_timeout(command, AGENT_UPDATE_CHECK_TIMEOUT)
         .await
         .map_err(anyhow::Error::msg)?;
     if !output.status.success() {
@@ -713,7 +699,7 @@ async fn npm_latest_version(package: &str, source: &str) -> anyhow::Result<Optio
     let registry = npm_registry_for_source(source);
     let url = format!("{}/{}", registry.trim_end_matches('/'), encoded);
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(8))
+        .timeout(AGENT_UPDATE_CHECK_TIMEOUT)
         .build()
         .context("build npm metadata client")?;
     let value: serde_json::Value = client
@@ -817,30 +803,6 @@ fn requested_package_version(package: &str) -> Option<String> {
 
 fn encode_npm_package_for_url(package: &str) -> String {
     package.replace('@', "%40").replace('/', "%2F")
-}
-
-fn local_npm_package_version(package: &str) -> Option<String> {
-    let package = npm_package_name(package);
-    let prefix = common::config::data_dir().join("npm-global");
-    for root in [
-        prefix.join("node_modules"),
-        prefix.join("lib").join("node_modules"),
-    ] {
-        let package_json = package
-            .split('/')
-            .fold(root, |path, segment| path.join(segment))
-            .join("package.json");
-        let Ok(contents) = std::fs::read_to_string(package_json) else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) else {
-            continue;
-        };
-        if let Some(version) = value.get("version").and_then(serde_json::Value::as_str) {
-            return Some(version.to_string());
-        }
-    }
-    None
 }
 
 fn extract_semver(value: &str) -> Option<String> {

@@ -134,12 +134,15 @@ function AgentGrid({
                   message: undefined,
                 }
             : report;
+        const updateLabel = visibleReport
+          ? updateReportLabel(visibleReport, t)
+          : null;
         return (
           <button
             key={agent.id}
             type="button"
             className={cn(
-              "relative flex min-h-[58px] items-center gap-3 rounded-md border p-2.5 pr-9 text-left transition-colors",
+              "relative flex min-h-[72px] items-center gap-3 rounded-md border p-2.5 pr-9 text-left transition-colors",
               selected
                 ? "border-primary/50 bg-primary/10"
                 : "border-border bg-background hover:border-primary/30",
@@ -161,6 +164,11 @@ function AgentGrid({
                   ? compactReportLabel(visibleReport, t)
                   : t("Not installed")}
               </span>
+              {updateLabel && (
+                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground/80">
+                  {updateLabel}
+                </span>
+              )}
             </span>
             <Checkbox
               checked={selected}
@@ -173,4 +181,34 @@ function AgentGrid({
       })}
     </div>
   );
+}
+
+function updateReportLabel(
+  report: StartkitItemReport,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string | null {
+  if (report.status !== "ok" && report.status !== "outdated") return null;
+  switch (report.message) {
+    case "Checking updates":
+      return t("Checking updates");
+    case "Already up to date":
+      return t("Already up to date");
+    case "Unable to check updates":
+      return t("Unable to check updates");
+    case "Update check timed out":
+      return t("Update check timed out");
+    default:
+      break;
+  }
+  if (report.message?.startsWith("Update available ")) {
+    return report.latestVersion
+      ? t("Update available {{version}}", { version: report.latestVersion })
+      : t("Update available");
+  }
+  if (report.message?.startsWith("Manual update required ")) {
+    return report.latestVersion
+      ? t("Manual update required {{version}}", { version: report.latestVersion })
+      : t("Manual update required");
+  }
+  return null;
 }

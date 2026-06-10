@@ -192,14 +192,6 @@ pub fn source_package(agent_id: &str, source: &str) -> Option<String> {
     })
 }
 
-pub fn configured_program(agent_id: &str) -> Option<String> {
-    let catalog = source_catalog().ok()?;
-    catalog
-        .agents
-        .get(agent_id)
-        .map(|spec| spec.program.clone())
-}
-
 pub async fn scan_and_persist() -> anyhow::Result<AgentDetectionFile> {
     let catalog = source_catalog()?;
     let detected = scan_agents(&catalog).await?;

@@ -246,30 +246,33 @@ export default function Onboarding() {
         );
       }
 
-      for (const agentId of pendingAgentIds) {
-        const reportId = `agents.${agentId}.cli`;
-        setAgentInstallReports((previous) =>
-          markReportsUpdating(previous, new Set([reportId]), "Checking updates"),
-        );
+      const reportIds = new Set(
+        pendingAgentIds.map((agentId) => `agents.${agentId}.cli`),
+      );
+      setAgentInstallReports((previous) =>
+        markReportsUpdating(previous, reportIds, "Checking updates"),
+      );
 
-        void invoke<StartkitItemReport[]>("check_agent_updates", {
-          request: {
-            agentIds: [agentId],
-            choices: {
-              ...agentStatusChoices,
-              agents: [agentId],
-            },
+      void invoke<StartkitItemReport[]>("check_agent_updates", {
+        request: {
+          agentIds: pendingAgentIds,
+          choices: {
+            ...agentStatusChoices,
+            agents: pendingAgentIds,
           },
+        },
+      })
+        .then((reports) => {
+          setAgentInstallReports((previous) =>
+            mergeReportsById(previous, reports),
+          );
         })
-          .then((reports) => {
-            setAgentInstallReports((previous) =>
-              mergeReportsById(previous, reports),
-            );
-          })
-          .catch((error) => {
-            console.error(`failed to check ${agentId} updates`, error);
-          });
-      }
+        .catch((error) => {
+          console.error("failed to check agent updates", error);
+          setAgentInstallReports((previous) =>
+            markReportsUpdating(previous, reportIds, "Unable to check updates"),
+          );
+        });
     },
     [agentStatusChoices, downloadSource, toolchainMode],
   );
@@ -412,14 +415,9 @@ export default function Onboarding() {
   useEffect(() => {
     if (!loaded || activeStep !== "agents" || startkit.running) return;
     const updateAgentIds = agentInstallReports
-      .filter((report) =>
-        report.status === "ok" ||
-        report.status === "missing" ||
-        report.status === "outdated"
-      )
+      .filter((report) => report.status === "ok")
       .map(agentIdFromReport)
-      .filter((id): id is string => Boolean(id))
-      .filter((id) => enabledAgents.has(id));
+      .filter((id): id is string => Boolean(id));
     if (updateAgentIds.length > 0) {
       checkAgentUpdates(updateAgentIds);
     }
@@ -427,7 +425,6 @@ export default function Onboarding() {
     activeStep,
     agentInstallReports,
     checkAgentUpdates,
-    enabledAgents,
     loaded,
     startkit.running,
   ]);
