@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent_detection;
 mod onboarding;
 mod profiles;
 mod startkit;
@@ -116,6 +117,13 @@ fn get_app_info() -> AppInfo {
     }
 }
 
+#[tauri::command]
+async fn rescan_agent_entries() -> Result<agent_detection::AgentDetectionFile, String> {
+    agent_detection::scan_and_persist()
+        .await
+        .map_err(|error| error.to_string())
+}
+
 /// Open an HTTP URL in the user's default external browser.
 ///
 /// We can't use `window.open` from the desktop-ui because it creates a
@@ -192,6 +200,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_auth_token,
             get_app_info,
+            rescan_agent_entries,
             open_external_url,
             restart_services,
             set_ui_locale,
@@ -281,6 +290,19 @@ fn main() {
                 app.manage(DaemonController::new(Arc::clone(&daemon), dist_path));
 
                 tray::setup(app)?;
+
+                tauri::async_runtime::spawn(async {
+                    match agent_detection::scan_and_persist().await {
+                        Ok(detected) => tracing::info!(
+                            agents = detected.agents.len(),
+                            "[VibeAround] agent auto-detect completed"
+                        ),
+                        Err(error) => tracing::warn!(
+                            error = %error,
+                            "[VibeAround] agent auto-detect failed"
+                        ),
+                    }
+                });
 
                 // Show the window immediately — the splash screen in index.html
                 // is visible while React loads and the daemon starts.

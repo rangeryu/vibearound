@@ -1,0 +1,270 @@
+[defaults]
+install_source = "npm_managed"
+
+[agents.codex]
+program = "codex"
+version_arg = "--version"
+
+[agents.codex.sources.npm_managed]
+label = "VibeAround managed npm"
+package = "@openai/codex"
+[agents.codex.sources.npm_managed.install]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @openai/codex@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @openai/codex@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @openai/codex@latest"
+[agents.codex.sources.npm_managed.upgrade]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @openai/codex@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @openai/codex@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @openai/codex@latest"
+
+[agents.codex.sources.npm_global]
+label = "npm global"
+package = "@openai/codex"
+[agents.codex.sources.npm_global.install]
+macos = "npm install -g @openai/codex@latest"
+linux = "npm install -g @openai/codex@latest"
+windows = "npm install -g @openai/codex@latest"
+[agents.codex.sources.npm_global.upgrade]
+macos = "npm install -g @openai/codex@latest"
+linux = "npm install -g @openai/codex@latest"
+windows = "npm install -g @openai/codex@latest"
+
+[agents.codex.sources.bun_global]
+label = "Bun global"
+package = "@openai/codex"
+[agents.codex.sources.bun_global.upgrade]
+macos = "bun add -g @openai/codex@latest"
+linux = "bun add -g @openai/codex@latest"
+windows = "bun add -g @openai/codex@latest"
+
+[agents.codex.sources.homebrew_cask]
+label = "Homebrew cask"
+[agents.codex.sources.homebrew_cask.upgrade]
+macos = "brew upgrade --cask codex"
+
+[agents.codex.sources.native]
+label = "Native installer"
+[agents.codex.sources.native.install]
+macos = "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+linux = "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+windows = "powershell -ExecutionPolicy ByPass -c \"irm https://chatgpt.com/codex/install.ps1 | iex\""
+[agents.codex.sources.native.upgrade]
+macos = "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+linux = "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+windows = "powershell -ExecutionPolicy ByPass -c \"irm https://chatgpt.com/codex/install.ps1 | iex\""
+
+[agents.claude]
+program = "claude"
+version_arg = "--version"
+
+[agents.claude.sources.npm_managed]
+label = "VibeAround managed npm"
+package = "@anthropic-ai/claude-code"
+[agents.claude.sources.npm_managed.install]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @anthropic-ai/claude-code@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @anthropic-ai/claude-code@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @anthropic-ai/claude-code@latest"
+[agents.claude.sources.npm_managed.upgrade]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @anthropic-ai/claude-code@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @anthropic-ai/claude-code@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @anthropic-ai/claude-code@latest"
+
+[agents.claude.sources.npm_global]
+label = "npm global"
+package = "@anthropic-ai/claude-code"
+[agents.claude.sources.npm_global.install]
+macos = "npm install -g @anthropic-ai/claude-code@latest"
+linux = "npm install -g @anthropic-ai/claude-code@latest"
+windows = "npm install -g @anthropic-ai/claude-code@latest"
+[agents.claude.sources.npm_global.upgrade]
+macos = "npm install -g @anthropic-ai/claude-code@latest"
+linux = "npm install -g @anthropic-ai/claude-code@latest"
+windows = "npm install -g @anthropic-ai/claude-code@latest"
+
+[agents.claude.sources.homebrew_cask]
+label = "Homebrew cask"
+[agents.claude.sources.homebrew_cask.upgrade]
+macos = "brew upgrade --cask claude-code"
+
+[agents.claude.sources.native]
+label = "Native installer"
+[agents.claude.sources.native.install]
+macos = "curl -fsSL https://claude.ai/install.sh | bash"
+linux = "curl -fsSL https://claude.ai/install.sh | bash"
+windows = "powershell -ExecutionPolicy ByPass -c \"irm https://claude.ai/install.ps1 | iex\""
+[agents.claude.sources.native.upgrade]
+macos = "curl -fsSL https://claude.ai/install.sh | bash"
+linux = "curl -fsSL https://claude.ai/install.sh | bash"
+windows = "powershell -ExecutionPolicy ByPass -c \"irm https://claude.ai/install.ps1 | iex\""
+
+[agents.pi]
+program = "pi"
+version_arg = "--version"
+
+[agents.pi.sources.npm_managed]
+label = "VibeAround managed npm"
+package = "@earendil-works/pi-coding-agent"
+[agents.pi.sources.npm_managed.install]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @earendil-works/pi-coding-agent@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @earendil-works/pi-coding-agent@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @earendil-works/pi-coding-agent@latest"
+[agents.pi.sources.npm_managed.upgrade]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @earendil-works/pi-coding-agent@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @earendil-works/pi-coding-agent@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @earendil-works/pi-coding-agent@latest"
+
+[agents.pi.sources.npm_global]
+label = "npm global"
+package = "@earendil-works/pi-coding-agent"
+[agents.pi.sources.npm_global.install]
+macos = "npm install -g @earendil-works/pi-coding-agent@latest"
+linux = "npm install -g @earendil-works/pi-coding-agent@latest"
+windows = "npm install -g @earendil-works/pi-coding-agent@latest"
+[agents.pi.sources.npm_global.upgrade]
+macos = "npm install -g @earendil-works/pi-coding-agent@latest"
+linux = "npm install -g @earendil-works/pi-coding-agent@latest"
+windows = "npm install -g @earendil-works/pi-coding-agent@latest"
+
+[agents.pi.sources.homebrew_formula]
+label = "Homebrew formula"
+[agents.pi.sources.homebrew_formula.upgrade]
+macos = "brew upgrade --formula pi-coding-agent"
+
+[agents.gemini]
+program = "gemini"
+version_arg = "--version"
+
+[agents.gemini.sources.npm_managed]
+label = "VibeAround managed npm"
+package = "@google/gemini-cli"
+[agents.gemini.sources.npm_managed.install]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @google/gemini-cli@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @google/gemini-cli@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @google/gemini-cli@latest"
+[agents.gemini.sources.npm_managed.upgrade]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @google/gemini-cli@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @google/gemini-cli@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @google/gemini-cli@latest"
+
+[agents.gemini.sources.npm_global]
+label = "npm global"
+package = "@google/gemini-cli"
+[agents.gemini.sources.npm_global.install]
+macos = "npm install -g @google/gemini-cli@latest"
+linux = "npm install -g @google/gemini-cli@latest"
+windows = "npm install -g @google/gemini-cli@latest"
+[agents.gemini.sources.npm_global.upgrade]
+macos = "npm install -g @google/gemini-cli@latest"
+linux = "npm install -g @google/gemini-cli@latest"
+windows = "npm install -g @google/gemini-cli@latest"
+
+[agents.gemini.sources.homebrew_formula]
+label = "Homebrew formula"
+[agents.gemini.sources.homebrew_formula.upgrade]
+macos = "brew upgrade --formula gemini-cli"
+
+[agents.opencode]
+program = "opencode"
+version_arg = "--version"
+
+[agents.opencode.sources.npm_managed]
+label = "VibeAround managed npm"
+package = "opencode-ai"
+[agents.opencode.sources.npm_managed.install]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} opencode-ai@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} opencode-ai@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} opencode-ai@latest"
+[agents.opencode.sources.npm_managed.upgrade]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} opencode-ai@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} opencode-ai@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} opencode-ai@latest"
+
+[agents.opencode.sources.npm_global]
+label = "npm global"
+package = "opencode-ai"
+[agents.opencode.sources.npm_global.install]
+macos = "npm install -g opencode-ai@latest"
+linux = "npm install -g opencode-ai@latest"
+windows = "npm install -g opencode-ai@latest"
+[agents.opencode.sources.npm_global.upgrade]
+macos = "npm install -g opencode-ai@latest"
+linux = "npm install -g opencode-ai@latest"
+windows = "npm install -g opencode-ai@latest"
+
+[agents.opencode.sources.homebrew_formula]
+label = "Homebrew formula"
+[agents.opencode.sources.homebrew_formula.upgrade]
+macos = "brew upgrade --formula opencode"
+
+[agents.cursor]
+program = "cursor-agent"
+version_arg = "--version"
+
+[agents.cursor.sources.homebrew_cask]
+label = "Homebrew cask"
+[agents.cursor.sources.homebrew_cask.upgrade]
+macos = "brew upgrade --cask cursor-cli"
+
+[agents.cursor.sources.native]
+label = "Native installer"
+[agents.cursor.sources.native.install]
+macos = "curl https://cursor.com/install -fsS | bash"
+linux = "curl https://cursor.com/install -fsS | bash"
+windows = "powershell -ExecutionPolicy ByPass -c \"irm https://cursor.com/install.ps1 | iex\""
+[agents.cursor.sources.native.upgrade]
+macos = "curl https://cursor.com/install -fsS | bash"
+linux = "curl https://cursor.com/install -fsS | bash"
+windows = "powershell -ExecutionPolicy ByPass -c \"irm https://cursor.com/install.ps1 | iex\""
+
+[agents.kiro]
+program = "kiro-cli"
+version_arg = "--version"
+
+[agents.kiro.sources.homebrew_cask]
+label = "Homebrew cask"
+[agents.kiro.sources.homebrew_cask.upgrade]
+macos = "brew upgrade --cask --greedy kiro-cli"
+
+[agents.kiro.sources.native]
+label = "Native installer"
+[agents.kiro.sources.native.install]
+macos = "curl -fsSL https://cli.kiro.dev/install | bash"
+linux = "curl -fsSL https://cli.kiro.dev/install | bash"
+windows = "powershell -ExecutionPolicy ByPass -c \"irm 'https://cli.kiro.dev/install.ps1' | iex\""
+[agents.kiro.sources.native.upgrade]
+macos = "kiro-cli"
+linux = "kiro-cli"
+windows = "kiro-cli"
+
+[agents.qwen-code]
+program = "qwen"
+version_arg = "--version"
+
+[agents.qwen-code.sources.npm_managed]
+label = "VibeAround managed npm"
+package = "@qwen-code/qwen-code"
+[agents.qwen-code.sources.npm_managed.install]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @qwen-code/qwen-code@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @qwen-code/qwen-code@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @qwen-code/qwen-code@latest"
+[agents.qwen-code.sources.npm_managed.upgrade]
+macos = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @qwen-code/qwen-code@latest"
+linux = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @qwen-code/qwen-code@latest"
+windows = "npm install --global --prefix {managed_npm_prefix} --registry {npm_registry} @qwen-code/qwen-code@latest"
+
+[agents.qwen-code.sources.npm_global]
+label = "npm global"
+package = "@qwen-code/qwen-code"
+[agents.qwen-code.sources.npm_global.install]
+macos = "npm install -g @qwen-code/qwen-code@latest"
+linux = "npm install -g @qwen-code/qwen-code@latest"
+windows = "npm install -g @qwen-code/qwen-code@latest"
+[agents.qwen-code.sources.npm_global.upgrade]
+macos = "npm install -g @qwen-code/qwen-code@latest"
+linux = "npm install -g @qwen-code/qwen-code@latest"
+windows = "npm install -g @qwen-code/qwen-code@latest"
+
+[agents.qwen-code.sources.homebrew_formula]
+label = "Homebrew formula"
+[agents.qwen-code.sources.homebrew_formula.upgrade]
+macos = "brew upgrade --formula qwen-code"
