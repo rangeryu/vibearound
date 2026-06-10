@@ -485,3 +485,42 @@ fn now_unix_ms() -> u128 {
         .map(|duration| duration.as_millis())
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_catalog_parses_agent_commands() {
+        let catalog = source_catalog().expect("catalog parses");
+        let codex = catalog.agents.get("codex").expect("codex source");
+        assert_eq!(codex.program, "codex");
+        assert!(codex.sources["npm_managed"]
+            .install
+            .for_current_platform()
+            .is_some());
+    }
+
+    #[test]
+    fn classifies_homebrew_npm_global_separately_from_formula() {
+        assert_eq!(
+            classify_source(
+                Path::new("/opt/homebrew/bin/codex"),
+                Some("/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"),
+            ),
+            "npm_global"
+        );
+        assert_eq!(
+            classify_source(
+                Path::new("/opt/homebrew/bin/opencode"),
+                Some("/opt/homebrew/Cellar/opencode/1.17.0/bin/opencode"),
+            ),
+            "homebrew_formula"
+        );
+    }
+
+    #[test]
+    fn managed_candidates_rank_after_user_shell_hits() {
+        assert!(candidate_rank(0, true, "npm_global") < candidate_rank(0, false, "npm_managed"));
+    }
+}
