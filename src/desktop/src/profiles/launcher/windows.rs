@@ -15,8 +15,13 @@ pub(super) fn spawn(plan: LaunchPlan) -> anyhow::Result<()> {
 
 fn spawn_powershell(plan: LaunchPlan) -> anyhow::Result<()> {
     let script_path = write_powershell_launch_script(&plan)?;
+    let no_exit = if plan.windows_process_probe.is_some() {
+        ""
+    } else {
+        "-NoExit "
+    };
     let params = format!(
-        "-ExecutionPolicy Bypass -NoExit -File {}",
+        "-ExecutionPolicy Bypass {no_exit}-File {}",
         quote_windows_process_arg(&script_path.to_string_lossy())
     );
 
@@ -60,12 +65,27 @@ fn build_powershell_script(plan: &LaunchPlan, command: &str, args: &[String]) ->
     ));
     out.push_str(&powershell_command_block(command, &args));
     out.push('\n');
+    if let Some(process_name) = &plan.windows_process_probe {
+        append_windows_process_probe(&mut out, process_name);
+    }
     out.push_str("if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {\n");
     out.push_str("  Write-Host \"`nCommand exited with code $LASTEXITCODE\"\n");
     out.push_str("}\n");
     out.push_str("$scriptPath = $MyInvocation.MyCommand.Path\n");
     out.push_str("if ($scriptPath) { Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue }\n");
     out
+}
+
+fn append_windows_process_probe(out: &mut String, process_name: &str) {
+    out.push_str("if ($?) {\n");
+    out.push_str("  for ($attempt = 1; $attempt -le 10; $attempt++) {\n");
+    out.push_str("    Start-Sleep -Milliseconds 500\n");
+    out.push_str(&format!(
+        "    if ($attempt -ge 4 -and (Get-Process -Name {} -ErrorAction SilentlyContinue)) {{ break }}\n",
+        powershell_single_quoted(process_name)
+    ));
+    out.push_str("  }\n");
+    out.push_str("}\n");
 }
 
 fn normalize_windows_claude_profile_launch(
@@ -374,6 +394,7 @@ mod tests {
             window_label: "Codex Test".to_string(),
             workspace: PathBuf::from(r"C:\Users\tester\project"),
             macos_app_probe: None,
+            windows_process_probe: None,
         }
     }
 
@@ -388,6 +409,19 @@ mod tests {
         assert!(script.contains("C:\\Program Files\\VibeAround\\vibearound-hook.exe"));
         assert!(script.contains("& $vaCommand @vaArgs"));
         assert!(!script.contains("Files\\VibeAround\\vibearound-hook.exe'\n"));
+    }
+
+    #[test]
+    fn powershell_script_waits_for_desktop_process_probe() {
+        let mut plan = plan("Start-Process Codex", Vec::new());
+        plan.windows_process_probe = Some("Codex".to_string());
+        let script = build_powershell_script(&plan, &plan.command, &plan.args);
+
+        assert!(script.contains("& $vaCommand @vaArgs\nif ($?) {"));
+        assert!(script.contains("for ($attempt = 1; $attempt -le 10; $attempt++)"));
+        assert!(script.contains("Start-Sleep -Milliseconds 500"));
+        assert!(script.contains("$attempt -ge 4"));
+        assert!(script.contains("Get-Process -Name 'Codex'"));
     }
 
     #[test]

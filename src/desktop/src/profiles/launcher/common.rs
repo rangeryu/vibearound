@@ -9,6 +9,8 @@ pub(super) struct LaunchPlan {
     pub window_label: String,
     pub workspace: PathBuf,
     pub macos_app_probe: Option<String>,
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    pub windows_process_probe: Option<String>,
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -150,6 +152,7 @@ mod tests {
             window_label: "Test".to_string(),
             workspace: Path::new("/tmp/work dir").to_path_buf(),
             macos_app_probe: None,
+            windows_process_probe: None,
         }
     }
 

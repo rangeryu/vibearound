@@ -110,6 +110,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                 window_label: format!("{} (direct)", agent.display_name),
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(&agent),
+                windows_process_probe: windows_process_probe_for_direct_agent(&agent),
             });
         };
 
@@ -123,6 +124,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             window_label: format!("{} (resume)", agent.display_name),
             workspace,
             macos_app_probe: macos_app_probe_for_direct_agent(&agent),
+            windows_process_probe: windows_process_probe_for_direct_agent(&agent),
         })
     }
 
@@ -149,6 +151,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             window_label: profile.label.clone(),
             workspace,
             macos_app_probe: None,
+            windows_process_probe: None,
         })
     }
 
@@ -178,6 +181,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             window_label: format!("{} (resume)", profile.label),
             workspace,
             macos_app_probe: None,
+            windows_process_probe: None,
         })
     }
 }
@@ -193,6 +197,22 @@ fn open_app_name(command: &str) -> Option<String> {
     command
         .trim()
         .strip_prefix("open -a ")
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| name.trim_matches('"').to_string())
+}
+
+fn windows_process_probe_for_direct_agent(agent: &resources::AgentDef) -> Option<String> {
+    if !cfg!(target_os = "windows") || !agent.direct_only {
+        return None;
+    }
+    start_process_name(agent.pty_command_for_current_platform())
+}
+
+fn start_process_name(command: &str) -> Option<String> {
+    command
+        .trim()
+        .strip_prefix("Start-Process ")
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(|name| name.trim_matches('"').to_string())
