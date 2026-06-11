@@ -210,7 +210,7 @@ Latest release: [VibeAround v0.7.1-beta](https://github.com/jazzenchen/VibeAroun
 
 Windows and Linux packages are built by GitHub Actions. The macOS package is currently Apple Silicon only. The v0.7.1-beta Windows MSI is intentionally omitted because Windows Installer requires numeric-only prerelease identifiers.
 
-**Upgrade note:** v0.7.1-beta changes Startkit state, detected agent sources, desktop launch targets, and profile launch settings. Back up `~/.vibearound/settings.json` before upgrading from 0.6.x, then rerun onboarding / Startkit setup if Launch or desktop-agent settings look stale.
+**Upgrade note:** v0.7.1-beta changes Startkit state, detected agent sources, desktop launch targets, and profile launch settings. Before upgrading from 0.6.x, back up durable state you may want to restore: `settings.json`, `profiles/`, `google-oauth/`, `agents.json`, `launcher.json`, `state/`, `sessions/`, `launch-session-archive.json`, `workspaces/`, and `worktrees/`. Let 0.7.1-beta rebuild generated cache/runtime data such as `.cache/`, `cache/startkit/`, `agents.detected.json`, `desktop-apps.detected.json`, `profile-state/`, `api-bridge/launches/`, `agent-hooks/`, `logs/`, `npm-global/`, `plugins/`, `bin/`, and `runtime/`. If Launch or desktop-agent settings look stale after upgrading, rerun onboarding / Startkit setup.
 
 ## Develop Locally
 

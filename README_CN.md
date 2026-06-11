@@ -211,7 +211,7 @@ VibeAround 默认把 AI 编程工作留在你自己的电脑上。
 
 Windows 和 Linux 包由 GitHub Actions 构建。macOS 当前只提供 Apple Silicon 版本。v0.7.1-beta 暂不提供 Windows MSI，因为 Windows Installer 要求 prerelease 标识只能包含数字。
 
-**升级提示：** v0.7.1-beta 调整了 Startkit 状态、Agent 来源检测、桌面启动目标和 Profile 启动设置。从 0.6.x 升级前请先备份 `~/.vibearound/settings.json`；如果 Launch 或桌面版 Agent 设置看起来异常，请重新跑 onboarding / Startkit 配置。
+**升级提示：** v0.7.1-beta 调整了 Startkit 状态、Agent 来源检测、桌面启动目标和 Profile 启动设置。从 0.6.x 升级前，请备份可能需要恢复的持久状态：`settings.json`、`profiles/`、`google-oauth/`、`agents.json`、`launcher.json`、`state/`、`sessions/`、`launch-session-archive.json`、`workspaces/`、`worktrees/`。不要把 `.cache/`、`cache/startkit/`、`agents.detected.json`、`desktop-apps.detected.json`、`profile-state/`、`api-bridge/launches/`、`agent-hooks/`、`logs/`、`npm-global/`、`plugins/`、`bin/`、`runtime/` 这类可重建的缓存/运行期数据恢复到新版本；如果 Launch 或桌面版 Agent 设置看起来异常，请重新跑 onboarding / Startkit 配置。
 
 ## 本地开发
 
