@@ -153,9 +153,10 @@ export function AgentLaunchBuilder({
     typeof setTimeout
   >[]>([]);
 
+  const enabledAgentKey = prefs?.enabledAgents.join("|") ?? "";
   const enabledAgents = useMemo(
     () => (prefs ? new Set(prefs.enabledAgents) : null),
-    [prefs?.enabledAgents],
+    [enabledAgentKey],
   );
   const viewPrefs = useMemo<LauncherPreferences | null>(() => {
     if (!prefs) return null;
