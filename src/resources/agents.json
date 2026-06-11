@@ -23,6 +23,24 @@
     }
   },
   {
+    "id": "claude-desktop",
+    "display_name": "Claude Desktop",
+    "description": "Anthropic Claude desktop app",
+    "aliases": ["claude-desktop", "claude-app"],
+    "platforms": ["macos", "windows"],
+    "direct_only": true,
+    "acp": {
+      "program": ""
+    },
+    "pty": {
+      "command": "open -a Claude",
+      "platform_commands": {
+        "macos": "open -a Claude",
+        "windows": "Start-Process Claude"
+      }
+    }
+  },
+  {
     "id": "codex",
     "display_name": "Codex CLI",
     "description": "OpenAI Codex CLI",
@@ -43,6 +61,24 @@
       "mcp_key": "mcp_servers",
       "mcp_entry": { "url": "{mcp_url}" },
       "skill_dir": ".codex/skills/vibearound"
+    }
+  },
+  {
+    "id": "codex-desktop",
+    "display_name": "Codex Desktop",
+    "description": "OpenAI Codex desktop app",
+    "aliases": ["codex-desktop", "codex-app"],
+    "platforms": ["macos", "windows"],
+    "direct_only": true,
+    "acp": {
+      "program": ""
+    },
+    "pty": {
+      "command": "open -a Codex",
+      "platform_commands": {
+        "macos": "open -a Codex",
+        "windows": "Start-Process Codex"
+      }
     }
   },
   {

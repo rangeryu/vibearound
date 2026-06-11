@@ -91,7 +91,7 @@ export function TerminalWorkspace({
     );
   }
 
-  if (viewMode === "grid") {
+  if (viewMode === "grid" || viewMode === "nine") {
     return (
       <TerminalGridView
         groups={groups}

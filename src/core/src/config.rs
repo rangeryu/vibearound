@@ -627,6 +627,18 @@ pub fn update_settings_json(mutator: impl FnOnce(&mut serde_json::Value)) -> Res
     Ok(())
 }
 
+/// Remove a user workspace registration from settings.json.
+///
+/// This does not delete the directory on disk. Legacy workspace fields are
+/// removed too because they are still read as regular workspace entries.
+pub fn remove_workspace_path(path: &Path) -> Result<bool, String> {
+    let mut removed = false;
+    update_settings_json(|root| {
+        removed = remove_workspace_from_settings_root(root, path);
+    })?;
+    Ok(removed)
+}
+
 /// Replace settings.json with an already-mutated JSON value. Use this for
 /// whole-file settings flows such as onboarding. Incremental updates should
 /// prefer [`update_settings_json`] so they merge against the latest on-disk
@@ -649,6 +661,54 @@ fn write_settings_json_to_path(path: &Path, root: &serde_json::Value) -> Result<
     let pretty = serde_json::to_string_pretty(root).map_err(|e| e.to_string())?;
     fs::write(path, pretty).map_err(|e| e.to_string())?;
     crate::auth::set_owner_only(path).map_err(|e| e.to_string())
+}
+
+fn remove_workspace_from_settings_root(root: &mut serde_json::Value, path: &Path) -> bool {
+    let Some(obj) = root.as_object_mut() else {
+        return false;
+    };
+
+    let mut removed = false;
+    if let Some(arr) = obj
+        .get_mut("workspaces")
+        .and_then(|value| value.as_array_mut())
+    {
+        let before_len = arr.len();
+        arr.retain(|value| {
+            value
+                .as_str()
+                .map(|candidate| !settings_path_matches(candidate, path))
+                .unwrap_or(true)
+        });
+        removed |= arr.len() != before_len;
+    }
+
+    for key in ["default_workspace", "working_dir"] {
+        let should_remove = obj
+            .get(key)
+            .and_then(|value| value.as_str())
+            .map(|candidate| settings_path_matches(candidate, path))
+            .unwrap_or(false);
+        if should_remove {
+            obj.remove(key);
+            removed = true;
+        }
+    }
+
+    removed
+}
+
+fn settings_path_matches(candidate: &str, target: &Path) -> bool {
+    paths_equal(&expand_home(candidate.trim()), target)
+}
+
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    left == right
+        || std::fs::canonicalize(left)
+            .ok()
+            .zip(std::fs::canonicalize(right).ok())
+            .map(|(left, right)| left == right)
+            .unwrap_or(false)
 }
 
 impl Default for Config {
@@ -926,6 +986,37 @@ mod tests {
 
         assert_eq!(config.resolve_workspace("codex"), builtin_workspaces_dir());
         assert!(config.workspaces.contains(&legacy_workspace));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn remove_workspace_cleans_current_and_legacy_settings() {
+        let dir = unique_test_dir("remove-workspace");
+        fs::create_dir_all(&dir).unwrap();
+        let workspace = dir.join("project-a");
+        let other = dir.join("project-b");
+        let mut root = serde_json::json!({
+            "workspaces": [
+                workspace.to_string_lossy().to_string(),
+                other.to_string_lossy().to_string()
+            ],
+            "default_workspace": workspace.to_string_lossy().to_string(),
+            "working_dir": workspace.to_string_lossy().to_string()
+        });
+
+        assert!(remove_workspace_from_settings_root(&mut root, &workspace));
+
+        let workspaces = root
+            .get("workspaces")
+            .and_then(|value| value.as_array())
+            .unwrap();
+        assert_eq!(workspaces.len(), 1);
+        assert_eq!(
+            workspaces[0].as_str(),
+            Some(other.to_string_lossy().as_ref())
+        );
+        assert!(root.get("default_workspace").is_none());
+        assert!(root.get("working_dir").is_none());
         fs::remove_dir_all(&dir).unwrap();
     }
 

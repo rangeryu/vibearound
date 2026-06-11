@@ -64,14 +64,6 @@ function NodeCommand() {
   return $null
 }
 
-function NpmCommand() {
-  $managedNpm = Join-Path $env:STARTKIT_NODE_DIR "npm.cmd"
-  if (Test-Path $managedNpm) { return $managedNpm }
-  $npm = Get-Command npm -ErrorAction SilentlyContinue
-  if ($npm) { return $npm.Source }
-  return $null
-}
-
 function LocalPackageVersion($package) {
   $name = PackageName $package
   $node = NodeCommand
@@ -97,16 +89,6 @@ for (const root of roots) {
 process.exit(1);
 '@
   $value = (& $node -e $script $name $env:STARTKIT_NPM_PREFIX 2>$null | Select-Object -First 1) -join ""
-  if ($LASTEXITCODE -eq 0 -and $value) { return $value }
-  return $null
-}
-
-function LatestPackageVersion($package) {
-  $name = PackageName $package
-  $npm = NpmCommand
-  if (-not $name -or -not $npm) { return $null }
-  $registry = if ($env:STARTKIT_NPM_REGISTRY) { $env:STARTKIT_NPM_REGISTRY } else { "https://registry.npmjs.org" }
-  $value = (& $npm view $name version --registry $registry 2>$null | Select-Object -Last 1) -join ""
   if ($LASTEXITCODE -eq 0 -and $value) { return $value }
   return $null
 }
@@ -137,13 +119,13 @@ $version = (& $cmd.Source $versionArg 2>&1 | Select-Object -First 1) -join ""
 if ($env:STARTKIT_NPM_PACKAGE -and (IsManagedPath $cmd.Source)) {
   $localVersion = LocalPackageVersion $env:STARTKIT_NPM_PACKAGE
   $requestedVersion = RequestedPackageVersion $env:STARTKIT_NPM_PACKAGE
-  $desiredVersion = if ($requestedVersion) { $requestedVersion } else { LatestPackageVersion $env:STARTKIT_NPM_PACKAGE }
+  $desiredVersion = $requestedVersion
   if ($localVersion -and $desiredVersion -and $localVersion -ne $desiredVersion) {
     Emit @{
       status = "outdated"
       version = $version
       path = $cmd.Source
-      message = "$program $localVersion is below the latest available version $desiredVersion"
+      message = "$program $localVersion does not match required version $desiredVersion"
       actions = @("install")
     }
     exit 0

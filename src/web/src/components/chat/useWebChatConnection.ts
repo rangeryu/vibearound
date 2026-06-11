@@ -757,9 +757,10 @@ export function useWebChatConnection({
       }
       if (promptInFlightRef.current) return false;
 
+      const uniqueAttachments = dedupeChatAttachments(attachments);
       promptInFlightRef.current = true;
       const messageId = createMessageId();
-      const contentParts = messageContentBlocks(trimmed, attachments).map((block, index) => ({
+      const contentParts = messageContentBlocks(trimmed, uniqueAttachments).map((block, index) => ({
         id: `${USER_CONTENT_PART_ID_PREFIX}-${Date.now()}-${index}`,
         kind: "content" as const,
         block,
@@ -784,8 +785,8 @@ export function useWebChatConnection({
           text: trimmed,
           agent: agentId,
         };
-        if (attachments.length > 0) {
-          payload.attachments = attachments.map((attachment) => ({
+        if (uniqueAttachments.length > 0) {
+          payload.attachments = uniqueAttachments.map((attachment) => ({
             id: attachment.id,
             name: attachment.name,
             mimeType: attachment.mimeType,
@@ -1105,6 +1106,23 @@ function mergeById<T extends { id: string }>(prev: T[], nextItems: T[]): T[] {
     byId.set(item.id, item);
   }
   return Array.from(byId.values());
+}
+
+function dedupeChatAttachments(attachments: ChatAttachment[]): ChatAttachment[] {
+  const seen = new Set<string>();
+  const out: ChatAttachment[] = [];
+  for (const attachment of attachments) {
+    const key = [
+      attachment.name,
+      attachment.size,
+      attachment.mimeType,
+      attachment.uri,
+    ].join("\u0000");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(attachment);
+  }
+  return out;
 }
 
 function messageContentBlocks(

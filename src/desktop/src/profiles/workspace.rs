@@ -82,20 +82,7 @@ pub(super) fn remove_workspace(workspace_path: String) -> Result<(), String> {
         return Err(format!("workspace is not registered: {}", path.display()));
     }
 
-    config::update_settings_json(|root| {
-        if let Some(arr) = root
-            .get_mut("workspaces")
-            .and_then(|value| value.as_array_mut())
-        {
-            arr.retain(|value| {
-                value
-                    .as_str()
-                    .map(|candidate| !paths_equal(Path::new(candidate), &path))
-                    .unwrap_or(true)
-            });
-        }
-    })
-    .map_err(|e| e.to_string())?;
+    config::remove_workspace_path(&path).map_err(|e| e.to_string())?;
 
     if terminal::read_workspace_preference()
         .as_ref()

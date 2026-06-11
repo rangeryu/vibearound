@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent_detection;
+mod desktop_detection;
 mod onboarding;
 mod profiles;
 mod startkit;
@@ -12,7 +14,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime};
 use tokio::sync::{Mutex, Notify};
 
-use onboarding::{OnboardingGate, OnboardingInstallState, OnboardingSessions};
+use onboarding::{OnboardingGate, OnboardingSessions};
 use startkit::StartkitRunState;
 
 #[derive(serde::Serialize)]
@@ -116,6 +118,21 @@ fn get_app_info() -> AppInfo {
     }
 }
 
+#[tauri::command]
+async fn rescan_agent_entries() -> Result<agent_detection::AgentDetectionFile, String> {
+    agent_detection::scan_and_persist()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn rescan_desktop_app_entries() -> Result<desktop_detection::DesktopAppDetectionFile, String>
+{
+    desktop_detection::scan_and_persist()
+        .await
+        .map_err(|error| error.to_string())
+}
+
 /// Open an HTTP URL in the user's default external browser.
 ///
 /// We can't use `window.open` from the desktop-ui because it creates a
@@ -188,11 +205,12 @@ fn main() {
         .manage(OnboardingActive(std::sync::atomic::AtomicBool::new(
             onboarding_needed,
         )))
-        .manage(OnboardingInstallState::default())
         .manage(StartkitRunState::default())
         .invoke_handler(tauri::generate_handler![
             get_auth_token,
             get_app_info,
+            rescan_agent_entries,
+            rescan_desktop_app_entries,
             open_external_url,
             restart_services,
             set_ui_locale,
@@ -208,11 +226,13 @@ fn main() {
             onboarding::finish_onboarding,
             onboarding::list_agents,
             onboarding::scan_agent_install_status,
+            onboarding::check_agent_updates,
+            onboarding::check_plugin_updates,
+            onboarding::scan_agent_sdk_status,
+            onboarding::scan_tunnel_status,
+            onboarding::scan_computer_install_status,
             onboarding::list_tunnels,
             onboarding::list_plugin_registry,
-            onboarding::get_install_manifest,
-            onboarding::start_onboarding_install,
-            onboarding::cancel_onboarding_install,
             startkit::startkit_manifest,
             startkit::startkit_plan,
             startkit::startkit_scan,
@@ -280,6 +300,31 @@ fn main() {
                 app.manage(DaemonController::new(Arc::clone(&daemon), dist_path));
 
                 tray::setup(app)?;
+
+                tauri::async_runtime::spawn(async {
+                    match agent_detection::scan_and_persist().await {
+                        Ok(detected) => tracing::info!(
+                            agents = detected.agents.len(),
+                            "[VibeAround] agent auto-detect completed"
+                        ),
+                        Err(error) => tracing::warn!(
+                            error = %error,
+                            "[VibeAround] agent auto-detect failed"
+                        ),
+                    }
+                });
+                tauri::async_runtime::spawn(async {
+                    match desktop_detection::scan_and_persist().await {
+                        Ok(detected) => tracing::info!(
+                            apps = detected.apps.len(),
+                            "[VibeAround] desktop app auto-detect completed"
+                        ),
+                        Err(error) => tracing::warn!(
+                            error = %error,
+                            "[VibeAround] desktop app auto-detect failed"
+                        ),
+                    }
+                });
 
                 // Show the window immediately — the splash screen in index.html
                 // is visible while React loads and the daemon starts.

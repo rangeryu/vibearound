@@ -44,6 +44,10 @@ export const zhCNLaunch: Record<string, string> = {
   "Quick Launch will start a new session": "快速启动会开启新会话",
   "Use existing CLI login": "使用 CLI 已有登录态",
   "Native CLI login": "CLI 原生登录",
+  "Open desktop app": "打开桌面应用",
+  "Desktop app": "桌面应用",
+  "Workspace and sessions are selected inside the desktop app.":
+    "工作区和会话在桌面应用里选择。",
   Direct: "直接",
   "API bridge on": "API 转接开启",
   "API bridge": "API 转接",
@@ -73,6 +77,7 @@ export const zhCNLaunch: Record<string, string> = {
   "Workspace order updated": "工作区顺序已更新",
   "Workspace removed": "已移除工作区",
   'Delete workspace "{{label}}"?': "删除工作区「{{label}}」？",
+  'Remove workspace "{{label}}"?': "移除工作区「{{label}}」？",
   "No profiles yet": "还没有配置",
   "Add your provider's API key once. From then on it's one click to launch claude or codex with that key already wired up — VibeAround opens a fresh Terminal window and stays out of the way.":
     "只需保存一次服务商 API key，之后一键即可用该 key 启动 Claude 或 Codex。VibeAround 会打开新的终端窗口，其余交给 CLI 自己运行。",

@@ -58,6 +58,7 @@ pub(crate) async fn run_acp_plugin_bridge(
 
     let init_handler = Arc::clone(&handler);
     let prompt_handler = Arc::clone(&handler);
+    let prompt_channel = channel_kind.clone();
     let cancel_handler = Arc::clone(&handler);
     let ext_notification_handler = Arc::clone(&handler);
     let ext_request_handler = Arc::clone(&handler);
@@ -73,8 +74,23 @@ pub(crate) async fn run_acp_plugin_bridge(
             acp::on_receive_request!(),
         )
         .on_receive_request(
-            async move |args: schema::PromptRequest, responder, _cx| {
-                responder.respond_with_result(prompt_handler.prompt(args).await)
+            async move |args: schema::PromptRequest, responder, cx| {
+                let prompt_handler = Arc::clone(&prompt_handler);
+                let prompt_channel = prompt_channel.clone();
+                cx.spawn(async move {
+                    let result = prompt_handler.prompt(args).await;
+                    if let Err(error) = responder.respond_with_result(result) {
+                        proc_log!(
+                            warn,
+                            kind = ProcessKind::ChannelPlugin,
+                            label = prompt_channel,
+                            event = "prompt_response_failed",
+                            error = %error
+                        );
+                    }
+                    Ok(())
+                })?;
+                Ok(())
             },
             acp::on_receive_request!(),
         )

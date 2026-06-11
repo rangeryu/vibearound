@@ -4,12 +4,12 @@ use common::profiles::catalog::{self, ContentCapabilities};
 use common::profiles::schema::ProfileDef;
 #[cfg(test)]
 use serde_json::Value;
-#[cfg(test)]
-use va_ai_api_bridge::{ContentBlock, UniversalItem};
 use va_ai_api_bridge::{
     sanitize_unsupported_media, MediaSanitization, ModelCapabilities, ResolvedModelSpec,
     UniversalRequest,
 };
+#[cfg(test)]
+use va_ai_api_bridge::{ContentBlock, UniversalItem};
 
 #[cfg(test)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -349,7 +349,9 @@ mod tests {
 
     use common::profiles::schema::{ApiTypeOverrides, AuthMode, ProviderSettings};
     use serde_json::json;
-    use va_ai_api_bridge::{AnthropicMessagesTranslator, OpenAiChatTranslator, Role, WireTranslator};
+    use va_ai_api_bridge::{
+        AnthropicMessagesTranslator, OpenAiChatTranslator, Role, WireTranslator,
+    };
 
     use super::*;
 

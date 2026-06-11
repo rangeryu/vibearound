@@ -323,7 +323,11 @@ function messagingPluginStatus(
 }
 
 function isInstallStepReport(report: StartkitItemReport): boolean {
-  return report.category !== "config" && report.status !== "needs_config";
+  return (
+    report.id !== "channels.plugins" &&
+    report.category !== "config" &&
+    report.status !== "needs_config"
+  );
 }
 
 function groupIcon(id: string) {

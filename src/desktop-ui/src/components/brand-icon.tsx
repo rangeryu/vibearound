@@ -4,7 +4,9 @@ import { cn } from "@/lib/utils";
 
 const CLI_LOGOS: Record<string, string> = {
   claude: "/brand/cli-claude.svg",
+  "claude-desktop": "/brand/cli-claude.svg",
   codex: "/brand/cli-openai.svg",
+  "codex-desktop": "/brand/cli-codex-desktop.png",
   pi: "/brand/cli-pi.svg",
   gemini: "/brand/cli-gemini.svg",
   opencode: "/brand/cli-opencode.svg",
@@ -27,6 +29,8 @@ const PROVIDER_LOGOS: Record<string, string> = {
   xai: "/brand/provider-xai.svg",
   zai: "/brand/provider-zai-color.svg",
 };
+
+const FULL_SIZE_LOGOS = new Set(["codex-desktop"]);
 
 interface BrandIconProps {
   kind: "cli" | "provider";
@@ -59,7 +63,12 @@ export function BrandIcon({
           src={src}
           alt={label ? `${label} logo` : ""}
           draggable={false}
-          className="h-[72%] w-[72%] object-contain"
+          className={cn(
+            "object-contain",
+            kind === "cli" && FULL_SIZE_LOGOS.has(id)
+              ? "h-full w-full"
+              : "h-[72%] w-[72%]",
+          )}
         />
       </span>
     );

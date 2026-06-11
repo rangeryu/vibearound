@@ -5775,6 +5775,7 @@ dependencies = [
  "anyhow",
  "common",
  "open 1.7.1",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "server",

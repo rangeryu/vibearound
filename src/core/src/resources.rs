@@ -32,6 +32,10 @@ pub struct AgentDef {
     #[serde(default)]
     pub aliases: Vec<String>,
     #[serde(default)]
+    pub platforms: Vec<String>,
+    #[serde(default)]
+    pub direct_only: bool,
+    #[serde(default)]
     pub install: Option<AgentInstallInfo>,
     pub acp: AgentAcpConfig,
     pub pty: AgentPtyConfig,
@@ -67,6 +71,36 @@ pub struct AgentAcpConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentPtyConfig {
     pub command: String,
+    #[serde(default)]
+    pub platform_commands: HashMap<String, String>,
+}
+
+impl AgentDef {
+    pub fn supports_current_platform(&self) -> bool {
+        self.platforms.is_empty()
+            || self
+                .platforms
+                .iter()
+                .any(|platform| platform == current_platform())
+    }
+
+    pub fn pty_command_for_current_platform(&self) -> &str {
+        self.pty
+            .platform_commands
+            .get(current_platform())
+            .map(String::as_str)
+            .unwrap_or(self.pty.command.as_str())
+    }
+}
+
+fn current_platform() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

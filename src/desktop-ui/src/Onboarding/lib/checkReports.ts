@@ -1,0 +1,270 @@
+import { groupReports } from "../components/startkitPresentation";
+import type {
+  AgentSummary,
+  DiscoveredChannelPlugin,
+  PluginRegistryEntry,
+  StartkitChoices,
+  StartkitItemReport,
+  TunnelSummary,
+} from "../types";
+
+export function mergeReportsById(
+  previous: StartkitItemReport[],
+  incoming: StartkitItemReport[],
+): StartkitItemReport[] {
+  const merged = new Map(previous.map((report) => [report.id, report]));
+  for (const report of incoming) merged.set(report.id, report);
+  return Array.from(merged.values());
+}
+
+export function mergeLocalReportsById(
+  previous: StartkitItemReport[],
+  incoming: StartkitItemReport[],
+): StartkitItemReport[] {
+  const merged = new Map(previous.map((report) => [report.id, report]));
+  for (const report of incoming) {
+    const existing = merged.get(report.id);
+    if (existing?.status === "running") continue;
+    if (existing?.latestVersion && existing.version === report.version) continue;
+    merged.set(report.id, report);
+  }
+  return Array.from(merged.values());
+}
+
+export function markReportsUpdating(
+  reports: StartkitItemReport[],
+  reportIds: Set<string>,
+  message: string,
+): StartkitItemReport[] {
+  return reports.map((report) =>
+    reportIds.has(report.id) &&
+    (report.status === "ok" ||
+      report.status === "missing" ||
+      report.status === "outdated")
+      ? { ...report, message }
+      : report,
+  );
+}
+
+export function agentIdFromReport(report: StartkitItemReport): string | null {
+  const match = /^agents\.(.+)\.cli$/.exec(report.id);
+  return match?.[1] ?? null;
+}
+
+export function agentIdFromSdkReport(report: StartkitItemReport): string | null {
+  const match = /^agents\.(.+)\.sdk$/.exec(report.id);
+  return match?.[1] ?? null;
+}
+
+export function pluginIdFromReport(report: StartkitItemReport): string | null {
+  const match = /^channels\.plugins\.(.+)$/.exec(report.id);
+  return match?.[1] ?? null;
+}
+
+export function tunnelReportMatchesProvider(
+  report: StartkitItemReport,
+  provider: string,
+): boolean {
+  switch (provider) {
+    case "cloudflare":
+      return report.id === "tunnels.cloudflare.binary";
+    case "localtunnel":
+      return report.id === "essentials.node";
+    case "ngrok":
+      return report.id === "tunnels.ngrok.sdk";
+    default:
+      return false;
+  }
+}
+
+export function groupReportsFromReports(reports: StartkitItemReport[]) {
+  const reportById = new Map(reports.map((report) => [report.id, report]));
+  return groupReports(
+    reports.map((report) => ({
+      id: report.id,
+      group: report.group,
+      label: report.label,
+      category: report.category,
+      severity: report.severity,
+      secret: report.secret,
+      settingsKey: report.settingsKey,
+    })),
+    reportById,
+  );
+}
+
+export function itemCheckSignature(id: string, ...parts: string[]): string {
+  return JSON.stringify([id, ...parts]);
+}
+
+export function agentCheckingReport(
+  agentId: string,
+  agents: AgentSummary[],
+  message: string,
+): StartkitItemReport {
+  const agent = agents.find((item) => item.id === agentId);
+  return {
+    id: `agents.${agentId}.cli`,
+    label: agent?.display_name ?? agentId,
+    group: "agents",
+    category: "agents",
+    status: "running",
+    message,
+    actions: [],
+    secret: false,
+  };
+}
+
+export function agentSdkCheckingReport(
+  agentId: string,
+  agents: AgentSummary[],
+): StartkitItemReport {
+  const agent = agents.find((item) => item.id === agentId);
+  return {
+    id: `agents.${agentId}.sdk`,
+    label: `${agent?.display_name ?? agentId} ACP adapter`,
+    group: "agents",
+    category: "agent_sdk",
+    status: "running",
+    severity: "blocker",
+    message: "Checking",
+    actions: [],
+    secret: false,
+  };
+}
+
+export function computerCheckingReports(
+  choices: StartkitChoices,
+): StartkitItemReport[] {
+  const reports: StartkitItemReport[] = [];
+  const needsNode =
+    choices.agents.length > 0 ||
+    choices.channels.length > 0 ||
+    choices.tunnel === "localtunnel";
+  const needsGit = choices.agents.length > 0 || choices.channels.length > 0;
+
+  if (needsNode) {
+    reports.push({
+      id: "essentials.node",
+      label: "Node.js",
+      group: "computer",
+      category: "essentials",
+      status: "running",
+      severity: "blocker",
+      message: "Checking local version",
+      actions: [],
+      secret: false,
+    });
+  }
+
+  if (needsGit) {
+    reports.push({
+      id: "essentials.git",
+      label: "Git",
+      group: "computer",
+      category: "essentials",
+      status: "running",
+      severity: "warning",
+      message: "Checking local version",
+      actions: [],
+      secret: false,
+    });
+  }
+
+  if (choices.shellPath) {
+    reports.push({
+      id: "environment.shell_path",
+      label: "Shell PATH",
+      group: "computer",
+      category: "environment",
+      status: "running",
+      severity: "warning",
+      message: "Checking local version",
+      actions: [],
+      secret: false,
+    });
+  }
+
+  return reports;
+}
+
+export function localPluginReport(
+  entry: PluginRegistryEntry,
+  discoveredPlugins: DiscoveredChannelPlugin[],
+): StartkitItemReport {
+  const discovered = discoveredPlugins.find((plugin) => plugin.id === entry.id);
+  return {
+    id: `channels.plugins.${entry.id}`,
+    label: entry.name,
+    group: "messaging",
+    category: "channels",
+    status: discovered ? "ok" : "missing",
+    version: discovered?.version,
+    path: discovered?.entry,
+    message: discovered ? "Plugin is installed" : "Plugin is not installed",
+    actions: discovered ? [] : ["install"],
+    secret: false,
+  };
+}
+
+export function pluginCheckingReport(
+  pluginId: string,
+  registry: PluginRegistryEntry[],
+  discoveredPlugins: DiscoveredChannelPlugin[],
+): StartkitItemReport {
+  const entry = registry.find((plugin) => plugin.id === pluginId);
+  const discovered = discoveredPlugins.find((plugin) => plugin.id === pluginId);
+  return {
+    id: `channels.plugins.${pluginId}`,
+    label: entry?.name ?? discovered?.name ?? pluginId,
+    group: "messaging",
+    category: "channels",
+    status: "running",
+    version: discovered?.version,
+    path: discovered?.entry,
+    message: "Checking updates",
+    actions: [],
+    secret: false,
+  };
+}
+
+export function tunnelCheckingReport(
+  tunnelId: string,
+  tunnels: TunnelSummary[],
+): StartkitItemReport {
+  const tunnel = tunnels.find((item) => item.id === tunnelId);
+  if (tunnelId === "localtunnel") {
+    return {
+      id: "essentials.node",
+      label: "Node.js",
+      group: "computer",
+      category: "essentials",
+      status: "running",
+      message: "Checking local version",
+      actions: [],
+      secret: false,
+    };
+  }
+  if (tunnelId === "ngrok") {
+    return {
+      id: "tunnels.ngrok.sdk",
+      label: tunnel?.display_name ?? "Ngrok",
+      group: "remote",
+      category: "tunnels",
+      status: "running",
+      message: "Checking local version",
+      actions: [],
+      secret: false,
+    };
+  }
+  return {
+    id: `tunnels.${tunnelId}.binary`,
+    label: tunnel?.display_name ?? tunnelId,
+    group: "remote",
+    category: "tunnels",
+    status: "running",
+    message: "Checking local version",
+    actions: [],
+    secret: false,
+  };
+}

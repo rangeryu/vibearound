@@ -1,4 +1,5 @@
 import {
+  Grid3x3,
   LayoutGrid,
   MessageSquare,
   Moon,
@@ -142,6 +143,14 @@ export function AppHeader({
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
               </ToggleGroupItem>
+              <ToggleGroupItem
+                value="nine"
+                aria-label={t("Nine-grid view")}
+                title={t("Nine-grid view")}
+                className="h-7 w-7 rounded p-0 data-[state=on]:bg-primary/15 data-[state=on]:text-primary text-muted-foreground/50 hover:text-foreground"
+              >
+                <Grid3x3 className="h-3.5 w-3.5" />
+              </ToggleGroupItem>
             </ToggleGroup>
           )}
         </nav>
@@ -242,7 +251,7 @@ export function AppHeader({
                     type="single"
                     value={viewMode}
                     onValueChange={(v) => v && onViewModeChange(v as ViewMode)}
-                    className="grid grid-cols-2 gap-1"
+                    className="grid grid-cols-3 gap-1"
                   >
                     <ToggleGroupItem
                       value="tabs"
@@ -261,6 +270,15 @@ export function AppHeader({
                     >
                       <LayoutGrid className="mr-1.5 h-3.5 w-3.5" />
                       <span className="text-xs">{t("Grid")}</span>
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      value="nine"
+                      aria-label={t("Nine-grid view")}
+                      title={t("Nine-grid view")}
+                      className="h-8 rounded-md data-[state=on]:bg-primary/15 data-[state=on]:text-primary text-muted-foreground/70 hover:text-foreground"
+                    >
+                      <Grid3x3 className="mr-1.5 h-3.5 w-3.5" />
+                      <span className="text-xs">{t("Nine grid")}</span>
                     </ToggleGroupItem>
                   </ToggleGroup>
                 </div>

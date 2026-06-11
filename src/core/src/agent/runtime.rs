@@ -79,13 +79,21 @@ pub enum StartupSession {
     /// where available, and otherwise suppresses startup notifications while
     /// falling back to `session/load`.
     Resume(String),
+    /// Attach without replay and without falling back to `session/load`.
+    ///
+    /// Some agents write a fresh session record when asked to `session/load`;
+    /// this mode avoids creating new sidebar entries when a user only opens an
+    /// existing session.
+    ResumeOnly(String),
 }
 
 impl StartupSession {
     pub fn session_id(&self) -> Option<&str> {
         match self {
             Self::Fresh => None,
-            Self::Load(session_id) | Self::Resume(session_id) => Some(session_id.as_str()),
+            Self::Load(session_id) | Self::Resume(session_id) | Self::ResumeOnly(session_id) => {
+                Some(session_id.as_str())
+            }
         }
     }
 }

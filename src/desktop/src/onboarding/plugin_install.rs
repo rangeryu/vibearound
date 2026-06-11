@@ -134,16 +134,58 @@ where
 
     if has_step(&install_steps, "git_clone") {
         // If a previous install left a partial directory, wipe it for a clean clone.
+        // Complete git installs are refreshed to the registry HEAD so "Install"
+        // also acts as "Update" for already-installed plugins.
         let needs_clone = if target_dir.exists() {
             if installed_tree_complete(&target_dir, plugin_kind) {
-                tracing::info!(
-                    "[install_plugin] {} already installed at {:?}, skipping clone",
-                    request.plugin_id,
-                    target_dir
-                );
-                logs.push("Existing plugin directory is complete; skipping git clone".into());
-                on_log("Existing plugin directory is complete; skipping git clone".into());
-                false
+                if target_dir.join(".git").exists() {
+                    tracing::info!(
+                        "[install_plugin] {} already installed at {:?}, refreshing git HEAD",
+                        request.plugin_id,
+                        target_dir
+                    );
+                    let message = "Refreshing existing plugin checkout".to_string();
+                    logs.push(message.clone());
+                    on_log(message);
+
+                    let mut fetch = common::process::env::command("git");
+                    fetch.args(["fetch", "--depth", "1", "origin", "HEAD"]);
+                    fetch.current_dir(&target_dir);
+                    let output = command_streaming(fetch, &mut on_log, &is_cancelled)
+                        .await
+                        .context("git fetch")?;
+                    push_output_logs(&mut logs, "git fetch", &output);
+                    if !output.status.success() {
+                        bail!(
+                            "git fetch failed: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+
+                    let mut reset = common::process::env::command("git");
+                    reset.args(["reset", "--hard", "FETCH_HEAD"]);
+                    reset.current_dir(&target_dir);
+                    let output = command_streaming(reset, &mut on_log, &is_cancelled)
+                        .await
+                        .context("git reset")?;
+                    push_output_logs(&mut logs, "git reset", &output);
+                    if !output.status.success() {
+                        bail!(
+                            "git reset failed: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+                    false
+                } else {
+                    tracing::info!(
+                        "[install_plugin] {} exists without git metadata at {:?}, re-cloning",
+                        request.plugin_id,
+                        target_dir
+                    );
+                    std::fs::remove_dir_all(&target_dir)
+                        .context("removing non-git plugin directory")?;
+                    true
+                }
             } else {
                 tracing::info!(
                     "[install_plugin] {} has a stale install at {:?}, re-cloning",
@@ -191,10 +233,11 @@ where
 
     if has_step(&install_steps, "npm_install") {
         tracing::info!("[install_plugin] npm install in {:?}", target_dir);
-        logs.push("Running: npm install".into());
-        on_log("Running: npm install".into());
-        let mut install_args = vec!["install".to_string()];
+        let mut install_args = npm_install_args_for(&target_dir);
         install_args.extend(common::process::env::npm_registry_args());
+        let install_message = format!("Running: npm {}", install_args.join(" "));
+        logs.push(install_message.clone());
+        on_log(install_message);
         let output = command_streaming(
             npm_process(&install_args, &target_dir).await?,
             &mut on_log,
@@ -327,6 +370,64 @@ fn install_steps_for(plugin_def: Option<&resources::PluginDef>) -> Vec<String> {
 
 fn has_step(steps: &[String], step: &str) -> bool {
     steps.iter().any(|value| value == step)
+}
+
+fn npm_install_args_for(target_dir: &std::path::Path) -> Vec<String> {
+    let mut args = vec!["install".to_string()];
+    args.extend(platform_npm_install_args(target_dir));
+    args
+}
+
+#[cfg(windows)]
+fn platform_npm_install_args(target_dir: &std::path::Path) -> Vec<String> {
+    if package_depends_on(target_dir, "@tencent-connect/openclaw-qqbot") {
+        tracing::info!(
+            "[install_plugin] detected @tencent-connect/openclaw-qqbot dependency; skipping npm scripts on Windows"
+        );
+        // The upstream package postinstall only creates an OpenClaw SDK link
+        // for native OpenClaw extension installs, and its shell redirection is
+        // not valid under Windows cmd.exe. VibeAround imports its API helpers.
+        return vec![
+            "--legacy-peer-deps".to_string(),
+            "--ignore-scripts".to_string(),
+        ];
+    }
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+fn platform_npm_install_args(_target_dir: &std::path::Path) -> Vec<String> {
+    Vec::new()
+}
+
+#[cfg(windows)]
+fn package_depends_on(target_dir: &std::path::Path, dependency: &str) -> bool {
+    let package_json = match std::fs::read_to_string(target_dir.join("package.json")) {
+        Ok(raw) => raw,
+        Err(_) => return false,
+    };
+    let package_json = match serde_json::from_str::<serde_json::Value>(&package_json) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    package_json_has_dependency(&package_json, dependency)
+}
+
+#[cfg(any(test, windows))]
+fn package_json_has_dependency(package_json: &serde_json::Value, dependency: &str) -> bool {
+    [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+    ]
+    .iter()
+    .any(|key| {
+        package_json
+            .get(*key)
+            .and_then(|deps| deps.as_object())
+            .is_some_and(|deps| deps.contains_key(dependency))
+    })
 }
 
 fn installed_tree_complete(target_dir: &std::path::Path, plugin_kind: &str) -> bool {
@@ -462,4 +563,37 @@ fn output_excerpt(label: &str, output: &str) -> Option<String> {
         excerpt = format!("...{}", &excerpt[start..]);
     }
     Some(format!("{label}:\n{excerpt}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_tencent_openclaw_qqbot_dependency() {
+        let package_json = serde_json::json!({
+            "dependencies": {
+                "@tencent-connect/openclaw-qqbot": "^1.7.1"
+            }
+        });
+
+        assert!(package_json_has_dependency(
+            &package_json,
+            "@tencent-connect/openclaw-qqbot"
+        ));
+    }
+
+    #[test]
+    fn ignores_unrelated_dependencies() {
+        let package_json = serde_json::json!({
+            "dependencies": {
+                "ws": "^8.20.1"
+            }
+        });
+
+        assert!(!package_json_has_dependency(
+            &package_json,
+            "@tencent-connect/openclaw-qqbot"
+        ));
+    }
 }

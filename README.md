@@ -223,9 +223,9 @@ Ask questions, share workflows, or tell us which agent/provider/channel should b
 
 WeChat group for Chinese-language discussion:
 
-<img src="assets/community/wechat-group-qr-2026-06-08.jpg" width="180" alt="VibeAround WeChat group QR code, valid until June 8, 2026" />
+<img src="assets/community/wechat-group-qr-2026-06-16.jpg" width="180" alt="VibeAround WeChat group QR code, valid until June 16, 2026" />
 
-This WeChat QR code is valid until June 8, 2026. If it has expired, use Discord or GitHub Issues to ask for the latest one.
+This WeChat QR code is valid until June 16, 2026. If it has expired, use Discord or GitHub Issues to ask for the latest one.
 
 ## License
 

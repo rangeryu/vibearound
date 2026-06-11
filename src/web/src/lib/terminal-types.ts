@@ -39,7 +39,7 @@ export interface TerminalGroup {
   collapsed?: boolean;
 }
 
-export type ViewMode = "tabs" | "grid";
+export type ViewMode = "tabs" | "grid" | "nine";
 
 export interface ToolTheme {
   accent: string;

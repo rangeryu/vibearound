@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -62,6 +61,7 @@ type Notice = {
 type SaveState =
   | "idle"
   | "agents"
+  | "api-bridge"
   | "proxy"
   | "im"
   | "sessions"
@@ -139,8 +139,6 @@ export function SettingsDialog({
   const [saving, setSaving] = useState<SaveState>("idle");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [settingsTab, setSettingsTab] = useState("general");
-  const apiBridgeRetrySnapshotRef = useRef<string | null>(null);
-  const apiBridgeRetrySavingRef = useRef(false);
   const apiBridgeRetryForm = useMemo<ApiBridgeRetryFormState>(
     () => ({
       retry429Enabled,
@@ -253,8 +251,6 @@ export function SettingsDialog({
           : "10",
     };
 
-    apiBridgeRetrySnapshotRef.current =
-      serializeApiBridgeRetryForm(nextForm);
     setRetry429Enabled(nextForm.retry429Enabled);
     setRetry429Unlimited(nextForm.retry429Unlimited);
     setRetry429MaxRetries(nextForm.retry429MaxRetries);
@@ -501,9 +497,10 @@ export function SettingsDialog({
     }
   }, [settings, proxyEnabled, proxyHttp, proxyNoProxy, onServicesRestarted]);
 
-  const saveApiBridgeSettings = useCallback(async () => {
-    if (!apiBridgeRetryFormKey || apiBridgeRetrySavingRef.current) return;
-    apiBridgeRetrySavingRef.current = true;
+  const applyApiBridgeSettings = useCallback(async () => {
+    if (!apiBridgeRetryFormKey) return;
+    setSaving("api-bridge");
+    setNotice(null);
     try {
       const nextSettings = buildApiBridgeSettings({
         settings,
@@ -513,43 +510,21 @@ export function SettingsDialog({
       setSettings(nextSettings);
       const response = await apiFetch("/api/settings/reload", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      apiBridgeRetrySnapshotRef.current = apiBridgeRetryFormKey;
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "API bridge settings applied." });
     } catch (error) {
-      apiBridgeRetrySnapshotRef.current = apiBridgeRetryFormKey;
       setNotice({
         variant: "error",
         message: error instanceof Error ? error.message : String(error),
       });
     } finally {
-      apiBridgeRetrySavingRef.current = false;
+      setSaving("idle");
     }
   }, [
     settings,
     apiBridgeRetryForm,
     apiBridgeRetryFormKey,
-  ]);
-
-  useEffect(() => {
-    if (
-      !settingsLoaded ||
-      loading ||
-      saving !== "idle" ||
-      !apiBridgeRetryFormKey ||
-      apiBridgeRetrySnapshotRef.current === apiBridgeRetryFormKey
-    ) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void saveApiBridgeSettings();
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [
-    apiBridgeRetryFormKey,
-    loading,
-    saveApiBridgeSettings,
-    saving,
-    settingsLoaded,
+    onServicesRestarted,
   ]);
 
   const uninstallIntegrations = useCallback(
@@ -716,6 +691,13 @@ export function SettingsDialog({
                 {t("Agents")}
               </TabsTrigger>
               <TabsTrigger
+                value="api-bridge"
+                className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <RotateCw className="h-3 w-3" />
+                {t("API Bridge")}
+              </TabsTrigger>
+              <TabsTrigger
                 value="im"
                 className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
               >
@@ -799,17 +781,6 @@ export function SettingsDialog({
                     }
                   />
                 </div>
-                <ApiBridgeRetrySettingsPanel
-                  retry429Enabled={retry429Enabled}
-                  retry429MaxRetries={retry429MaxRetries}
-                  retry429Unlimited={retry429Unlimited}
-                  retry429DelaySeconds={retry429DelaySeconds}
-                  onRetry429EnabledChange={setRetry429Enabled}
-                  onRetry429MaxRetriesChange={setRetry429MaxRetries}
-                  onRetry429UnlimitedChange={setRetry429Unlimited}
-                  onRetry429DelaySecondsChange={setRetry429DelaySeconds}
-                  disabled={!canSubmit}
-                />
               </div>
             </TabsContent>
 
@@ -928,6 +899,46 @@ export function SettingsDialog({
                       {saving === "agents"
                         ? t("Applying…")
                         : t("Apply Agent Settings")}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent
+              value="api-bridge"
+              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+            >
+              {loading ? (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <LoadingBlock />
+                </div>
+              ) : (
+                <>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                    <ApiBridgeRetrySettingsPanel
+                      retry429Enabled={retry429Enabled}
+                      retry429MaxRetries={retry429MaxRetries}
+                      retry429Unlimited={retry429Unlimited}
+                      retry429DelaySeconds={retry429DelaySeconds}
+                      onRetry429EnabledChange={setRetry429Enabled}
+                      onRetry429MaxRetriesChange={setRetry429MaxRetries}
+                      onRetry429UnlimitedChange={setRetry429Unlimited}
+                      onRetry429DelaySecondsChange={setRetry429DelaySeconds}
+                      disabled={!canSubmit}
+                      notice={<SettingsNotice notice={notice} />}
+                    />
+                  </div>
+                  <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!canSubmit || !apiBridgeRetryFormKey}
+                      onClick={() => void applyApiBridgeSettings()}
+                    >
+                      {saving === "api-bridge"
+                        ? t("Applying…")
+                        : t("Apply API Bridge Settings")}
                     </Button>
                   </div>
                 </>
@@ -1272,6 +1283,7 @@ function ApiBridgeRetrySettingsPanel({
   onRetry429UnlimitedChange,
   onRetry429DelaySecondsChange,
   disabled,
+  notice,
 }: {
   retry429Enabled: boolean;
   retry429MaxRetries: string;
@@ -1282,21 +1294,21 @@ function ApiBridgeRetrySettingsPanel({
   onRetry429UnlimitedChange: (value: boolean) => void;
   onRetry429DelaySecondsChange: (value: string) => void;
   disabled: boolean;
+  notice?: ReactNode;
 }) {
   const { t } = useI18n();
   const controlsDisabled = disabled || !retry429Enabled;
   return (
-    <div className="mt-5 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
-            <RotateCw className="h-4 w-4 text-primary" />
-            {t("API bridge retry")}
-          </h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t("Automatically retry upstream requests that return 429.")}
-          </p>
-        </div>
+    <div className="space-y-5">
+      <div>
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <RotateCw className="h-4 w-4 text-primary" />
+          {t("API bridge retry")}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("Automatically retry upstream requests that return 429.")}
+        </p>
+        {notice}
       </div>
       <div className="rounded-md border border-border">
         <SettingsActionRow

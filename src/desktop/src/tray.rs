@@ -272,7 +272,10 @@ fn build_direct_launch_submenu<R: Runtime>(
     )
     .enabled(launch_enabled);
 
-    for agent in common::resources::AGENTS.iter() {
+    for agent in common::resources::AGENTS
+        .iter()
+        .filter(|agent| agent.supports_current_platform())
+    {
         let item = MenuItemBuilder::with_id(
             format!("{}{}", MENU_LAUNCH_DIRECT_PREFIX, agent.id),
             menu_text(&agent.display_name),

@@ -56,7 +56,7 @@ export function Workspaces() {
   };
 
   const removeWorkspace = async (path: string) => {
-    if (!window.confirm(t('Delete workspace "{{label}}"?', { label: path }))) {
+    if (!window.confirm(t('Remove workspace "{{label}}"?', { label: path }))) {
       return;
     }
     try {

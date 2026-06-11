@@ -8,6 +8,8 @@
 //! wrapped in a tagged [`crate::api_types::ChatEvent`] envelope so the
 //! frontend can discriminate exhaustively.
 
+use std::collections::HashSet;
+
 use axum::extract::{
     ws::{Message, WebSocket, WebSocketUpgrade},
     State,
@@ -982,9 +984,20 @@ fn parse_web_attachments(value: &serde_json::Value, message_id: &str) -> Vec<Att
         .get("attachments")
         .and_then(|items| items.as_array())
         .map(|items| {
+            let mut seen = HashSet::new();
             items
                 .iter()
                 .filter_map(|item| parse_web_attachment(item, message_id))
+                .filter(|attachment| {
+                    let key = format!(
+                        "{}\u{0}{}\u{0}{}\u{0}{}",
+                        attachment.file_key,
+                        attachment.file_name,
+                        attachment.resource_type,
+                        attachment.size.unwrap_or_default()
+                    );
+                    seen.insert(key)
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -1425,5 +1438,28 @@ mod tests {
         assert_eq!(attachments[0].file_name, "report.md");
         assert_eq!(attachments[0].resource_type, "text/markdown");
         assert_eq!(attachments[0].size, Some(42));
+    }
+
+    #[test]
+    fn dedupes_message_attachments() {
+        let input = parse_web_chat_input(
+            "chat-1",
+            r#"{"type":"message","messageId":"msg-1","attachments":[{"uri":"file:///tmp/logo.png","name":"Logo.png","mimeType":"image/png","size":42},{"uri":"file:///tmp/logo.png","name":"Logo.png","mimeType":"image/png","size":42}]}"#,
+        )
+        .expect("message input");
+
+        let WebChatInput::Message {
+            input:
+                ChannelInput::Message {
+                    envelope: ChannelEnvelope { attachments, .. },
+                },
+            ..
+        } = input
+        else {
+            panic!("expected attachment message");
+        };
+
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].file_key, "file:///tmp/logo.png");
     }
 }

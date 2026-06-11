@@ -53,14 +53,6 @@ node_bin() {
   fi
 }
 
-npm_bin() {
-  if [ -x "${STARTKIT_NODE_DIR:-}/bin/npm" ]; then
-    printf '%s' "$STARTKIT_NODE_DIR/bin/npm"
-  elif command -v npm >/dev/null 2>&1; then
-    command -v npm
-  fi
-}
-
 local_package_version() {
   package="$(package_name "$1")"
   node="$(node_bin || true)"
@@ -85,13 +77,6 @@ for (const root of roots) {
 }
 process.exit(1);
 NODE
-}
-
-latest_package_version() {
-  package="$(package_name "$1")"
-  npm="$(npm_bin || true)"
-  [ -n "$npm" ] || return 1
-  "$npm" view "$package" version --registry "${STARTKIT_NPM_REGISTRY:-https://registry.npmjs.org}" 2>/dev/null | tail -n 1
 }
 
 is_managed_candidate() {
@@ -133,14 +118,9 @@ fi
 
 if [ -n "${STARTKIT_NPM_PACKAGE:-}" ] && is_managed_candidate; then
   local_version="$(local_package_version "$STARTKIT_NPM_PACKAGE" 2>/dev/null || true)"
-  requested_version="$(requested_package_version "$STARTKIT_NPM_PACKAGE" || true)"
-  if [ -n "$requested_version" ]; then
-    desired_version="$requested_version"
-  else
-    desired_version="$(latest_package_version "$STARTKIT_NPM_PACKAGE" 2>/dev/null || true)"
-  fi
+  desired_version="$(requested_package_version "$STARTKIT_NPM_PACKAGE" || true)"
   if [ -n "$local_version" ] && [ -n "$desired_version" ] && [ "$local_version" != "$desired_version" ]; then
-    printf '{"status":"outdated","version":"%s","path":"%s","message":"%s %s is below the latest available version %s","actions":["install"]}\n' \
+    printf '{"status":"outdated","version":"%s","path":"%s","message":"%s %s does not match required version %s","actions":["install"]}\n' \
       "$(json_escape "$version")" "$(json_escape "$path")" "$(json_escape "$program")" "$(json_escape "$local_version")" "$(json_escape "$desired_version")"
     exit 0
   fi

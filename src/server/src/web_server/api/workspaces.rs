@@ -134,21 +134,41 @@ pub async fn create_workspace_handler(
 pub async fn remove_workspace_handler(
     Json(body): Json<WorkspacePathBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let path = std::path::PathBuf::from(&body.path);
     let builtin = config::builtin_workspaces_dir();
-    if std::path::PathBuf::from(&body.path) == builtin {
+    if paths_equal(&path, &builtin) {
         return Err((
             StatusCode::BAD_REQUEST,
             "Cannot remove the built-in workspace".into(),
         ));
     }
-    config::update_settings_json(|root| {
-        if let Some(arr) = root.get_mut("workspaces").and_then(|v| v.as_array_mut()) {
-            arr.retain(|v| v.as_str() != Some(&body.path));
-        }
-    })
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    let cfg = config::ensure_loaded();
+    if !cfg
+        .all_workspaces()
+        .iter()
+        .any(|workspace| paths_equal(workspace, &path))
+    {
+        return Err((
+            StatusCode::NOT_FOUND,
+            format!("Workspace is not registered: {}", path.display()),
+        ));
+    }
+
+    config::remove_workspace_path(&path).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    common::agent_state::remove_workspace_references(&path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(serde_json::json!({ "removed": body.path })))
+}
+
+fn paths_equal(left: &std::path::Path, right: &std::path::Path) -> bool {
+    left == right
+        || std::fs::canonicalize(left)
+            .ok()
+            .zip(std::fs::canonicalize(right).ok())
+            .map(|(left, right)| left == right)
+            .unwrap_or(false)
 }
 
 #[cfg(test)]

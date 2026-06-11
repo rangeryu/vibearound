@@ -6,6 +6,7 @@ export const zhCNWebDashboard: Record<string, string> = {
   View: "视图",
   Tabs: "标签",
   Grid: "网格",
+  "Nine grid": "九宫格",
   Light: "浅色",
   Dark: "深色",
   "{{running}}/{{total}} active": "{{running}}/{{total}} 活跃",
@@ -15,6 +16,7 @@ export const zhCNWebDashboard: Record<string, string> = {
   "Switch to dark theme": "切换到深色主题",
   "Tab view": "标签视图",
   "Grid view": "网格视图",
+  "Nine-grid view": "九宫格视图",
   "WebSocket follows page host (tunnel works on phone)":
     "WebSocket 跟随页面 host（手机隧道可用）",
   "Tunnel: — (see desktop tray)": "隧道：—（见桌面托盘）",
@@ -51,6 +53,7 @@ export const zhCNWebDashboard: Record<string, string> = {
   ALL: "全部",
   "All agents": "全部 Agent",
   Projects: "项目",
+  Workspaces: "工作区",
   "No projects": "没有项目",
   "No chats": "没有聊天",
   "Show less": "收起",

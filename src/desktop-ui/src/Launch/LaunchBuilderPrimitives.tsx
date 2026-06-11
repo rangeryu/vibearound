@@ -8,10 +8,12 @@ import { useSortable } from "@dnd-kit/react/sortable";
 import {
   Copy,
   GripVertical,
+  Monitor,
   MoreVertical,
   Pencil,
   Plug,
   Star,
+  Terminal,
   Trash2,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
@@ -150,7 +152,7 @@ export function SelectableItemCard({
         active
           ? "border-primary bg-primary/10 text-primary shadow-[inset_3px_0_0_hsl(var(--primary))]"
           : disabled
-            ? "border-border bg-card"
+            ? "border-border/70 bg-muted/45 text-muted-foreground opacity-65 grayscale"
             : "border-border bg-card hover:border-primary/40 hover:bg-accent/35"
       } ${disabled ? "cursor-not-allowed" : "cursor-pointer"} ${
         isDragging ? "opacity-55" : ""
@@ -465,7 +467,7 @@ export function WorkspaceActionsMenu({
           onSelect={() => onDelete(workspace)}
         >
           <Trash2 className="h-3 w-3" />
-          {t("Delete")}
+          {t("Remove workspace")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -519,13 +521,20 @@ export function AgentRailButton({
         id={agent.id}
         label={agent.display_name}
         framed={false}
-        className="h-9 w-9"
+        className="h-12 w-12 rounded-[10px]"
       />
       {isDefault && (
-        <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-amber-500/40 bg-background text-amber-600 shadow-sm dark:text-amber-300">
+        <span className="absolute -right-1 -top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-amber-500/40 bg-background text-amber-600 shadow-sm dark:text-amber-300">
           <Star className="h-2.5 w-2.5" />
         </span>
       )}
+      <span className="absolute -bottom-1 -right-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm">
+        {agent.direct_only ? (
+          <Monitor className="h-2.5 w-2.5" />
+        ) : (
+          <Terminal className="h-2.5 w-2.5" />
+        )}
+      </span>
     </button>
   );
 }

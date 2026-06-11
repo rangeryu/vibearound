@@ -21,8 +21,9 @@ export function useChatAttachments(t: Translate) {
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
-    const accepted = files.filter(isAllowedAttachment);
-    const rejected = files.filter((file) => !isAllowedAttachment(file));
+    const uniqueFiles = uniqueBy(files, fileSelectionKey);
+    const accepted = uniqueFiles.filter(isAllowedAttachment);
+    const rejected = uniqueFiles.filter((file) => !isAllowedAttachment(file));
     if (rejected.length > 0) {
       setAttachmentError(describeRejections(rejected, t));
     }
@@ -43,16 +44,24 @@ export function useChatAttachments(t: Translate) {
       );
       const failed = results.filter((result) => result.status === "rejected");
       if (uploaded.length > 0) {
-        setAttachments((prev) => [
-          ...prev,
-          ...uploaded.map((file) => ({
+        setAttachments((prev) => {
+          const next = [...prev];
+          const seen = new Set(next.map(attachmentDedupeKey));
+          for (const file of uploaded) {
+            const attachment = {
             id: file.id,
             name: file.name,
             mimeType: file.mime_type,
             size: file.size,
             uri: file.uri,
-          })),
-        ]);
+            };
+            const key = attachmentDedupeKey(attachment);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            next.push(attachment);
+          }
+          return next;
+        });
       }
       if (failed.length > 0) {
         failed.forEach((result) => {
@@ -89,6 +98,26 @@ export function useChatAttachments(t: Translate) {
     handleFilesSelected,
     handleRemoveAttachment,
   };
+}
+
+function uniqueBy<T>(items: T[], keyFor: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    const key = keyFor(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function fileSelectionKey(file: File): string {
+  return [file.name, file.size, file.type, file.lastModified].join("\u0000");
+}
+
+function attachmentDedupeKey(attachment: ChatAttachment): string {
+  return [attachment.name, attachment.size, attachment.mimeType].join("\u0000");
 }
 
 function describeRejections(files: File[], t: Translate): string {

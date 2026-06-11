@@ -156,7 +156,8 @@ async fn drive_agent_bridge(
                         }
                     }
                 }
-                StartupSession::Resume(session_id) => {
+                StartupSession::Resume(session_id) | StartupSession::ResumeOnly(session_id) => {
+                    let allow_load_fallback = matches!(startup_session, StartupSession::Resume(_));
                     // Keep this on after a successful startup attach. `Agent`
                     // clears it before the first real prompt/new session.
                     suppress_startup_notifications.store(true, Ordering::SeqCst);
@@ -167,9 +168,14 @@ async fn drive_agent_bridge(
                         .is_none()
                     {
                         tracing::info!(
-                            "[{}-agent] session/resume unsupported for {}, trying suppressed session/load",
+                            "[{}-agent] session/resume unsupported for {}{}",
                             agent_id_for_run,
-                            session_id
+                            session_id,
+                            if allow_load_fallback {
+                                ", trying suppressed session/load"
+                            } else {
+                                ""
+                            }
                         );
                         None
                     } else {
@@ -188,9 +194,14 @@ async fn drive_agent_bridge(
                             }
                             Err(error) => {
                                 tracing::info!(
-                                    "[{}-agent] failed to resume session {}, trying suppressed session/load: {}",
+                                    "[{}-agent] failed to resume session {}{}: {}",
                                     agent_id_for_run,
                                     session_id,
+                                    if allow_load_fallback {
+                                        ", trying suppressed session/load"
+                                    } else {
+                                        ""
+                                    },
                                     error
                                 );
                                 None
@@ -200,7 +211,7 @@ async fn drive_agent_bridge(
 
                     match resume_result {
                         Some(session_id) => Some(session_id),
-                        None => {
+                        None if allow_load_fallback => {
                             match conn
                                 .send_request(schema::LoadSessionRequest::new(
                                     session_id.clone(),
@@ -225,6 +236,10 @@ async fn drive_agent_bridge(
                                     None
                                 }
                             }
+                        }
+                        None => {
+                            suppress_startup_notifications.store(false, Ordering::SeqCst);
+                            None
                         }
                     }
                 }

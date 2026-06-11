@@ -2,7 +2,7 @@ import { MessageSquare, Download, ExternalLink, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useI18n } from "@va/i18n";
 
-import { Alert } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -344,7 +344,9 @@ function AuthFlowSection({
               : undefined
           }
         >
-          {t(authState.message)}
+          <AlertDescription className="min-w-0 whitespace-normal break-words text-xs leading-relaxed text-inherit">
+            {t(authState.message)}
+          </AlertDescription>
         </Alert>
       )}
 

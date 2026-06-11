@@ -144,7 +144,10 @@ where
 }
 
 fn npm_install_args(args: &[&str]) -> Vec<String> {
-    let mut out = args.iter().map(|arg| (*arg).to_string()).collect::<Vec<_>>();
+    let mut out = args
+        .iter()
+        .map(|arg| (*arg).to_string())
+        .collect::<Vec<_>>();
     out.extend(crate::process::env::npm_registry_args());
     out
 }

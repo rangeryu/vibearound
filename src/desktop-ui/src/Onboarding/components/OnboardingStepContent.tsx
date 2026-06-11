@@ -25,10 +25,12 @@ export function OnboardingStepContent({
   onToggleAgent,
   pluginRegistry,
   discoveredPlugins,
+  pluginReports,
   enabledChannels,
   onToggleChannel,
   tunnels,
   tunnelProvider,
+  tunnelReports,
   onTunnelProvider,
   groupedReports,
   reports,
@@ -64,10 +66,12 @@ export function OnboardingStepContent({
   onToggleAgent: (id: AgentId) => void;
   pluginRegistry: PluginRegistryEntry[];
   discoveredPlugins: DiscoveredChannelPlugin[];
+  pluginReports: StartkitItemReport[];
   enabledChannels: Set<string>;
   onToggleChannel: (pluginId: string, enabled: boolean) => void;
   tunnels: TunnelSummary[];
   tunnelProvider: TunnelProvider;
+  tunnelReports: StartkitItemReport[];
   onTunnelProvider: (value: TunnelProvider) => void;
   groupedReports: Array<{ id: string; reports: StartkitItemReport[] }>;
   reports: StartkitItemReport[];
@@ -109,7 +113,6 @@ export function OnboardingStepContent({
           agents={agents}
           enabledAgents={enabledAgents}
           reports={reportsById}
-          scanning={scanning}
           onToggleAgent={onToggleAgent}
         />
       )}
@@ -118,6 +121,7 @@ export function OnboardingStepContent({
         <ImDecisionPanel
           pluginRegistry={pluginRegistry}
           discoveredPlugins={discoveredPlugins}
+          pluginReports={pluginReports}
           enabledChannels={enabledChannels}
           onToggleChannel={onToggleChannel}
         />
@@ -127,6 +131,7 @@ export function OnboardingStepContent({
         <RemoteDecisionPanel
           tunnels={tunnels}
           provider={tunnelProvider}
+          reports={tunnelReports}
           onProvider={onTunnelProvider}
         />
       )}

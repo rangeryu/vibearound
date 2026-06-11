@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   FolderOpen,
@@ -40,6 +40,7 @@ import {
   removeLauncherWorkspace,
   reorderLauncherWorkspaces,
   reorderProfiles,
+  rescanDesktopAppEntries,
   setProfileConnection,
   setLauncherAgentProfile,
   setLauncherAgentLaunchArgs,
@@ -84,7 +85,9 @@ import type {
 
 const AGENT_ORDER = [
   "codex",
+  "codex-desktop",
   "claude",
+  "claude-desktop",
   "pi",
   "gemini",
   "cursor",
@@ -146,6 +149,9 @@ export function AgentLaunchBuilder({
   const [sessionChoice, setSessionChoice] = useState<SessionChoice>(null);
   const [settingsAgent, setSettingsAgent] = useState<AgentSummary | null>(null);
   const [busy, setBusy] = useState(false);
+  const postLaunchSessionRefreshTimers = useRef<ReturnType<
+    typeof setTimeout
+  >[]>([]);
 
   const enabledAgents = useMemo(
     () => (prefs ? new Set(prefs.enabledAgents) : null),
@@ -161,12 +167,23 @@ export function AgentLaunchBuilder({
   }, [prefs, workspaceOptions, agentId]);
 
   useEffect(() => {
-    void listAgents()
-      .then((items) => {
+    void Promise.all([
+      listAgents(),
+      rescanDesktopAppEntries().catch(() => null),
+    ])
+      .then(([items, desktopApps]) => {
         const rank = new Map(AGENT_ORDER.map((id, index) => [id, index]));
-        const visible = enabledAgents
-          ? items.filter((agent) => enabledAgents.has(agent.id))
-          : items;
+        const installedDesktopAgents = new Set(
+          Object.entries(desktopApps?.apps ?? {})
+            .filter(([, app]) => app.installed)
+            .map(([agentId]) => agentId),
+        );
+        const visible = items.filter((agent) => {
+          if (agent.direct_only) {
+            return desktopApps === null || installedDesktopAgents.has(agent.id);
+          }
+          return enabledAgents ? enabledAgents.has(agent.id) : true;
+        });
         const ordered = [...visible].sort(
           (a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999),
         );
@@ -253,6 +270,80 @@ export function AgentLaunchBuilder({
   }, [prefs, agentId, onError]);
 
   const currentAgentWorkspace = prefs ? agentWorkspace(prefs, agentId) : "";
+  const latestSessionScope = useRef({ agentId: "", workspace: "" });
+
+  useEffect(() => {
+    latestSessionScope.current = {
+      agentId,
+      workspace: currentAgentWorkspace,
+    };
+  }, [agentId, currentAgentWorkspace]);
+
+  const clearPostLaunchSessionRefreshTimers = useCallback(() => {
+    for (const timer of postLaunchSessionRefreshTimers.current) {
+      clearTimeout(timer);
+    }
+    postLaunchSessionRefreshTimers.current = [];
+  }, []);
+
+  useEffect(
+    () => () => clearPostLaunchSessionRefreshTimers(),
+    [clearPostLaunchSessionRefreshTimers],
+  );
+
+  const refreshPostLaunchSessions = useCallback(
+    async (launchedAgentId: string, launchedWorkspace: string) => {
+      if (
+        !launchedAgentId ||
+        !launchedWorkspace ||
+        !agentSupportsSessionResume(launchedAgentId)
+      ) {
+        return;
+      }
+
+      try {
+        const items = await listLaunchSessions(
+          launchedAgentId,
+          launchedWorkspace,
+          showArchivedSessions,
+        );
+        const latest = latestSessionScope.current;
+        if (latest.agentId !== launchedAgentId) return;
+
+        setWorkspaceSessionCounts((current) => ({
+          ...current,
+          [launchedWorkspace]: items.filter((item) => !item.archived).length,
+        }));
+
+        if (latest.workspace !== launchedWorkspace) return;
+
+        setSessions(items);
+        setSessionChoice((current) =>
+          current?.kind === "session" &&
+          items.some((item) => item.sessionId === current.sessionId)
+            ? current
+            : null,
+        );
+      } catch {
+        // A launched CLI may not have written its session yet. Ignore and let
+        // the next scheduled refresh or a normal remount pick it up.
+      }
+    },
+    [showArchivedSessions],
+  );
+
+  const schedulePostLaunchSessionRefresh = useCallback(
+    (launchedAgentId: string, launchedWorkspace: string) => {
+      clearPostLaunchSessionRefreshTimers();
+      for (const delayMs of [5000, 10000, 15000]) {
+        const timer = setTimeout(() => {
+          void refreshPostLaunchSessions(launchedAgentId, launchedWorkspace);
+        }, delayMs);
+        postLaunchSessionRefreshTimers.current.push(timer);
+      }
+    },
+    [clearPostLaunchSessionRefreshTimers, refreshPostLaunchSessions],
+  );
 
   useEffect(() => {
     if (!agentId || !currentAgentWorkspace) {
@@ -317,6 +408,7 @@ export function AgentLaunchBuilder({
   }, [agentId, viewPrefs?.workspaceOptions]);
 
   const selectedAgent = agents.find((agent) => agent.id === agentId);
+  const selectedAgentIsDirectOnly = Boolean(selectedAgent?.direct_only);
   const selectedProfile =
     profileChoice.kind === "profile"
       ? profileById(profiles, profileChoice.profileId)
@@ -331,10 +423,11 @@ export function AgentLaunchBuilder({
   );
   const selectedWorkspace = currentWorkspace(viewPrefs);
   const selectedTerminal = currentTerminal(viewPrefs);
-  const selectedSession = resolveSelectedSession(
+  const resolvedSelectedSession = resolveSelectedSession(
     sessionChoice,
     visibleSessions,
   );
+  const selectedSession = selectedAgentIsDirectOnly ? null : resolvedSelectedSession;
   const selectionLaunchable = viewPrefs
     ? isSelectionLaunchable(profileChoice, selectedProfile, agentId, viewPrefs)
     : false;
@@ -347,7 +440,8 @@ export function AgentLaunchBuilder({
         t,
       )
     : t("Loading…");
-  const sessionResumeSupported = agentSupportsSessionResume(agentId);
+  const sessionResumeSupported =
+    !selectedAgentIsDirectOnly && agentSupportsSessionResume(agentId);
   const sessionResumeUnsupportedReason = t(
     "{{agent}} does not support selecting a session to resume",
     { agent: agentLabel(agentId) },
@@ -477,7 +571,7 @@ export function AgentLaunchBuilder({
   }
 
   async function removeWorkspace(path: string, label: string) {
-    if (!window.confirm(t('Delete workspace "{{label}}"?', { label }))) return;
+    if (!window.confirm(t('Remove workspace "{{label}}"?', { label }))) return;
     setBusy(true);
     onError(null);
     try {
@@ -610,6 +704,8 @@ export function AgentLaunchBuilder({
 
   async function launchSelected() {
     if (!agentId) return;
+    const launchedAgentId = agentId;
+    const launchedWorkspace = currentAgentWorkspace;
     setBusy(true);
     onError(null);
     try {
@@ -617,19 +713,20 @@ export function AgentLaunchBuilder({
         if (profileChoice.kind === "profile") {
           await launchProfileResume(
             profileChoice.profileId,
-            agentId,
+            launchedAgentId,
             selectedSession.sessionId,
           );
         } else {
-          await launchDirectResume(agentId, selectedSession.sessionId);
+          await launchDirectResume(launchedAgentId, selectedSession.sessionId);
         }
         onToast(t("Resume launch opened"));
       } else {
         if (profileChoice.kind === "profile") {
-          await launchProfile(profileChoice.profileId, agentId);
+          await launchProfile(profileChoice.profileId, launchedAgentId);
         } else {
-          await launchDirect(agentId);
+          await launchDirect(launchedAgentId);
         }
+        schedulePostLaunchSessionRefresh(launchedAgentId, launchedWorkspace);
         onToast(t("Quick launch opened"));
       }
     } catch (error) {
@@ -670,13 +767,18 @@ export function AgentLaunchBuilder({
     ? profileSummary(selectedProfile, agentId, viewPrefs, t)
     : {
         title: t("Direct"),
-        detail: t("Use existing CLI login"),
+        detail: selectedAgentIsDirectOnly
+          ? t("Open desktop app")
+          : t("Use existing CLI login"),
         bridge: false,
-        route: t("Native CLI login"),
+        route: selectedAgentIsDirectOnly
+          ? t("Desktop app")
+          : t("Native CLI login"),
       };
   const sessionTitle = selectedSession?.title ?? t("New session");
   const selectedAgentPreference = viewPrefs.agentPreferences[agentId];
   const terminalArgCount = agentLaunchArgCount(selectedAgentPreference);
+  const showLaunchControls = !selectedAgentIsDirectOnly;
 
   return (
     <TooltipProvider>
@@ -704,187 +806,202 @@ export function AgentLaunchBuilder({
                     agentId={agentId}
                     agentLabelText={selectedAgent.display_name}
                     action={
-                      <div className="flex items-center gap-1.5 pt-1">
-                        {terminalArgCount > 0 && (
-                          <span className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                            {t("{{count}} args", { count: terminalArgCount })}
-                          </span>
-                        )}
-                        <TooltipButton
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={busy}
-                          aria-label={t("Agent settings")}
-                          title={t("Agent settings")}
-                          onClick={() => setSettingsAgent(selectedAgent)}
-                        >
-                          <Settings2 className="h-4 w-4" />
-                        </TooltipButton>
-                      </div>
+                      showLaunchControls ? (
+                        <div className="flex items-center gap-1.5 pt-1">
+                          {terminalArgCount > 0 && (
+                            <span className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                              {t("{{count}} args", { count: terminalArgCount })}
+                            </span>
+                          )}
+                          <TooltipButton
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={busy}
+                            aria-label={t("Agent settings")}
+                            title={t("Agent settings")}
+                            onClick={() => setSettingsAgent(selectedAgent)}
+                          >
+                            <Settings2 className="h-4 w-4" />
+                          </TooltipButton>
+                        </div>
+                      ) : undefined
                     }
                   >
-                    <SelectorPopup
-                      id="profile"
-                      openSelector={openSelector}
-                      onOpenChange={setOpenSelector}
-                      widthClassName="w-max min-w-[340px] max-w-[min(680px,calc(100vw-1rem))]"
-                      widthPx={680}
-                      trigger={
-                        <button
-                          type="button"
-                          className={`mt-0.5 flex max-w-[520px] min-w-0 cursor-pointer items-center gap-1 rounded-sm text-left text-[12px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                            openSelector === "profile"
-                              ? "text-primary"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                          onClick={() =>
-                            setOpenSelector(
-                              openSelector === "profile" ? null : "profile",
-                            )
-                          }
-                        >
-                          <span className="min-w-0 truncate font-semibold text-foreground">
-                            {selectedProfileSummary.title}
-                          </span>
-                          <span className="min-w-0 truncate text-muted-foreground">
-                            <span className="px-0.5">·</span>
-                            {selectedProfileSummary.route}
-                          </span>
-                        </button>
-                      }
-                    >
-                      <ProfileInfoPanel
-                        agentId={agentId}
-                        prefs={viewPrefs}
-                        profile={selectedProfile}
-                        summary={selectedProfileSummary}
-                      />
-                    </SelectorPopup>
+                    <>
+                      <SelectorPopup
+                        id="profile"
+                        openSelector={openSelector}
+                        onOpenChange={setOpenSelector}
+                        widthClassName="w-max min-w-[340px] max-w-[min(680px,calc(100vw-1rem))]"
+                        widthPx={680}
+                        trigger={
+                          <button
+                            type="button"
+                            className={`mt-0.5 flex max-w-[520px] min-w-0 cursor-pointer items-center gap-1 rounded-sm text-left text-[12px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                              openSelector === "profile"
+                                ? "text-primary"
+                                : "text-muted-foreground hover:text-foreground"
+                            }`}
+                            onClick={() =>
+                              setOpenSelector(
+                                openSelector === "profile" ? null : "profile",
+                              )
+                            }
+                          >
+                            <span className="min-w-0 truncate font-semibold text-foreground">
+                              {selectedProfileSummary.title}
+                            </span>
+                            <span className="min-w-0 truncate text-muted-foreground">
+                              <span className="px-0.5">·</span>
+                              {selectedProfileSummary.route}
+                            </span>
+                          </button>
+                        }
+                      >
+                        <ProfileInfoPanel
+                          agentId={agentId}
+                          prefs={viewPrefs}
+                          profile={selectedProfile}
+                          summary={selectedProfileSummary}
+                        />
+                      </SelectorPopup>
+                      {selectedAgentIsDirectOnly && (
+                        <p className="mt-1 max-w-[520px] text-[11px] leading-4 text-muted-foreground">
+                          {t("Workspace and sessions are selected inside the desktop app.")}
+                        </p>
+                      )}
+                    </>
                   </AgentSummaryHeader>
-                  <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
-                    <SelectorPopup
-                      id="terminal"
-                      openSelector={openSelector}
-                      onOpenChange={setOpenSelector}
-                      widthClassName="w-[min(300px,calc(100vw-1rem))]"
-                      widthPx={300}
-                      trigger={
-                        <LaunchSummaryPill
-                          active={openSelector === "terminal"}
-                          chevron
-                          disabled={busy}
-                          className="w-[160px]"
-                          icon={<Terminal className="h-4 w-4" />}
-                          onClick={() =>
-                            setOpenSelector(
-                              openSelector === "terminal" ? null : "terminal",
-                            )
-                          }
-                          label={t("Terminal")}
-                          title={selectedTerminal?.label ?? t("Terminal")}
-                        />
-                      }
-                    >
-                      <TerminalPanel
-                        options={viewPrefs.options}
-                        selected={viewPrefs.terminal}
-                        busy={busy}
-                        onSelect={(terminalId) => {
-                          setOpenSelector(null);
-                          void chooseTerminal(terminalId);
-                        }}
-                      />
-                    </SelectorPopup>
-                    <SelectorPopup
-                      id="workspace"
-                      openSelector={openSelector}
-                      onOpenChange={setOpenSelector}
-                      widthClassName="w-[min(400px,calc(100vw-1rem))]"
-                      widthPx={400}
-                      trigger={
-                        <LaunchSummaryPill
-                          active={openSelector === "workspace"}
-                          chevron
-                          className="w-[250px]"
-                          icon={<FolderOpen className="h-4 w-4" />}
-                          onClick={() =>
-                            setOpenSelector(
-                              openSelector === "workspace" ? null : "workspace",
-                            )
-                          }
-                          label={t("Workspace")}
-                          title={selectedWorkspace.label}
-                          detail={workspacesLoading ? t("Loading…") : undefined}
-                        />
-                      }
-                    >
-                      <WorkspacePanel
-                        prefs={viewPrefs}
-                        loading={workspacesLoading}
-                        onSelect={(path) => {
-                          setOpenSelector(null);
-                          void chooseWorkspace(path);
-                        }}
-                        onDelete={(path, label) =>
-                          void removeWorkspace(path, label)
+                  {showLaunchControls && (
+                    <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+                      <SelectorPopup
+                        id="terminal"
+                        openSelector={openSelector}
+                        onOpenChange={setOpenSelector}
+                        widthClassName="w-[min(300px,calc(100vw-1rem))]"
+                        widthPx={300}
+                        trigger={
+                          <LaunchSummaryPill
+                            active={openSelector === "terminal"}
+                            chevron
+                            disabled={busy}
+                            className="w-[160px]"
+                            icon={<Terminal className="h-4 w-4" />}
+                            onClick={() =>
+                              setOpenSelector(
+                                openSelector === "terminal" ? null : "terminal",
+                              )
+                            }
+                            label={t("Terminal")}
+                            title={selectedTerminal?.label ?? t("Terminal")}
+                          />
                         }
-                        onReorder={(fromPath, toPath) =>
-                          void reorderWorkspace(fromPath, toPath)
-                        }
-                        onCreate={() => {
-                          setOpenSelector(null);
-                          void chooseFolder();
-                        }}
-                        sessionCounts={workspaceSessionCounts}
-                        busy={busy}
-                      />
-                    </SelectorPopup>
-                    <SelectorPopup
-                      id="session"
-                      openSelector={openSelector}
-                      onOpenChange={setOpenSelector}
-                      widthClassName="w-[min(420px,calc(100vw-1rem))]"
-                      widthPx={420}
-                      trigger={
-                        <LaunchSummaryPill
-                          active={openSelector === "session"}
-                          chevron
-                          disabled={!sessionResumeSupported}
-                          className="w-[210px]"
-                          icon={<MessageCircle className="h-4 w-4" />}
-                          onClick={() =>
-                            setOpenSelector(
-                              openSelector === "session" ? null : "session",
-                            )
-                          }
-                          label={t("Session")}
-                          title={
-                            !sessionResumeSupported
-                              ? t("Session resume unavailable")
-                              : sessionsLoading
-                                ? t("Loading…")
-                                : sessionTitle
-                          }
-                          detail={selectedSession ? t("resume") : undefined}
+                      >
+                        <TerminalPanel
+                          options={viewPrefs.options}
+                          selected={viewPrefs.terminal}
+                          busy={busy}
+                          onSelect={(terminalId) => {
+                            setOpenSelector(null);
+                            void chooseTerminal(terminalId);
+                          }}
                         />
-                      }
-                    >
-                      <SessionPanel
-                        sessions={visibleSessions}
-                        selected={sessionChoice}
-                        archiveFilterAvailable={agentId === "codex"}
-                        resumeSupported={sessionResumeSupported}
-                        unsupportedReason={sessionResumeUnsupportedReason}
-                        showArchived={showArchivedSessions}
-                        onShowArchivedChange={setShowArchivedSessions}
-                        onSelect={(choice) => {
-                          setOpenSelector(null);
-                          setSessionChoice(choice);
-                        }}
-                      />
-                    </SelectorPopup>
-                  </div>
+                      </SelectorPopup>
+                      <SelectorPopup
+                        id="workspace"
+                        openSelector={openSelector}
+                        onOpenChange={setOpenSelector}
+                        widthClassName="w-[min(400px,calc(100vw-1rem))]"
+                        widthPx={400}
+                        trigger={
+                          <LaunchSummaryPill
+                            active={openSelector === "workspace"}
+                            chevron
+                            className="w-[250px]"
+                            icon={<FolderOpen className="h-4 w-4" />}
+                            onClick={() =>
+                              setOpenSelector(
+                                openSelector === "workspace"
+                                  ? null
+                                  : "workspace",
+                              )
+                            }
+                            label={t("Workspace")}
+                            title={selectedWorkspace.label}
+                            detail={
+                              workspacesLoading ? t("Loading…") : undefined
+                            }
+                          />
+                        }
+                      >
+                        <WorkspacePanel
+                          prefs={viewPrefs}
+                          loading={workspacesLoading}
+                          onSelect={(path) => {
+                            setOpenSelector(null);
+                            void chooseWorkspace(path);
+                          }}
+                          onDelete={(path, label) =>
+                            void removeWorkspace(path, label)
+                          }
+                          onReorder={(fromPath, toPath) =>
+                            void reorderWorkspace(fromPath, toPath)
+                          }
+                          onCreate={() => {
+                            setOpenSelector(null);
+                            void chooseFolder();
+                          }}
+                          sessionCounts={workspaceSessionCounts}
+                          busy={busy}
+                        />
+                      </SelectorPopup>
+                      <SelectorPopup
+                        id="session"
+                        openSelector={openSelector}
+                        onOpenChange={setOpenSelector}
+                        widthClassName="w-[min(420px,calc(100vw-1rem))]"
+                        widthPx={420}
+                        trigger={
+                          <LaunchSummaryPill
+                            active={openSelector === "session"}
+                            chevron
+                            disabled={!sessionResumeSupported}
+                            className="w-[210px]"
+                            icon={<MessageCircle className="h-4 w-4" />}
+                            onClick={() =>
+                              setOpenSelector(
+                                openSelector === "session" ? null : "session",
+                              )
+                            }
+                            label={t("Session")}
+                            title={
+                              !sessionResumeSupported
+                                ? t("Session resume unavailable")
+                                : sessionsLoading
+                                  ? t("Loading…")
+                                  : sessionTitle
+                            }
+                            detail={selectedSession ? t("resume") : undefined}
+                          />
+                        }
+                      >
+                        <SessionPanel
+                          sessions={visibleSessions}
+                          selected={sessionChoice}
+                          archiveFilterAvailable={agentId === "codex"}
+                          resumeSupported={sessionResumeSupported}
+                          unsupportedReason={sessionResumeUnsupportedReason}
+                          showArchived={showArchivedSessions}
+                          onShowArchivedChange={setShowArchivedSessions}
+                          onSelect={(choice) => {
+                            setOpenSelector(null);
+                            setSessionChoice(choice);
+                          }}
+                        />
+                      </SelectorPopup>
+                    </div>
+                  )}
                 </div>
                 <div className="col-span-1 flex">
                   <TooltipButton

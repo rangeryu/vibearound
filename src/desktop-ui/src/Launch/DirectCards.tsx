@@ -4,11 +4,17 @@ import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
-import { listAgents, type AgentSummary } from "./api";
+import {
+  listAgents,
+  rescanDesktopAppEntries,
+  type AgentSummary,
+} from "./api";
 
 const AGENT_DISPLAY_ORDER = [
   "claude",
+  "claude-desktop",
   "codex",
+  "codex-desktop",
   "pi",
   "gemini",
   "opencode",
@@ -55,12 +61,23 @@ export function DirectCards({
   );
 
   useEffect(() => {
-    void listAgents()
-      .then((items) => {
+    void Promise.all([
+      listAgents(),
+      rescanDesktopAppEntries().catch(() => null),
+    ])
+      .then(([items, desktopApps]) => {
         const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));
-        const visible = enabledAgentSet
-          ? items.filter((agent) => enabledAgentSet.has(agent.id))
-          : items;
+        const installedDesktopAgents = new Set(
+          Object.entries(desktopApps?.apps ?? {})
+            .filter(([, app]) => app.installed)
+            .map(([agentId]) => agentId),
+        );
+        const visible = items.filter((agent) => {
+          if (agent.direct_only) {
+            return desktopApps === null || installedDesktopAgents.has(agent.id);
+          }
+          return enabledAgentSet ? enabledAgentSet.has(agent.id) : true;
+        });
         setAgents([...visible].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999)));
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));

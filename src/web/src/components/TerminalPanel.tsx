@@ -41,6 +41,7 @@ export function TerminalPanel({
   const appTheme = useTheme();
   const theme = getToolTheme(session.tool, appTheme);
   const status = statusConfig[session.status];
+  const compact = viewMode === "nine" && !isMaximized;
 
   // Mobile: hold sendInput callback from TerminalView's WebSocket.
   const [isMobile] = useState(() =>
@@ -62,19 +63,19 @@ export function TerminalPanel({
       }}
     >
       <div
-        className="flex items-center justify-between px-3 py-1.5"
+        className={`flex items-center justify-between ${compact ? "px-2 py-1" : "px-3 py-1.5"}`}
         style={{
           backgroundColor: theme.headerBg,
           borderBottom: `1px solid ${theme.borderColor}`,
         }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <div
             className="h-3 w-0.5 rounded-full"
             style={{ backgroundColor: theme.accent }}
           />
           <div
-            className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider font-mono"
+            className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider font-mono"
             style={{
               backgroundColor: `${theme.accent}20`,
               color: theme.accent,
@@ -82,10 +83,10 @@ export function TerminalPanel({
           >
             {t(theme.label)}
           </div>
-          <div className="text-xs font-medium text-foreground/90 font-mono">
+          <div className="min-w-0 truncate text-xs font-medium text-foreground/90 font-mono">
             {session.name}
           </div>
-          <div className="flex items-center gap-1.5 pl-2">
+          <div className="flex shrink-0 items-center gap-1.5 pl-2">
             <div
               className={`h-1.5 w-1.5 shrink-0 rounded-full self-center ${status.pulse ? "animate-pulse" : ""}`}
               style={{
@@ -97,8 +98,8 @@ export function TerminalPanel({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="hidden text-[10px] text-muted-foreground/30 font-mono md:inline truncate max-w-32">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className={`${compact ? "hidden" : "hidden md:inline"} max-w-32 truncate text-[10px] text-muted-foreground/30 font-mono`}>
             {session.cwd}
           </span>
           {onClose && (
@@ -143,7 +144,7 @@ export function TerminalPanel({
         <MobileInputBar sendInput={sendInput} />
       )}
       <div
-        className="flex items-center gap-2 px-3 py-1"
+        className={`flex items-center gap-2 ${compact ? "px-2 py-0.5" : "px-3 py-1"}`}
         style={{
           backgroundColor: theme.headerBg,
           borderTop: `1px solid ${theme.borderColor}`,

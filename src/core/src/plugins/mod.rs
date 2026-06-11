@@ -99,6 +99,11 @@ impl DiscoveredPlugin {
     pub fn entry_path(&self) -> PathBuf {
         self.dir.join(&self.manifest.entry)
     }
+
+    pub fn installed_version(&self) -> String {
+        read_package_version(&self.dir.join("package.json"))
+            .unwrap_or_else(|| self.manifest.version.clone())
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,7 +134,7 @@ impl From<&DiscoveredPlugin> for DiscoveredPluginSummary {
         Self {
             id: plugin.manifest.id.clone(),
             name: plugin.manifest.name.clone(),
-            version: plugin.manifest.version.clone(),
+            version: plugin.installed_version(),
             kind: plugin.manifest.kind.clone(),
             runtime: plugin.manifest.runtime.clone(),
             entry: plugin.manifest.entry.clone(),
@@ -279,4 +284,15 @@ fn read_plugin_manifest(path: &Path) -> Option<PluginManifest> {
             None
         }
     }
+}
+
+fn read_package_version(path: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&raw).ok()?;
+    value
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|version| !version.is_empty())
+        .map(str::to_string)
 }

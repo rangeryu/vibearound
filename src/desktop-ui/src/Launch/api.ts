@@ -90,6 +90,7 @@ export interface AgentSummary {
   description: string;
   install_type: string | null;
   pty_command: string;
+  direct_only: boolean;
   acp_program: string;
   acp_args: string[];
   acp_npm_package?: string | null;
@@ -99,6 +100,25 @@ export interface AgentSummary {
 /** Reuses the onboarding command that returns all CLIs in agents.json. */
 export function listAgents(): Promise<AgentSummary[]> {
   return invoke<AgentSummary[]>("list_agents");
+}
+
+export interface DesktopAppDetectionFile {
+  apps: Record<string, DesktopAppDetection>;
+}
+
+export interface DesktopAppDetection {
+  installed: boolean;
+  launchCommand: string;
+  entry?: {
+    appName: string;
+    path: string;
+    source: string;
+    sourceLabel: string;
+  } | null;
+}
+
+export function rescanDesktopAppEntries(): Promise<DesktopAppDetectionFile> {
+  return invoke<DesktopAppDetectionFile>("rescan_desktop_app_entries");
 }
 
 export interface TerminalOption {

@@ -1,22 +1,25 @@
-import { Globe } from "lucide-react";
+import { CheckCircle2, Download, Globe, Loader2 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { cn } from "@/lib/utils";
 
 import {
+  compactReportLabel,
   tunnelDescription,
   tunnelRank,
 } from "./startkitPresentation";
-import type { TunnelSummary } from "../types";
+import type { StartkitItemReport, TunnelSummary } from "../types";
 import type { TunnelProvider } from "../constants";
 
 export function RemoteDecisionPanel({
   tunnels,
   provider,
+  reports,
   onProvider,
 }: {
   tunnels: TunnelSummary[];
   provider: TunnelProvider;
+  reports: StartkitItemReport[];
   onProvider: (value: TunnelProvider) => void;
 }) {
   const { t } = useI18n();
@@ -50,6 +53,11 @@ export function RemoteDecisionPanel({
               key={tunnel.id}
               tunnel={tunnel}
               selected={provider === tunnel.id}
+              report={
+                provider === tunnel.id
+                  ? tunnelReportForProvider(tunnel.id, reports)
+                  : undefined
+              }
               recommended={tunnel.id === "cloudflare"}
               onSelect={() => onProvider(tunnel.id)}
               t={t}
@@ -64,12 +72,14 @@ export function RemoteDecisionPanel({
 function TunnelCard({
   tunnel,
   selected,
+  report,
   recommended,
   onSelect,
   t,
 }: {
   tunnel: TunnelSummary;
   selected: boolean;
+  report?: StartkitItemReport;
   recommended?: boolean;
   onSelect: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -96,6 +106,43 @@ function TunnelCard({
       <span className="mt-2 block text-xs leading-5 text-muted-foreground">
         {tunnelDescription(tunnel.id, t)}
       </span>
+      {report && (
+        <span
+          className={cn(
+            "mt-2 inline-flex items-center gap-1.5 text-[11px]",
+            report.status === "ok"
+              ? "text-emerald-700 dark:text-emerald-300"
+              : report.status === "outdated" || report.status === "running"
+                ? "text-amber-700 dark:text-amber-300"
+                : "text-muted-foreground",
+          )}
+        >
+          {report.status === "running" ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : report.status === "ok" ? (
+            <CheckCircle2 className="h-3 w-3" />
+          ) : (
+            <Download className="h-3 w-3" />
+          )}
+          {compactReportLabel(report, t)}
+        </span>
+      )}
     </button>
   );
+}
+
+function tunnelReportForProvider(
+  provider: string,
+  reports: StartkitItemReport[],
+): StartkitItemReport | undefined {
+  switch (provider) {
+    case "cloudflare":
+      return reports.find((report) => report.id === "tunnels.cloudflare.binary");
+    case "localtunnel":
+      return reports.find((report) => report.id === "essentials.node");
+    case "ngrok":
+      return reports.find((report) => report.id === "tunnels.ngrok.sdk");
+    default:
+      return undefined;
+  }
 }

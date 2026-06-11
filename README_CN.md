@@ -223,9 +223,9 @@ bun run dev
 
 中文交流微信群：
 
-<img src="assets/community/wechat-group-qr-2026-06-08.jpg" width="180" alt="VibeAround 微信群二维码，有效期至 2026 年 6 月 8 日" />
+<img src="assets/community/wechat-group-qr-2026-06-16.jpg" width="180" alt="VibeAround 微信群二维码，有效期至 2026 年 6 月 16 日" />
 
-该微信群二维码有效期至 2026 年 6 月 8 日。如果图片失效，可以通过 Discord 或 GitHub Issues 索取最新二维码。
+该微信群二维码有效期至 2026 年 6 月 16 日。如果图片失效，可以通过 Discord 或 GitHub Issues 索取最新二维码。
 
 ## 许可证
 

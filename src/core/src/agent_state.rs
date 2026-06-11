@@ -285,7 +285,12 @@ pub fn remove_profile_references(profile_id: &str) -> anyhow::Result<()> {
 pub fn remove_workspace_references(workspace: &std::path::Path) -> anyhow::Result<()> {
     update_prefs(|prefs| {
         for preference in prefs.agents.values_mut() {
-            if preference.workspace.as_deref() == Some(workspace) {
+            if preference
+                .workspace
+                .as_deref()
+                .map(|candidate| paths_equal(candidate, workspace))
+                .unwrap_or(false)
+            {
                 preference.workspace = None;
             }
         }
@@ -295,6 +300,15 @@ pub fn remove_workspace_references(workspace: &std::path::Path) -> anyhow::Resul
                 || !preference.launch_args.is_empty()
         });
     })
+}
+
+fn paths_equal(left: &std::path::Path, right: &std::path::Path) -> bool {
+    left == right
+        || std::fs::canonicalize(left)
+            .ok()
+            .zip(std::fs::canonicalize(right).ok())
+            .map(|(left, right)| left == right)
+            .unwrap_or(false)
 }
 
 fn update_prefs(f: impl FnOnce(&mut AgentsPrefsFile)) -> anyhow::Result<()> {

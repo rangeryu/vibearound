@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, MessageSquare } from "lucide-react";
+import { CheckCircle2, Download, Loader2, MessageSquare } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { Checkbox } from "@/components/ui/checkbox";
@@ -7,21 +7,26 @@ import { cn } from "@/lib/utils";
 import type {
   DiscoveredChannelPlugin,
   PluginRegistryEntry,
+  StartkitItemReport,
 } from "../types";
+import { compactReportLabel } from "./startkitPresentation";
 
 export function ImDecisionPanel({
   pluginRegistry,
   discoveredPlugins,
+  pluginReports,
   enabledChannels,
   onToggleChannel,
 }: {
   pluginRegistry: PluginRegistryEntry[];
   discoveredPlugins: DiscoveredChannelPlugin[];
+  pluginReports: StartkitItemReport[];
   enabledChannels: Set<string>;
   onToggleChannel: (pluginId: string, enabled: boolean) => void;
 }) {
   const { t } = useI18n();
   const discoveredMap = new Map(discoveredPlugins.map((plugin) => [plugin.id, plugin]));
+  const reportMap = new Map(pluginReports.map((report) => [report.id, report]));
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-4xl items-center py-4">
@@ -46,12 +51,18 @@ export function ImDecisionPanel({
               const selected = enabledChannels.has(entry.id);
               const discovered = discoveredMap.get(entry.id);
               const installed = Boolean(discovered);
+              const report = selected
+                ? reportMap.get(`channels.plugins.${entry.id}`)
+                : undefined;
               const installLabel =
-                installed && discovered?.version
+                report
+                  ? compactReportLabel(report, t)
+                  : installed && discovered?.version
                   ? t("Installed {{version}}", { version: discovered.version })
                   : installed
                     ? t("Installed")
                     : t("Not installed");
+              const status = report?.status ?? (installed ? "ok" : "missing");
               return (
                 <button
                   key={entry.id}
@@ -80,12 +91,16 @@ export function ImDecisionPanel({
                     <span
                       className={cn(
                         "mt-1 inline-flex items-center gap-1.5 text-[11px]",
-                        installed
+                        status === "ok"
                           ? "text-emerald-700 dark:text-emerald-300"
+                          : status === "outdated" || status === "running"
+                            ? "text-amber-700 dark:text-amber-300"
                           : "text-muted-foreground",
                       )}
                     >
-                      {installed ? (
+                      {status === "running" ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : status === "ok" ? (
                         <CheckCircle2 className="h-3 w-3" />
                       ) : (
                         <Download className="h-3 w-3" />
