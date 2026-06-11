@@ -152,7 +152,7 @@ export function SelectableItemCard({
         active
           ? "border-primary bg-primary/10 text-primary shadow-[inset_3px_0_0_hsl(var(--primary))]"
           : disabled
-            ? "border-border bg-card"
+            ? "border-border/70 bg-muted/45 text-muted-foreground opacity-65 grayscale"
             : "border-border bg-card hover:border-primary/40 hover:bg-accent/35"
       } ${disabled ? "cursor-not-allowed" : "cursor-pointer"} ${
         isDragging ? "opacity-55" : ""
