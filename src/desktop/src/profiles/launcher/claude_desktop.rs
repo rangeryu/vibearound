@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use ::common::profiles::{self, connections};
-use ::common::{auth, config};
+use ::common::{agent_state, auth, config};
 use anyhow::{anyhow, Context};
 use profiles::ProfileDef;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -56,20 +56,11 @@ pub(super) fn apply_profile_config(profile: &ProfileDef) -> anyhow::Result<()> {
         .bridge_target_api_type
         .clone()
         .unwrap_or_else(|| route.client_api_type.clone());
+    ensure_claude_bridge_agent_model(profile, &route, &target_api_type)
+        .with_context(|| format!("prepare Claude Desktop bridge model for '{}'", profile.id))?;
     let scope = format!("claude-{}", route.client_api_type);
     let base_url = bridge_base_url(&profile.id, &scope, &target_api_type);
-    let raw_model_routes = if route.bridge_models.is_empty() {
-        connections::bridge_model_routes(profile, None, &target_api_type)
-    } else {
-        route.bridge_models
-    };
-    let model_routes = connections::claude_bridge_model_routes(raw_model_routes);
-    apply_profile_config_at(
-        &claude_3p_user_data_dir(),
-        profile,
-        &base_url,
-        &model_routes,
-    )
+    apply_profile_config_at(&claude_3p_user_data_dir(), profile, &base_url)
 }
 
 pub(super) fn cleanup_profile_config() -> anyhow::Result<()> {
@@ -86,18 +77,131 @@ fn bridge_base_url(profile_id: &str, scope: &str, target_api_type: &str) -> Stri
     )
 }
 
+fn ensure_claude_bridge_agent_model(
+    profile: &ProfileDef,
+    route: &connections::ProfileAgentRoute,
+    target_api_type: &str,
+) -> anyhow::Result<()> {
+    let model_route =
+        claude_bridge_model_route(profile, route, target_api_type).ok_or_else(|| {
+            anyhow!(
+                "profile '{}' has no models available for Claude Desktop",
+                profile.id
+            )
+        })?;
+    let agent_prefs = agent_state::read_prefs();
+    let merged_connections = connections::merged_profile_connections(&agent_prefs);
+    let mut preference = merged_connections
+        .get(&profile.id)
+        .and_then(|items| items.get("claude"))
+        .cloned()
+        .unwrap_or_default();
+    if !upsert_claude_bridge_agent_model_preference(
+        &mut preference,
+        &route.client_api_type,
+        target_api_type,
+        &model_route,
+    ) {
+        return Ok(());
+    }
+    agent_state::write_profile_connection_preference(&profile.id, "claude", preference)
+}
+
+fn claude_bridge_model_route(
+    profile: &ProfileDef,
+    route: &connections::ProfileAgentRoute,
+    target_api_type: &str,
+) -> Option<connections::ProfileBridgeModelRoute> {
+    let routes = if route.bridge_models.is_empty() {
+        connections::bridge_model_routes(profile, None, target_api_type)
+    } else {
+        route.bridge_models.clone()
+    };
+    routes
+        .iter()
+        .find(|route| connections::is_claude_usable_model_id(&route.agent_model))
+        .cloned()
+        .or_else(|| routes.into_iter().next())
+}
+
+fn upsert_claude_bridge_agent_model_preference(
+    preference: &mut agent_state::ProfileConnectionPreference,
+    client_api_type: &str,
+    target_api_type: &str,
+    model_route: &connections::ProfileBridgeModelRoute,
+) -> bool {
+    let mut changed = false;
+    if preference.selected_api_type.as_deref() != Some(client_api_type) {
+        preference.selected_api_type = Some(client_api_type.to_string());
+        changed = true;
+    }
+
+    let bridge = preference
+        .bridge
+        .entry(client_api_type.to_string())
+        .or_default();
+    if !bridge.enabled {
+        bridge.enabled = true;
+        changed = true;
+    }
+    if bridge.target_api_type.as_deref() != Some(target_api_type) {
+        bridge.target_api_type = Some(target_api_type.to_string());
+        changed = true;
+    }
+
+    let agent_model = if connections::is_claude_usable_model_id(&model_route.agent_model) {
+        model_route.agent_model.clone()
+    } else {
+        connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID.to_string()
+    };
+
+    if bridge.models.is_empty() {
+        if bridge.upstream_model.as_deref() != Some(model_route.upstream_model.as_str()) {
+            bridge.upstream_model = Some(model_route.upstream_model.clone());
+            changed = true;
+        }
+        if bridge.fake_model_id.as_deref() != Some(agent_model.as_str()) {
+            bridge.fake_model_id = Some(agent_model);
+            changed = true;
+        }
+        return changed;
+    }
+
+    if bridge.models.iter().any(|model| {
+        model
+            .fake_model_id
+            .as_deref()
+            .is_some_and(connections::is_claude_usable_model_id)
+    }) {
+        return changed;
+    }
+
+    if let Some(model) = bridge
+        .models
+        .iter_mut()
+        .find(|model| model.upstream_model.as_deref() == Some(model_route.upstream_model.as_str()))
+    {
+        if model.fake_model_id.as_deref() != Some(agent_model.as_str()) {
+            model.fake_model_id = Some(agent_model);
+            changed = true;
+        }
+    } else {
+        bridge
+            .models
+            .push(agent_state::ProfileBridgeModelPreference {
+                upstream_model: Some(model_route.upstream_model.clone()),
+                fake_model_id: Some(agent_model),
+            });
+        changed = true;
+    }
+    changed
+}
+
 fn apply_profile_config_at(
     root: &Path,
     profile: &ProfileDef,
     base_url: &str,
-    model_routes: &[connections::ProfileBridgeModelRoute],
 ) -> anyhow::Result<()> {
-    if model_routes.is_empty() {
-        return Err(anyhow!(
-            "profile '{}' has no models available for Claude Desktop",
-            profile.id
-        ));
-    }
     let library_dir = config_library_dir(root);
     std::fs::create_dir_all(&library_dir)
         .with_context(|| format!("create Claude Desktop config library {:?}", library_dir))?;
@@ -126,11 +230,7 @@ fn apply_profile_config_at(
             "inferenceGatewayBaseUrl": base_url,
             "inferenceGatewayApiKey": "vibearound-local-bridge",
             "inferenceGatewayAuthScheme": "bearer",
-            "modelDiscoveryEnabled": false,
-            "inferenceModels": model_routes
-                .iter()
-                .map(|route| serde_json::json!({ "name": route.agent_model }))
-                .collect::<Vec<_>>(),
+            "modelDiscoveryEnabled": true,
         }),
     )
     .with_context(|| format!("write Claude Desktop profile '{}'", profile.id))?;
@@ -493,10 +593,6 @@ mod tests {
             &root,
             &profile(),
             "http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic",
-            &[connections::ProfileBridgeModelRoute {
-                upstream_model: "minimax-real".to_string(),
-                agent_model: connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID.to_string(),
-            }],
         )
         .expect("apply Claude Desktop profile");
 
@@ -522,17 +618,9 @@ mod tests {
             managed
                 .get("modelDiscoveryEnabled")
                 .and_then(Value::as_bool),
-            Some(false)
+            Some(true)
         );
-        assert_eq!(
-            managed
-                .get("inferenceModels")
-                .and_then(Value::as_array)
-                .and_then(|models| models.first())
-                .and_then(|model| model.get("name"))
-                .and_then(Value::as_str),
-            Some(connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID)
-        );
+        assert!(managed.get("inferenceModels").is_none());
         assert_eq!(
             read_deployment_mode(&root).expect("deployment mode"),
             Some("3p".to_string())
@@ -567,10 +655,6 @@ mod tests {
             &root,
             &profile(),
             "http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic",
-            &[connections::ProfileBridgeModelRoute {
-                upstream_model: "minimax-real".to_string(),
-                agent_model: connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID.to_string(),
-            }],
         )
         .expect("apply Claude Desktop profile");
 
@@ -609,5 +693,79 @@ mod tests {
             deployment
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn upsert_claude_bridge_agent_model_fills_single_model_fake_id() {
+        let mut preference = agent_state::ProfileConnectionPreference {
+            selected_api_type: Some("anthropic".to_string()),
+            bridge: [(
+                "anthropic".to_string(),
+                agent_state::ProfileBridgePreference {
+                    enabled: true,
+                    target_api_type: Some("openai-chat".to_string()),
+                    upstream_model: Some("nvidia/nemotron".to_string()),
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        };
+
+        let changed = upsert_claude_bridge_agent_model_preference(
+            &mut preference,
+            "anthropic",
+            "openai-chat",
+            &connections::ProfileBridgeModelRoute {
+                upstream_model: "nvidia/nemotron".to_string(),
+                agent_model: "nvidia/nemotron".to_string(),
+            },
+        );
+
+        assert!(changed);
+        let bridge = preference.bridge.get("anthropic").expect("bridge");
+        assert_eq!(bridge.upstream_model.as_deref(), Some("nvidia/nemotron"));
+        assert_eq!(
+            bridge.fake_model_id.as_deref(),
+            Some(connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID)
+        );
+    }
+
+    #[test]
+    fn upsert_claude_bridge_agent_model_preserves_existing_claude_style_model() {
+        let mut preference = agent_state::ProfileConnectionPreference {
+            selected_api_type: Some("anthropic".to_string()),
+            bridge: [(
+                "anthropic".to_string(),
+                agent_state::ProfileBridgePreference {
+                    enabled: true,
+                    target_api_type: Some("openai-chat".to_string()),
+                    models: vec![agent_state::ProfileBridgeModelPreference {
+                        upstream_model: Some("deepseek-v4-pro".to_string()),
+                        fake_model_id: Some("opus-4.7[1m]".to_string()),
+                    }],
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        };
+
+        let changed = upsert_claude_bridge_agent_model_preference(
+            &mut preference,
+            "anthropic",
+            "openai-chat",
+            &connections::ProfileBridgeModelRoute {
+                upstream_model: "deepseek-v4-pro".to_string(),
+                agent_model: "opus-4.7[1m]".to_string(),
+            },
+        );
+
+        assert!(!changed);
+        let bridge = preference.bridge.get("anthropic").expect("bridge");
+        assert_eq!(
+            bridge.models[0].fake_model_id.as_deref(),
+            Some("opus-4.7[1m]")
+        );
     }
 }
