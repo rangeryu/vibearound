@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="Logo.png" alt="VibeAround logo" width="96" />
+<img src="Logo.svg" alt="VibeAround logo" width="96" />
 
 # VibeAround
 
@@ -99,8 +99,8 @@ Continue your latest session from messaging apps, desktop browsers, or mobile br
 
 <table>
   <tr>
-    <td width="34%" align="center"><img src="assets/marketing/screenshots/en/web-dashboard-mobile.png" alt="VibeAround mobile web dashboard" width="260" /></td>
-    <td width="66%"><img src="assets/marketing/screenshots/en/web-terminal.png" alt="VibeAround Web Terminal for remote agent control" /></td>
+    <td width="28%" align="center"><img src="assets/marketing/screenshots/en/web-dashboard-mobile.png" alt="VibeAround mobile web dashboard" width="220" /></td>
+    <td width="72%"><img src="assets/marketing/screenshots/en/web-terminal.png" alt="VibeAround Web Terminal for remote agent control" /></td>
   </tr>
 </table>
 
@@ -244,7 +244,7 @@ Ask questions, share workflows, or which agent/provider/channel should be smooth
 
 WeChat group for Chinese-language discussion:
 
-<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/community/wechat-group-qr-2026-06-19.webp" width="180" alt="VibeAround WeChat group QR code, valid until June 19, 2026" />
+<img src="assets/community/wechat-group-qr-2026-06-19.webp" width="180" alt="VibeAround WeChat group QR code, valid until June 19, 2026" />
 
 This WeChat QR code is valid until June 19, 2026. Use Discord or GitHub Issues to ask for the latest one if it has expired.
 

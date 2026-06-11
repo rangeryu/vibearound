@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="Logo.png" alt="VibeAround logo" width="96" />
+<img src="Logo.svg" alt="VibeAround logo" width="96" />
 
 # VibeAround
 
@@ -98,8 +98,8 @@ Agent 侧 API 形态                  VibeAround API Bridge                  Pro
 
 <table>
   <tr>
-    <td width="34%" align="center"><img src="assets/marketing/screenshots/en/web-dashboard-mobile.png" alt="VibeAround 移动端 Web Dashboard" width="260" /></td>
-    <td width="66%"><img src="assets/marketing/screenshots/en/web-terminal.png" alt="VibeAround Web Terminal 远程控制界面" /></td>
+    <td width="28%" align="center"><img src="assets/marketing/screenshots/en/web-dashboard-mobile.png" alt="VibeAround 移动端 Web Dashboard" width="220" /></td>
+    <td width="72%"><img src="assets/marketing/screenshots/en/web-terminal.png" alt="VibeAround Web Terminal 远程控制界面" /></td>
   </tr>
 </table>
 
@@ -245,7 +245,7 @@ bun run dev
 
 微信交流群：
 
-<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/community/wechat-group-qr-2026-06-19.webp" width="180" alt="VibeAround 微信群二维码，有效期至 2026 年 6 月 19 日" />
+<img src="assets/community/wechat-group-qr-2026-06-19.webp" width="180" alt="VibeAround 微信群二维码，有效期至 2026 年 6 月 19 日" />
 
 该微信群二维码有效期至 2026 年 6 月 19 日。如果图片失效，可以通过 Discord 或 GitHub Issues 索取最新二维码。
 
