@@ -33,6 +33,17 @@ pub(super) struct ResolvedUpstreamRoute {
     pub(super) model: Option<String>,
 }
 
+pub(super) struct RateLimitRetryContext {
+    pub(super) request_id: String,
+    pub(super) profile_id: String,
+    pub(super) route_scope: Option<String>,
+    pub(super) target_api_type: String,
+    pub(super) client_protocol: BridgeProtocol,
+    pub(super) upstream: String,
+    pub(super) stream: bool,
+    pub(super) model: Option<String>,
+}
+
 impl UpstreamEndpoint {
     pub(super) fn request_url(&self, request: &Value) -> Result<String, String> {
         if self.kind == UpstreamKind::GoogleCodeAssist {
@@ -307,6 +318,7 @@ pub(super) fn apply_upstream_auth(
 
 pub(super) async fn send_upstream_request_with_rate_limit_retry(
     mut request: reqwest::RequestBuilder,
+    context: Option<&RateLimitRetryContext>,
 ) -> Result<reqwest::Response, reqwest::Error> {
     let settings = config::ensure_loaded().api_bridge.retry_429.clone();
     if !settings.enabled || settings.max_retries == Some(0) {
@@ -330,13 +342,31 @@ pub(super) async fn send_upstream_request_with_rate_limit_retry(
             return Ok(response);
         }
         let delay = rate_limit_retry_delay(response.headers(), &settings);
-        tracing::warn!(
-            target: "server::web_server::api_bridge",
-            retry = retries + 1,
-            max_retries = ?settings.max_retries,
-            delay_seconds = delay.as_secs(),
-            "Upstream returned 429; retrying after backoff"
-        );
+        if let Some(context) = context {
+            tracing::warn!(
+                target: "server::web_server::api_bridge",
+                request_id = %context.request_id,
+                profile_id = %context.profile_id,
+                route_scope = ?context.route_scope,
+                target_api_type = %context.target_api_type,
+                client_protocol = ?context.client_protocol,
+                upstream = %context.upstream,
+                stream = context.stream,
+                model = ?context.model,
+                retry = retries + 1,
+                max_retries = ?settings.max_retries,
+                delay_seconds = delay.as_secs(),
+                "Upstream returned 429; retrying after backoff"
+            );
+        } else {
+            tracing::warn!(
+                target: "server::web_server::api_bridge",
+                retry = retries + 1,
+                max_retries = ?settings.max_retries,
+                delay_seconds = delay.as_secs(),
+                "Upstream returned 429; retrying after backoff"
+            );
+        }
         drop(response);
         tokio::time::sleep(delay).await;
         retries += 1;

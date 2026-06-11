@@ -36,7 +36,7 @@ pub use routes::{
 use stream::translated_stream_response;
 use upstream::{
     apply_upstream_auth, redacted_url, request_stream, send_upstream_request_with_rate_limit_retry,
-    upstream_endpoint, upstream_error_response, ResolvedUpstreamRoute,
+    upstream_endpoint, upstream_error_response, RateLimitRetryContext, ResolvedUpstreamRoute,
 };
 
 use super::AppState;
@@ -51,6 +51,7 @@ pub(super) async fn bridge_handler(
     headers: HeaderMap,
     original_request: Value,
 ) -> Response {
+    let request_id = uuid::Uuid::new_v4().to_string();
     let upstream = match upstream_endpoint(&profile_id, &target_api_type) {
         Ok(endpoint) => endpoint,
         Err((status, message)) => return json_error(status, &message),
@@ -154,6 +155,7 @@ pub(super) async fn bridge_handler(
 
         tracing::info!(
             target: "server::web_server::api_bridge",
+            request_id = %request_id,
             profile_id = %profile_id,
             route_scope = ?route_scope,
             manual_scope = ?manual_scope,
@@ -163,7 +165,20 @@ pub(super) async fn bridge_handler(
             "API bridge passthrough forwarding request"
         );
 
-        let response = match send_upstream_request_with_rate_limit_retry(request).await {
+        let retry_context = retry_context(
+            &request_id,
+            &profile_id,
+            route_scope.as_ref(),
+            &target_api_type,
+            client_protocol,
+            &route,
+        );
+        let response = match send_upstream_request_with_rate_limit_retry(
+            request,
+            Some(&retry_context),
+        )
+        .await
+        {
             Ok(response) => response,
             Err(e) => {
                 return json_error(
@@ -253,6 +268,7 @@ pub(super) async fn bridge_handler(
 
     tracing::info!(
         target: "server::web_server::api_bridge",
+        request_id = %request_id,
         profile_id = %profile_id,
         route_scope = ?route_scope,
         manual_scope = ?manual_scope,
@@ -264,15 +280,24 @@ pub(super) async fn bridge_handler(
         "API bridge forwarding request"
     );
 
-    let response = match send_upstream_request_with_rate_limit_retry(request).await {
-        Ok(response) => response,
-        Err(e) => {
-            return json_error(
-                StatusCode::BAD_GATEWAY,
-                &format!("failed to reach upstream bridge endpoint: {e}"),
-            );
-        }
-    };
+    let retry_context = retry_context(
+        &request_id,
+        &profile_id,
+        route_scope.as_ref(),
+        &target_api_type,
+        client_protocol,
+        &route,
+    );
+    let response =
+        match send_upstream_request_with_rate_limit_retry(request, Some(&retry_context)).await {
+            Ok(response) => response,
+            Err(e) => {
+                return json_error(
+                    StatusCode::BAD_GATEWAY,
+                    &format!("failed to reach upstream bridge endpoint: {e}"),
+                );
+            }
+        };
 
     if !response.status().is_success() {
         return upstream_error_response(response).await;
@@ -383,6 +408,26 @@ pub(super) async fn models_handler(
         "last_id": last_id,
     }))
     .into_response()
+}
+
+fn retry_context(
+    request_id: &str,
+    profile_id: &str,
+    route_scope: Option<&String>,
+    target_api_type: &str,
+    client_protocol: BridgeProtocol,
+    route: &ResolvedUpstreamRoute,
+) -> RateLimitRetryContext {
+    RateLimitRetryContext {
+        request_id: request_id.to_string(),
+        profile_id: profile_id.to_string(),
+        route_scope: route_scope.cloned(),
+        target_api_type: target_api_type.to_string(),
+        client_protocol,
+        upstream: redacted_url(&route.url),
+        stream: route.stream,
+        model: route.model.clone(),
+    }
 }
 
 fn upstream_http_client(state: &AppState, profile: &ProfileDef) -> Result<reqwest::Client, String> {

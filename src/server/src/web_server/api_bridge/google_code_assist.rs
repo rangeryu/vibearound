@@ -75,6 +75,7 @@ pub(super) async fn resolve_project_id(
             .bearer_auth(token)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(body),
+        None,
     )
     .await
     .map_err(|error| {
