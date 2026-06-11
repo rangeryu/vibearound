@@ -8,7 +8,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use ::common::{auth, config, profiles};
+use ::common::profiles::{self, connections};
+use ::common::{auth, config};
 use anyhow::{anyhow, Context};
 use profiles::ProfileDef;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -53,11 +54,22 @@ pub(super) fn apply_profile_config(profile: &ProfileDef) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow!("profile '{}' cannot launch Claude Desktop", profile.id))?;
     let target_api_type = route
         .bridge_target_api_type
-        .as_deref()
-        .unwrap_or(route.client_api_type.as_str());
+        .clone()
+        .unwrap_or_else(|| route.client_api_type.clone());
     let scope = format!("claude-{}", route.client_api_type);
-    let base_url = bridge_base_url(&profile.id, &scope, target_api_type);
-    apply_profile_config_at(&claude_3p_user_data_dir(), profile, &base_url)
+    let base_url = bridge_base_url(&profile.id, &scope, &target_api_type);
+    let raw_model_routes = if route.bridge_models.is_empty() {
+        connections::bridge_model_routes(profile, None, &target_api_type)
+    } else {
+        route.bridge_models
+    };
+    let model_routes = connections::claude_bridge_model_routes(raw_model_routes);
+    apply_profile_config_at(
+        &claude_3p_user_data_dir(),
+        profile,
+        &base_url,
+        &model_routes,
+    )
 }
 
 pub(super) fn cleanup_profile_config() -> anyhow::Result<()> {
@@ -78,7 +90,14 @@ fn apply_profile_config_at(
     root: &Path,
     profile: &ProfileDef,
     base_url: &str,
+    model_routes: &[connections::ProfileBridgeModelRoute],
 ) -> anyhow::Result<()> {
+    if model_routes.is_empty() {
+        return Err(anyhow!(
+            "profile '{}' has no models available for Claude Desktop",
+            profile.id
+        ));
+    }
     let library_dir = config_library_dir(root);
     std::fs::create_dir_all(&library_dir)
         .with_context(|| format!("create Claude Desktop config library {:?}", library_dir))?;
@@ -107,6 +126,11 @@ fn apply_profile_config_at(
             "inferenceGatewayBaseUrl": base_url,
             "inferenceGatewayApiKey": "vibearound-local-bridge",
             "inferenceGatewayAuthScheme": "bearer",
+            "modelDiscoveryEnabled": false,
+            "inferenceModels": model_routes
+                .iter()
+                .map(|route| serde_json::json!({ "name": route.agent_model }))
+                .collect::<Vec<_>>(),
         }),
     )
     .with_context(|| format!("write Claude Desktop profile '{}'", profile.id))?;
@@ -469,6 +493,10 @@ mod tests {
             &root,
             &profile(),
             "http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic",
+            &[connections::ProfileBridgeModelRoute {
+                upstream_model: "minimax-real".to_string(),
+                agent_model: connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID.to_string(),
+            }],
         )
         .expect("apply Claude Desktop profile");
 
@@ -489,6 +517,21 @@ mod tests {
                 .get("inferenceGatewayBaseUrl")
                 .and_then(Value::as_str),
             Some("http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic")
+        );
+        assert_eq!(
+            managed
+                .get("modelDiscoveryEnabled")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            managed
+                .get("inferenceModels")
+                .and_then(Value::as_array)
+                .and_then(|models| models.first())
+                .and_then(|model| model.get("name"))
+                .and_then(Value::as_str),
+            Some(connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID)
         );
         assert_eq!(
             read_deployment_mode(&root).expect("deployment mode"),
@@ -524,6 +567,10 @@ mod tests {
             &root,
             &profile(),
             "http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic",
+            &[connections::ProfileBridgeModelRoute {
+                upstream_model: "minimax-real".to_string(),
+                agent_model: connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID.to_string(),
+            }],
         )
         .expect("apply Claude Desktop profile");
 

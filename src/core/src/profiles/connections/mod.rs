@@ -14,6 +14,8 @@ mod legacy;
 
 use super::{catalog, schema::ProfileDef};
 
+pub const DEFAULT_CLAUDE_BRIDGE_MODEL_ID: &str = "claude-sonnet-4-5";
+
 #[derive(Debug, Clone)]
 pub struct ProfileAgentRoute {
     pub client_api_type: String,
@@ -245,6 +247,50 @@ pub fn bridge_model_routes(
         }));
     }
     dedupe_model_routes(routes)
+}
+
+pub fn claude_bridge_model_routes(
+    routes: Vec<ProfileBridgeModelRoute>,
+) -> Vec<ProfileBridgeModelRoute> {
+    let mut out = Vec::new();
+    for route in routes {
+        if is_claude_usable_model_id(&route.agent_model) {
+            out.push(route);
+        } else if out.iter().all(|existing: &ProfileBridgeModelRoute| {
+            existing.agent_model != DEFAULT_CLAUDE_BRIDGE_MODEL_ID
+        }) {
+            out.push(ProfileBridgeModelRoute {
+                upstream_model: route.upstream_model,
+                agent_model: DEFAULT_CLAUDE_BRIDGE_MODEL_ID.to_string(),
+            });
+        }
+    }
+    dedupe_model_routes(out)
+}
+
+pub fn is_claude_usable_model_id(model_id: &str) -> bool {
+    let model_id = catalog::strip_bracket_suffix(model_id).unwrap_or(model_id);
+    let model_id = model_id.trim().to_ascii_lowercase();
+    if model_id.is_empty() {
+        return false;
+    }
+    let excluded = [
+        "deepseek", "gemini", "glm", "gpt", "grok", "kimi", "llama", "mimo", "minimax", "moonshot",
+        "nemotron", "nvidia", "openai", "qwen",
+    ];
+    if excluded.iter().any(|needle| model_id.contains(needle)) {
+        return false;
+    }
+    model_id.contains("claude")
+        || model_id.contains("anthropic")
+        || ["sonnet", "opus", "haiku", "fable", "mythos"]
+            .iter()
+            .any(|prefix| {
+                model_id == *prefix
+                    || model_id
+                        .strip_prefix(prefix)
+                        .is_some_and(|rest| rest.starts_with('-'))
+            })
 }
 
 fn sanitize_bridge_models(

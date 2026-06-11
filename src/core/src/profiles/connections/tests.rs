@@ -345,3 +345,35 @@ fn bridge_route_carries_model_list() {
         ]
     );
 }
+
+#[test]
+fn claude_bridge_model_routes_maps_provider_model_to_default_fake_id() {
+    let routes = claude_bridge_model_routes(vec![ProfileBridgeModelRoute {
+        upstream_model: "nvidia/nemotron-3-super-120b-a12b".to_string(),
+        agent_model: "nvidia/nemotron-3-super-120b-a12b".to_string(),
+    }]);
+
+    assert_eq!(
+        routes,
+        vec![ProfileBridgeModelRoute {
+            upstream_model: "nvidia/nemotron-3-super-120b-a12b".to_string(),
+            agent_model: DEFAULT_CLAUDE_BRIDGE_MODEL_ID.to_string(),
+        }]
+    );
+}
+
+#[test]
+fn claude_bridge_model_routes_keeps_explicit_claude_style_id() {
+    let routes = claude_bridge_model_routes(vec![ProfileBridgeModelRoute {
+        upstream_model: "deepseek-v4-pro".to_string(),
+        agent_model: "opus-4.7[1m]".to_string(),
+    }]);
+
+    assert_eq!(
+        routes,
+        vec![ProfileBridgeModelRoute {
+            upstream_model: "deepseek-v4-pro".to_string(),
+            agent_model: "opus-4.7[1m]".to_string(),
+        }]
+    );
+}

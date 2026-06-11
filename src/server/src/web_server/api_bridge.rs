@@ -2,9 +2,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use common::config;
+use common::profiles::catalog;
 use common::profiles::headers::merged_upstream_headers;
 use common::profiles::schema::ProfileDef;
-use common::profiles::{catalog, connections};
 use serde_json::{json, Value};
 use va_ai_api_bridge::{
     DeepSeekBridgeSettings, ProviderBridgeAdapter, ProviderBridgeAdapterConfig,
@@ -23,7 +23,9 @@ mod upstream;
 
 use completion::{translated_completion_response, UpstreamResponseTransform};
 use content_policy::{sanitize_request_content, ContentSanitization};
-use model_mapping::{bridge_model_mapping, bridge_route_preference};
+use model_mapping::{
+    bridge_model_mapping, bridge_model_routes_for_client, bridge_route_preference,
+};
 use normalization::normalize_target_request;
 use passthrough::{buffered_passthrough_response, passthrough_response};
 pub(super) use protocol::BridgeProtocol;
@@ -80,6 +82,8 @@ pub(super) async fn bridge_handler(
             &upstream.profile,
             bridge_preference.as_ref(),
             &target_api_type,
+            route_scope.as_deref(),
+            client_protocol.api_type(),
             requested_agent_model.as_deref(),
         );
         let original_agent_request = agent_request.clone();
@@ -186,6 +190,8 @@ pub(super) async fn bridge_handler(
         &upstream.profile,
         bridge_preference.as_ref(),
         &target_api_type,
+        route_scope.as_deref(),
+        client_protocol.api_type(),
         universal_request.model.as_deref(),
     );
     if let Some(mapping) = &model_mapping {
@@ -330,10 +336,12 @@ pub(super) async fn models_handler(
             &target_api_type,
         )
     });
-    let models = connections::bridge_model_routes(
+    let models = bridge_model_routes_for_client(
         &upstream.profile,
         bridge_preference.as_ref(),
         &target_api_type,
+        route_scope.as_deref(),
+        client_api_type.unwrap_or_default(),
     );
     let data: Vec<_> = models
         .iter()

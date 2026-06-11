@@ -31,10 +31,20 @@ pub(super) fn bridge_model_mapping(
     profile: &ProfileDef,
     bridge: Option<&agent_state::ProfileBridgePreference>,
     target_api_type: &str,
+    route_scope: Option<&str>,
+    client_api_type: &str,
     requested_agent_model: Option<&str>,
 ) -> Option<BridgeModelMapping> {
-    let bridge = bridge?;
-    let routes = connections::bridge_model_routes(profile, Some(bridge), target_api_type);
+    if bridge.is_none() && !is_claude_client_scope(route_scope, client_api_type) {
+        return None;
+    }
+    let routes = bridge_model_routes_for_client(
+        profile,
+        bridge,
+        target_api_type,
+        route_scope,
+        client_api_type,
+    );
     if let Some(requested_agent_model) = clean_model_id(requested_agent_model) {
         if let Some(route) = routes
             .iter()
@@ -58,6 +68,26 @@ pub(super) fn bridge_model_mapping(
         upstream_model: route.upstream_model,
         agent_model: route.agent_model,
     })
+}
+
+pub(super) fn bridge_model_routes_for_client(
+    profile: &ProfileDef,
+    bridge: Option<&agent_state::ProfileBridgePreference>,
+    target_api_type: &str,
+    route_scope: Option<&str>,
+    client_api_type: &str,
+) -> Vec<connections::ProfileBridgeModelRoute> {
+    let routes = connections::bridge_model_routes(profile, bridge, target_api_type);
+    if is_claude_client_scope(route_scope, client_api_type) {
+        return connections::claude_bridge_model_routes(routes);
+    }
+    routes
+}
+
+fn is_claude_client_scope(route_scope: Option<&str>, client_api_type: &str) -> bool {
+    client_api_type == "anthropic"
+        && route_scope.and_then(|scope| agent_id_from_scope(scope, client_api_type))
+            == Some("claude")
 }
 
 fn agent_id_from_scope(scope: &str, client_api_type: &str) -> Option<&'static str> {
@@ -138,8 +168,15 @@ mod tests {
             headers: BTreeMap::new(),
         };
 
-        let mapping = bridge_model_mapping(&profile, Some(&bridge), "openai-chat", None)
-            .expect("mapping should resolve");
+        let mapping = bridge_model_mapping(
+            &profile,
+            Some(&bridge),
+            "openai-chat",
+            Some("codex-openai-responses"),
+            "openai-responses",
+            None,
+        )
+        .expect("mapping should resolve");
 
         assert_eq!(mapping.upstream_model, "gemini-3.1-pro-preview");
         assert_eq!(mapping.agent_model, "gemini-3.1-pro");
@@ -171,6 +208,8 @@ mod tests {
             &profile,
             Some(&bridge),
             "openai-chat",
+            Some("codex-openai-responses"),
+            "openai-responses",
             Some("provider-new-model"),
         )
         .expect("mapping should resolve");
@@ -204,11 +243,119 @@ mod tests {
             headers: BTreeMap::new(),
         };
 
-        let mapping =
-            bridge_model_mapping(&profile, Some(&bridge), "openai-chat", Some("opus-4.7"))
-                .expect("mapping should resolve");
+        let mapping = bridge_model_mapping(
+            &profile,
+            Some(&bridge),
+            "openai-chat",
+            Some("claude-anthropic"),
+            "anthropic",
+            Some("opus-4.7"),
+        )
+        .expect("mapping should resolve");
 
         assert_eq!(mapping.upstream_model, "deepseek-v4-pro");
         assert_eq!(mapping.agent_model, "opus-4.7[1m]");
+    }
+
+    #[test]
+    fn claude_scope_models_expose_fake_anthropic_id() {
+        let profile = ProfileDef {
+            id: "nvidia-test".to_string(),
+            label: "NVIDIA Test".to_string(),
+            provider: "nvidia".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials: BTreeMap::new(),
+            overrides: [(
+                "openai-chat".to_string(),
+                ApiTypeOverrides {
+                    endpoint_id: None,
+                    base_url: None,
+                    model: Some("nvidia/nemotron-3-super-120b-a12b".to_string()),
+                    reasoning_effort: None,
+                    capabilities: None,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            use_settings_proxy: false,
+            provider_settings: Default::default(),
+        };
+        let bridge = agent_state::ProfileBridgePreference {
+            enabled: true,
+            target_api_type: Some("openai-chat".to_string()),
+            upstream_model: Some("nvidia/nemotron-3-super-120b-a12b".to_string()),
+            fake_model_id: None,
+            models: Vec::new(),
+            headers: BTreeMap::new(),
+        };
+
+        let models = bridge_model_routes_for_client(
+            &profile,
+            Some(&bridge),
+            "openai-chat",
+            Some("claude-anthropic"),
+            "anthropic",
+        );
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(
+            models[0].agent_model,
+            connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID
+        );
+        assert_eq!(
+            models[0].upstream_model,
+            "nvidia/nemotron-3-super-120b-a12b"
+        );
+    }
+
+    #[test]
+    fn claude_scope_fake_model_maps_back_to_upstream() {
+        let profile = ProfileDef {
+            id: "nvidia-test".to_string(),
+            label: "NVIDIA Test".to_string(),
+            provider: "nvidia".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials: BTreeMap::new(),
+            overrides: [(
+                "openai-chat".to_string(),
+                ApiTypeOverrides {
+                    endpoint_id: None,
+                    base_url: None,
+                    model: Some("nvidia/nemotron-3-super-120b-a12b".to_string()),
+                    reasoning_effort: None,
+                    capabilities: None,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            use_settings_proxy: false,
+            provider_settings: Default::default(),
+        };
+        let bridge = agent_state::ProfileBridgePreference {
+            enabled: true,
+            target_api_type: Some("openai-chat".to_string()),
+            upstream_model: Some("nvidia/nemotron-3-super-120b-a12b".to_string()),
+            fake_model_id: None,
+            models: Vec::new(),
+            headers: BTreeMap::new(),
+        };
+
+        let mapping = bridge_model_mapping(
+            &profile,
+            Some(&bridge),
+            "openai-chat",
+            Some("claude-anthropic"),
+            "anthropic",
+            Some(connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID),
+        )
+        .expect("mapping should resolve");
+
+        assert_eq!(mapping.upstream_model, "nvidia/nemotron-3-super-120b-a12b");
+        assert_eq!(
+            mapping.agent_model,
+            connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID
+        );
     }
 }
