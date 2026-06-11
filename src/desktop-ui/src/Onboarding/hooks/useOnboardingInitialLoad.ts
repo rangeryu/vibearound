@@ -58,7 +58,7 @@ export function useOnboardingInitialLoad({
   setPluginRegistry: (value: PluginRegistryEntry[]) => void;
   setDiscoveredPlugins: (value: DiscoveredChannelPlugin[]) => void;
   setDownloadSource: (value: string) => void;
-  setToolchainMode: (value: "auto" | "managed" | "system") => void;
+  setToolchainMode: (value: "managed" | "system") => void;
   setShellPath: (value: boolean) => void;
   setEnabledAgents: (value: Set<AgentId>) => void;
   setEnabledChannels: (value: Set<string>) => void;

@@ -1,5 +1,6 @@
 import {
   Globe,
+  HardDrive,
   SlidersHorizontal,
   TerminalSquare,
 } from "lucide-react";
@@ -20,6 +21,8 @@ export function StartkitAdvancedMenu({
   sources,
   downloadSource,
   onDownloadSource,
+  installLocation,
+  onInstallLocation,
   shellPath,
   shellPathDisabled,
   onShellPath,
@@ -27,6 +30,8 @@ export function StartkitAdvancedMenu({
   sources: StartkitManifestSummary["sources"];
   downloadSource: string;
   onDownloadSource: (value: string) => void;
+  installLocation: "managed" | "system";
+  onInstallLocation: (value: "managed" | "system") => void;
   shellPath: boolean;
   shellPathDisabled: boolean;
   onShellPath: (checked: boolean) => void;
@@ -51,6 +56,11 @@ export function StartkitAdvancedMenu({
             sources={sources}
             value={downloadSource}
             onChange={onDownloadSource}
+            t={t}
+          />
+          <InstallLocationChooser
+            value={installLocation}
+            onChange={onInstallLocation}
             t={t}
           />
           <ShellPathChooser
@@ -107,6 +117,65 @@ function SourceChooser({
           </Button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function InstallLocationChooser({
+  value,
+  onChange,
+  t,
+}: {
+  value: "managed" | "system";
+  onChange: (value: "managed" | "system") => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  const options: Array<{
+    id: "managed" | "system";
+    label: string;
+    description: string;
+  }> = [
+    {
+      id: "managed",
+      label: "VibeAround npm",
+      description: "Install CLI tools under .vibearound/npm.",
+    },
+    {
+      id: "system",
+      label: "System",
+      description: "Use the user's global toolchain when available.",
+    },
+  ];
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium">
+        <HardDrive className="h-3.5 w-3.5 text-primary" />
+        {t("Install location")}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {options.map((option) => (
+          <Button
+            key={option.id}
+            type="button"
+            size="sm"
+            variant="outline"
+            className={cn(
+              "h-auto min-h-9 flex-col items-start justify-start gap-0.5 px-2 py-1.5 text-left text-xs",
+              value === option.id && "border-primary bg-primary/10 text-primary",
+            )}
+            onClick={() => onChange(option.id)}
+          >
+            <span className="font-medium">{t(option.label)}</span>
+            <span className="text-[10px] leading-snug text-muted-foreground">
+              {t(option.description)}
+            </span>
+          </Button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+        {t("Plugins always install under .vibearound/plugins.")}
+      </p>
     </div>
   );
 }

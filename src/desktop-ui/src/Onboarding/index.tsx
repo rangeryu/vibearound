@@ -76,9 +76,9 @@ export default function Onboarding() {
   >([]);
 
   const [downloadSource, setDownloadSource] = useState("global");
-  const [toolchainMode, setToolchainMode] = useState<
-    "auto" | "managed" | "system"
-  >("auto");
+  const [toolchainMode, setToolchainMode] = useState<"managed" | "system">(
+    "managed",
+  );
   const [shellPath, setShellPath] = useState(false);
   const [enabledAgents, setEnabledAgents] = useState<Set<AgentId>>(new Set());
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(
@@ -831,6 +831,8 @@ export default function Onboarding() {
             sources={manifest?.sources ?? {}}
             downloadSource={downloadSource}
             onDownloadSource={setDownloadSource}
+            installLocation={toolchainMode}
+            onInstallLocation={setToolchainMode}
             shellPath={shellPath && toolchainMode !== "system"}
             shellPathDisabled={toolchainMode === "system"}
             onShellPath={setShellPath}

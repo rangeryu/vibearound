@@ -220,6 +220,15 @@ export const zhCNOnboarding: Record<string, string> = {
   "No extra configuration": "没有额外配置",
   "The selected setup can launch now.": "现在可以启动 VibeAround。",
   "Node/npm source": "Node/npm 下载源",
+  "Install location": "安装位置",
+  "VibeAround npm": "VibeAround npm",
+  "Install CLI tools under .vibearound/npm.":
+    "将 CLI 工具安装到 .vibearound/npm。",
+  System: "系统",
+  "Use the user's global toolchain when available.":
+    "优先使用用户系统全局工具链。",
+  "Plugins always install under .vibearound/plugins.":
+    "插件始终安装到 .vibearound/plugins。",
   "Write shell PATH": "写入终端 PATH",
   "Terminal sessions can find managed Node, Codex, Claude, and helper tools.":
     "勾选后，你也可以在终端里直接使用这些工具。",

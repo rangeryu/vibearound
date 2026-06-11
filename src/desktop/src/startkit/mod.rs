@@ -176,7 +176,7 @@ fn default_source() -> String {
 }
 
 fn default_toolchain_mode() -> String {
-    "auto".to_string()
+    "managed".to_string()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1742,7 +1742,7 @@ mod tests {
             tunnel: "none".to_string(),
             channels: Vec::new(),
             source: "global".to_string(),
-            toolchain_mode: "auto".to_string(),
+            toolchain_mode: "managed".to_string(),
             shell_path: false,
         });
 
@@ -1760,7 +1760,7 @@ mod tests {
             tunnel: "cloudflare".to_string(),
             channels: Vec::new(),
             source: "cn".to_string(),
-            toolchain_mode: "auto".to_string(),
+            toolchain_mode: "managed".to_string(),
             shell_path: false,
         });
 
@@ -1781,7 +1781,7 @@ mod tests {
             tunnel: "none".to_string(),
             channels: vec!["telegram".to_string()],
             source: "global".to_string(),
-            toolchain_mode: "auto".to_string(),
+            toolchain_mode: "managed".to_string(),
             shell_path: false,
         });
 
@@ -1791,7 +1791,7 @@ mod tests {
     }
 
     #[test]
-    fn startkit_choices_default_to_auto_toolchain() {
+    fn startkit_choices_default_to_managed_toolchain() {
         let choices: StartkitChoices = serde_json::from_value(serde_json::json!({
             "agents": ["codex"],
             "tunnel": "none",
@@ -1800,7 +1800,7 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(choices.toolchain_mode, "auto");
+        assert_eq!(choices.toolchain_mode, "managed");
         assert!(!choices.shell_path);
     }
 

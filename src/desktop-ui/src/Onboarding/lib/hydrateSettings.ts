@@ -13,7 +13,7 @@ export function hydrateStartkitPrefs(
   loadedSettings: Settings,
   setters: {
     setDownloadSource: (value: string) => void;
-    setToolchainMode: (value: "auto" | "managed" | "system") => void;
+    setToolchainMode: (value: "managed" | "system") => void;
     setShellPath: (value: boolean) => void;
   },
 ) {
@@ -21,7 +21,6 @@ export function hydrateStartkitPrefs(
     setters.setDownloadSource(loadedSettings.startkit.source);
   }
   if (
-    loadedSettings.startkit?.toolchain_mode === "auto" ||
     loadedSettings.startkit?.toolchain_mode === "managed" ||
     loadedSettings.startkit?.toolchain_mode === "system"
   ) {
