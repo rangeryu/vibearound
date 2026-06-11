@@ -18,6 +18,18 @@ use sha2::{Digest, Sha256};
 
 const MANAGED_ENTRY_PREFIX: &str = "VibeAround: ";
 const STATE_FILE_NAME: &str = ".vibearound-claude-desktop-state.json";
+const CLAUDE_DESKTOP_BRIDGE_MODEL_IDS: &[&str] = &[
+    "claude-opus-4-8[1m]",
+    "claude-opus-4-7[1m]",
+    "claude-opus-4-6[1m]",
+    "claude-opus-4-5[1m]",
+    "claude-sonnet-4-6[1m]",
+    "claude-sonnet-4-5[1m]",
+    "claude-sonnet-4[1m]",
+    "claude-haiku-4-5[1m]",
+    "claude-haiku-3-5[1m]",
+    "claude-haiku-3[1m]",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct ConfigLibraryMeta {
@@ -82,13 +94,13 @@ fn ensure_claude_bridge_agent_model(
     route: &connections::ProfileAgentRoute,
     target_api_type: &str,
 ) -> anyhow::Result<()> {
-    let model_route =
-        claude_bridge_model_route(profile, route, target_api_type).ok_or_else(|| {
-            anyhow!(
-                "profile '{}' has no models available for Claude Desktop",
-                profile.id
-            )
-        })?;
+    let model_routes = claude_bridge_model_routes(profile, route, target_api_type);
+    if model_routes.is_empty() {
+        anyhow::bail!(
+            "profile '{}' has no models available for Claude Desktop",
+            profile.id
+        );
+    }
     let agent_prefs = agent_state::read_prefs();
     let merged_connections = connections::merged_profile_connections(&agent_prefs);
     let mut preference = merged_connections
@@ -100,35 +112,31 @@ fn ensure_claude_bridge_agent_model(
         &mut preference,
         &route.client_api_type,
         target_api_type,
-        &model_route,
+        &model_routes,
     ) {
         return Ok(());
     }
     agent_state::write_profile_connection_preference(&profile.id, "claude", preference)
 }
 
-fn claude_bridge_model_route(
+fn claude_bridge_model_routes(
     profile: &ProfileDef,
     route: &connections::ProfileAgentRoute,
     target_api_type: &str,
-) -> Option<connections::ProfileBridgeModelRoute> {
+) -> Vec<connections::ProfileBridgeModelRoute> {
     let routes = if route.bridge_models.is_empty() {
         connections::bridge_model_routes(profile, None, target_api_type)
     } else {
         route.bridge_models.clone()
     };
     routes
-        .iter()
-        .find(|route| connections::is_claude_usable_model_id(&route.agent_model))
-        .cloned()
-        .or_else(|| routes.into_iter().next())
 }
 
 fn upsert_claude_bridge_agent_model_preference(
     preference: &mut agent_state::ProfileConnectionPreference,
     client_api_type: &str,
     target_api_type: &str,
-    model_route: &connections::ProfileBridgeModelRoute,
+    model_routes: &[connections::ProfileBridgeModelRoute],
 ) -> bool {
     let mut changed = false;
     if preference.selected_api_type.as_deref() != Some(client_api_type) {
@@ -149,52 +157,137 @@ fn upsert_claude_bridge_agent_model_preference(
         changed = true;
     }
 
-    let agent_model = if connections::is_claude_usable_model_id(&model_route.agent_model) {
-        model_route.agent_model.clone()
-    } else {
-        connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID.to_string()
+    let Some(first_route) = model_routes.first() else {
+        return changed;
     };
 
-    if bridge.models.is_empty() {
-        if bridge.upstream_model.as_deref() != Some(model_route.upstream_model.as_str()) {
-            bridge.upstream_model = Some(model_route.upstream_model.clone());
-            changed = true;
+    let generated_models = bridge.models.is_empty();
+    if generated_models {
+        let legacy_fake_model = bridge
+            .fake_model_id
+            .as_deref()
+            .filter(|value| connections::is_claude_usable_model_id(value))
+            .map(ToOwned::to_owned);
+        let mut used_agent_models = Vec::new();
+        for (index, route) in model_routes.iter().enumerate() {
+            let agent_model = if index == 0 {
+                legacy_fake_model.clone().unwrap_or_else(|| {
+                    claude_desktop_agent_model_id(route, index, &used_agent_models)
+                })
+            } else {
+                claude_desktop_agent_model_id(route, index, &used_agent_models)
+            };
+            used_agent_models.push(agent_model.clone());
+            bridge
+                .models
+                .push(agent_state::ProfileBridgeModelPreference {
+                    upstream_model: Some(route.upstream_model.clone()),
+                    fake_model_id: Some(agent_model),
+                });
         }
-        if bridge.fake_model_id.as_deref() != Some(agent_model.as_str()) {
-            bridge.fake_model_id = Some(agent_model);
-            changed = true;
-        }
-        return changed;
+        changed = true;
     }
 
-    if bridge.models.iter().any(|model| {
-        model
+    let mut legacy_fake_model = bridge
+        .fake_model_id
+        .as_deref()
+        .filter(|value| connections::is_claude_usable_model_id(value))
+        .map(ToOwned::to_owned);
+    let mut used_agent_models: Vec<String> = Vec::new();
+    for (index, model) in bridge.models.iter_mut().enumerate() {
+        if model
             .fake_model_id
             .as_deref()
             .is_some_and(connections::is_claude_usable_model_id)
-    }) {
-        return changed;
+        {
+            if let Some(fake_model_id) = model.fake_model_id.as_ref() {
+                used_agent_models.push(fake_model_id.clone());
+            }
+            continue;
+        }
+        let legacy_fake_model = if index == 0 {
+            legacy_fake_model.take().filter(|fake_model_id| {
+                !used_agent_models
+                    .iter()
+                    .any(|existing| existing == fake_model_id)
+            })
+        } else {
+            None
+        };
+        let route = model
+            .upstream_model
+            .as_deref()
+            .and_then(|upstream| {
+                model_routes
+                    .iter()
+                    .find(|route| route.upstream_model == upstream)
+            })
+            .unwrap_or_else(|| {
+                model_routes
+                    .get(index)
+                    .unwrap_or_else(|| model_routes.last().expect("non-empty model routes"))
+            });
+        let agent_model = legacy_fake_model
+            .unwrap_or_else(|| claude_desktop_agent_model_id(route, index, &used_agent_models));
+        model.fake_model_id = Some(agent_model.clone());
+        used_agent_models.push(agent_model);
+        changed = true;
     }
 
-    if let Some(model) = bridge
-        .models
-        .iter_mut()
-        .find(|model| model.upstream_model.as_deref() == Some(model_route.upstream_model.as_str()))
-    {
-        if model.fake_model_id.as_deref() != Some(agent_model.as_str()) {
-            model.fake_model_id = Some(agent_model);
-            changed = true;
+    for route in model_routes {
+        if bridge
+            .models
+            .iter()
+            .any(|model| model.upstream_model.as_deref() == Some(route.upstream_model.as_str()))
+        {
+            continue;
         }
-    } else {
+        let agent_model =
+            claude_desktop_agent_model_id(route, bridge.models.len(), &used_agent_models);
         bridge
             .models
             .push(agent_state::ProfileBridgeModelPreference {
-                upstream_model: Some(model_route.upstream_model.clone()),
-                fake_model_id: Some(agent_model),
+                upstream_model: Some(route.upstream_model.clone()),
+                fake_model_id: Some(agent_model.clone()),
             });
+        used_agent_models.push(agent_model);
         changed = true;
     }
+    if generated_models {
+        let Some(first_model) = bridge.models.first() else {
+            if bridge.upstream_model.as_deref() != Some(first_route.upstream_model.as_str()) {
+                bridge.upstream_model = Some(first_route.upstream_model.clone());
+                changed = true;
+            }
+            return changed;
+        };
+        if bridge.upstream_model != first_model.upstream_model {
+            bridge.upstream_model = first_model.upstream_model.clone();
+            changed = true;
+        }
+        if bridge.fake_model_id != first_model.fake_model_id {
+            bridge.fake_model_id = first_model.fake_model_id.clone();
+            changed = true;
+        }
+    }
     changed
+}
+
+fn claude_desktop_agent_model_id(
+    route: &connections::ProfileBridgeModelRoute,
+    index: usize,
+    used: &[String],
+) -> String {
+    if connections::is_claude_usable_model_id(&route.agent_model)
+        && !used.iter().any(|existing| existing == &route.agent_model)
+    {
+        return route.agent_model.clone();
+    }
+    CLAUDE_DESKTOP_BRIDGE_MODEL_IDS
+        .iter()
+        .find(|model| !used.iter().any(|existing| existing == **model))
+        .map(|model| (*model).to_string())
+        .unwrap_or_else(|| format!("claude-sonnet-4-5-{}", index + 1))
 }
 
 fn apply_profile_config_at(
@@ -716,18 +809,20 @@ mod tests {
             &mut preference,
             "anthropic",
             "openai-chat",
-            &connections::ProfileBridgeModelRoute {
+            &[connections::ProfileBridgeModelRoute {
                 upstream_model: "nvidia/nemotron".to_string(),
                 agent_model: "nvidia/nemotron".to_string(),
-            },
+            }],
         );
 
         assert!(changed);
         let bridge = preference.bridge.get("anthropic").expect("bridge");
         assert_eq!(bridge.upstream_model.as_deref(), Some("nvidia/nemotron"));
+        assert_eq!(bridge.fake_model_id.as_deref(), Some("claude-opus-4-8[1m]"));
+        assert_eq!(bridge.models.len(), 1);
         assert_eq!(
-            bridge.fake_model_id.as_deref(),
-            Some(connections::DEFAULT_CLAUDE_BRIDGE_MODEL_ID)
+            bridge.models[0].fake_model_id.as_deref(),
+            Some("claude-opus-4-8[1m]")
         );
     }
 
@@ -755,10 +850,10 @@ mod tests {
             &mut preference,
             "anthropic",
             "openai-chat",
-            &connections::ProfileBridgeModelRoute {
+            &[connections::ProfileBridgeModelRoute {
                 upstream_model: "deepseek-v4-pro".to_string(),
                 agent_model: "opus-4.7[1m]".to_string(),
-            },
+            }],
         );
 
         assert!(!changed);
@@ -766,6 +861,74 @@ mod tests {
         assert_eq!(
             bridge.models[0].fake_model_id.as_deref(),
             Some("opus-4.7[1m]")
+        );
+    }
+
+    #[test]
+    fn upsert_claude_bridge_agent_model_fills_model_list_fake_ids() {
+        let mut preference = agent_state::ProfileConnectionPreference {
+            selected_api_type: Some("anthropic".to_string()),
+            bridge: [(
+                "anthropic".to_string(),
+                agent_state::ProfileBridgePreference {
+                    enabled: true,
+                    target_api_type: Some("gemini".to_string()),
+                    upstream_model: Some("gemini-2.5-flash".to_string()),
+                    models: vec![
+                        agent_state::ProfileBridgeModelPreference {
+                            upstream_model: Some("gemini-2.5-flash".to_string()),
+                            fake_model_id: None,
+                        },
+                        agent_state::ProfileBridgeModelPreference {
+                            upstream_model: Some("gemini-3.1-flash-lite".to_string()),
+                            fake_model_id: None,
+                        },
+                        agent_state::ProfileBridgeModelPreference {
+                            upstream_model: Some("gemini-2.5-pro".to_string()),
+                            fake_model_id: None,
+                        },
+                    ],
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        };
+
+        let changed = upsert_claude_bridge_agent_model_preference(
+            &mut preference,
+            "anthropic",
+            "gemini",
+            &[
+                connections::ProfileBridgeModelRoute {
+                    upstream_model: "gemini-2.5-flash".to_string(),
+                    agent_model: "gemini-2.5-flash".to_string(),
+                },
+                connections::ProfileBridgeModelRoute {
+                    upstream_model: "gemini-3.1-flash-lite".to_string(),
+                    agent_model: "gemini-3.1-flash-lite".to_string(),
+                },
+                connections::ProfileBridgeModelRoute {
+                    upstream_model: "gemini-2.5-pro".to_string(),
+                    agent_model: "gemini-2.5-pro".to_string(),
+                },
+            ],
+        );
+
+        assert!(changed);
+        let bridge = preference.bridge.get("anthropic").expect("bridge");
+        let fake_ids: Vec<_> = bridge
+            .models
+            .iter()
+            .map(|model| model.fake_model_id.as_deref())
+            .collect();
+        assert_eq!(
+            fake_ids,
+            vec![
+                Some("claude-opus-4-8[1m]"),
+                Some("claude-opus-4-7[1m]"),
+                Some("claude-opus-4-6[1m]"),
+            ]
         );
     }
 }
