@@ -760,6 +760,29 @@ mod tests {
     }
 
     #[test]
+    fn codex_desktop_launch_uses_codex_config_args() {
+        let profile = openai_responses_profile("xai", "grok-4.3");
+        let provider = catalog::get(&profile.provider).expect("provider exists");
+
+        let rendered = render(&profile, "openai-responses", "codex-desktop", provider)
+            .expect("codex desktop profile renders");
+
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model='grok-4.3'"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model_provider='xai'"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg.starts_with("model_catalog_json='")));
+        assert!(rendered.config_env.is_none());
+    }
+
+    #[test]
     fn pi_launch_materializes_openai_chat_extension() {
         let profile = openai_chat_profile("dashscope", Some("coding-plan"), "qwen3.6-plus");
         let provider = catalog::get(&profile.provider).expect("provider exists");
