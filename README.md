@@ -6,7 +6,7 @@
 
 **Keep your AI coding agents around.**
 
-Launch Claude Code, Codex CLI, Gemini CLI, Pi Agent, and more from one place — side by side, connected, reachable, and ready to work across web, mobile, and messaging.
+Launch Claude Code, Codex CLI, Gemini CLI, Pi Agent, Claude Desktop, Codex Desktop, and more from one place — side by side, connected, reachable, and ready to work across web, mobile, and messaging.
 
 [Download](https://github.com/jazzenchen/VibeAround/releases/latest) | [Demo](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [WeChat](#community) | [简体中文](README_CN.md)
 
@@ -20,7 +20,7 @@ Launch Claude Code, Codex CLI, Gemini CLI, Pi Agent, and more from one place —
 
 </div>
 
-VibeAround keeps execution local. Claude Code, Codex CLI, Gemini CLI, Pi Agent, and other agents still run on your machine, inside your projects, with your shell, filesystem, credentials, and permissions. VibeAround gives those local sessions shared entry points: desktop Launch, browser dashboard, mobile-friendly Web Chat, Web Terminal, messaging channels, and authenticated previews.
+VibeAround keeps execution local. Claude Code, Codex CLI, Gemini CLI, Pi Agent, Claude Desktop, Codex Desktop, and other agents still run on your machine, inside your projects, with your shell, filesystem, credentials, and permissions. VibeAround gives those local sessions shared entry points: desktop Launch, browser dashboard, mobile-friendly Web Chat, Web Terminal, messaging channels, and authenticated previews.
 
 Profiles can also connect third-party provider APIs. VibeAround can expose model lists, custom model names, context metadata, and bridge routes across OpenAI Responses, OpenAI Chat Completions, Anthropic Messages, and Gemini Generate Content, so agents can work with providers such as DeepSeek, Kimi, DashScope, xAI/Grok, MiniMax, NVIDIA NIM, or your own OpenAI-compatible endpoint.
 
@@ -43,7 +43,7 @@ Coding agents are powerful, but their working state is usually trapped inside on
 
 | Area | What it does |
 |---|---|
-| **Launch** | Start an agent directly or through a provider profile; choose terminal, workspace, and new/resumed session in one place |
+| **Launch** | Start a CLI or supported desktop agent directly or through a provider profile; choose terminal, workspace, and new/resumed session in one place |
 | **Profiles** | Store provider credentials, model lists, bridge routes, API-shape translations, and per-provider options |
 | **Workspaces** | Keep project directories, session history, and launch context organized around the folder you are working in |
 | **Web Dashboard** | Open Web Chat, Web Terminal, previews, runtime status, and local session views from a browser |
@@ -54,7 +54,7 @@ Coding agents are powerful, but their working state is usually trapped inside on
 ## Screenshots
 
 <p align="center">
-  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.5/current-app/app-launch-cn.webp" width="88%" alt="VibeAround desktop Launch page with agents, profiles, workspaces, sessions, and launch controls" />
+  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.5/current-app/app-launch-en.webp" width="88%" alt="VibeAround desktop Launch page with agents, profiles, workspaces, sessions, and launch controls" />
 </p>
 
 <p align="center">
@@ -80,15 +80,17 @@ Detailed guides live in the [Wiki](https://github.com/jazzenchen/VibeAround/wiki
 
 ## Download
 
-Latest release: [VibeAround v0.6.11](https://github.com/jazzenchen/VibeAround/releases/tag/v0.6.11).
+Latest release: [VibeAround v0.7.0-beta](https://github.com/jazzenchen/VibeAround/releases/tag/v0.7.0-beta).
 
 | Platform | Recommended download |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.6.11_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround-win-0.6.11-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.6.11/VibeAround_0.6.11_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.7.0-beta_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.0-beta/VibeAround_0.7.0-beta_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.0-beta/VibeAround_0.7.0-beta_x64-setup.exe) or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.0-beta/VibeAround-win-0.7.0-beta-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.0-beta/VibeAround_0.7.0-beta_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.0-beta/VibeAround_0.7.0-beta_amd64.deb) |
 
-Windows and Linux packages are built by GitHub Actions. The macOS package is currently Apple Silicon only.
+Windows and Linux packages are built by GitHub Actions. The macOS package is currently Apple Silicon only. The v0.7.0-beta Windows MSI is intentionally omitted because Windows Installer requires numeric-only prerelease identifiers.
+
+Upgrade note: v0.7.0-beta changes Startkit state, detected agent sources, desktop launch targets, and profile launch settings. Back up `~/.vibearound/settings.json` before upgrading from 0.6.x.
 
 ## Core Concepts
 
@@ -98,14 +100,18 @@ An agent is the coding CLI VibeAround launches or attaches to. Agents run locall
 
 | Agent | Launch | Resume / handover | Profile routing |
 |---|---:|---:|---:|
-| Claude Code | Yes | Yes | Yes |
-| Codex CLI | Yes | Yes | Yes |
-| Pi | Yes | Yes | Yes |
-| Gemini CLI | Yes | Yes | Yes |
-| OpenCode | Yes | Partial | Yes |
-| Cursor CLI | Direct | Yes | No |
-| Kiro CLI | Direct | Yes | No |
-| Qwen Code | Direct | Yes | No |
+| Claude Code | ✅ | ✅ | ✅ |
+| Claude Desktop | ✅ | — | ✅ |
+| Codex CLI | ✅ | ✅ | ✅ |
+| Codex Desktop | ✅ | — | ✅ |
+| Pi | ✅ | ✅ | ✅ |
+| Gemini CLI | ✅ | ✅ | ✅ |
+| OpenCode | ✅ | ⚠️ | ✅ |
+| Cursor CLI | ➜ | ✅ | — |
+| Kiro CLI | ➜ | ✅ | — |
+| Qwen Code | ➜ | ✅ | — |
+
+✅ Supported · ⚠️ Partial · ➜ Direct launch · — Not supported
 
 ### Profiles
 
@@ -223,9 +229,9 @@ Ask questions, share workflows, or tell us which agent/provider/channel should b
 
 WeChat group for Chinese-language discussion:
 
-<img src="assets/community/wechat-group-qr-2026-06-16.jpg" width="180" alt="VibeAround WeChat group QR code, valid until June 16, 2026" />
+<img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/community/wechat-group-qr-2026-06-19.webp" width="180" alt="VibeAround WeChat group QR code, valid until June 19, 2026" />
 
-This WeChat QR code is valid until June 16, 2026. If it has expired, use Discord or GitHub Issues to ask for the latest one.
+This WeChat QR code is valid until June 19, 2026. If it has expired, use Discord or GitHub Issues to ask for the latest one.
 
 ## License
 
