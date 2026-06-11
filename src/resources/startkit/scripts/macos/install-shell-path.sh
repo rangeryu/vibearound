@@ -31,7 +31,7 @@ write_profile() {
   {
     printf '\n%s\n' "$start_marker"
     printf '# Added by VibeAround Startkit. Remove this block to undo.\n'
-    printf 'export PATH="$HOME/.vibearound/bin:$HOME/.vibearound/runtime/node/bin:$HOME/.vibearound/runtime/node:$HOME/.vibearound/npm/bin:$HOME/.vibearound/npm:$HOME/.vibearound/npm-global/bin:$HOME/.vibearound/npm-global:$PATH"\n'
+    printf 'export PATH="$HOME/.vibearound/bin:$HOME/.vibearound/runtime/node/bin:$HOME/.vibearound/runtime/node:$HOME/.vibearound/npm/bin:$HOME/.vibearound/npm:$PATH"\n'
     printf '%s\n' "$end_marker"
   } >> "$tmp"
 

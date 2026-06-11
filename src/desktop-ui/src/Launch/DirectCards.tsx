@@ -74,7 +74,7 @@ export function DirectCards({
         );
         const visible = items.filter((agent) => {
           if (agent.direct_only) {
-            return desktopApps === null || installedDesktopAgents.has(agent.id);
+            return installedDesktopAgents.has(agent.id);
           }
           return enabledAgentSet ? enabledAgentSet.has(agent.id) : true;
         });

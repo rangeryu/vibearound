@@ -304,8 +304,6 @@ fn prepend_vibearound_managed_paths(env: &mut HashMap<String, String>) {
         home.join("runtime").join("node"),
         home.join("npm").join("bin"),
         home.join("npm"),
-        home.join("npm-global").join("bin"),
-        home.join("npm-global"),
     ];
 
     let current = path_value(env).unwrap_or_default();

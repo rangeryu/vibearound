@@ -413,7 +413,7 @@ fn connection_preference_is_empty(preference: &ProfileConnectionPreference) -> b
                     .map(str::trim)
                     .unwrap_or_default()
                     .is_empty()
-                && (!bridge.enabled || bridge.headers.is_empty())
+                && bridge.headers.is_empty()
         })
 }
 

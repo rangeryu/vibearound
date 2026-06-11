@@ -633,11 +633,6 @@ fn managed_paths(program: &str) -> Vec<PathBuf> {
                 .join("npm")
                 .join("bin")
                 .join(format!("{program}.cmd")),
-            data_dir.join("npm-global").join(format!("{program}.cmd")),
-            data_dir
-                .join("npm-global")
-                .join("bin")
-                .join(format!("{program}.cmd")),
             data_dir.join("bin").join(format!("{program}.exe")),
             data_dir.join("bin").join(program),
         ]
@@ -648,8 +643,6 @@ fn managed_paths(program: &str) -> Vec<PathBuf> {
         vec![
             data_dir.join("npm").join("bin").join(program),
             data_dir.join("npm").join(program),
-            data_dir.join("npm-global").join("bin").join(program),
-            data_dir.join("npm-global").join(program),
             data_dir.join("bin").join(program),
         ]
         .into_iter()

@@ -1468,15 +1468,13 @@ fn apply_startkit_env(
 
 pub fn managed_path_entries() -> Vec<PathBuf> {
     let home = common::config::data_dir();
-    let mut entries = Vec::new();
-    entries.push(home.join("bin"));
-    entries.push(home.join("runtime").join("node").join("bin"));
-    entries.push(home.join("runtime").join("node"));
-    entries.push(home.join("npm").join("bin"));
-    entries.push(home.join("npm"));
-    entries.push(home.join("npm-global").join("bin"));
-    entries.push(home.join("npm-global"));
-    entries
+    vec![
+        home.join("bin"),
+        home.join("runtime").join("node").join("bin"),
+        home.join("runtime").join("node"),
+        home.join("npm").join("bin"),
+        home.join("npm"),
+    ]
 }
 
 fn report_from_script(item: &StartkitItem, output: ScriptOutput) -> StartkitItemReport {

@@ -181,7 +181,7 @@ export function AgentLaunchBuilder({
         );
         const visible = items.filter((agent) => {
           if (agent.direct_only) {
-            return desktopApps === null || installedDesktopAgents.has(agent.id);
+            return installedDesktopAgents.has(agent.id);
           }
           return enabledAgents ? enabledAgents.has(agent.id) : true;
         });
