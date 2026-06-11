@@ -62,8 +62,16 @@ jobs:
           else
             TAG="v${VERSION}"
           fi
+          ARGS="${{ matrix.args }}"
+          if [ "${RUNNER_OS}" = "Windows" ] && [[ "${VERSION}" == *-* ]]; then
+            # MSI rejects textual prerelease identifiers such as 0.7.0-beta.
+            # Keep beta Windows releases on NSIS + portable ZIP; stable releases
+            # still use the matrix default of NSIS + MSI.
+            ARGS="--bundles nsis"
+          fi
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "args=${ARGS}" >> "${GITHUB_OUTPUT}"
 
       - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v0
@@ -85,7 +93,7 @@ jobs:
             macOS DMG is built locally and attached separately.
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          args: ${{ steps.release.outputs.args }}
 
       - name: Package Windows portable ZIP
         if: runner.os == 'Windows'
