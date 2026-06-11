@@ -327,7 +327,7 @@ function VibeAroundMark() {
     <img
       src="/brand/vibearound-mark.svg"
       alt=""
-      className="h-5 w-5 shrink-0 rounded-md"
+      className="h-5 w-5 shrink-0"
       aria-hidden="true"
       draggable={false}
     />

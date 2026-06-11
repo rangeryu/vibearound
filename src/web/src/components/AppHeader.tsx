@@ -311,7 +311,7 @@ function VibeAroundLogo({ className }: { className?: string }) {
       alt=""
       aria-hidden="true"
       draggable={false}
-      className={cn("shrink-0 rounded-md", className)}
+      className={cn("shrink-0", className)}
     />
   );
 }
