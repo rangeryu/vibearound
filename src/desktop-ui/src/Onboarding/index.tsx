@@ -110,6 +110,8 @@ export default function Onboarding() {
   const checkedAgentSdkSignaturesRef = useRef<Set<string>>(new Set());
   const checkedTunnelSignaturesRef = useRef<Set<string>>(new Set());
   const checkedComputerSignaturesRef = useRef<Set<string>>(new Set());
+  const checkedInstallScanSignaturesRef = useRef<Set<string>>(new Set());
+  const previousStartkitOptionsRef = useRef<string | null>(null);
   const refreshedPluginsAfterInstallRef = useRef(false);
   const [agentInstallReports, setAgentInstallReports] = useState<
     StartkitItemReport[]
@@ -278,7 +280,63 @@ export default function Onboarding() {
   );
 
   useEffect(() => {
-    if (!loaded || activeStep !== "install" || startkit.running) return;
+    if (!loaded) return;
+    const signature = itemCheckSignature(
+      "startkit-options",
+      downloadSource,
+      toolchainMode,
+    );
+    if (previousStartkitOptionsRef.current === null) {
+      previousStartkitOptionsRef.current = signature;
+      return;
+    }
+    if (previousStartkitOptionsRef.current === signature) return;
+
+    previousStartkitOptionsRef.current = signature;
+    checkedAgentLocalSignaturesRef.current.clear();
+    checkedAgentUpdateSignaturesRef.current.clear();
+    checkedPluginSignaturesRef.current.clear();
+    checkedAgentSdkSignaturesRef.current.clear();
+    checkedTunnelSignaturesRef.current.clear();
+    checkedComputerSignaturesRef.current.clear();
+    checkedInstallScanSignaturesRef.current.clear();
+    setAgentInstallReports([]);
+    setPluginUpdateReports([]);
+    setAgentSdkReports([]);
+    setTunnelReports([]);
+    setComputerReports([]);
+    startkit.reset();
+  }, [downloadSource, loaded, startkit.reset, toolchainMode]);
+
+  useEffect(() => {
+    if (!loaded || activeStep !== "install" || startkit.running || startkit.scanning) return;
+    const signature = itemCheckSignature(
+      "install",
+      downloadSource,
+      toolchainMode,
+      String(choices.shellPath),
+      [...choices.agents].sort().join(","),
+      [...choices.channels].sort().join(","),
+      choices.tunnel,
+    );
+    if (checkedInstallScanSignaturesRef.current.has(signature)) return;
+    checkedInstallScanSignaturesRef.current.add(signature);
+
+    void startkit.scan(finalSettings, choices);
+  }, [
+    activeStep,
+    choices,
+    downloadSource,
+    finalSettings,
+    loaded,
+    startkit.running,
+    startkit.scanning,
+    startkit.scan,
+    toolchainMode,
+  ]);
+
+  useEffect(() => {
+    if (!loaded || activeStep !== "install" || startkit.running || startkit.scanning) return;
     const signature = itemCheckSignature(
       "computer",
       downloadSource,
@@ -317,11 +375,12 @@ export default function Onboarding() {
     loaded,
     settings,
     startkit.running,
+    startkit.scanning,
     toolchainMode,
   ]);
 
   useEffect(() => {
-    if (!loaded || activeStep !== "install" || startkit.running) return;
+    if (!loaded || activeStep !== "install" || startkit.running || startkit.scanning) return;
     const agentIds = Array.from(enabledAgents).sort();
     const pendingAgentIds = agentIds.filter((agentId) => {
       const signature = itemCheckSignature(agentId, "agent-sdk");
@@ -363,6 +422,7 @@ export default function Onboarding() {
     enabledAgents,
     loaded,
     startkit.running,
+    startkit.scanning,
   ]);
 
   useEffect(() => {
@@ -430,7 +490,7 @@ export default function Onboarding() {
   ]);
 
   useEffect(() => {
-    if (!loaded || activeStep !== "im") return;
+    if (!loaded || (activeStep !== "im" && activeStep !== "install")) return;
     if (pluginRegistry.length === 0) return;
     setPluginUpdateReports((previous) =>
       mergeLocalReportsById(
@@ -443,7 +503,7 @@ export default function Onboarding() {
   }, [activeStep, discoveredPlugins, loaded, pluginRegistry]);
 
   useEffect(() => {
-    if (!loaded || activeStep !== "im") return;
+    if (!loaded || (activeStep !== "im" && activeStep !== "install") || startkit.running) return;
     const pluginIds = Array.from(enabledChannels).sort();
     if (pluginIds.length === 0) return;
     const pendingPluginIds = pluginIds.filter((id) => {
@@ -488,6 +548,7 @@ export default function Onboarding() {
     enabledChannels,
     loaded,
     pluginRegistry,
+    startkit.running,
   ]);
 
   useEffect(() => {
@@ -676,8 +737,22 @@ export default function Onboarding() {
     pluginUpdateReports,
     tunnelReports,
   ]);
-  const installReports =
-    startkit.running || startkit.complete ? startkit.reports : cachedInstallReports;
+  const installReports = useMemo(() => {
+    if (startkit.running || startkit.complete) return startkit.reports;
+    if (startkit.scanning) {
+      return mergeReportsById(cachedInstallReports, startkit.reports);
+    }
+    if (startkit.reports.length > 0) {
+      return mergeReportsById(startkit.reports, cachedInstallReports);
+    }
+    return cachedInstallReports;
+  }, [
+    cachedInstallReports,
+    startkit.complete,
+    startkit.reports,
+    startkit.running,
+    startkit.scanning,
+  ]);
   const groupedReports = useMemo(
     () => groupReportsFromReports(installReports),
     [installReports],
@@ -689,6 +764,23 @@ export default function Onboarding() {
     }
     return reports;
   }, [agentInstallReports, startkit.reportById]);
+
+  useEffect(() => {
+    if (!loaded || activeStep !== "install" || startkit.running) return;
+    const updateAgentIds = installReports
+      .filter((report) => report.status === "ok")
+      .map(agentIdFromReport)
+      .filter((id): id is string => Boolean(id));
+    if (updateAgentIds.length > 0) {
+      checkAgentUpdates(updateAgentIds);
+    }
+  }, [
+    activeStep,
+    checkAgentUpdates,
+    installReports,
+    loaded,
+    startkit.running,
+  ]);
   const hasScanned = installReports.some((report) => report.status !== "pending");
   const installReportsRunning = installReports.some((report) => report.status === "running");
   const hasInstallWork = installReports.some(reportNeedsInstall);
@@ -851,7 +943,7 @@ export default function Onboarding() {
           agents={agents}
           enabledAgents={enabledAgents}
           reportsById={agentReportsById}
-          scanning={installReportsRunning}
+          scanning={startkit.scanning || installReportsRunning}
           onToggleAgent={toggleAgent}
           pluginRegistry={pluginRegistry}
           discoveredPlugins={discoveredPlugins}

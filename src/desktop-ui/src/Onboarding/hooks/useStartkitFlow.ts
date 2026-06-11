@@ -143,6 +143,7 @@ interface UseStartkitFlowResult {
   ) => Promise<void>;
   cancel: () => Promise<void>;
   finish: () => Promise<void>;
+  reset: () => void;
 }
 
 export function useStartkitFlow(): UseStartkitFlowResult {
@@ -266,6 +267,18 @@ export function useStartkitFlow(): UseStartkitFlowResult {
     setFinalStatus("cancelled");
   }, []);
 
+  const reset = useCallback(() => {
+    if (running) return;
+    for (const unlisten of unlistenRefs.current) unlisten();
+    unlistenRefs.current = [];
+    setPlan(null);
+    setReports([]);
+    setScanning(false);
+    setComplete(false);
+    setFinalStatus(null);
+    setError(null);
+  }, [running]);
+
   const finish = useCallback(async () => {
     for (const unlisten of unlistenRefs.current) unlisten();
     unlistenRefs.current = [];
@@ -287,5 +300,6 @@ export function useStartkitFlow(): UseStartkitFlowResult {
     start,
     cancel,
     finish,
+    reset,
   };
 }
