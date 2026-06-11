@@ -133,6 +133,11 @@ async fn rescan_desktop_app_entries() -> Result<desktop_detection::DesktopAppDet
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn get_desktop_app_entries() -> Option<desktop_detection::DesktopAppDetectionFile> {
+    desktop_detection::read_detected_desktop_apps()
+}
+
 /// Open an HTTP URL in the user's default external browser.
 ///
 /// We can't use `window.open` from the desktop-ui because it creates a
@@ -211,6 +216,7 @@ fn main() {
             get_app_info,
             rescan_agent_entries,
             rescan_desktop_app_entries,
+            get_desktop_app_entries,
             open_external_url,
             restart_services,
             set_ui_locale,

@@ -125,6 +125,10 @@ export function rescanDesktopAppEntries(): Promise<DesktopAppDetectionFile> {
   return invoke<DesktopAppDetectionFile>("rescan_desktop_app_entries");
 }
 
+export function getDesktopAppEntries(): Promise<DesktopAppDetectionFile | null> {
+  return invoke<DesktopAppDetectionFile | null>("get_desktop_app_entries");
+}
+
 export interface TerminalOption {
   id: string;
   label: string;

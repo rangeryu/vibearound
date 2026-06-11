@@ -5,8 +5,8 @@ import { useI18n } from "@va/i18n";
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import {
+  getDesktopAppEntries,
   listAgents,
-  rescanDesktopAppEntries,
   type AgentSummary,
 } from "./api";
 
@@ -63,7 +63,7 @@ export function DirectCards({
   useEffect(() => {
     void Promise.all([
       listAgents(),
-      rescanDesktopAppEntries().catch(() => null),
+      getDesktopAppEntries().catch(() => null),
     ])
       .then(([items, desktopApps]) => {
         const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));

@@ -39,6 +39,12 @@ pub fn detected_desktop_apps_path() -> PathBuf {
     common::config::data_dir().join("desktop-apps.detected.json")
 }
 
+pub fn read_detected_desktop_apps() -> Option<DesktopAppDetectionFile> {
+    let path = detected_desktop_apps_path();
+    let contents = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&contents).ok()
+}
+
 pub async fn scan_and_persist() -> anyhow::Result<DesktopAppDetectionFile> {
     let detected = scan_desktop_apps().await;
     write_detected_desktop_apps(&detected)?;
