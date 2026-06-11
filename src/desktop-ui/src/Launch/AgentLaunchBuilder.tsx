@@ -169,17 +169,19 @@ export function AgentLaunchBuilder({
   useEffect(() => {
     void Promise.all([
       listAgents(),
-      rescanDesktopAppEntries().catch(() => ({ apps: {} })),
+      rescanDesktopAppEntries().catch(() => null),
     ])
       .then(([items, desktopApps]) => {
         const rank = new Map(AGENT_ORDER.map((id, index) => [id, index]));
         const installedDesktopAgents = new Set(
-          Object.entries(desktopApps.apps)
+          Object.entries(desktopApps?.apps ?? {})
             .filter(([, app]) => app.installed)
             .map(([agentId]) => agentId),
         );
         const visible = items.filter((agent) => {
-          if (agent.direct_only) return installedDesktopAgents.has(agent.id);
+          if (agent.direct_only) {
+            return desktopApps === null || installedDesktopAgents.has(agent.id);
+          }
           return enabledAgents ? enabledAgents.has(agent.id) : true;
         });
         const ordered = [...visible].sort(
