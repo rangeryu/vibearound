@@ -37,6 +37,7 @@ import {
   agentConnectionDef,
   apiTypeProtocolDisplayLabel,
   canDeleteWorkspace,
+  connectionAgentId,
   isGlobalDefaultDirect,
   isGlobalDefaultProfile,
   isBridgeAgent,
@@ -275,8 +276,9 @@ export function ProfilePanel({
                     agentId,
                     profile.id,
                   );
+                  const connectionId = connectionAgentId(agentId);
                   const connection =
-                    isBridgeAgent(agentId)
+                    connectionId
                       ? resolveProfileConnection(
                           profile,
                           prefs.profileConnections,
@@ -382,8 +384,9 @@ export function ProfilePanel({
                           }
                           makeDefaultDisabled={busy || !availability.launchable}
                           onConnectionSettings={(profile) => {
-                            if (isBridgeAgent(agentId)) {
-                              onConnectionSettings(profile, agentId);
+                            const connectionId = connectionAgentId(agentId);
+                            if (connectionId) {
+                              onConnectionSettings(profile, connectionId);
                             }
                           }}
                           onEditProfile={onEditProfile}

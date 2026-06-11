@@ -58,12 +58,12 @@ import { agentLaunchArgCount } from "./agentLaunchArgs";
 import { buildProfileCopyDraft } from "./profileClone";
 import {
   agentLabel,
+  connectionAgentId,
   agentProfileId,
   agentSupportsSessionResume,
   agentWorkspace,
   currentTerminal,
   currentWorkspace,
-  isBridgeAgent,
   isSelectionLaunchable,
   isSortableWorkspace,
   mergeOrderedSubset,
@@ -486,11 +486,12 @@ export function AgentLaunchBuilder({
   }
 
   async function chooseProfileApiType(profile: ProfileSummary, apiType: string) {
-    if (!viewPrefs || !isBridgeAgent(agentId)) return;
-    const current = viewPrefs.profileConnections[profile.id]?.[agentId] ?? {};
+    const connectionId = connectionAgentId(agentId);
+    if (!viewPrefs || !connectionId) return;
+    const current = viewPrefs.profileConnections[profile.id]?.[connectionId] ?? {};
     onError(null);
     try {
-      await setProfileConnection(profile.id, agentId, {
+      await setProfileConnection(profile.id, connectionId, {
         ...current,
         selectedApiType: apiType,
       });

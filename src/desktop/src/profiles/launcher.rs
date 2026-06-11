@@ -6,6 +6,7 @@
 
 mod bridge;
 mod codex;
+mod codex_desktop;
 mod common;
 mod plan;
 

@@ -152,10 +152,11 @@ pub fn resolve_profile_agent_route_with_connections(
     if supported.is_empty() {
         return None;
     }
+    let connection_agent_id = connection_agent_id(agent_id);
 
     let preference = connections
         .get(&profile.id)
-        .and_then(|items| items.get(agent_id));
+        .and_then(|items| items.get(connection_agent_id));
     let preferred_client_api_type = preference
         .and_then(|preference| preference.selected_api_type.as_deref())
         .filter(|api_type| supported.contains(api_type))
@@ -423,6 +424,7 @@ fn recommended_bridge_target(
             &["openai-responses", "gemini", "openai-chat", "anthropic"]
         }
         ("codex", "openai-responses")
+        | ("codex-desktop", "openai-responses")
         | ("opencode", "openai-responses")
         | ("opencode", "openai-chat")
         | ("pi", "openai-responses")
@@ -469,7 +471,7 @@ fn prune_bridge_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, S
 fn agent_client_api_types(agent_id: &str) -> &'static [&'static str] {
     match agent_id {
         "claude" => &["anthropic"],
-        "codex" => &["openai-responses"],
+        "codex" | "codex-desktop" => &["openai-responses"],
         "gemini" => &["gemini"],
         "opencode" => &["openai-responses", "openai-chat", "anthropic"],
         "pi" => &["anthropic", "openai-responses", "openai-chat"],
@@ -489,10 +491,18 @@ fn launch_target_defs() -> &'static [(&'static str, &'static str)] {
     &[
         ("claude", "Claude Code"),
         ("codex", "Codex"),
+        ("codex-desktop", "Codex Desktop"),
         ("gemini", "Gemini CLI"),
         ("pi", "Pi"),
         ("opencode", "OpenCode"),
     ]
+}
+
+fn connection_agent_id(agent_id: &str) -> &str {
+    match agent_id {
+        "codex-desktop" => "codex",
+        other => other,
+    }
 }
 
 #[cfg(test)]

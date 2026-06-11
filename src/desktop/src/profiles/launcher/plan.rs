@@ -12,7 +12,7 @@ use profiles::ProfileDef;
 use crate::agent_detection;
 
 use super::common::LaunchPlan;
-use super::{bridge, codex};
+use super::{bridge, codex, codex_desktop};
 
 enum LaunchTarget<'a> {
     Profile {
@@ -138,6 +138,22 @@ impl<'a> LaunchPlanBuilder<'a> {
         let agent = resources::agent_by_id(agent_id)
             .ok_or_else(|| anyhow!("agent '{}' not found in agents.json", agent_id))?;
         let workspace = crate::profiles::resolve_launch_workspace(agent_id)?;
+        if agent_id == "codex-desktop" {
+            codex_desktop::apply_profile_overlay(profile, &self.launch_id, rendered)
+                .with_context(|| format!("prepare Codex Desktop profile '{}'", profile.id))?;
+            return Ok(LaunchPlan {
+                env: Vec::new(),
+                command: launch_command_for_agent(
+                    agent_id,
+                    agent.pty_command_for_current_platform(),
+                ),
+                args: Vec::new(),
+                window_label: profile.label.clone(),
+                workspace,
+                macos_app_probe: macos_app_probe_for_direct_agent(&agent),
+                windows_process_probe: windows_process_probe_for_direct_agent(&agent),
+            });
+        }
         agent_integrations::auto_install_project_integrations(agent_id, &workspace)
             .with_context(|| format!("install project integrations for {}", agent_id))?;
         let mut command_args = rendered.command_args.clone();

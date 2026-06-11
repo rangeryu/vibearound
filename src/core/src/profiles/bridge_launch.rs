@@ -30,7 +30,7 @@ pub(super) fn render_bridge_launch(
     settings.scope = format!("{launch_target}-{client_api_type}");
     match launch_target {
         "claude" => Ok(render_claude_bridge_profile(profile, launch_id, settings)),
-        "codex" => Ok(render_codex_bridge_profile(profile, launch_id, settings)),
+        "codex" | "codex-desktop" => Ok(render_codex_bridge_profile(profile, launch_id, settings)),
         "gemini" => Ok(render_gemini_bridge_profile(profile, settings)),
         "opencode" => Ok(render_opencode_bridge_profile(
             profile,

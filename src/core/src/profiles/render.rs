@@ -279,7 +279,7 @@ fn render_pi_profile(
 }
 
 fn command_args_for(launch_target: &str, ctx: &BTreeMap<String, String>) -> Vec<String> {
-    if launch_target != "codex" {
+    if !is_codex_launch_target(launch_target) {
         return Vec::new();
     }
 
@@ -352,7 +352,7 @@ fn add_codex_model_catalog(
     settings_files: &mut Vec<RenderedSettingsFile>,
     command_args: &mut Vec<String>,
 ) -> anyhow::Result<()> {
-    if launch_target != "codex" {
+    if !is_codex_launch_target(launch_target) {
         return Ok(());
     }
     let Some(model) = ctx.get("model").filter(|value| !value.is_empty()) else {
@@ -463,6 +463,10 @@ fn codex_provider_env_key(provider_id: &str) -> &'static str {
         "azure" => "AZURE_OPENAI_API_KEY",
         _ => "OPENAI_API_KEY",
     }
+}
+
+fn is_codex_launch_target(launch_target: &str) -> bool {
+    matches!(launch_target, "codex" | "codex-desktop")
 }
 
 /// Wraps a value as a TOML literal string (`'...'`).  Literal strings have no
