@@ -77,7 +77,7 @@ export default function Onboarding() {
 
   const [downloadSource, setDownloadSource] = useState("global");
   const [toolchainMode, setToolchainMode] = useState<"managed" | "system">(
-    "managed",
+    "system",
   );
   const [shellPath, setShellPath] = useState(false);
   const [enabledAgents, setEnabledAgents] = useState<Set<AgentId>>(new Set());
