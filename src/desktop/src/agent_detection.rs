@@ -87,8 +87,29 @@ pub struct AgentDetectionFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentDetection {
-    pub selected: Option<AgentCandidate>,
+    #[serde(rename = "default", default)]
+    pub default_candidate: Option<AgentCandidate>,
+    #[serde(default)]
+    pub system_selected: Option<AgentCandidate>,
+    #[serde(default, rename = "selected", skip_serializing)]
+    pub legacy_selected: Option<AgentCandidate>,
+    #[serde(default)]
     pub candidates: Vec<AgentCandidate>,
+}
+
+impl AgentDetection {
+    fn default_candidate(&self) -> Option<AgentCandidate> {
+        self.default_candidate
+            .clone()
+            .or_else(|| self.legacy_selected.clone())
+    }
+
+    fn system_selected_candidate(&self) -> Option<AgentCandidate> {
+        self.system_selected
+            .clone()
+            .or_else(|| self.legacy_selected.clone())
+            .or_else(|| self.candidates.first().cloned())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,11 +142,58 @@ pub fn read_detected_agents() -> Option<AgentDetectionFile> {
     serde_json::from_str(&contents).ok()
 }
 
-pub fn selected_candidate_for(agent_id: &str) -> Option<AgentCandidate> {
+pub fn default_candidate_for(agent_id: &str) -> Option<AgentCandidate> {
     read_detected_agents()?
         .agents
         .get(agent_id)
-        .and_then(|detection| detection.selected.clone())
+        .and_then(AgentDetection::default_candidate)
+}
+
+pub fn system_selected_candidate_for(agent_id: &str) -> Option<AgentCandidate> {
+    read_detected_agents()?
+        .agents
+        .get(agent_id)
+        .and_then(AgentDetection::system_selected_candidate)
+}
+
+pub fn candidate_for_toolchain_mode(
+    agent_id: &str,
+    toolchain_mode: &str,
+) -> Option<AgentCandidate> {
+    if toolchain_mode == "system" {
+        return system_selected_candidate_for(agent_id);
+    }
+    default_candidate_for(agent_id)
+}
+
+pub fn preferred_candidate_for_toolchain_mode(
+    detection: &AgentDetection,
+    toolchain_mode: &str,
+) -> Option<AgentCandidate> {
+    if toolchain_mode == "system" {
+        return detection.system_selected_candidate();
+    }
+
+    detection.default_candidate()
+}
+
+#[cfg_attr(test, allow(dead_code))]
+pub fn configured_toolchain_mode() -> String {
+    let path = common::config::data_dir().join("settings.json");
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return "managed".to_string();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) else {
+        return "managed".to_string();
+    };
+    match json
+        .get("startkit")
+        .and_then(|value| value.get("toolchain_mode"))
+        .and_then(serde_json::Value::as_str)
+    {
+        Some("system") => "system".to_string(),
+        _ => "managed".to_string(),
+    }
 }
 
 pub fn source_command_template(agent_id: &str, source: &str, action: &str) -> Option<String> {
@@ -175,6 +243,10 @@ fn first_install_source(agent_id: &str, source_ids: &[&str]) -> Option<String> {
         .iter()
         .find(|source| source_command_template(agent_id, source, "install").is_some())
         .map(|source| (*source).to_string())
+}
+
+fn agent_has_managed_npm_source(agent_id: &str) -> bool {
+    source_command_template(agent_id, "npm_managed", "install").is_some()
 }
 
 pub fn source_package(agent_id: &str, source: &str) -> Option<String> {
@@ -319,11 +391,29 @@ async fn scan_agent(agent_id: &str, spec: &AgentCommandSpec) -> AgentDetection {
     }
 
     candidates.sort_by_key(|candidate| candidate.rank);
-    let selected = candidates.first().cloned();
+    let system_selected = candidates.first().cloned();
+    let default_candidate =
+        vibearound_default_candidate(agent_id, &candidates, system_selected.as_ref());
     AgentDetection {
-        selected,
+        default_candidate,
+        system_selected,
+        legacy_selected: None,
         candidates,
     }
+}
+
+fn vibearound_default_candidate(
+    agent_id: &str,
+    candidates: &[AgentCandidate],
+    system_selected: Option<&AgentCandidate>,
+) -> Option<AgentCandidate> {
+    if agent_has_managed_npm_source(agent_id) {
+        return candidates
+            .iter()
+            .find(|candidate| candidate.source == "npm_managed")
+            .cloned();
+    }
+    system_selected.cloned()
 }
 
 fn write_detected_agents(detected: &AgentDetectionFile) -> anyhow::Result<()> {
@@ -887,5 +977,65 @@ mod tests {
         let second = first.clone();
         let paths = dedupe_paths(vec![first, second]);
         assert_eq!(paths.len(), 1);
+    }
+
+    #[test]
+    fn records_system_selected_and_vibearound_default_separately() {
+        let system = test_candidate("/usr/local/bin/codex", "npm_global", 0);
+        let managed = test_candidate("/tmp/.vibearound/npm/bin/codex", "npm_managed", 10_000);
+        let detection = AgentDetection {
+            default_candidate: Some(managed.clone()),
+            system_selected: Some(system.clone()),
+            legacy_selected: None,
+            candidates: vec![system.clone(), managed.clone()],
+        };
+
+        assert_eq!(
+            preferred_candidate_for_toolchain_mode(&detection, "system")
+                .as_ref()
+                .map(|candidate| candidate.path.as_str()),
+            Some(system.path.as_str())
+        );
+        assert_eq!(
+            preferred_candidate_for_toolchain_mode(&detection, "managed")
+                .as_ref()
+                .map(|candidate| candidate.path.as_str()),
+            Some(managed.path.as_str())
+        );
+
+        let json = serde_json::to_string(&detection).expect("serialize detection");
+        assert!(json.contains("\"default\""));
+        assert!(json.contains("\"systemSelected\""));
+        assert!(!json.contains("\"selected\""));
+    }
+
+    #[test]
+    fn vibearound_default_is_empty_until_managed_candidate_exists() {
+        let system = test_candidate("/usr/local/bin/codex", "npm_global", 0);
+        assert!(vibearound_default_candidate(
+            "codex",
+            std::slice::from_ref(&system),
+            Some(&system)
+        )
+        .is_none());
+        assert_eq!(
+            vibearound_default_candidate("cursor", std::slice::from_ref(&system), Some(&system))
+                .as_ref()
+                .map(|candidate| candidate.path.as_str()),
+            Some(system.path.as_str())
+        );
+    }
+
+    fn test_candidate(path: &str, source: &str, rank: u32) -> AgentCandidate {
+        AgentCandidate {
+            path: path.to_string(),
+            realpath: None,
+            version: None,
+            source: source.to_string(),
+            source_label: source.to_string(),
+            rank,
+            is_user_default: rank == 0,
+            package: None,
+        }
     }
 }

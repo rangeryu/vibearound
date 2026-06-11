@@ -421,8 +421,15 @@ async fn agent_update_report(
     let candidate = agent_detection::scan_agent_and_persist(&agent_id)
         .await
         .ok()
-        .and_then(|detection| detection.selected)
-        .or_else(|| agent_detection::selected_candidate_for(&agent_id))?;
+        .and_then(|detection| {
+            agent_detection::preferred_candidate_for_toolchain_mode(
+                &detection,
+                &choices.toolchain_mode,
+            )
+        })
+        .or_else(|| {
+            agent_detection::candidate_for_toolchain_mode(&agent_id, &choices.toolchain_mode)
+        })?;
     let source = candidate.source.clone();
     let local_version = candidate.version.as_deref().and_then(extract_semver);
     let mut report = StartkitItemReport {

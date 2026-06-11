@@ -267,7 +267,10 @@ fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> String {
 
     #[cfg(not(test))]
     {
-        let Some(candidate) = agent_detection::selected_candidate_for(agent_id) else {
+        let toolchain_mode = agent_detection::configured_toolchain_mode();
+        let Some(candidate) =
+            agent_detection::candidate_for_toolchain_mode(agent_id, &toolchain_mode)
+        else {
             return fallback_command.to_string();
         };
         replace_launch_program(fallback_command, &candidate.path)

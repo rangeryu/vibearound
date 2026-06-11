@@ -1100,7 +1100,12 @@ async fn scan_agent_cli_item(
     let selected = agent_detection::scan_agent_and_persist(agent_id)
         .await
         .ok()
-        .and_then(|detection| detection.selected);
+        .and_then(|detection| {
+            agent_detection::preferred_candidate_for_toolchain_mode(
+                &detection,
+                &choices.toolchain_mode,
+            )
+        });
 
     match selected {
         Some(candidate) => StartkitItemReport {
@@ -1125,10 +1130,7 @@ async fn scan_agent_cli_item(
             .is_some();
             StartkitItemReport {
                 status: StartkitItemStatus::Missing,
-                message: Some(format!(
-                    "{} was not found in the user's default PATH",
-                    item.label
-                )),
+                message: Some(agent_missing_message(item, &choices.toolchain_mode)),
                 actions: if can_install {
                     vec!["install".to_string()]
                 } else {
@@ -1137,6 +1139,14 @@ async fn scan_agent_cli_item(
                 ..base_report(item)
             }
         }
+    }
+}
+
+fn agent_missing_message(item: &StartkitItem, toolchain_mode: &str) -> String {
+    if toolchain_mode == "system" {
+        format!("{} was not found in the system toolchain", item.label)
+    } else {
+        format!("{} was not found in VibeAround", item.label)
     }
 }
 
