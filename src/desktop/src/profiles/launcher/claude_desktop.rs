@@ -344,12 +344,10 @@ fn apply_profile_config_at(
     )
     .context("write Claude Desktop VibeAround state")?;
     set_deployment_mode(root, Some("3p")).context("switch Claude Desktop to third-party mode")?;
-    set_developer_mode(root, true).context("enable Claude Desktop developer mode")?;
     Ok(())
 }
 
 fn cleanup_profile_config_at(root: &Path) -> anyhow::Result<()> {
-    set_developer_mode(root, false).context("disable Claude Desktop developer mode")?;
     let library_dir = config_library_dir(root);
     let state_path = state_path(root);
     let has_state = state_path.exists();
@@ -486,25 +484,6 @@ fn restore_deployment_mode(root: &Path, previous: Option<&str>) -> anyhow::Resul
     set_deployment_mode(root, previous)
 }
 
-fn read_developer_mode(root: &Path) -> anyhow::Result<Option<bool>> {
-    let value = read_json_or_default::<Value>(&developer_settings_path(root))?;
-    Ok(value.get("allowDevTools").and_then(Value::as_bool))
-}
-
-fn set_developer_mode(root: &Path, enabled: bool) -> anyhow::Result<()> {
-    let path = developer_settings_path(root);
-    let mut value = read_json_or_default::<Value>(&path)
-        .with_context(|| format!("read Claude Desktop developer settings {:?}", path))?;
-    if !value.is_object() {
-        value = Value::Object(Default::default());
-    }
-    let object = value
-        .as_object_mut()
-        .expect("developer settings value was normalized to object");
-    object.insert("allowDevTools".to_string(), Value::Bool(enabled));
-    write_json(&path, &value)
-}
-
 fn read_json_or_default<T>(path: &Path) -> anyhow::Result<T>
 where
     T: DeserializeOwned + Default,
@@ -602,10 +581,6 @@ fn state_path(root: &Path) -> PathBuf {
 
 fn deployment_config_path(root: &Path) -> PathBuf {
     root.join("claude_desktop_config.json")
-}
-
-fn developer_settings_path(root: &Path) -> PathBuf {
-    root.join("developer_settings.json")
 }
 
 #[cfg(test)]
@@ -743,10 +718,6 @@ mod tests {
             read_deployment_mode(&root).expect("deployment mode"),
             Some("3p".to_string())
         );
-        assert_eq!(
-            read_developer_mode(&root).expect("developer mode"),
-            Some(true)
-        );
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -790,17 +761,13 @@ mod tests {
             read_deployment_mode(&root).expect("deployment mode"),
             Some("1p".to_string())
         );
-        assert_eq!(
-            read_developer_mode(&root).expect("developer mode"),
-            Some(false)
-        );
         assert!(!state_path(&root).exists());
 
         let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
-    fn cleanup_without_managed_state_disables_developer_mode_only() {
+    fn cleanup_without_managed_state_leaves_user_config_unchanged() {
         let root = temp_root("noop-cleanup");
         std::fs::create_dir_all(config_library_dir(&root)).expect("create config library");
         let meta = r#"{"appliedId":"default-id","entries":[{"id":"default-id","name":"Default"}]}"#;
@@ -817,10 +784,6 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(deployment_config_path(&root)).expect("read deployment config"),
             deployment
-        );
-        assert_eq!(
-            read_developer_mode(&root).expect("developer mode"),
-            Some(false)
         );
         let _ = std::fs::remove_dir_all(root);
     }
