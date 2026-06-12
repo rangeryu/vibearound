@@ -703,7 +703,7 @@ function ModelSettingDialog({
   const [models, setModels] = useState<ProfileBridgeModelPreference[]>(
     () => setting.models.length > 0 ? setting.models : [{ upstreamModel: "" }],
   );
-  const datalistId = `bridge-model-options-${setting.agentId}-${setting.clientApiType}-${setting.targetApiType}`;
+  const [openPickerIndex, setOpenPickerIndex] = useState<number | null>(null);
   const cleaned = cleanBridgeModels(models);
 
   function updateModel(index: number, patch: ProfileBridgeModelPreference) {
@@ -738,21 +738,12 @@ function ModelSettingDialog({
             <span> · {setting.providerLabel}</span>
           </div>
 
-          <datalist id={datalistId}>
-            {setting.options.map((model) => (
-              <option
-                key={model.id}
-                value={model.id}
-                label={modelOptionDatalistLabel(model, t)}
-              />
-            ))}
-          </datalist>
-
           <div className="grid gap-2">
             {models.map((model, index) => {
               const upstreamModel = cleanModelId(model.upstreamModel);
               const option = findModelOption(setting.options, upstreamModel);
               const isCustomModel = !!upstreamModel && !option;
+              const suggestions = modelOptionSuggestions(setting.options, upstreamModel);
               return (
                 <div
                   key={index}
@@ -770,26 +761,78 @@ function ModelSettingDialog({
                         }
                       />
                     </label>
-                    <label className="grid min-w-0 gap-1 text-[11px] text-muted-foreground">
+                    <div className="grid min-w-0 gap-1 text-[11px] text-muted-foreground">
                       <span>{t("Upstream model")}</span>
-                      <Input
-                        list={datalistId}
-                        value={model.upstreamModel ?? ""}
-                        className="h-7 w-full font-mono text-xs"
-                        placeholder={t("model id (e.g. gpt-4o, claude-sonnet-4-6)")}
-                        onChange={(event) =>
-                          updateModel(index, {
-                            upstreamModel: event.currentTarget.value,
-                            capabilities: findModelOption(
-                              setting.options,
-                              event.currentTarget.value,
+                      <div className="relative">
+                        <Input
+                          value={model.upstreamModel ?? ""}
+                          className="h-7 w-full font-mono text-xs"
+                          placeholder={t("model id (e.g. gpt-4o, claude-sonnet-4-6)")}
+                          onFocus={() => setOpenPickerIndex(index)}
+                          onBlur={() => {
+                            window.setTimeout(() => {
+                              setOpenPickerIndex((current) =>
+                                current === index ? null : current,
+                              );
+                            }, 120);
+                          }}
+                          onChange={(event) =>
+                            updateModel(
+                              index,
+                              upstreamModelPatch(
+                                setting.options,
+                                event.currentTarget.value,
+                                model.capabilities,
+                              ),
                             )
-                              ? undefined
-                              : model.capabilities,
-                          })
-                        }
-                      />
-                    </label>
+                          }
+                        />
+                        {openPickerIndex === index && suggestions.length > 0 && (
+                          <div
+                            role="listbox"
+                            className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg"
+                          >
+                            {suggestions.map((candidate) => (
+                              <button
+                                key={candidate.id}
+                                type="button"
+                                role="option"
+                                className="grid w-full min-w-0 gap-1 rounded px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                                onMouseDown={(event) => {
+                                  event.preventDefault();
+                                  updateModel(
+                                    index,
+                                    upstreamModelPatch(
+                                      setting.options,
+                                      candidate.id,
+                                      model.capabilities,
+                                    ),
+                                  );
+                                  setOpenPickerIndex(null);
+                                }}
+                              >
+                                <span className="flex min-w-0 items-baseline gap-2">
+                                  <span className="truncate font-mono text-xs text-foreground">
+                                    {candidate.id}
+                                  </span>
+                                  {candidate.label && candidate.label !== candidate.id && (
+                                    <span className="truncate text-[11px] text-muted-foreground">
+                                      {candidate.label}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="truncate text-[11px] text-muted-foreground">
+                                  {modelContextText(candidate, t)}
+                                </span>
+                                <span className="truncate text-[11px] text-muted-foreground">
+                                  {inputCapabilityText(candidate.capabilities, t)}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -916,6 +959,20 @@ function bridgeModelOptions(
   return options;
 }
 
+function modelOptionSuggestions(options: ModelDef[], model: string): ModelDef[] {
+  const query = cleanModelId(model).toLowerCase();
+  const filtered = query
+    ? options.filter((option) => modelOptionMatches(option, query))
+    : options;
+  return filtered.slice(0, 8);
+}
+
+function modelOptionMatches(option: ModelDef, query: string): boolean {
+  return [option.id, option.label ?? "", ...(option.aliases ?? [])].some((value) =>
+    value.toLowerCase().includes(query),
+  );
+}
+
 function findModelOption(options: ModelDef[], model: string): ModelDef | null {
   const modelId = cleanModelId(model);
   if (!modelId) return null;
@@ -964,14 +1021,6 @@ function updateCapability(
   };
 }
 
-function modelOptionDatalistLabel(
-  option: ModelDef,
-  t: (key: string, values?: Record<string, string | number | null | undefined>) => string,
-): string {
-  const label = option.label && option.label !== option.id ? option.label : option.id;
-  return `${label} · ${modelMetadataText(option, t)}`;
-}
-
 function modelMetadataText(
   option: ModelDef | null,
   t: (key: string, values?: Record<string, string | number | null | undefined>) => string,
@@ -979,18 +1028,34 @@ function modelMetadataText(
 ): string {
   if (!option) {
     const parts = [t("Custom model metadata")];
-    const customCapabilities = capabilityLabels(preference?.capabilities, t);
-    if (customCapabilities.length > 0) parts.push(customCapabilities.join(", "));
+    parts.push(inputCapabilityText(preference?.capabilities, t));
     return parts.join(" · ");
   }
-  const parts = [
-    option.context_window
-      ? t("{{count}} context", { count: formatContextWindow(option.context_window) })
-      : t("Context unknown"),
-  ];
-  const capabilities = capabilityLabels(option.capabilities, t);
-  if (capabilities.length > 0) parts.push(capabilities.join(", "));
+  const parts = [modelContextText(option, t)];
+  parts.push(inputCapabilityText(option.capabilities, t));
   return parts.join(" · ");
+}
+
+function upstreamModelPatch(
+  options: ModelDef[],
+  upstreamModel: string,
+  currentCapabilities: ProfileBridgeModelPreference["capabilities"],
+): ProfileBridgeModelPreference {
+  return {
+    upstreamModel,
+    capabilities: findModelOption(options, upstreamModel)
+      ? undefined
+      : currentCapabilities,
+  };
+}
+
+function modelContextText(
+  option: ModelDef,
+  t: (key: string, values?: Record<string, string | number | null | undefined>) => string,
+): string {
+  return option.context_window
+    ? t("{{count}} context", { count: formatContextWindow(option.context_window) })
+    : t("Context unknown");
 }
 
 function capabilityLabels(
@@ -1001,6 +1066,15 @@ function capabilityLabels(
   if (capabilities?.image_input) labels.push(t("images"));
   if (capabilities?.file_input) labels.push(t("files"));
   return labels;
+}
+
+function inputCapabilityText(
+  capabilities: ModelDef["capabilities"] | ProfileBridgeModelPreference["capabilities"],
+  t: (key: string, values?: Record<string, string | number | null | undefined>) => string,
+): string {
+  return t("Input: {{inputs}}", {
+    inputs: [t("text"), ...capabilityLabels(capabilities, t)].join(", "),
+  });
 }
 
 function formatContextWindow(value: number): string {

@@ -328,7 +328,7 @@ export function ProfilePanel({
                         </div>
                         {summary.bridge && (
                           <div className="mt-0.5">
-                            <BridgeBadge />
+                            <BridgeBadge label={summary.bridgeLabel} />
                           </div>
                         )}
                         <div

@@ -48,11 +48,18 @@ export const zhCNLaunch: Record<string, string> = {
   "Desktop app": "桌面应用",
   "Workspace and sessions are selected inside the desktop app.":
     "工作区和会话在桌面应用里选择。",
+  "For Anthropic profiles, Claude Desktop opens the local bridge automatically on launch.":
+    "对于 Anthropic 配置，启动 Claude Desktop 时会自动打开本地 bridge。",
   "Claude Desktop profile launch requires Developer Mode. Enable it in Claude Desktop: Help -> Troubleshooting -> Enable Developer Mode.":
     "Claude Desktop 使用配置启动需要开启 Developer Mode：在 Claude Desktop 里打开 Help -> Troubleshooting -> Enable Developer Mode。",
   Direct: "直接",
   "API bridge on": "API 转接开启",
   "API bridge": "API 转接",
+  "Desktop bridge": "桌面本地转接",
+  "Desktop local bridge": "桌面本地转接",
+  "Desktop local bridge + API bridge": "桌面本地转接 + API 转接",
+  "Claude Desktop local bridge -> {{provider}} {{apiType}}":
+    "Claude Desktop 本地转接 -> {{provider}} {{apiType}}",
   "Set default": "设为默认",
   "Set app default": "设为应用默认",
   "Manual config": "手动配置",
@@ -266,6 +273,8 @@ export const zhCNLaunch: Record<string, string> = {
   "{{count}} context": "{{count}} 上下文",
   "Context unknown": "上下文未知",
   "Custom model metadata": "自定义模型，metadata 未知",
+  "Input: {{inputs}}": "输入：{{inputs}}",
+  text: "文本",
   images: "图片",
   files: "文件",
   "Agent sees {{model}}": "Agent 看到 {{model}}",

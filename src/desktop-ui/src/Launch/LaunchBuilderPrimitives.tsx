@@ -484,12 +484,12 @@ export function DefaultBadge() {
   );
 }
 
-export function BridgeBadge() {
+export function BridgeBadge({ label }: { label?: string }) {
   const { t } = useI18n();
   return (
     <span className="inline-flex items-center gap-1 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
       <Plug className="h-3 w-3" />
-      {t("API bridge on")}
+      {label ?? t("API bridge on")}
     </span>
   );
 }

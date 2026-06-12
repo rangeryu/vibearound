@@ -220,6 +220,30 @@ export function profileSummary(
       prefs.profileConnections,
       agentConnectionDef(agentId),
     );
+    if (isDesktopBridgeAgent(agentId) && resolved.status !== "unsupported") {
+      const bridgeEnabled = resolved.status === "via_bridge";
+      const targetApiType =
+        bridgeEnabled && resolved.selected.targetApiType
+          ? resolved.selected.targetApiType
+          : resolved.selectedApiType;
+      return {
+        title: profile.label,
+        detail: profile.providerLabel,
+        bridge: true,
+        bridgeLabel: bridgeEnabled
+          ? t("Desktop bridge")
+          : t("Desktop bridge on launch"),
+        route: t(
+          bridgeEnabled
+            ? "Claude Desktop local bridge -> {{provider}} {{apiType}}"
+            : "Claude Desktop local bridge opens on launch -> {{provider}} {{apiType}}",
+          {
+            provider: profile.providerLabel,
+            apiType: apiTypeProtocolDisplayLabel(targetApiType),
+          },
+        ),
+      };
+    }
     if (resolved.status === "via_bridge" && resolved.selected.targetApiType) {
       return {
         title: profile.label,
@@ -279,6 +303,10 @@ export function agentConnectionDef(agentId: string): ConnectionAgentDef {
 
 export function isBridgeAgent(agentId: string): boolean {
   return PROXY_AGENTS.has(agentId);
+}
+
+export function isDesktopBridgeAgent(agentId: string): boolean {
+  return agentId === "claude-desktop";
 }
 
 export function connectionAgentId(agentId: string): ConnectionAgentId | null {
