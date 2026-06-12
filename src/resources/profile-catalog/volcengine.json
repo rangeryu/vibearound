@@ -122,28 +122,46 @@
       "models": [
         {
           "id": "ark-code-latest",
-          "label": "Ark Code Latest"
+          "label": "Ark Code Latest",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-code",
-          "label": "Doubao Seed 2.0 Code"
+          "label": "Doubao Seed 2.0 Code",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-pro",
-          "label": "Doubao Seed 2.0 Pro"
+          "label": "Doubao Seed 2.0 Pro",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-lite",
-          "label": "Doubao Seed 2.0 Lite"
+          "label": "Doubao Seed 2.0 Lite",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "doubao-seed-code",
-          "label": "Doubao Seed Code"
+          "label": "Doubao Seed Code",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "minimax-latest",
           "label": "MiniMax Latest",
-          "aliases": ["minimax-m2.7"]
+          "aliases": ["minimax-m2.7"],
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5.1",
@@ -151,7 +169,10 @@
         },
         {
           "id": "deepseek-v3.2",
-          "label": "DeepSeek V3.2"
+          "label": "DeepSeek V3.2",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "deepseek-v4-flash",
@@ -163,7 +184,10 @@
         },
         {
           "id": "kimi-k2.6",
-          "label": "Kimi K2.6"
+          "label": "Kimi K2.6",
+          "capabilities": {
+            "image_input": true
+          }
         }
       ],
       "auth_modes": [
@@ -198,27 +222,45 @@
       "models": [
         {
           "id": "ark-code-latest",
-          "label": "Ark Code Latest"
+          "label": "Ark Code Latest",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-code",
-          "label": "Doubao Seed 2.0 Code"
+          "label": "Doubao Seed 2.0 Code",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-pro",
-          "label": "Doubao Seed 2.0 Pro"
+          "label": "Doubao Seed 2.0 Pro",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-lite",
-          "label": "Doubao Seed 2.0 Lite"
+          "label": "Doubao Seed 2.0 Lite",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-mini",
-          "label": "Doubao Seed 2.0 Mini"
+          "label": "Doubao Seed 2.0 Mini",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "minimax-m2.7",
-          "label": "MiniMax M2.7"
+          "label": "MiniMax M2.7",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5.1",
@@ -226,7 +268,10 @@
         },
         {
           "id": "deepseek-v3.2",
-          "label": "DeepSeek V3.2"
+          "label": "DeepSeek V3.2",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "deepseek-v4-flash",
@@ -238,7 +283,10 @@
         },
         {
           "id": "kimi-k2.6",
-          "label": "Kimi K2.6"
+          "label": "Kimi K2.6",
+          "capabilities": {
+            "image_input": true
+          }
         }
       ],
       "auth_modes": [
@@ -295,7 +343,8 @@
           "aliases": ["doubao-seed-2-0-code"],
           "context_window": 256000,
           "capabilities": {
-            "image_input": true
+            "image_input": true,
+            "file_input": true
           }
         },
         {
@@ -304,7 +353,8 @@
           "aliases": ["doubao-seed-2-0-pro"],
           "context_window": 256000,
           "capabilities": {
-            "image_input": true
+            "image_input": true,
+            "file_input": true
           }
         },
         {
@@ -313,7 +363,8 @@
           "aliases": ["doubao-seed-2-0-lite"],
           "context_window": 256000,
           "capabilities": {
-            "image_input": true
+            "image_input": true,
+            "file_input": true
           }
         },
         {
@@ -322,7 +373,8 @@
           "aliases": ["doubao-seed-2-0-mini"],
           "context_window": 256000,
           "capabilities": {
-            "image_input": true
+            "image_input": true,
+            "file_input": true
           }
         },
         {
@@ -414,7 +466,8 @@
           "aliases": ["doubao-seed-2-0-code"],
           "context_window": 256000,
           "capabilities": {
-            "image_input": true
+            "image_input": true,
+            "file_input": true
           }
         },
         {
@@ -423,7 +476,8 @@
           "aliases": ["doubao-seed-2-0-pro"],
           "context_window": 256000,
           "capabilities": {
-            "image_input": true
+            "image_input": true,
+            "file_input": true
           }
         },
         {
@@ -432,7 +486,8 @@
           "aliases": ["doubao-seed-2-0-lite"],
           "context_window": 256000,
           "capabilities": {
-            "image_input": true
+            "image_input": true,
+            "file_input": true
           }
         },
         {
@@ -441,7 +496,8 @@
           "aliases": ["doubao-seed-2-0-mini"],
           "context_window": 256000,
           "capabilities": {
-            "image_input": true
+            "image_input": true,
+            "file_input": true
           }
         },
         {
@@ -511,28 +567,52 @@
       "models": [
         {
           "id": "ark-code-latest",
-          "label": "Ark Code Latest"
+          "label": "Ark Code Latest",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-code",
-          "label": "Doubao Seed 2.0 Code"
+          "label": "Doubao Seed 2.0 Code",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-pro",
-          "label": "Doubao Seed 2.0 Pro"
+          "label": "Doubao Seed 2.0 Pro",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-lite",
-          "label": "Doubao Seed 2.0 Lite"
+          "label": "Doubao Seed 2.0 Lite",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "doubao-seed-code",
-          "label": "Doubao Seed Code"
+          "label": "Doubao Seed Code",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "minimax-latest",
           "label": "MiniMax Latest",
-          "aliases": ["minimax-m2.7"]
+          "aliases": ["minimax-m2.7"],
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "glm-5.1",
@@ -540,7 +620,11 @@
         },
         {
           "id": "deepseek-v3.2",
-          "label": "DeepSeek V3.2"
+          "label": "DeepSeek V3.2",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "deepseek-v4-flash",
@@ -552,7 +636,11 @@
         },
         {
           "id": "kimi-k2.6",
-          "label": "Kimi K2.6"
+          "label": "Kimi K2.6",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         }
       ],
       "auth_modes": [
@@ -594,27 +682,51 @@
       "models": [
         {
           "id": "ark-code-latest",
-          "label": "Ark Code Latest"
+          "label": "Ark Code Latest",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-code",
-          "label": "Doubao Seed 2.0 Code"
+          "label": "Doubao Seed 2.0 Code",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-pro",
-          "label": "Doubao Seed 2.0 Pro"
+          "label": "Doubao Seed 2.0 Pro",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-lite",
-          "label": "Doubao Seed 2.0 Lite"
+          "label": "Doubao Seed 2.0 Lite",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "doubao-seed-2.0-mini",
-          "label": "Doubao Seed 2.0 Mini"
+          "label": "Doubao Seed 2.0 Mini",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "minimax-m2.7",
-          "label": "MiniMax M2.7"
+          "label": "MiniMax M2.7",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "glm-5.1",
@@ -622,7 +734,11 @@
         },
         {
           "id": "deepseek-v3.2",
-          "label": "DeepSeek V3.2"
+          "label": "DeepSeek V3.2",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         },
         {
           "id": "deepseek-v4-flash",
@@ -634,7 +750,11 @@
         },
         {
           "id": "kimi-k2.6",
-          "label": "Kimi K2.6"
+          "label": "Kimi K2.6",
+          "capabilities": {
+            "image_input": true,
+            "file_input": true
+          }
         }
       ],
       "auth_modes": [

@@ -314,10 +314,12 @@ fn bridge_route_carries_model_list() {
                         agent_state::ProfileBridgeModelPreference {
                             upstream_model: Some("gpt-real".to_string()),
                             fake_model_id: Some("gpt-fake".to_string()),
+                            capabilities: Default::default(),
                         },
                         agent_state::ProfileBridgeModelPreference {
                             upstream_model: Some("provider-extra".to_string()),
                             fake_model_id: None,
+                            capabilities: Default::default(),
                         },
                     ],
                     ..Default::default()
@@ -337,10 +339,12 @@ fn bridge_route_carries_model_list() {
             ProfileBridgeModelRoute {
                 upstream_model: "gpt-real".to_string(),
                 agent_model: "gpt-fake".to_string(),
+                capabilities: Default::default(),
             },
             ProfileBridgeModelRoute {
                 upstream_model: "provider-extra".to_string(),
                 agent_model: "provider-extra".to_string(),
+                capabilities: Default::default(),
             },
         ]
     );

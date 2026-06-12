@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
+use crate::profiles::catalog::ContentCapabilities;
 use crate::{auth, config, resources};
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
@@ -103,6 +104,10 @@ pub struct ProfileBridgeModelPreference {
     /// Optional model id exposed to the agent for this entry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fake_model_id: Option<String>,
+    /// Optional manual input capability overrides for custom or newly released
+    /// upstream models that are not yet represented in the provider catalog.
+    #[serde(default, skip_serializing_if = "ContentCapabilities::is_empty")]
+    pub capabilities: ContentCapabilities,
 }
 
 pub type ProfileConnectionPreferences =

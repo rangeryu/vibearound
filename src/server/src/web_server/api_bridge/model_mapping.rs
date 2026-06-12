@@ -1,10 +1,12 @@
 use common::agent_state;
+use common::profiles::catalog::ContentCapabilities;
 use common::profiles::{catalog, connections, schema::ProfileDef};
 
 #[derive(Debug, Clone)]
 pub(super) struct BridgeModelMapping {
     pub(super) upstream_model: String,
     pub(super) agent_model: String,
+    pub(super) capabilities: ContentCapabilities,
 }
 
 pub(super) fn bridge_route_preference(
@@ -43,6 +45,7 @@ pub(super) fn bridge_model_mapping(
             return Some(BridgeModelMapping {
                 upstream_model: route.upstream_model.clone(),
                 agent_model: route.agent_model.clone(),
+                capabilities: route.capabilities.clone(),
             });
         }
         let upstream_model = canonical_model(profile, target_api_type, &requested_agent_model)
@@ -50,6 +53,7 @@ pub(super) fn bridge_model_mapping(
         return Some(BridgeModelMapping {
             upstream_model,
             agent_model: requested_agent_model,
+            capabilities: ContentCapabilities::default(),
         });
     }
 
@@ -57,6 +61,7 @@ pub(super) fn bridge_model_mapping(
     Some(BridgeModelMapping {
         upstream_model: route.upstream_model,
         agent_model: route.agent_model,
+        capabilities: route.capabilities,
     })
 }
 
@@ -200,6 +205,7 @@ mod tests {
             models: vec![agent_state::ProfileBridgeModelPreference {
                 upstream_model: Some("deepseek-v4-pro".to_string()),
                 fake_model_id: Some("opus-4.7[1m]".to_string()),
+                capabilities: Default::default(),
             }],
             headers: BTreeMap::new(),
         };

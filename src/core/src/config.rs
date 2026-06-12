@@ -38,6 +38,35 @@ pub fn data_dir() -> PathBuf {
     home_dir().join(".vibearound")
 }
 
+pub fn startkit_toolchain_mode_from_settings_str(contents: &str) -> String {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(contents) else {
+        return default_startkit_toolchain_mode();
+    };
+    startkit_toolchain_mode_from_settings_value(&json)
+}
+
+pub fn startkit_toolchain_mode_from_settings_value(json: &serde_json::Value) -> String {
+    match json
+        .get("startkit")
+        .and_then(|value| value.get("toolchain_mode"))
+        .and_then(serde_json::Value::as_str)
+    {
+        Some("managed") => "managed".to_string(),
+        _ => default_startkit_toolchain_mode(),
+    }
+}
+
+pub fn read_startkit_toolchain_mode() -> String {
+    let path = data_dir().join("settings.json");
+    std::fs::read_to_string(path)
+        .map(|contents| startkit_toolchain_mode_from_settings_str(&contents))
+        .unwrap_or_else(|_| default_startkit_toolchain_mode())
+}
+
+fn default_startkit_toolchain_mode() -> String {
+    "system".to_string()
+}
+
 /// Runtime state directory for append-only stores and other non-config data.
 pub fn state_dir() -> PathBuf {
     data_dir().join("state")
@@ -750,6 +779,34 @@ mod tests {
             "vibearound-config-{name}-{}-{nonce}",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn startkit_toolchain_mode_defaults_to_system() {
+        assert_eq!(startkit_toolchain_mode_from_settings_str("{}"), "system");
+        assert_eq!(
+            startkit_toolchain_mode_from_settings_str(r#"{ "startkit": {} }"#),
+            "system"
+        );
+        assert_eq!(
+            startkit_toolchain_mode_from_settings_str(
+                r#"{ "startkit": { "toolchain_mode": "system" } }"#,
+            ),
+            "system"
+        );
+        assert_eq!(
+            startkit_toolchain_mode_from_settings_str(
+                r#"{ "startkit": { "toolchain_mode": "managed" } }"#,
+            ),
+            "managed"
+        );
+        assert_eq!(
+            startkit_toolchain_mode_from_settings_str(
+                r#"{ "startkit": { "toolchain_mode": "auto" } }"#,
+            ),
+            "system"
+        );
+        assert_eq!(startkit_toolchain_mode_from_settings_str("{"), "system");
     }
 
     #[test]

@@ -15,6 +15,7 @@ import { resolveProfileConnection } from "./connections";
 import {
   agentConnectionDef,
   apiTypeProtocolDisplayLabel,
+  isDesktopBridgeAgent,
   isBridgeAgent,
 } from "./launchModel";
 import type { ProfileSummary } from "./types";
@@ -25,6 +26,7 @@ export interface LaunchProfileSummary {
   title: string;
   detail: string;
   bridge: boolean;
+  bridgeLabel?: string;
   route: string;
 }
 
@@ -275,15 +277,23 @@ export function ProfileInfoPanel({
   const launchTarget = profile?.launchTargets.find(
     (target) => target.id === agentId,
   );
+  const desktopBridge = isDesktopBridgeAgent(agentId);
   const bridgeStatus = selectedConnection
-    ? selectedConnection.status === "via_bridge"
-      ? t("API bridge on")
-      : selectedConnection.status === "native"
-        ? t("Native")
-        : t("Unsupported")
+    ? desktopBridge
+      ? selectedConnection.status === "unsupported"
+        ? t("Unsupported")
+        : selectedConnection.status === "via_bridge"
+          ? t("Desktop local bridge + API bridge")
+          : t("Desktop local bridge")
+      : selectedConnection.status === "via_bridge"
+        ? t("API bridge on")
+        : selectedConnection.status === "native"
+          ? t("Native")
+          : t("Unsupported")
     : t("Disabled");
   const modelEntries =
-    selectedConnection?.status === "via_bridge"
+    selectedConnection &&
+    (selectedConnection.status === "via_bridge" || desktopBridge)
       ? selectedConnection.models.filter((model) => model.upstreamModel)
       : [];
 
@@ -309,7 +319,7 @@ export function ProfileInfoPanel({
             <span className="truncate text-[13px] font-semibold">
               {summary.title}
             </span>
-            {summary.bridge && <BridgeBadge />}
+            {summary.bridge && <BridgeBadge label={summary.bridgeLabel} />}
           </span>
           <span className="block truncate text-[11px] text-muted-foreground">
             {profile ? profile.providerLabel : summary.detail}
@@ -331,7 +341,7 @@ export function ProfileInfoPanel({
               {summary.route}
             </span>
           </ProfileInfoRow>
-          <ProfileInfoRow label={t("API bridge")}>
+          <ProfileInfoRow label={desktopBridge ? t("Desktop bridge") : t("API bridge")}>
             <span className="truncate">{bridgeStatus}</span>
           </ProfileInfoRow>
           {selectedConnection && (

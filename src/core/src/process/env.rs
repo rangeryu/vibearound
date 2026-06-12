@@ -372,17 +372,7 @@ pub fn set_path_value(env: &mut HashMap<String, String>, value: String) {
 }
 
 fn vibearound_managed_paths_enabled() -> bool {
-    let path = crate::config::data_dir().join("settings.json");
-    let Ok(contents) = std::fs::read_to_string(path) else {
-        return true;
-    };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) else {
-        return true;
-    };
-    json.get("startkit")
-        .and_then(|value| value.get("toolchain_mode"))
-        .and_then(serde_json::Value::as_str)
-        != Some("system")
+    crate::config::read_startkit_toolchain_mode() == "managed"
 }
 
 /// Probe the user's login shell for their full environment.

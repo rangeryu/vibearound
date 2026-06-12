@@ -489,7 +489,6 @@ mod tests {
         let entries = all();
         assert!(entries.len() >= 5);
         assert!(get("moonshot").is_some());
-        assert!(get("kimi").is_some());
         assert!(get("dashscope").is_some());
         assert!(get("openrouter").is_some());
         assert!(get("minimax").is_some());
@@ -520,36 +519,21 @@ mod tests {
             kimi_coding.headers.get("User-Agent").map(String::as_str),
             Some("claude-code/0.1.0")
         );
-    }
+        let kimi_code = model(kimi_coding, "kimi-for-coding");
+        assert!(kimi_code.capabilities.image_input);
+        assert!(!kimi_code.capabilities.file_input);
 
-    #[test]
-    fn kimi_coding_sets_coding_endpoint_headers() {
-        let provider = get("kimi").expect("kimi must exist");
-        assert!(provider.hidden_from_picker);
-        let endpoint = provider
-            .endpoints
-            .iter()
-            .find(|e| e.api_type == "anthropic")
-            .expect("kimi anthropic endpoint");
-        assert_eq!(endpoint.default_base_url, "https://api.kimi.com/coding/");
-        assert_eq!(
-            endpoint.headers.get("User-Agent").map(String::as_str),
-            Some("claude-code/0.1.0")
-        );
-        assert_eq!(
-            endpoint.models.first().map(|model| model.id.as_str()),
-            Some("kimi-for-coding")
-        );
-        let coding_model = model(endpoint, "kimi-for-coding");
-        assert_eq!(
-            coding_model.label.as_deref(),
-            Some("Kimi Code (powered by Kimi K2.6)")
-        );
-        assert_eq!(coding_model.context_window, Some(256_000));
-        assert_eq!(
-            model(endpoint, "k2p5").label.as_deref(),
-            Some("Kimi Code (legacy K2.5)")
-        );
+        let anthropic =
+            find_endpoint(provider, "anthropic", None).expect("moonshot anthropic endpoint");
+        let kimi_k26 = model(anthropic, "kimi-k2.6");
+        assert!(kimi_k26.capabilities.image_input);
+        assert!(!kimi_k26.capabilities.file_input);
+
+        let openai_chat =
+            find_endpoint(provider, "openai-chat", None).expect("moonshot chat endpoint");
+        let kimi_k26 = model(openai_chat, "kimi-k2.6");
+        assert!(kimi_k26.capabilities.image_input);
+        assert!(!kimi_k26.capabilities.file_input);
     }
 
     #[test]
@@ -708,7 +692,13 @@ mod tests {
             }
             assert!(model(endpoint, "qwen3.6-plus").capabilities.image_input);
             assert!(model(endpoint, "qwen3.6-flash").capabilities.image_input);
+            assert!(model(endpoint, "deepseek-v4-pro").capabilities.image_input);
+            assert!(model(endpoint, "MiniMax-M2.5").capabilities.image_input);
+            assert!(model(endpoint, "glm-5").capabilities.image_input);
             assert!(model(endpoint, "kimi-k2.6").capabilities.image_input);
+            assert!(!model(endpoint, "glm-5.1").capabilities.image_input);
+            assert!(!model(endpoint, "qwen3.6-plus").capabilities.file_input);
+            assert!(!model(endpoint, "kimi-k2.6").capabilities.file_input);
         }
     }
 
@@ -732,6 +722,24 @@ mod tests {
             Some("{{api_key}}")
         );
         assert!(render.env.get("ANTHROPIC_API_KEY").is_none());
+
+        for endpoint in [global, cn] {
+            let m3 = model(endpoint, "MiniMax-M3");
+            assert_eq!(m3.context_window, Some(1_000_000));
+            assert!(m3.capabilities.image_input);
+            assert!(!m3.capabilities.file_input);
+            assert!(!model(endpoint, "MiniMax-M2.7").capabilities.image_input);
+        }
+
+        for endpoint_id in ["global", "cn"] {
+            let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("minimax chat endpoint {endpoint_id}"));
+            let m3 = model(endpoint, "MiniMax-M3");
+            assert_eq!(m3.context_window, Some(1_000_000));
+            assert!(m3.capabilities.image_input);
+            assert!(!m3.capabilities.file_input);
+            assert!(!model(endpoint, "MiniMax-M2.7").capabilities.image_input);
+        }
     }
 
     #[test]
@@ -836,6 +844,21 @@ mod tests {
             model(ark_anthropic, "doubao-seed-code").id,
             "doubao-seed-code-preview-251028"
         );
+        assert!(
+            model(ark_anthropic, "doubao-seed-2-0-pro")
+                .capabilities
+                .image_input
+        );
+        assert!(
+            !model(ark_anthropic, "doubao-seed-2-0-pro")
+                .capabilities
+                .file_input
+        );
+        assert!(
+            !model(ark_anthropic, "deepseek-v4-pro")
+                .capabilities
+                .image_input
+        );
 
         for api_type in ["openai-responses", "openai-chat"] {
             let endpoint =
@@ -851,10 +874,17 @@ mod tests {
             assert_eq!(code.id, "doubao-seed-code-preview-251028");
             assert_eq!(code.context_window, Some(256_000));
             assert!(code.capabilities.image_input);
+            assert!(!code.capabilities.file_input);
+
+            let seed2_pro = model(endpoint, "doubao-seed-2-0-pro");
+            assert!(seed2_pro.capabilities.image_input);
+            assert!(seed2_pro.capabilities.file_input);
 
             let deepseek = model(endpoint, "deepseek-v4-pro");
             assert_eq!(deepseek.id, "deepseek-v4-pro-260425");
             assert_eq!(deepseek.context_window, Some(1_024_000));
+            assert!(!deepseek.capabilities.image_input);
+            assert!(!deepseek.capabilities.file_input);
         }
 
         let coding_anthropic =
@@ -869,6 +899,22 @@ mod tests {
         assert!(find_model(coding_anthropic, "doubao-seed-2.0-code").is_some());
         assert!(find_model(coding_anthropic, "minimax-latest").is_some());
         assert!(find_model(coding_anthropic, "doubao-seed-code-preview-251028").is_none());
+        assert!(
+            model(coding_anthropic, "ark-code-latest")
+                .capabilities
+                .image_input
+        );
+        assert!(
+            !model(coding_anthropic, "ark-code-latest")
+                .capabilities
+                .file_input
+        );
+        assert!(!model(coding_anthropic, "glm-5.1").capabilities.image_input);
+        assert!(
+            !model(coding_anthropic, "deepseek-v4-pro")
+                .capabilities
+                .image_input
+        );
 
         let coding_chat =
             find_endpoint(provider, "openai-chat", Some("coding-plan")).expect("coding chat");
@@ -878,6 +924,28 @@ mod tests {
         );
         assert!(!coding_chat.append_v1_path);
         assert!(find_model(coding_chat, "kimi-k2.6").is_some());
+        assert!(
+            model(coding_chat, "ark-code-latest")
+                .capabilities
+                .image_input
+        );
+        assert!(
+            model(coding_chat, "ark-code-latest")
+                .capabilities
+                .file_input
+        );
+        assert!(
+            model(coding_chat, "doubao-seed-2.0-code")
+                .capabilities
+                .file_input
+        );
+        assert!(model(coding_chat, "kimi-k2.6").capabilities.file_input);
+        assert!(!model(coding_chat, "glm-5.1").capabilities.image_input);
+        assert!(
+            !model(coding_chat, "deepseek-v4-pro")
+                .capabilities
+                .file_input
+        );
 
         let agent_anthropic =
             find_endpoint(provider, "anthropic", Some("agent-plan")).expect("agent anthropic");
@@ -890,6 +958,16 @@ mod tests {
         assert!(find_model(agent_anthropic, "ark-code-latest").is_some());
         assert!(find_model(agent_anthropic, "doubao-seed-2.0-mini").is_some());
         assert!(find_model(agent_anthropic, "doubao-seedance-2.0").is_none());
+        assert!(
+            model(agent_anthropic, "doubao-seed-2.0-mini")
+                .capabilities
+                .image_input
+        );
+        assert!(
+            !model(agent_anthropic, "doubao-seed-2.0-mini")
+                .capabilities
+                .file_input
+        );
 
         let agent_chat =
             find_endpoint(provider, "openai-chat", Some("agent-plan")).expect("agent chat");
@@ -899,6 +977,17 @@ mod tests {
         );
         assert!(!agent_chat.append_v1_path);
         assert!(find_model(agent_chat, "minimax-m2.7").is_some());
+        assert!(
+            model(agent_chat, "doubao-seed-2.0-mini")
+                .capabilities
+                .image_input
+        );
+        assert!(
+            model(agent_chat, "doubao-seed-2.0-mini")
+                .capabilities
+                .file_input
+        );
+        assert!(!model(agent_chat, "glm-5.1").capabilities.image_input);
     }
 
     #[test]
@@ -940,6 +1029,18 @@ mod tests {
             assert_eq!(model(endpoint, "glm-5").context_window, Some(200_000));
             assert_eq!(model(endpoint, "glm-4.7").context_window, Some(200_000));
             assert_eq!(model(endpoint, "glm-4.5").context_window, Some(128_000));
+            assert!(!model(endpoint, "glm-5").capabilities.image_input);
+            assert!(!model(endpoint, "glm-4.7").capabilities.image_input);
+        }
+
+        for endpoint_id in ["global", "cn"] {
+            let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("zai chat endpoint {endpoint_id}"));
+            let vision = model(endpoint, "glm-5v-turbo");
+            assert!(vision.capabilities.image_input);
+            assert!(vision.capabilities.file_input);
+            assert!(model(endpoint, "glm-4.6v").capabilities.image_input);
+            assert!(model(endpoint, "glm-4.5v").capabilities.file_input);
         }
     }
 

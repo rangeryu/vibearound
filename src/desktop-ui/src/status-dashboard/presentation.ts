@@ -64,6 +64,50 @@ export function agentDisplayName(agent: AgentRuntime, t: Translate) {
   return agent.agent_title ?? agent.agent_name ?? agent.cli_kind ?? t("Coding Agent");
 }
 
+export function agentProfileDisplay(agent: AgentRuntime): string | null {
+  return agent.profile_label?.trim() || agent.profile?.trim() || null;
+}
+
+export function agentRuntimeTitle(agent: AgentRuntime, t: Translate): string {
+  const name = agentDisplayName(agent, t);
+  const profile = agentProfileDisplay(agent);
+  return profile ? `${name} -> ${profile}` : name;
+}
+
+export function agentAttachedApps(agent: AgentRuntime): string[] {
+  const routes =
+    agent.attached_routes.length > 0
+      ? agent.attached_routes
+      : agent.channel_kind && agent.channel_kind !== "workspace"
+        ? [
+            {
+              route_key: agent.route_key,
+              channel_kind: agent.channel_kind,
+              chat_id: agent.chat_id,
+            },
+          ]
+        : [];
+  const seen = new Set<string>();
+  const apps: string[] = [];
+  for (const route of routes) {
+    const app = channelDisplayName(route.channel_kind);
+    const label = route.chat_id ? `${app} · ${shortId(route.chat_id)}` : app;
+    if (seen.has(label)) continue;
+    seen.add(label);
+    apps.push(label);
+  }
+  return apps;
+}
+
+export function agentAttachedFrom(
+  agent: AgentRuntime,
+  t: Translate,
+): string {
+  const apps = agentAttachedApps(agent);
+  if (apps.length > 0) return apps.join(", ");
+  return t("Launch");
+}
+
 export function capitalize(value: string): string {
   return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
 }

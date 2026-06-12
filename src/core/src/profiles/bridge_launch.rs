@@ -150,6 +150,7 @@ fn resolve_bridge_settings(
                 .filter(|model| !model.is_empty())
                 .map(ToOwned::to_owned)
                 .unwrap_or_else(|| requested_upstream_model.clone()),
+            capabilities: catalog::ContentCapabilities::default(),
         }]
     } else {
         bridge_models.to_vec()
@@ -196,7 +197,8 @@ fn bridge_model_settings(
     let model_context_window = model_def.and_then(|model_def| model_def.context_window);
     let model_capabilities = model_def
         .map(|model_def| endpoint.capabilities.content.merge(&model_def.capabilities))
-        .unwrap_or_else(|| endpoint.capabilities.content.clone());
+        .unwrap_or_else(|| endpoint.capabilities.content.clone())
+        .merge(&route.capabilities);
     Some(BridgeModelSettings {
         agent_model,
         model_context_window,
@@ -644,10 +646,12 @@ mod tests {
                 ProfileBridgeModelRoute {
                     upstream_model: "qwen3.6-plus".to_string(),
                     agent_model: "gpt-5.1-codex".to_string(),
+                    capabilities: Default::default(),
                 },
                 ProfileBridgeModelRoute {
                     upstream_model: "qwen3.5-plus".to_string(),
                     agent_model: "gpt-5.1-mini".to_string(),
+                    capabilities: Default::default(),
                 },
             ],
         )
@@ -671,6 +675,74 @@ mod tests {
         assert_eq!(models[0]["context_window"], 1_000_000);
         assert_eq!(models[1]["slug"], "gpt-5.1-mini");
         assert_eq!(models[1]["context_window"], 1_000_000);
+    }
+
+    #[test]
+    fn codex_bridge_launch_uses_custom_model_capability_overrides() {
+        let profile = dashscope_profile();
+        let rendered = render_bridge_launch(
+            &profile,
+            "codex",
+            "launch-test",
+            "openai-responses",
+            "openai-chat",
+            Some("qwen3.6-plus"),
+            None,
+            &[ProfileBridgeModelRoute {
+                upstream_model: "provider-new-vision-model".to_string(),
+                agent_model: "gpt-custom-vision".to_string(),
+                capabilities: catalog::ContentCapabilities {
+                    image_input: true,
+                    file_input: true,
+                },
+            }],
+        )
+        .expect("codex bridge launch renders");
+
+        let catalog_file = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path == "codex-model-catalog-launch-test.json")
+            .expect("codex model catalog file");
+        let catalog: Value =
+            serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
+        let model = &catalog["models"][0];
+
+        assert_eq!(model["slug"], "gpt-custom-vision");
+        assert_eq!(
+            model["input_modalities"],
+            serde_json::json!(["text", "image", "file"])
+        );
+    }
+
+    #[test]
+    fn codex_bridge_launch_model_catalog_includes_file_modality() {
+        let profile = gemini_profile();
+
+        let rendered = render_bridge_launch(
+            &profile,
+            "codex",
+            "launch-test",
+            "openai-responses",
+            "openai-chat",
+            None,
+            None,
+            &[],
+        )
+        .expect("codex bridge launch renders");
+        let catalog_file = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path == "codex-model-catalog-launch-test.json")
+            .expect("codex model catalog file");
+        let catalog: Value =
+            serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
+        let model = &catalog["models"][0];
+
+        assert_eq!(
+            model["input_modalities"],
+            serde_json::json!(["text", "image", "file"])
+        );
     }
 
     #[test]
@@ -711,6 +783,32 @@ mod tests {
             .contains(&("GEMINI_MODEL".to_string(), "gemini-2.5-flash".to_string())));
         assert!(rendered.settings_files.is_empty());
         assert!(rendered.config_env.is_none());
+    }
+
+    #[test]
+    fn pi_bridge_launch_extension_includes_file_input() {
+        let profile = gemini_profile();
+
+        let rendered = render_bridge_launch(
+            &profile,
+            "pi",
+            "launch-test",
+            "openai-responses",
+            "openai-chat",
+            None,
+            Some("gpt-5.1"),
+            &[],
+        )
+        .expect("pi bridge launch renders");
+        let extension = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path.ends_with(".mjs"))
+            .expect("pi extension file");
+
+        assert!(extension.contents.contains(
+            "\"input\": [\n        \"text\",\n        \"image\",\n        \"file\"\n      ]"
+        ));
     }
 
     #[test]

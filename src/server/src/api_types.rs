@@ -23,6 +23,7 @@ use serde::Serialize;
 
 use common::previews::PreviewSnapshot;
 use common::pty::{PtyRunState, PtyTool};
+use common::routing::RouteKey;
 
 /// Per-agent display info returned under `AgentsConfig.agents`.
 ///
@@ -356,12 +357,36 @@ pub enum ChatEvent {
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize)]
+pub struct AgentAttachedRoute {
+    pub route_key: String,
+    pub channel_kind: String,
+    pub chat_id: String,
+}
+
+impl From<&RouteKey> for AgentAttachedRoute {
+    fn from(route: &RouteKey) -> Self {
+        Self {
+            route_key: route.as_key(),
+            channel_kind: route.channel_kind.clone(),
+            chat_id: route.chat_id.clone(),
+        }
+    }
+}
+
+pub fn agent_profile_label(profile_id: Option<&str>) -> Option<String> {
+    let profile = common::profiles::schema::load(profile_id?)?;
+    Some(common::profiles::normalize_legacy_profile(profile).label)
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct AgentRuntime {
     pub route_key: String,
     pub channel_kind: String,
     pub chat_id: String,
+    pub attached_routes: Vec<AgentAttachedRoute>,
     pub cli_kind: Option<String>,
     pub profile: Option<String>,
+    pub profile_label: Option<String>,
     pub session_id: Option<String>,
     pub workspace: Option<String>,
     pub busy: bool,

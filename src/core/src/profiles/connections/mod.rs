@@ -29,6 +29,7 @@ pub struct ProfileAgentRoute {
 pub struct ProfileBridgeModelRoute {
     pub upstream_model: String,
     pub agent_model: String,
+    pub capabilities: catalog::ContentCapabilities,
 }
 
 #[derive(Debug, Clone)]
@@ -218,7 +219,13 @@ pub fn bridge_model_routes(
                 .filter_map(|entry| {
                     let upstream = clean_optional_string(entry.upstream_model.as_deref())?;
                     let fake = clean_optional_string(entry.fake_model_id.as_deref());
-                    Some(model_route(profile, target_api_type, upstream, fake))
+                    Some(model_route(
+                        profile,
+                        target_api_type,
+                        upstream,
+                        fake,
+                        entry.capabilities.clone(),
+                    ))
                 })
                 .collect(),
         );
@@ -231,19 +238,40 @@ pub fn bridge_model_routes(
     if legacy_fake.is_some() {
         return legacy_upstream
             .or_else(|| default_model(profile, target_api_type))
-            .map(|upstream| vec![model_route(profile, target_api_type, upstream, legacy_fake)])
+            .map(|upstream| {
+                vec![model_route(
+                    profile,
+                    target_api_type,
+                    upstream,
+                    legacy_fake,
+                    catalog::ContentCapabilities::default(),
+                )]
+            })
             .unwrap_or_default();
     }
 
     let preferred = legacy_upstream.or_else(|| default_model(profile, target_api_type));
     let mut routes = Vec::new();
     if let Some(preferred) = preferred {
-        routes.push(model_route(profile, target_api_type, preferred, None));
+        routes.push(model_route(
+            profile,
+            target_api_type,
+            preferred,
+            None,
+            catalog::ContentCapabilities::default(),
+        ));
     }
     if let Some(endpoint) = endpoint_for(profile, target_api_type) {
         routes.extend(endpoint.models.iter().filter_map(|model| {
-            clean_optional_string(Some(model.id.as_str()))
-                .map(|id| model_route(profile, target_api_type, id, None))
+            clean_optional_string(Some(model.id.as_str())).map(|id| {
+                model_route(
+                    profile,
+                    target_api_type,
+                    id,
+                    None,
+                    catalog::ContentCapabilities::default(),
+                )
+            })
         }));
     }
     dedupe_model_routes(routes)
@@ -286,6 +314,7 @@ fn sanitize_bridge_models(
         out.push(agent_state::ProfileBridgeModelPreference {
             upstream_model: Some(upstream_model),
             fake_model_id: clean_optional_string(entry.fake_model_id.as_deref()),
+            capabilities: entry.capabilities,
         });
     }
     out
@@ -296,6 +325,7 @@ fn model_route(
     target_api_type: &str,
     upstream_model: String,
     fake_model_id: Option<String>,
+    capabilities: catalog::ContentCapabilities,
 ) -> ProfileBridgeModelRoute {
     let requested_upstream_model = upstream_model.trim().to_string();
     let upstream_model = canonical_model(profile, target_api_type, &requested_upstream_model)
@@ -307,6 +337,7 @@ fn model_route(
     ProfileBridgeModelRoute {
         upstream_model,
         agent_model,
+        capabilities,
     }
 }
 

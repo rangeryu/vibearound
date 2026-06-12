@@ -166,12 +166,20 @@ async fn build_agents_runtime(
                 st.thread_id.to_string(),
             ),
         };
+        let profile = st.host_binding.profile_id.clone();
+        let profile_label = crate::api_types::agent_profile_label(profile.as_deref());
         out.push(crate::api_types::AgentRuntime {
             route_key,
             channel_kind,
             chat_id,
+            attached_routes: entry
+                .attached_routes
+                .iter()
+                .map(crate::api_types::AgentAttachedRoute::from)
+                .collect(),
             cli_kind: Some(st.host_binding.agent_id.clone()),
-            profile: st.host_binding.profile_id.clone(),
+            profile,
+            profile_label,
             session_id: st.session_id,
             workspace: Some(st.workspace.to_string_lossy().to_string()),
             busy: st.busy,

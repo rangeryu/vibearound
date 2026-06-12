@@ -973,6 +973,7 @@ export default function Onboarding() {
           onConfigChange={updateChannelConfig}
           onVerboseChange={updateChannelVerbose}
           onInstallPlugin={installPlugin}
+          onInstallLocation={setToolchainMode}
           onStartAuth={startAuth}
           onCancelAuth={cancelAuth}
           onNgrokToken={setNgrokToken}

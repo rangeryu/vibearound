@@ -873,7 +873,9 @@ export function AgentLaunchBuilder({
                       {selectedAgentIsDirectOnly && (
                         <div className="mt-1 space-y-0.5">
                           <p className="max-w-[520px] text-[11px] leading-4 text-muted-foreground">
-                            {t("Workspace and sessions are selected inside the desktop app.")}
+                            {agentId === "claude-desktop" && profileChoice.kind === "profile"
+                              ? t("For Anthropic profiles, Claude Desktop opens the local bridge automatically on launch.")
+                              : t("Workspace and sessions are selected inside the desktop app.")}
                           </p>
                           {showClaudeDesktopDeveloperModeHint && (
                             <p className="max-w-[640px] text-[11px] leading-4 text-muted-foreground">

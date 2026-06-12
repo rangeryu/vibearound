@@ -685,7 +685,7 @@ mod tests {
         for profile in [
             anthropic_profile("deepseek", None, "deepseek-v4-pro"),
             anthropic_profile("dashscope", Some("coding-plan"), "qwen3.6-plus"),
-            anthropic_profile("kimi", None, "kimi-for-coding"),
+            anthropic_profile("moonshot", Some("kimi-coding"), "kimi-for-coding"),
         ] {
             let provider = catalog::get(&profile.provider).expect("provider exists");
             let rendered =
@@ -717,7 +717,7 @@ mod tests {
                     .find(|(key, _)| key == "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
                     .map(|(_, value)| value.as_str()),
                 Some(match profile.provider.as_str() {
-                    "kimi" => "256000",
+                    "moonshot" => "256000",
                     _ => "1000000",
                 })
             );
@@ -776,6 +776,28 @@ mod tests {
         assert_eq!(
             model["input_modalities"],
             serde_json::json!(["text", "image"])
+        );
+    }
+
+    #[test]
+    fn codex_launch_model_catalog_includes_file_modality() {
+        let profile = openai_chat_profile("gemini", Some("gemini-api"), "gemini-2.5-flash");
+        let provider = catalog::get(&profile.provider).expect("provider exists");
+
+        let rendered =
+            render(&profile, "openai-chat", "codex", provider).expect("codex profile renders");
+        let catalog_file = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path.starts_with("codex-model-catalog-"))
+            .expect("codex model catalog file");
+        let catalog: Value =
+            serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
+        let model = &catalog["models"][0];
+
+        assert_eq!(
+            model["input_modalities"],
+            serde_json::json!(["text", "image", "file"])
         );
     }
 
@@ -844,6 +866,23 @@ mod tests {
         assert!(extension.contents.contains("\"contextWindow\": 1000000"));
         assert!(extension.contents.contains("\"maxTokens\": 16384"));
         assert!(extension.contents.contains("\"image\""));
+    }
+
+    #[test]
+    fn pi_launch_extension_includes_file_input() {
+        let profile = openai_chat_profile("gemini", Some("gemini-api"), "gemini-2.5-flash");
+        let provider = catalog::get(&profile.provider).expect("provider exists");
+
+        let rendered = render(&profile, "openai-chat", "pi", provider).expect("pi profile renders");
+        let extension = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path.ends_with(".mjs"))
+            .expect("pi extension file");
+
+        assert!(extension.contents.contains(
+            "\"input\": [\n        \"text\",\n        \"image\",\n        \"file\"\n      ]"
+        ));
     }
 
     #[test]
