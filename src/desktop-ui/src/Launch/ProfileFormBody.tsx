@@ -1,6 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 
-import { CheckCircle2, Eye, EyeOff, Globe, Loader2, LogIn } from "lucide-react";
+import {
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  FileText,
+  Globe,
+  Image as ImageIcon,
+  Loader2,
+  LogIn,
+} from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
@@ -46,6 +55,7 @@ import type {
   AuthMode,
   CatalogEntry,
   FieldDef,
+  ModelDef,
 } from "./types";
 import type { ProviderSettings } from "./types";
 import { apiTypeLabel, apiTypeShort } from "./types";
@@ -291,6 +301,12 @@ export function FormBody({
                 if (!ep) return null;
                 const ov = overrides[apiType] ?? {};
                 const endpointOptions = endpointsForApiType(provider, apiType);
+                const selectedModel =
+                  ov.model?.trim() || ep.models[0]?.id || "";
+                const selectedModelOption = findModelOption(
+                  ep.models,
+                  selectedModel,
+                );
                 return (
                   <div
                     key={apiType}
@@ -304,6 +320,14 @@ export function FormBody({
                         · {t(apiTypeLabel(apiType))}
                       </span>
                     </div>
+                    {selectedModel && !requiresProfileModel(provider, ep) && (
+                      <ModelMetadataRow
+                        label={t("Default model")}
+                        model={selectedModel}
+                        option={selectedModelOption}
+                        endpoint={ep}
+                      />
+                    )}
                     {!usesEndpointGroups && endpointOptions.length > 1 && (
                       <FieldRow label={t("Endpoint type")}>
                         <Select
@@ -406,6 +430,14 @@ export function FormBody({
                           placeholder={t("model id (e.g. gpt-4o, claude-sonnet-4-6)")}
                           className={MONO_INPUT_CLASS}
                         />
+                        {selectedModel && (
+                          <ModelMetadataRow
+                            label={t("Selected model")}
+                            model={selectedModel}
+                            option={selectedModelOption}
+                            endpoint={ep}
+                          />
+                        )}
                       </FieldRow>
                     )}
                     {canOverrideInputSupport(provider, ep) && (
@@ -529,6 +561,79 @@ function EndpointGroupField({
       </Select>
     </FieldRow>
   );
+}
+
+function ModelMetadataRow({
+  label,
+  model,
+  option,
+  endpoint,
+}: {
+  label: string;
+  model: string;
+  option: ModelDef | null;
+  endpoint: CatalogEntry["endpoints"][number];
+}) {
+  const { t } = useI18n();
+  const capabilities = mergedModelCapabilities(endpoint, option);
+  return (
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+      <span className="font-medium text-foreground">{label}</span>
+      <span className="max-w-full truncate rounded bg-muted px-1.5 py-0.5 font-mono">
+        {model}
+      </span>
+      <span className="rounded bg-muted px-1.5 py-0.5">
+        {option?.context_window
+          ? t("{{count}} context", { count: formatContextWindow(option.context_window) })
+          : option
+            ? t("Context unknown")
+            : t("Custom model metadata")}
+      </span>
+      {capabilities.image_input && (
+        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
+          <ImageIcon className="h-3 w-3" />
+          {t("images")}
+        </span>
+      )}
+      {capabilities.file_input && (
+        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
+          <FileText className="h-3 w-3" />
+          {t("files")}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function findModelOption(models: ModelDef[], model: string): ModelDef | null {
+  const modelId = model.trim();
+  if (!modelId) return null;
+  return (
+    models.find(
+      (option) =>
+        option.id === modelId || (option.aliases ?? []).some((alias) => alias === modelId),
+    ) ?? null
+  );
+}
+
+function mergedModelCapabilities(
+  endpoint: CatalogEntry["endpoints"][number],
+  option: ModelDef | null,
+) {
+  return {
+    image_input:
+      !!endpoint.capabilities?.content?.image_input ||
+      !!option?.capabilities?.image_input,
+    file_input:
+      !!endpoint.capabilities?.content?.file_input ||
+      !!option?.capabilities?.file_input,
+  };
+}
+
+function formatContextWindow(value: number): string {
+  if (value >= 1_000_000) return `${Math.round(value / 1_000_000)}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
+  return String(value);
 }
 
 function GoogleOAuthField({

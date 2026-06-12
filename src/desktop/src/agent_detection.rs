@@ -179,21 +179,7 @@ pub fn preferred_candidate_for_toolchain_mode(
 
 #[cfg_attr(test, allow(dead_code))]
 pub fn configured_toolchain_mode() -> String {
-    let path = common::config::data_dir().join("settings.json");
-    let Ok(contents) = std::fs::read_to_string(path) else {
-        return "managed".to_string();
-    };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) else {
-        return "managed".to_string();
-    };
-    match json
-        .get("startkit")
-        .and_then(|value| value.get("toolchain_mode"))
-        .and_then(serde_json::Value::as_str)
-    {
-        Some("system") => "system".to_string(),
-        _ => "managed".to_string(),
-    }
+    common::config::read_startkit_toolchain_mode()
 }
 
 pub fn source_command_template(agent_id: &str, source: &str, action: &str) -> Option<String> {

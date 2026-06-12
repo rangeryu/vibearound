@@ -46,14 +46,27 @@ impl From<MediaSanitization> for ContentSanitization {
     }
 }
 
+#[cfg(test)]
 pub(super) fn sanitize_request_content(
     profile: &ProfileDef,
     target_api_type: &str,
     request: &mut UniversalRequest,
 ) -> ContentSanitization {
+    sanitize_request_content_with_capabilities(profile, target_api_type, request, None)
+}
+
+pub(super) fn sanitize_request_content_with_capabilities(
+    profile: &ProfileDef,
+    target_api_type: &str,
+    request: &mut UniversalRequest,
+    capability_overrides: Option<&ContentCapabilities>,
+) -> ContentSanitization {
     let configured_model = configured_model(profile, target_api_type);
     let model = request.model.as_deref().or(configured_model.as_deref());
-    let capabilities = resolve_content_capabilities(profile, target_api_type, model);
+    let mut capabilities = resolve_content_capabilities(profile, target_api_type, model);
+    if let Some(overrides) = capability_overrides {
+        capabilities = capabilities.merge(overrides);
+    }
     let model_spec = resolved_model_spec(profile, model, capabilities);
     sanitize_unsupported_media(request, &model_spec).into()
 }
@@ -421,13 +434,13 @@ mod tests {
     #[test]
     fn suggests_compatible_models_from_same_endpoint() {
         let error = validate_request_content(
-            &profile("dashscope", "glm-5"),
+            &profile("dashscope", "glm-5.1"),
             "openai-chat",
-            &image_request("glm-5"),
+            &image_request("glm-5.1"),
         )
         .unwrap_err();
 
-        assert!(error.contains("Alibaba DashScope model 'glm-5'"));
+        assert!(error.contains("Alibaba DashScope model 'glm-5.1'"));
         assert!(error.contains("Compatible models for image input on this endpoint"));
         assert!(error.contains("qwen3.6-plus"));
         assert!(error.contains("qwen3.5-plus"));
@@ -450,6 +463,23 @@ mod tests {
 
         validate_request_content(&profile, "openai-chat", &image_request("my-vision-model"))
             .unwrap();
+    }
+
+    #[test]
+    fn bridge_model_capability_overrides_allow_custom_media() {
+        let mut request = image_request("provider-new-vision-model");
+        let result = sanitize_request_content_with_capabilities(
+            &profile("dashscope", "provider-new-vision-model"),
+            "openai-chat",
+            &mut request,
+            Some(&ContentCapabilities {
+                image_input: true,
+                file_input: false,
+            }),
+        );
+
+        assert!(!result.changed());
+        assert!(request_content_usage(&request).image_input);
     }
 
     #[test]

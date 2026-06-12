@@ -52,6 +52,7 @@ export interface ProfileBridgePreference {
 export interface ProfileBridgeModelPreference {
   upstreamModel?: string | null;
   fakeModelId?: string | null;
+  capabilities?: ContentCapabilities | null;
 }
 
 export type ProfileConnections = Record<

@@ -12,6 +12,14 @@
       "auth_header": true,
       "models": [
         {
+          "id": "MiniMax-M3",
+          "label": "MiniMax M3",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
           "id": "MiniMax-M2.7",
           "label": "MiniMax M2.7",
           "context_window": 204800
@@ -53,6 +61,14 @@
       "auth_header": true,
       "models": [
         {
+          "id": "MiniMax-M3",
+          "label": "MiniMax M3",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
           "id": "MiniMax-M2.7",
           "label": "MiniMax M2.7",
           "context_window": 204800
@@ -92,6 +108,14 @@
       "api_type": "openai-chat",
       "default_base_url": "https://api.minimax.io/v1",
       "models": [
+        {
+          "id": "MiniMax-M3",
+          "label": "MiniMax M3",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
         {
           "id": "MiniMax-M2.7",
           "label": "MiniMax M2.7",
@@ -139,6 +163,14 @@
       "api_type": "openai-chat",
       "default_base_url": "https://api.minimaxi.com/v1",
       "models": [
+        {
+          "id": "MiniMax-M3",
+          "label": "MiniMax M3",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
         {
           "id": "MiniMax-M2.7",
           "label": "MiniMax M2.7",

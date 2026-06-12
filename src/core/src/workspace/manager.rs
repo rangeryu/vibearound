@@ -365,12 +365,61 @@ impl WorkspaceThreadManager {
             .collect())
     }
 
+    pub async fn reset_thread_attachments_for_host_start(
+        &self,
+        thread_id: &WorkspaceThreadId,
+        current_route: Option<&RouteKey>,
+    ) -> anyhow::Result<()> {
+        let projection = self.attachment_projection().await?;
+        let routes = projection
+            .all()
+            .filter(|attachment| &attachment.thread_id == thread_id)
+            .map(|attachment| attachment.route.clone())
+            .collect::<Vec<_>>();
+        if routes.is_empty() && current_route.is_none() {
+            return Ok(());
+        }
+
+        for route in &routes {
+            self.attachment_store
+                .append(&RouteAttachmentEvent::detached(route.clone()))
+                .await
+                .context("append route detach for host start")?;
+            self.pending_selections.remove(route);
+        }
+
+        if let Some(route) = current_route {
+            let thread = self
+                .thread(thread_id)
+                .await?
+                .ok_or_else(|| anyhow!("thread {} not found", thread_id))?;
+            self.attachment_store
+                .append(&RouteAttachmentEvent::attached(
+                    route.clone(),
+                    thread.workspace_id,
+                    thread.id,
+                ))
+                .await
+                .context("append route attach for host start")?;
+        }
+
+        self.attachment_store
+            .compact()
+            .await
+            .context("compact route attachments after host start")?;
+        self.notify_change();
+        Ok(())
+    }
+
     pub async fn runtime_entries(&self) -> anyhow::Result<Vec<WorkspaceThreadRuntimeEntry>> {
         let thread_projection = self.thread_projection().await?;
         let attachment_projection = self.attachment_projection().await?;
-        let mut routes_by_thread: HashMap<WorkspaceThreadId, RouteKey> = HashMap::new();
+        let mut routes_by_thread: HashMap<WorkspaceThreadId, Vec<RouteKey>> = HashMap::new();
         for attachment in attachment_projection.all() {
-            routes_by_thread.insert(attachment.thread_id.clone(), attachment.route.clone());
+            routes_by_thread
+                .entry(attachment.thread_id.clone())
+                .or_default()
+                .push(attachment.route.clone());
         }
 
         let mut entries = Vec::new();
@@ -390,8 +439,14 @@ impl WorkspaceThreadManager {
             if !runtime_has_started_host(&state) {
                 continue;
             }
+            let mut attached_routes = routes_by_thread
+                .get(&thread.id)
+                .cloned()
+                .unwrap_or_default();
+            attached_routes.sort_by_key(|route| route.as_key());
             entries.push(WorkspaceThreadRuntimeEntry {
-                route: routes_by_thread.get(&thread.id).cloned(),
+                route: attached_routes.first().cloned(),
+                attached_routes,
                 first_user_prompt: thread.first_user_prompt.clone(),
                 created_at: thread.created_at.clone(),
                 updated_at: thread.updated_at.clone(),
@@ -704,6 +759,7 @@ impl WorkspaceThreadManager {
 #[derive(Debug, Clone)]
 pub struct WorkspaceThreadRuntimeEntry {
     pub route: Option<RouteKey>,
+    pub attached_routes: Vec<RouteKey>,
     pub state: ThreadRuntimeState,
     pub first_user_prompt: Option<String>,
     pub created_at: String,
@@ -875,6 +931,51 @@ mod tests {
             manager.thread(&thread_id).await.unwrap().unwrap().status,
             crate::workspace::threads::store::ThreadStatus::Open
         );
+    }
+
+    #[tokio::test]
+    async fn host_start_reset_clears_stale_attachments_without_becoming_exclusive() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let stale_route = RouteKey::new("qqbot", "chat-old");
+        let current_route = RouteKey::new("feishu", "chat-new");
+
+        let runtime = manager.resolve_route_runtime(&stale_route).await.unwrap();
+        let thread_id = runtime.state().await.thread_id;
+        manager
+            .attach_thread(&current_route, &thread_id)
+            .await
+            .unwrap();
+
+        manager
+            .reset_thread_attachments_for_host_start(&thread_id, Some(&current_route))
+            .await
+            .unwrap();
+
+        assert!(manager
+            .current_attachment(&stale_route)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            manager
+                .attached_routes_for_thread(&thread_id)
+                .await
+                .unwrap(),
+            vec![current_route.clone()]
+        );
+
+        manager
+            .attach_thread(&stale_route, &thread_id)
+            .await
+            .unwrap();
+        let mut routes = manager
+            .attached_routes_for_thread(&thread_id)
+            .await
+            .unwrap();
+        routes.sort_by_key(|route| route.as_key());
+
+        assert_eq!(routes, vec![current_route, stale_route]);
     }
 
     #[tokio::test]

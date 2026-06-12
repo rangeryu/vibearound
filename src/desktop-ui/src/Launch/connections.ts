@@ -261,6 +261,7 @@ export function cleanBridgeModels(
     .map((model) => ({
       upstreamModel: cleanModelId(model.upstreamModel),
       fakeModelId: cleanModelId(model.fakeModelId),
+      capabilities: cleanCapabilities(model.capabilities),
     }))
     .filter((model) => model.upstreamModel);
 }
@@ -268,6 +269,16 @@ export function cleanBridgeModels(
 function cleanModelId(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function cleanCapabilities(
+  capabilities: ProfileBridgeModelPreference["capabilities"],
+): ProfileBridgeModelPreference["capabilities"] {
+  if (!capabilities?.image_input && !capabilities?.file_input) return undefined;
+  return {
+    ...(capabilities.image_input ? { image_input: true } : {}),
+    ...(capabilities.file_input ? { file_input: true } : {}),
+  };
 }
 
 function selectedClientApiType(

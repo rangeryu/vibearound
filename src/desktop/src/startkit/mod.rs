@@ -176,7 +176,7 @@ fn default_source() -> String {
 }
 
 fn default_toolchain_mode() -> String {
-    "managed".to_string()
+    "system".to_string()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1799,7 +1799,7 @@ mod tests {
     }
 
     #[test]
-    fn startkit_choices_default_to_managed_toolchain() {
+    fn startkit_choices_default_to_system_toolchain() {
         let choices: StartkitChoices = serde_json::from_value(serde_json::json!({
             "agents": ["codex"],
             "tunnel": "none",
@@ -1808,7 +1808,7 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(choices.toolchain_mode, "managed");
+        assert_eq!(choices.toolchain_mode, "system");
         assert!(!choices.shell_path);
     }
 

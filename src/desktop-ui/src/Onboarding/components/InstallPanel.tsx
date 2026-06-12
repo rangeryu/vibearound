@@ -11,6 +11,7 @@ import { useI18n } from "@va/i18n";
 import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 import {
   groupSummary,
@@ -41,6 +42,7 @@ export function InstallPanel({
   tunnelProvider,
   pluginRegistry,
   discoveredPlugins,
+  onInstallLocation,
 }: {
   groupedReports: Array<{ id: string; reports: StartkitItemReport[] }>;
   reports: StartkitItemReport[];
@@ -53,6 +55,7 @@ export function InstallPanel({
   tunnelProvider: string;
   pluginRegistry: PluginRegistryEntry[];
   discoveredPlugins: DiscoveredChannelPlugin[];
+  onInstallLocation: (value: "managed" | "system") => void;
 }) {
   const { t } = useI18n();
   const [showDetails, setShowDetails] = useState(false);
@@ -90,6 +93,9 @@ export function InstallPanel({
   const headline = running
     ? installProgressLabel(installReports, t)
     : installHeadline({ scanning, running, complete, finalStatus, t });
+  const systemManagedBlocked =
+    choices.toolchainMode === "system" &&
+    installReports.some((report) => isSystemManagedBlockedReport(report));
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-4xl items-center py-4">
@@ -114,6 +120,23 @@ export function InstallPanel({
         {error && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             {error}
+          </div>
+        )}
+
+        {systemManagedBlocked && (
+          <div className="flex flex-col gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs text-amber-800 sm:flex-row sm:items-center sm:justify-between dark:text-amber-200">
+            <div className="min-w-0">
+              {t("System install location only uses tools already installed on this computer. To let VibeAround install Node.js and agent CLIs, switch the install location to VibeAround.")}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-amber-500/40 bg-background text-xs text-foreground hover:bg-amber-500/10"
+              onClick={() => onInstallLocation("managed")}
+            >
+              {t("Use VibeAround install location")}
+            </Button>
           </div>
         )}
 
@@ -184,6 +207,14 @@ export function InstallPanel({
         )}
       </div>
     </div>
+  );
+}
+
+function isSystemManagedBlockedReport(report: StartkitItemReport): boolean {
+  return (
+    report.status === "blocked" &&
+    report.message ===
+      "System-only mode is selected, so Startkit will not install a managed copy."
   );
 }
 

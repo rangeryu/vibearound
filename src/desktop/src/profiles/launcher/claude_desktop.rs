@@ -183,6 +183,7 @@ fn upsert_claude_bridge_agent_model_preference(
                 .push(agent_state::ProfileBridgeModelPreference {
                     upstream_model: Some(route.upstream_model.clone()),
                     fake_model_id: Some(agent_model),
+                    capabilities: Default::default(),
                 });
         }
         changed = true;
@@ -249,6 +250,7 @@ fn upsert_claude_bridge_agent_model_preference(
             .push(agent_state::ProfileBridgeModelPreference {
                 upstream_model: Some(route.upstream_model.clone()),
                 fake_model_id: Some(agent_model.clone()),
+                capabilities: Default::default(),
             });
         used_agent_models.push(agent_model);
         changed = true;
@@ -812,6 +814,7 @@ mod tests {
             &[connections::ProfileBridgeModelRoute {
                 upstream_model: "nvidia/nemotron".to_string(),
                 agent_model: "nvidia/nemotron".to_string(),
+                capabilities: Default::default(),
             }],
         );
 
@@ -838,6 +841,7 @@ mod tests {
                     models: vec![agent_state::ProfileBridgeModelPreference {
                         upstream_model: Some("deepseek-v4-pro".to_string()),
                         fake_model_id: Some("opus-4.7[1m]".to_string()),
+                        capabilities: Default::default(),
                     }],
                     ..Default::default()
                 },
@@ -853,6 +857,7 @@ mod tests {
             &[connections::ProfileBridgeModelRoute {
                 upstream_model: "deepseek-v4-pro".to_string(),
                 agent_model: "opus-4.7[1m]".to_string(),
+                capabilities: Default::default(),
             }],
         );
 
@@ -878,14 +883,17 @@ mod tests {
                         agent_state::ProfileBridgeModelPreference {
                             upstream_model: Some("gemini-2.5-flash".to_string()),
                             fake_model_id: None,
+                            capabilities: Default::default(),
                         },
                         agent_state::ProfileBridgeModelPreference {
                             upstream_model: Some("gemini-3.1-flash-lite".to_string()),
                             fake_model_id: None,
+                            capabilities: Default::default(),
                         },
                         agent_state::ProfileBridgeModelPreference {
                             upstream_model: Some("gemini-2.5-pro".to_string()),
                             fake_model_id: None,
+                            capabilities: Default::default(),
                         },
                     ],
                     ..Default::default()
@@ -903,14 +911,17 @@ mod tests {
                 connections::ProfileBridgeModelRoute {
                     upstream_model: "gemini-2.5-flash".to_string(),
                     agent_model: "gemini-2.5-flash".to_string(),
+                    capabilities: Default::default(),
                 },
                 connections::ProfileBridgeModelRoute {
                     upstream_model: "gemini-3.1-flash-lite".to_string(),
                     agent_model: "gemini-3.1-flash-lite".to_string(),
+                    capabilities: Default::default(),
                 },
                 connections::ProfileBridgeModelRoute {
                     upstream_model: "gemini-2.5-pro".to_string(),
                     agent_model: "gemini-2.5-pro".to_string(),
+                    capabilities: Default::default(),
                 },
             ],
         );

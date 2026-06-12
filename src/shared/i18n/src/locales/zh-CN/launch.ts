@@ -28,7 +28,7 @@ export const zhCNLaunch: Record<string, string> = {
     "使用所选配置、工作区和会话启动",
   "Selected profile is missing": "所选配置不存在",
   "No session to resume": "没有可恢复的会话",
-  "No launch agents enabled": "没有启用可启动的 agent",
+  "No launch agents enabled": "没有启用可启动的 Agent",
   "Loading launch settings": "正在读取启动设置",
   "Launch is already in progress": "正在启动中",
   "VibeAround default updated": "已更新 VibeAround 默认项",
@@ -42,17 +42,24 @@ export const zhCNLaunch: Record<string, string> = {
   "Reordering unavailable while launching": "启动中暂时不能排序",
   "No actions available": "没有可用操作",
   "Quick Launch will start a new session": "快速启动会开启新会话",
-  "Use existing CLI login": "使用 CLI 已有登录态",
-  "Native CLI login": "CLI 原生登录",
+  "Use existing CLI login": "使用 CLI 已登录账号",
+  "Native CLI login": "使用 CLI 原生登录",
   "Open desktop app": "打开桌面应用",
   "Desktop app": "桌面应用",
   "Workspace and sessions are selected inside the desktop app.":
     "工作区和会话在桌面应用里选择。",
+  "For Anthropic profiles, Claude Desktop opens the local bridge automatically on launch.":
+    "使用 Anthropic API 时，启动 Claude Desktop 会自动打开本地转接。",
   "Claude Desktop profile launch requires Developer Mode. Enable it in Claude Desktop: Help -> Troubleshooting -> Enable Developer Mode.":
     "Claude Desktop 使用配置启动需要开启 Developer Mode：在 Claude Desktop 里打开 Help -> Troubleshooting -> Enable Developer Mode。",
   Direct: "直接",
   "API bridge on": "API 转接开启",
   "API bridge": "API 转接",
+  "Desktop bridge": "桌面本地转接",
+  "Desktop local bridge": "桌面本地转接",
+  "Desktop local bridge + API bridge": "桌面本地转接 + API 转接",
+  "{{agent}} → {{provider}} {{apiType}}":
+    "{{agent}} → {{provider}} {{apiType}}",
   "Set default": "设为默认",
   "Set app default": "设为应用默认",
   "Manual config": "手动配置",
@@ -89,7 +96,7 @@ export const zhCNLaunch: Record<string, string> = {
   "Direct launch stays pinned above profiles":
     "直接启动固定显示在配置上方",
   "No profile — uses each CLI's existing login session":
-    "不使用配置，沿用各 CLI 已有登录会话",
+    "不使用配置，沿用各 CLI 已登录账号",
   "Use {{agent}} as Quick Launch default without a profile":
     "将 {{agent}} 设为不使用配置的快速启动默认项",
   "Edit profile · {{label}}": "编辑配置 · {{label}}",
@@ -98,7 +105,7 @@ export const zhCNLaunch: Record<string, string> = {
   "New profile · {{provider}}": "新建配置 · {{provider}}",
   "Configure a Quick Launch provider profile.": "配置快速启动的服务商凭据。",
   "The provider {{provider}} is no longer in the catalog. Form fell back to a custom endpoint — re-pick a provider via Back, or edit the URL/key and save.":
-    "服务商 {{provider}} 已不在 catalog 中。表单已回退到自定义 endpoint，你可以返回重新选择服务商，或编辑 URL/key 后保存。",
+    "服务商 {{provider}} 已不在内置目录中。表单已切换为自定义 endpoint，你可以返回重新选择服务商，或编辑 URL / key 后保存。",
   "Label is required": "必须填写名称",
   "Pick at least one API type": "至少选择一种 API 类型",
   "{{field}} is required": "必须填写 {{field}}",
@@ -117,28 +124,30 @@ export const zhCNLaunch: Record<string, string> = {
   "Model routes": "模型映射",
   Endpoint: "Endpoint",
   "Base URL": "Base URL",
-  "Leave blank to use the catalog default.": "留空则使用 catalog 默认值。",
+  "Leave blank to use the catalog default.": "留空则使用内置默认值。",
   "Required for custom endpoints.": "自定义 endpoint 必填。",
   "Required for Vertex AI; use the endpoint root ending in /endpoints/openapi.":
     "Vertex AI 必填；请使用以 /endpoints/openapi 结尾的 endpoint 根地址。",
   "Endpoint URL from the provider dashboard.":
-    "服务商控制台里的 endpoint URL。",
+    "服务商控制台中的 endpoint URL。",
   "Deployment name": "部署名称",
   Model: "模型",
+  "Default model": "默认模型",
+  "Selected model": "已选模型",
   "Select a model": "选择模型",
   "model id (e.g. gpt-4o, claude-sonnet-4-6)":
     "模型 id（例如 gpt-4o、claude-sonnet-4-6）",
   "Reasoning effort": "推理强度",
   "DeepSeek API bridge": "DeepSeek API 转接",
   "Thinking mode": "Thinking 模式",
-  "Replay reasoning content": "回放 reasoning content",
+  "Replay reasoning content": "回放 reasoning 内容",
   "Input support": "输入支持",
   Images: "图片",
   Files: "文件",
   "API kinds": "API 类型",
   "Endpoint type": "Endpoint 类型",
   "Select every API shape this endpoint supports.":
-    "选择这个 endpoint 支持的所有 API 形态。",
+    "选择这个 endpoint 支持的 API 类型。",
   "Use HTTP proxy": "使用 HTTP 代理",
   "Provider requests for this profile use the configured HTTP proxy when it is enabled.":
     "开启后，这个配置的服务商请求会使用设置中配置的 HTTP 代理。",
@@ -147,7 +156,7 @@ export const zhCNLaunch: Record<string, string> = {
   "Search providers": "搜索服务商",
   "Preset providers": "预设服务商",
   "No providers found. The catalog ships with the desktop binary; if you see this, the install is broken.":
-    "未找到服务商。Catalog 随桌面应用一起发布，如果看到这条消息，说明安装已损坏。",
+    "未找到服务商。内置目录会随桌面应用一起发布；如果看到这条消息，说明安装可能已损坏。",
   "No matching providers": "没有匹配的服务商",
   Custom: "自定义",
   "Custom endpoint": "自定义 endpoint",
@@ -264,9 +273,11 @@ export const zhCNLaunch: Record<string, string> = {
   "{{count}} context": "{{count}} 上下文",
   "Context unknown": "上下文未知",
   "Custom model metadata": "自定义模型，metadata 未知",
+  "Input: {{inputs}}": "输入：{{inputs}}",
+  text: "文本",
   images: "图片",
   files: "文件",
-  "Agent sees {{model}}": "Agent 看到 {{model}}",
+  "Agent sees {{model}}": "Agent 端模型 id： {{model}}",
   "Target model": "目标模型",
   "Select model": "选择模型",
   Headers: "请求头",
@@ -279,12 +290,12 @@ export const zhCNLaunch: Record<string, string> = {
   "Manual setup": "手动配置",
   "Click a value to copy.": "点击字段值即可复制。",
   "Use any non-empty API key value when the local API bridge is already running with a saved profile key.":
-    "本地 API 转接已使用保存的配置 key 运行时，API key 填任意非空值即可。",
+    "本地 API 转接已使用保存的配置 key 运行时，此处填写任意非空值即可。",
   Copied: "已复制",
   "Manual setting": "手动配置",
   "{{agent}} manual setting": "{{agent}} 手动配置",
   "Copy this snippet into the CLI config file yourself. VibeAround does not edit the file automatically.":
-    "把这段配置自行粘贴到 CLI 配置文件里。VibeAround 不会自动改写文件。",
+    "将这段配置手动粘贴到 CLI 配置文件中。VibeAround 不会自动修改该文件。",
   "Configuration file": "配置文件",
   "How to modify": "修改方法",
   "Open the Codex config file, then add this snippet or update the existing VibeAround profile block.":
@@ -292,11 +303,11 @@ export const zhCNLaunch: Record<string, string> = {
   "Open the OpenCode config file, then add or merge this provider block.":
     "打开 OpenCode 配置文件，然后添加或合并这段 provider 配置。",
   "The top-level profile line makes plain codex use this VibeAround profile by default.":
-    "顶层 profile 配置项会让直接运行 codex 时默认使用这个 VibeAround 配置。",
+    "直接运行 codex 时默认使用顶层 profile 配置。",
   "Paste this property inside the root JSON object of Claude settings.":
     "把这个属性粘贴到 Claude settings 的根 JSON 对象里。",
   "If env already exists, merge these keys into the existing env object instead of creating another env block.":
-    "如果已经有 env，请把这些 key 合并到已有 env 对象里，不要再创建第二个 env。",
+    "如果已经有 env，请将这些 key 合并到现有 env 中，不要创建第二个 env。",
   "Config snippet": "配置片段",
   "Codex config snippet": "Codex 配置片段",
   "OpenCode config snippet": "OpenCode 配置片段",

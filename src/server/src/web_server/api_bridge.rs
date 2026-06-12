@@ -22,7 +22,7 @@ mod stream;
 mod upstream;
 
 use completion::{translated_completion_response, UpstreamResponseTransform};
-use content_policy::{sanitize_request_content, ContentSanitization};
+use content_policy::{sanitize_request_content_with_capabilities, ContentSanitization};
 use model_mapping::{bridge_model_mapping, bridge_route_preference};
 use normalization::normalize_target_request;
 use passthrough::{buffered_passthrough_response, passthrough_response};
@@ -91,8 +91,12 @@ pub(super) async fn bridge_handler(
             .protocol
             .decode_agent_request(agent_request.clone())
         {
-            let sanitization =
-                sanitize_request_content(&upstream.profile, &target_api_type, &mut content_request);
+            let sanitization = sanitize_request_content_with_capabilities(
+                &upstream.profile,
+                &target_api_type,
+                &mut content_request,
+                model_mapping.as_ref().map(|mapping| &mapping.capabilities),
+            );
             log_content_sanitization(
                 &profile_id,
                 &target_api_type,
@@ -206,8 +210,12 @@ pub(super) async fn bridge_handler(
     if let Some(mapping) = &model_mapping {
         universal_request.model = Some(mapping.upstream_model.clone());
     }
-    let sanitization =
-        sanitize_request_content(&upstream.profile, &target_api_type, &mut universal_request);
+    let sanitization = sanitize_request_content_with_capabilities(
+        &upstream.profile,
+        &target_api_type,
+        &mut universal_request,
+        model_mapping.as_ref().map(|mapping| &mapping.capabilities),
+    );
     log_content_sanitization(
         &profile_id,
         &target_api_type,
@@ -363,8 +371,7 @@ pub(super) async fn models_handler(
     let data: Vec<_> = models
         .iter()
         .map(|model| {
-            let metadata =
-                bridge_model_metadata(&upstream.profile, &target_api_type, &model.upstream_model);
+            let metadata = bridge_model_metadata(&upstream.profile, &target_api_type, model);
             let mut input_modalities = vec!["text"];
             if metadata.image_input {
                 input_modalities.push("image");
@@ -555,7 +562,7 @@ struct BridgeModelMetadata {
 fn bridge_model_metadata(
     profile: &common::profiles::schema::ProfileDef,
     target_api_type: &str,
-    upstream_model: &str,
+    model: &connections::ProfileBridgeModelRoute,
 ) -> BridgeModelMetadata {
     let endpoint = catalog::get(&profile.provider).and_then(|provider| {
         let endpoint_id = profile
@@ -571,10 +578,11 @@ fn bridge_model_metadata(
             file_input: false,
         };
     };
-    let model_def = catalog::find_model(endpoint, upstream_model);
+    let model_def = catalog::find_model(endpoint, &model.upstream_model);
     let capabilities = model_def
         .map(|model_def| endpoint.capabilities.content.merge(&model_def.capabilities))
-        .unwrap_or_else(|| endpoint.capabilities.content.clone());
+        .unwrap_or_else(|| endpoint.capabilities.content.clone())
+        .merge(&model.capabilities);
     BridgeModelMetadata {
         context_window: model_def.and_then(|model_def| model_def.context_window),
         image_input: capabilities.image_input,

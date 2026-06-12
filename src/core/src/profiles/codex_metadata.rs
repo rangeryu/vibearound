@@ -61,6 +61,9 @@ fn input_modalities(spec: &CodexModelCatalogSpec<'_>) -> Value {
     if spec.capabilities.image_input {
         modalities.push(Value::String("image".to_string()));
     }
+    if spec.capabilities.file_input {
+        modalities.push(Value::String("file".to_string()));
+    }
     Value::Array(modalities)
 }
 

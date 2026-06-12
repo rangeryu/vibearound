@@ -32,11 +32,17 @@
         },
         {
           "id": "glm-5",
-          "label": "glm-5"
+          "label": "glm-5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5"
+          "label": "MiniMax-M2.5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3.5-plus",
@@ -48,19 +54,31 @@
         },
         {
           "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23"
+          "label": "qwen3-max-2026-01-23",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next"
+          "label": "qwen3-coder-next",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus"
+          "label": "qwen3-coder-plus",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-4.7",
-          "label": "glm-4.7"
+          "label": "glm-4.7",
+          "capabilities": {
+            "image_input": true
+          }
         }
       ],
       "auth_modes": [
@@ -114,11 +132,17 @@
         },
         {
           "id": "glm-5",
-          "label": "glm-5"
+          "label": "glm-5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5"
+          "label": "MiniMax-M2.5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3.5-plus",
@@ -130,19 +154,31 @@
         },
         {
           "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23"
+          "label": "qwen3-max-2026-01-23",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next"
+          "label": "qwen3-coder-next",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus"
+          "label": "qwen3-coder-plus",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-4.7",
-          "label": "glm-4.7"
+          "label": "glm-4.7",
+          "capabilities": {
+            "image_input": true
+          }
         }
       ],
       "auth_modes": [
@@ -198,11 +234,17 @@
         },
         {
           "id": "glm-5",
-          "label": "glm-5"
+          "label": "glm-5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5"
+          "label": "MiniMax-M2.5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3.5-plus",
@@ -214,19 +256,31 @@
         },
         {
           "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23"
+          "label": "qwen3-max-2026-01-23",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next"
+          "label": "qwen3-coder-next",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus"
+          "label": "qwen3-coder-plus",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-4.7",
-          "label": "glm-4.7"
+          "label": "glm-4.7",
+          "capabilities": {
+            "image_input": true
+          }
         }
       ],
       "auth_modes": [
@@ -289,11 +343,17 @@
         },
         {
           "id": "glm-5",
-          "label": "glm-5"
+          "label": "glm-5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5"
+          "label": "MiniMax-M2.5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3.5-plus",
@@ -305,19 +365,31 @@
         },
         {
           "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23"
+          "label": "qwen3-max-2026-01-23",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next"
+          "label": "qwen3-coder-next",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus"
+          "label": "qwen3-coder-plus",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-4.7",
-          "label": "glm-4.7"
+          "label": "glm-4.7",
+          "capabilities": {
+            "image_input": true
+          }
         }
       ],
       "auth_modes": [
@@ -365,7 +437,10 @@
         {
           "id": "qwen3.6-max-preview",
           "label": "qwen3.6-max-preview",
-          "context_window": 256000
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3.6-plus",
@@ -386,12 +461,18 @@
         {
           "id": "deepseek-v4-pro",
           "label": "deepseek-v4-pro",
-          "context_window": 1000000
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "deepseek-v4-flash",
           "label": "deepseek-v4-flash",
-          "context_window": 1000000
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5.1",
@@ -416,36 +497,60 @@
         },
         {
           "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23"
+          "label": "qwen3-max-2026-01-23",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next"
+          "label": "qwen3-coder-next",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus"
+          "label": "qwen3-coder-plus",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5",
-          "label": "glm-5"
+          "label": "glm-5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5"
+          "label": "MiniMax-M2.5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-4.7",
-          "label": "glm-4.7"
+          "label": "glm-4.7",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "kimi-k2.5",
           "label": "kimi-k2.5",
-          "context_window": 256000
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "deepseek-v3.2",
-          "label": "deepseek-v3.2"
+          "label": "deepseek-v3.2",
+          "capabilities": {
+            "image_input": true
+          }
         }
       ],
       "auth_modes": [
@@ -493,7 +598,10 @@
         {
           "id": "qwen3.6-max-preview",
           "label": "qwen3.6-max-preview",
-          "context_window": 256000
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3.6-plus",
@@ -514,12 +622,18 @@
         {
           "id": "deepseek-v4-pro",
           "label": "deepseek-v4-pro",
-          "context_window": 1000000
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "deepseek-v4-flash",
           "label": "deepseek-v4-flash",
-          "context_window": 1000000
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5.1",
@@ -544,36 +658,60 @@
         },
         {
           "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23"
+          "label": "qwen3-max-2026-01-23",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next"
+          "label": "qwen3-coder-next",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus"
+          "label": "qwen3-coder-plus",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-5",
-          "label": "glm-5"
+          "label": "glm-5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5"
+          "label": "MiniMax-M2.5",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "glm-4.7",
-          "label": "glm-4.7"
+          "label": "glm-4.7",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "kimi-k2.5",
           "label": "kimi-k2.5",
-          "context_window": 256000
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "deepseek-v3.2",
-          "label": "deepseek-v3.2"
+          "label": "deepseek-v3.2",
+          "capabilities": {
+            "image_input": true
+          }
         }
       ],
       "auth_modes": [

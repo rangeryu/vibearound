@@ -158,11 +158,14 @@ fn pi_extension_contents(config: &PiProviderLaunchConfig<'_>) -> anyhow::Result<
 }
 
 fn model_inputs(capabilities: &ContentCapabilities) -> Vec<&'static str> {
+    let mut inputs = vec!["text"];
     if capabilities.image_input {
-        vec!["text", "image"]
-    } else {
-        vec!["text"]
+        inputs.push("image");
     }
+    if capabilities.file_input {
+        inputs.push("file");
+    }
+    inputs
 }
 
 fn slug(input: &str) -> String {
