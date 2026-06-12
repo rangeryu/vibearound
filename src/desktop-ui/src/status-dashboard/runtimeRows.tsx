@@ -5,9 +5,8 @@ import type { AgentRuntime } from "../hooks/useAgentsRuntime";
 import type { ChannelRuntime } from "../hooks/useChannelsState";
 import type { TunnelRuntime } from "../hooks/useTunnelsState";
 import {
-  agentDisplayName,
   agentAttachedFrom,
-  basename,
+  agentRuntimeTitle,
   capitalize,
   channelDisplayName,
   channelPresentation,
@@ -71,15 +70,11 @@ export function AgentRuntimeRow({
 }) {
   const failed = Boolean(agent.failed);
   const tone: Tone = failed ? "danger" : agent.busy ? "busy" : "good";
-  const title = agentDisplayName(agent, t);
-  const subagentCount = agent.subagents.length + agent.multi_agent_turns.length;
+  const title = agentRuntimeTitle(agent, t);
   const attachedFrom = agentAttachedFrom(agent, t);
   const details = [
-    agent.cli_kind ?? null,
-    agent.workspace ? basename(agent.workspace) : null,
-    agent.session_id ? t("Session {{id}}", { id: shortId(agent.session_id) }) : null,
-    agent.agent_version ? `v${agent.agent_version}` : null,
-    subagentCount > 0 ? t("{{count}} subagents", { count: subagentCount }) : null,
+    agent.session_id ? t("sid {{id}}", { id: shortId(agent.session_id) }) : null,
+    agent.workspace ?? null,
     agent.failed,
   ].filter(Boolean);
 

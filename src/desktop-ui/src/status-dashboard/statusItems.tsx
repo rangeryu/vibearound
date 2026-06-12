@@ -8,6 +8,7 @@ import type { TunnelRuntime } from "../hooks/useTunnelsState";
 import {
   agentDisplayName,
   agentAttachedFrom,
+  agentProfileDisplay,
   basename,
   capitalize,
   channelDisplayName,
@@ -219,11 +220,13 @@ export function buildAgentStatusItems({
     const tone: Tone = failed ? "danger" : agent.busy ? "busy" : "good";
     const name = agentDisplayName(agent, t);
     const attachedFrom = agentAttachedFrom(agent, t);
+    const profile = agentProfileDisplay(agent);
     const details: RuntimeStatusItem["details"] = [
       { label: t("Type"), value: t("Coding Agent") },
       { label: t("Name"), value: name },
       { label: t("Status"), value: status },
       { label: t("Attached from"), value: attachedFrom },
+      ...(profile ? [{ label: t("Profile"), value: profile }] : []),
       { label: t("CLI"), value: agent.cli_kind ?? t("Unknown") },
       { label: t("Version"), value: agent.agent_version ?? t("Unknown") },
       {

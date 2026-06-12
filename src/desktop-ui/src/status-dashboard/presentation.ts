@@ -64,6 +64,16 @@ export function agentDisplayName(agent: AgentRuntime, t: Translate) {
   return agent.agent_title ?? agent.agent_name ?? agent.cli_kind ?? t("Coding Agent");
 }
 
+export function agentProfileDisplay(agent: AgentRuntime): string | null {
+  return agent.profile_label?.trim() || agent.profile?.trim() || null;
+}
+
+export function agentRuntimeTitle(agent: AgentRuntime, t: Translate): string {
+  const name = agentDisplayName(agent, t);
+  const profile = agentProfileDisplay(agent);
+  return profile ? `${name} -> ${profile}` : name;
+}
+
 export function agentAttachedApps(agent: AgentRuntime): string[] {
   const routes =
     agent.attached_routes.length > 0

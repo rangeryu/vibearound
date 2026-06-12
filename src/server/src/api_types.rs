@@ -373,6 +373,11 @@ impl From<&RouteKey> for AgentAttachedRoute {
     }
 }
 
+pub fn agent_profile_label(profile_id: Option<&str>) -> Option<String> {
+    let profile = common::profiles::schema::load(profile_id?)?;
+    Some(common::profiles::normalize_legacy_profile(profile).label)
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentRuntime {
     pub route_key: String,
@@ -381,6 +386,7 @@ pub struct AgentRuntime {
     pub attached_routes: Vec<AgentAttachedRoute>,
     pub cli_kind: Option<String>,
     pub profile: Option<String>,
+    pub profile_label: Option<String>,
     pub session_id: Option<String>,
     pub workspace: Option<String>,
     pub busy: bool,
