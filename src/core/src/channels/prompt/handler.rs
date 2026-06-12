@@ -280,6 +280,12 @@ pub async fn start_runtime_and_notify(
     force_session_ready: bool,
 ) -> acp::Result<()> {
     let before = runtime.state().await;
+    if before.initialize.is_none() {
+        workspace_threads
+            .reset_thread_attachments_for_host_start(&before.thread_id, Some(route))
+            .await
+            .map_err(internal_error)?;
+    }
     let handler = bridge_handler(workspace_threads, plugin_host, &before);
     let session_id = runtime.start(route, handler).await?;
     let after = runtime.state().await;

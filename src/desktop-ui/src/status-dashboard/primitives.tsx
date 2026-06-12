@@ -46,15 +46,18 @@ export function RuntimeRow({
   title,
   status,
   details,
+  secondaryDetails,
   actions,
 }: {
   tone: Tone;
   title: string;
   status: string;
   details: Array<string | null | undefined | false>;
+  secondaryDetails?: Array<string | null | undefined | false>;
   actions?: ReactNode;
 }) {
   const visibleDetails = details.filter(Boolean) as string[];
+  const visibleSecondaryDetails = (secondaryDetails ?? []).filter(Boolean) as string[];
 
   return (
     <div className="group flex min-h-[58px] items-center gap-3 rounded-md border border-border bg-background px-3 py-2 transition-colors hover:bg-accent/35">
@@ -69,6 +72,15 @@ export function RuntimeRow({
         {visibleDetails.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             {visibleDetails.map((detail, index) => (
+              <span key={`${detail}-${index}`} className="max-w-full truncate">
+                {detail}
+              </span>
+            ))}
+          </div>
+        )}
+        {visibleSecondaryDetails.length > 0 && (
+          <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            {visibleSecondaryDetails.map((detail, index) => (
               <span key={`${detail}-${index}`} className="max-w-full truncate">
                 {detail}
               </span>

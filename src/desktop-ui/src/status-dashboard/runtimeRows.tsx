@@ -6,6 +6,7 @@ import type { ChannelRuntime } from "../hooks/useChannelsState";
 import type { TunnelRuntime } from "../hooks/useTunnelsState";
 import {
   agentDisplayName,
+  agentAttachedFrom,
   basename,
   capitalize,
   channelDisplayName,
@@ -72,6 +73,7 @@ export function AgentRuntimeRow({
   const tone: Tone = failed ? "danger" : agent.busy ? "busy" : "good";
   const title = agentDisplayName(agent, t);
   const subagentCount = agent.subagents.length + agent.multi_agent_turns.length;
+  const attachedFrom = agentAttachedFrom(agent, t);
   const details = [
     agent.cli_kind ?? null,
     agent.workspace ? basename(agent.workspace) : null,
@@ -87,6 +89,9 @@ export function AgentRuntimeRow({
       title={title}
       status={failed ? t("Failed") : agent.busy ? t("Busy") : t("Idle")}
       details={details}
+      secondaryDetails={[
+        t("Attached from {{source}}", { source: attachedFrom }),
+      ]}
       actions={
         !failed && (
           <RuntimeIconButton title={t("Stop")} onClick={onKill} danger>

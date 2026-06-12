@@ -170,6 +170,11 @@ async fn build_agents_runtime(
             route_key,
             channel_kind,
             chat_id,
+            attached_routes: entry
+                .attached_routes
+                .iter()
+                .map(crate::api_types::AgentAttachedRoute::from)
+                .collect(),
             cli_kind: Some(st.host_binding.agent_id.clone()),
             profile: st.host_binding.profile_id.clone(),
             session_id: st.session_id,

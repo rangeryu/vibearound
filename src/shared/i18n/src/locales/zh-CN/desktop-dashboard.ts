@@ -133,6 +133,8 @@ export const zhCNDesktopDashboard: Record<string, string> = {
     "查看由启动页或聊天工具拉起的 Agent 运行实例。",
   "Agent sessions started by Launch or messaging apps.":
     "查看由启动页或聊天工具拉起的 Agent 会话。",
+  "Attached from": "来源",
+  "Attached from {{source}}": "来源：{{source}}",
   "Bot connectors and restart health.": "查看聊天机器人连接和重启状态。",
   "No active tunnel": "没有活跃隧道",
   "Remote access is off until a tunnel starts.":
