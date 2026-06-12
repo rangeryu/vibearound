@@ -7,21 +7,25 @@ mod web_server;
 
 pub use web_server::run_web_server;
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
-use tokio::sync::Notify;
-use tokio::task::JoinHandle;
+use tokio::sync::{mpsc, Notify};
+use tokio::task::{JoinHandle, JoinSet};
 
 use common::auth::{self, AuthToken};
-use common::channels::{handle_channel_input, ChannelManager, WebChannelManager};
+use common::channels::{handle_channel_input, ChannelInput, ChannelManager, WebChannelManager};
 use common::config;
 use common::plugins;
 use common::process::registry::{self as child_registry, ChildRegistry};
 use common::pty::{PtySessionManager, Registry, SessionId};
 use common::tunnels::{self, TunnelManager};
 use common::workspace::WorkspaceThreadManager;
+
+const CHANNEL_INPUT_WORKER_COUNT: usize = 64;
 
 /// Unified daemon that starts and manages all VibeAround services.
 /// Both the server binary and the desktop (Tauri) binary use this.
@@ -106,6 +110,15 @@ impl RunningDaemon {
         tunnels.clear();
         pty.clear();
     }
+}
+
+fn channel_input_shard(input: &ChannelInput, shard_count: usize) -> usize {
+    let Some(route) = input.route_key() else {
+        return 0;
+    };
+    let mut hasher = DefaultHasher::new();
+    route.hash(&mut hasher);
+    (hasher.finish() as usize) % shard_count.max(1)
 }
 
 impl ServerDaemon {
@@ -208,20 +221,35 @@ impl ServerDaemon {
         let channel_input_shutdown = Arc::new(Notify::new());
         let input_shutdown_for_task = Arc::clone(&channel_input_shutdown);
         let channel_input_handle = tokio::spawn(async move {
+            let mut workers = JoinSet::new();
+            let mut input_shards = Vec::with_capacity(CHANNEL_INPUT_WORKER_COUNT);
+            for _ in 0..CHANNEL_INPUT_WORKER_COUNT {
+                let (tx, mut rx) = mpsc::unbounded_channel::<ChannelInput>();
+                let workspace_thread_manager = Arc::clone(&manager_for_input);
+                let plugin_host = Arc::clone(&plugin_host_for_input);
+                workers.spawn(async move {
+                    while let Some(input) = rx.recv().await {
+                        handle_channel_input(&workspace_thread_manager, &plugin_host, input).await;
+                    }
+                });
+                input_shards.push(tx);
+            }
+
             loop {
                 tokio::select! {
                     biased;
                     _ = input_shutdown_for_task.notified() => break,
                     maybe = input_rx.recv() => {
                         let Some(input) = maybe else { break };
-                            let workspace_thread_manager = Arc::clone(&manager_for_input);
-                            let plugin_host = Arc::clone(&plugin_host_for_input);
-                            tokio::spawn(async move {
-                            handle_channel_input(&workspace_thread_manager, &plugin_host, input).await;
-                        });
+                        let shard = channel_input_shard(&input, input_shards.len());
+                        if input_shards[shard].send(input).is_err() {
+                            tracing::warn!(shard, "channel input worker stopped");
+                        }
                     }
                 }
             }
+            drop(input_shards);
+            workers.abort_all();
         });
 
         // 3. Channel plugins — supervised by ChannelMonitor (respawn on
