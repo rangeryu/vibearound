@@ -769,8 +769,11 @@ export default function Onboarding() {
   const hasBlockingReport = installReports.some((report) =>
     ["blocked", "error"].includes(report.status),
   );
+  const installCompletedSuccessfully =
+    startkit.complete &&
+    (startkit.finalStatus === "complete" || startkit.finalStatus === "needs_input");
   const canContinueFromInstall =
-    startkit.complete ||
+    installCompletedSuccessfully ||
     (hasScanned && !installReportsRunning && !hasRunnableInstallWork && !hasBlockingReport);
   const activeIndex = WIZARD_STEPS.findIndex((step) => step.id === activeStep);
 
@@ -881,6 +884,7 @@ export default function Onboarding() {
     hasRunnableInstallWork,
     hasScanned,
     hasBlockingReport,
+    installCompletedSuccessfully,
     installReports,
     installReportsRunning,
     enabledAgents,

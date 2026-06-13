@@ -680,8 +680,10 @@ async fn run_startkit_install<R: Runtime>(
         }
 
         let item = find_item(&manifest, item_id)?;
-        let report = if item.kind.as_deref() == Some("builtin_channel_plugins") {
-            run_channel_plugins_item(&app, item, &settings, &choices, &cancelled).await
+        let report = if item.kind.as_deref() == Some("builtin_agent_adapters") {
+            run_agent_adapters_item(&app, item, &choices, &cancelled).await
+        } else if item.kind.as_deref() == Some("builtin_channel_plugins") {
+            run_channel_plugins_item(&app, item, &choices, &cancelled).await
         } else {
             let progress =
                 |item: &StartkitItem, status: StartkitItemStatus, message: Option<String>| {
@@ -744,7 +746,6 @@ async fn run_startkit_install<R: Runtime>(
 async fn run_channel_plugins_item<R: Runtime>(
     app: &AppHandle<R>,
     item: &StartkitItem,
-    _settings: &Value,
     choices: &StartkitChoices,
     cancelled: &Arc<AtomicBool>,
 ) -> anyhow::Result<StartkitItemReport> {
@@ -754,17 +755,6 @@ async fn run_channel_plugins_item<R: Runtime>(
             message: Some("No channel plugins selected".to_string()),
             ..base_report(item)
         });
-    }
-
-    for agent_id in &choices.agents {
-        if cancelled.load(Ordering::Relaxed) {
-            return Ok(StartkitItemReport {
-                status: StartkitItemStatus::Skipped,
-                message: Some("Cancelled".to_string()),
-                ..base_report(item)
-            });
-        }
-        install_acp_adapter_for_agent(app, agent_id, cancelled).await?;
     }
 
     for channel_id in &choices.channels {
@@ -781,6 +771,41 @@ async fn run_channel_plugins_item<R: Runtime>(
     Ok(StartkitItemReport {
         status: StartkitItemStatus::Ok,
         message: Some("Channel plugins are ready".to_string()),
+        actions: Vec::new(),
+        ..base_report(item)
+    })
+}
+
+async fn run_agent_adapters_item<R: Runtime>(
+    app: &AppHandle<R>,
+    item: &StartkitItem,
+    choices: &StartkitChoices,
+    cancelled: &Arc<AtomicBool>,
+) -> anyhow::Result<StartkitItemReport> {
+    let agent_ids = npm_adapter_agent_ids(choices);
+    if agent_ids.is_empty() {
+        return Ok(StartkitItemReport {
+            status: StartkitItemStatus::Skipped,
+            message: Some("No npm ACP adapters selected".to_string()),
+            actions: Vec::new(),
+            ..base_report(item)
+        });
+    }
+
+    for agent_id in agent_ids {
+        if cancelled.load(Ordering::Relaxed) {
+            return Ok(StartkitItemReport {
+                status: StartkitItemStatus::Skipped,
+                message: Some("Cancelled".to_string()),
+                ..base_report(item)
+            });
+        }
+        install_acp_adapter_for_agent(app, &agent_id, cancelled).await?;
+    }
+
+    Ok(StartkitItemReport {
+        status: StartkitItemStatus::Ok,
+        message: Some("Agent ACP adapters are ready".to_string()),
         actions: Vec::new(),
         ..base_report(item)
     })
@@ -1008,6 +1033,10 @@ async fn scan_item(
         return scan_config_item(item, settings);
     }
 
+    if item.kind.as_deref() == Some("builtin_agent_adapters") {
+        return scan_agent_adapters_item(item, choices);
+    }
+
     if item.kind.as_deref() == Some("builtin_channel_plugins") {
         let status = if choices.channels.is_empty() {
             StartkitItemStatus::Skipped
@@ -1064,6 +1093,67 @@ async fn scan_item(
             ..base_report(item)
         },
     }
+}
+
+fn scan_agent_adapters_item(item: &StartkitItem, choices: &StartkitChoices) -> StartkitItemReport {
+    let agent_ids = npm_adapter_agent_ids(choices);
+    if agent_ids.is_empty() {
+        return StartkitItemReport {
+            status: StartkitItemStatus::Skipped,
+            message: Some("No npm ACP adapters selected".to_string()),
+            actions: Vec::new(),
+            ..base_report(item)
+        };
+    }
+
+    let missing = agent_ids
+        .iter()
+        .filter(|agent_id| !agent_adapter_installed(agent_id))
+        .count();
+    if missing == 0 {
+        return StartkitItemReport {
+            status: StartkitItemStatus::Ok,
+            message: Some("Agent ACP adapters are ready".to_string()),
+            actions: Vec::new(),
+            ..base_report(item)
+        };
+    }
+
+    StartkitItemReport {
+        status: StartkitItemStatus::Missing,
+        message: Some(format!(
+            "{} of {} agent ACP adapter(s) will be installed",
+            missing,
+            agent_ids.len()
+        )),
+        actions: vec!["install".to_string()],
+        ..base_report(item)
+    }
+}
+
+fn npm_adapter_agent_ids(choices: &StartkitChoices) -> Vec<String> {
+    choices
+        .agents
+        .iter()
+        .filter(|agent_id| {
+            common::resources::agent_by_id(agent_id)
+                .and_then(|agent| agent.acp.npm_package.as_deref())
+                .is_some()
+        })
+        .cloned()
+        .collect()
+}
+
+fn agent_adapter_installed(agent_id: &str) -> bool {
+    let Some(agent) = common::resources::agent_by_id(agent_id) else {
+        return true;
+    };
+    let Some(npm_pkg) = agent.acp.npm_package.as_deref() else {
+        return true;
+    };
+    let default_bin_name = common::agent::npm_package_bin_name(npm_pkg);
+    let bin_name = agent.acp.bin_name.as_deref().unwrap_or(&default_bin_name);
+    common::agent::npm_package_installed(npm_pkg, bin_name)
 }
 
 async fn scan_agent_cli_item(
@@ -1476,6 +1566,7 @@ fn should_include(item: &StartkitItem, choices: &StartkitChoices) -> bool {
     item.include_if.iter().any(|rule| match rule.as_str() {
         "always" => true,
         "agent:any" => !choices.agents.is_empty(),
+        "agent:npm_adapter" => !npm_adapter_agent_ids(choices).is_empty(),
         "channels:any" => !choices.channels.is_empty(),
         "tunnel:any" => choices.tunnel != "none",
         "shell_path:true" => choices.shell_path,
@@ -1589,11 +1680,29 @@ mod tests {
             shell_path: false,
         });
 
-        assert!(!item_ids.contains(&"essentials.node".to_string()));
+        assert!(item_ids.contains(&"essentials.node".to_string()));
+        assert!(item_ids.contains(&"agents.adapters".to_string()));
         assert!(!item_ids.contains(&"essentials.git".to_string()));
         assert!(item_ids.contains(&"agents.codex.cli".to_string()));
         assert!(!item_ids.contains(&"agents.claude.cli".to_string()));
         assert!(!item_ids.contains(&"tunnels.cloudflare.binary".to_string()));
+    }
+
+    #[test]
+    fn non_npm_agent_does_not_pull_node_or_adapter() {
+        let item_ids = ids(StartkitChoices {
+            agents: vec!["qwen-code".to_string()],
+            tunnel: "none".to_string(),
+            channels: Vec::new(),
+            source: "global".to_string(),
+            toolchain_mode: "system".to_string(),
+            shell_path: false,
+        });
+
+        assert!(!item_ids.contains(&"essentials.node".to_string()));
+        assert!(!item_ids.contains(&"agents.adapters".to_string()));
+        assert!(!item_ids.contains(&"essentials.git".to_string()));
+        assert!(item_ids.contains(&"agents.qwen-code.cli".to_string()));
     }
 
     #[test]
@@ -1637,6 +1746,7 @@ mod tests {
         assert!(item_ids.contains(&"essentials.node".to_string()));
         assert!(item_ids.contains(&"essentials.git".to_string()));
         assert!(item_ids.contains(&"channels.plugins".to_string()));
+        assert!(!item_ids.contains(&"agents.adapters".to_string()));
     }
 
     #[test]

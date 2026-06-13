@@ -138,10 +138,9 @@ export function computerCheckingReports(
 ): StartkitItemReport[] {
   const reports: StartkitItemReport[] = [];
   const needsNode =
-    choices.agents.length > 0 ||
     choices.channels.length > 0 ||
     choices.tunnel === "localtunnel";
-  const needsGit = choices.agents.length > 0 || choices.channels.length > 0;
+  const needsGit = choices.channels.length > 0;
 
   if (needsNode) {
     reports.push({
