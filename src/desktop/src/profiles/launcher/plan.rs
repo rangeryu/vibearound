@@ -8,9 +8,6 @@ use ::common::{agent as agent_integrations, profiles, resources};
 use anyhow::{anyhow, Context};
 use profiles::ProfileDef;
 
-#[cfg(not(test))]
-use crate::agent_detection;
-
 use super::common::LaunchPlan;
 use super::{bridge, claude_desktop, codex, codex_desktop};
 
@@ -118,6 +115,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(&agent),
                 windows_process_probe: windows_process_probe_for_direct_agent(&agent),
+                windows_executable_path: windows_executable_path_for_agent(agent_id),
             });
         };
 
@@ -132,6 +130,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             workspace,
             macos_app_probe: macos_app_probe_for_direct_agent(&agent),
             windows_process_probe: windows_process_probe_for_direct_agent(&agent),
+            windows_executable_path: windows_executable_path_for_agent(agent_id),
         })
     }
 
@@ -159,6 +158,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(&agent),
                 windows_process_probe: windows_process_probe_for_direct_agent(&agent),
+                windows_executable_path: windows_executable_path_for_agent(agent_id),
             });
         }
         if agent_id == "claude-desktop" {
@@ -176,6 +176,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(&agent),
                 windows_process_probe: windows_process_probe_for_direct_agent(&agent),
+                windows_executable_path: windows_executable_path_for_agent(agent_id),
             });
         }
         agent_integrations::auto_install_project_integrations(agent_id, &workspace)
@@ -192,6 +193,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             workspace,
             macos_app_probe: None,
             windows_process_probe: None,
+            windows_executable_path: None,
         })
     }
 
@@ -222,6 +224,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             workspace,
             macos_app_probe: None,
             windows_process_probe: None,
+            windows_executable_path: None,
         })
     }
 }
@@ -249,6 +252,14 @@ fn windows_process_probe_for_direct_agent(agent: &resources::AgentDef) -> Option
     start_process_name(agent.pty_command_for_current_platform())
 }
 
+fn windows_executable_path_for_agent(agent_id: &str) -> Option<std::path::PathBuf> {
+    if !cfg!(target_os = "windows") {
+        return None;
+    }
+    let prefs = ::common::agent_state::read_prefs();
+    ::common::agent_state::resolve_agent_executable_path(&prefs, agent_id)
+}
+
 fn start_process_name(command: &str) -> Option<String> {
     command
         .trim()
@@ -259,54 +270,8 @@ fn start_process_name(command: &str) -> Option<String> {
 }
 
 fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> String {
-    #[cfg(test)]
-    {
-        let _ = agent_id;
-        return fallback_command.to_string();
-    }
-
-    #[cfg(not(test))]
-    {
-        let toolchain_mode = agent_detection::configured_toolchain_mode();
-        let Some(candidate) =
-            agent_detection::candidate_for_toolchain_mode(agent_id, &toolchain_mode)
-        else {
-            return fallback_command.to_string();
-        };
-        replace_launch_program(fallback_command, &candidate.path)
-    }
-}
-
-fn replace_launch_program(command: &str, program_path: &str) -> String {
-    let mut parts = command.splitn(2, char::is_whitespace);
-    let Some(program) = parts.next().filter(|part| !part.is_empty()) else {
-        return command.to_string();
-    };
-    let quoted = quote_launch_program_path(program_path);
-    match parts.next() {
-        Some(rest) => {
-            let rest = rest.trim_start();
-            if rest.is_empty() {
-                quoted
-            } else {
-                format!("{quoted} {rest}")
-            }
-        }
-        None if program.is_empty() => command.to_string(),
-        None => quoted,
-    }
-}
-
-fn quote_launch_program_path(path: &str) -> String {
-    if cfg!(windows) {
-        if path.chars().any(char::is_whitespace) {
-            format!("\"{}\"", path.replace('"', "\\\""))
-        } else {
-            path.to_string()
-        }
-    } else {
-        shell_escape::unix::escape(std::borrow::Cow::Borrowed(path)).into_owned()
-    }
+    let _ = agent_id;
+    fallback_command.to_string()
 }
 
 fn materialized_profile_env(
@@ -459,25 +424,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn replace_launch_program_preserves_command_tail() {
-        assert_eq!(
-            replace_launch_program("claude code --permission-mode acceptEdits", "/tmp/claude"),
-            "/tmp/claude code --permission-mode acceptEdits"
-        );
-    }
-
-    #[test]
-    fn replace_launch_program_quotes_paths_with_spaces_on_unix() {
-        if cfg!(windows) {
-            return;
-        }
-        assert_eq!(
-            replace_launch_program("codex", "/Applications/My Codex.app/Contents/codex"),
-            "'/Applications/My Codex.app/Contents/codex'"
-        );
-    }
-
     fn minimax_anthropic_profile() -> ProfileDef {
         ProfileDef {
             id: "minimax-test".to_string(),
@@ -623,7 +569,11 @@ mod tests {
             .build()
             .expect("claude desktop profile plan");
 
-        assert_eq!(plan.command, "open -a Claude");
+        if cfg!(target_os = "windows") {
+            assert_eq!(plan.command, "Start-Process Claude");
+        } else {
+            assert_eq!(plan.command, "open -a Claude");
+        }
         assert!(plan.args.is_empty());
         assert_eq!(plan.window_label, "MiniMax Test");
         assert!(plan.env.is_empty());

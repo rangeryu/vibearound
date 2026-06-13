@@ -54,11 +54,23 @@ pub fn npm_package_bin_name(npm_package: &str) -> String {
 }
 
 pub fn npm_package_installed(npm_package: &str, bin_name: &str) -> bool {
-    crate::process::env::resolve_acp_agent_bin(bin_name).is_ok()
-        && npm_package_version_satisfied(npm_package)
+    npm_package_installed_in_dir(
+        npm_package,
+        bin_name,
+        &crate::process::env::acp_agents_dir(),
+    )
 }
 
-fn npm_package_version_satisfied(npm_package: &str) -> bool {
+pub fn npm_package_installed_in_dir(
+    npm_package: &str,
+    bin_name: &str,
+    package_dir: &std::path::Path,
+) -> bool {
+    crate::process::env::resolve_npm_bin_in_dir(package_dir, bin_name).is_ok()
+        && npm_package_version_satisfied_in_dir(npm_package, package_dir)
+}
+
+fn npm_package_version_satisfied_in_dir(npm_package: &str, package_dir: &std::path::Path) -> bool {
     let spec = npm_package_spec(npm_package);
     let Some(requested_version) = spec.requested_version else {
         return true;
@@ -67,10 +79,9 @@ fn npm_package_version_satisfied(npm_package: &str) -> bool {
     let package_json = spec
         .package_name
         .split('/')
-        .fold(
-            crate::process::env::acp_agents_dir().join("node_modules"),
-            |path, segment| path.join(segment),
-        )
+        .fold(package_dir.join("node_modules"), |path, segment| {
+            path.join(segment)
+        })
         .join("package.json");
     let Ok(contents) = std::fs::read_to_string(package_json) else {
         return false;
@@ -115,18 +126,37 @@ where
     C: Fn() -> bool,
 {
     let plugins_dir = crate::process::env::acp_agents_dir();
-    std::fs::create_dir_all(&plugins_dir).with_context(|| format!("creating {:?}", plugins_dir))?;
+    auto_install_npm_package_in_dir_with_progress_and_cancel(
+        npm_package,
+        &plugins_dir,
+        &mut on_log,
+        is_cancelled,
+    )
+    .await
+}
 
-    let pkg_json = plugins_dir.join("package.json");
+pub async fn auto_install_npm_package_in_dir_with_progress_and_cancel<F, C>(
+    npm_package: &str,
+    package_dir: &std::path::Path,
+    mut on_log: F,
+    is_cancelled: C,
+) -> anyhow::Result<InstallOutput>
+where
+    F: FnMut(String),
+    C: Fn() -> bool,
+{
+    std::fs::create_dir_all(package_dir).with_context(|| format!("creating {:?}", package_dir))?;
+
+    let pkg_json = package_dir.join("package.json");
     if !pkg_json.exists() {
-        let init = serde_json::json!({ "name": "vibearound-plugins", "private": true });
+        let init = serde_json::json!({ "name": "vibearound-managed", "private": true });
         std::fs::write(&pkg_json, serde_json::to_string_pretty(&init).unwrap())
             .context("writing package.json")?;
     }
 
     let output = npm_command_streaming(
         &npm_install_args(&["install", npm_package]),
-        &plugins_dir,
+        package_dir,
         &mut on_log,
         is_cancelled,
     )
@@ -139,8 +169,61 @@ where
     if !output.status.success() {
         anyhow::bail!("npm install {} failed: {}", npm_package, stderr.trim());
     }
-    tracing::info!("[agent] installed {}", npm_package);
+    tracing::info!(
+        "[agent] installed {} in {}",
+        npm_package,
+        package_dir.display()
+    );
     Ok(InstallOutput { stdout, stderr })
+}
+
+/// Install an npm-backed CLI into the active global npm prefix.
+///
+/// This is used by Startkit after Node is ready. The command runs through
+/// `node npm-cli.js` so it works with either a user Node install or the
+/// Startkit-provisioned Node runtime.
+pub async fn auto_install_npm_global_package_with_progress_and_cancel<F, C>(
+    npm_package: &str,
+    mut on_log: F,
+    is_cancelled: C,
+) -> anyhow::Result<InstallOutput>
+where
+    F: FnMut(String),
+    C: Fn() -> bool,
+{
+    let cwd = crate::config::data_dir();
+    std::fs::create_dir_all(&cwd).with_context(|| format!("creating {:?}", cwd))?;
+
+    let target = npm_global_install_target(npm_package);
+    let mut args = vec!["install".to_string(), "-g".to_string(), target.clone()];
+    args.extend(crate::process::env::npm_registry_args());
+
+    tracing::info!("[agent] installing global npm CLI: {}", target);
+    let output = npm_command_streaming(&args, &cwd, &mut on_log, is_cancelled)
+        .await
+        .with_context(|| format!("running npm install -g {}", target))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        anyhow::bail!("npm install -g {} failed: {}", target, stderr.trim());
+    }
+    let bin_dir = npm_global_bin_dir(&cwd).await?;
+    crate::process::env::ensure_user_path_dir(&bin_dir)
+        .with_context(|| format!("adding {} to user PATH", bin_dir.display()))?;
+    on_log(format!("Added {} to user PATH", bin_dir.display()));
+    tracing::info!("[agent] installed global npm CLI {}", target);
+    Ok(InstallOutput { stdout, stderr })
+}
+
+fn npm_global_install_target(npm_package: &str) -> String {
+    let package = npm_package.trim();
+    if npm_package_spec(package).requested_version.is_some() {
+        package.to_string()
+    } else {
+        format!("{package}@latest")
+    }
 }
 
 fn npm_install_args(args: &[&str]) -> Vec<String> {
@@ -204,6 +287,33 @@ async fn npm_process(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     Ok(command)
+}
+
+async fn npm_global_bin_dir(cwd: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
+    let args = vec!["prefix".to_string(), "-g".to_string()];
+    let output = npm_process(&args, cwd)
+        .await?
+        .output()
+        .await
+        .context("running npm prefix -g")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "npm prefix -g failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let prefix = stdout
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("npm prefix -g returned no output"))?;
+    let prefix = std::path::PathBuf::from(prefix);
+    Ok(if cfg!(windows) {
+        prefix
+    } else {
+        prefix.join("bin")
+    })
 }
 
 async fn npm_command_streaming<F>(
@@ -388,7 +498,9 @@ fn has_enabled_channels(settings: &serde_json::Value) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{npm_package_bin_name, npm_package_spec, NpmPackageSpec};
+    use super::{
+        npm_global_install_target, npm_package_bin_name, npm_package_spec, NpmPackageSpec,
+    };
 
     #[test]
     fn parses_scoped_npm_package_specs() {
@@ -415,5 +527,17 @@ mod tests {
             "codex-acp"
         );
         assert_eq!(npm_package_bin_name("plain-agent@1.2.3"), "plain-agent");
+    }
+
+    #[test]
+    fn global_install_target_adds_latest_when_unpinned() {
+        assert_eq!(
+            npm_global_install_target("@anthropic-ai/claude-code"),
+            "@anthropic-ai/claude-code@latest"
+        );
+        assert_eq!(
+            npm_global_install_target("@openai/codex@1.2.3"),
+            "@openai/codex@1.2.3"
+        );
     }
 }

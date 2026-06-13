@@ -7,7 +7,7 @@
 //! runtimes are also in-memory, so replaying old outputs would create
 //! stale messages and unanswerable permission prompts.
 
-use dashmap::DashMap;
+use parking_lot::Mutex;
 
 use crate::storage::jsonl;
 
@@ -22,7 +22,7 @@ pub struct PendingOutput {
 }
 
 pub struct ChannelOutbox {
-    pending: DashMap<String, ChannelOutput>,
+    pending: Mutex<Vec<PendingOutput>>,
 }
 
 impl ChannelOutbox {
@@ -33,34 +33,51 @@ impl ChannelOutbox {
 
     pub fn new() -> Self {
         Self {
-            pending: DashMap::new(),
+            pending: Mutex::new(Vec::new()),
         }
     }
 
     pub async fn enqueue(&self, output: ChannelOutput) -> jsonl::Result<String> {
+        self.enqueue_now(output)
+    }
+
+    pub fn enqueue_now(&self, output: ChannelOutput) -> jsonl::Result<String> {
         let output_id = format!("out_{}", uuid::Uuid::new_v4().simple());
-        self.pending.insert(output_id.clone(), output);
+        self.pending.lock().push(PendingOutput {
+            output_id: output_id.clone(),
+            output,
+        });
         Ok(output_id)
     }
 
     pub async fn mark_sent(&self, output_id: &str) -> jsonl::Result<()> {
-        self.pending.remove(output_id);
-        Ok(())
+        self.mark_sent_now(output_id)
     }
 
     pub async fn mark_nacked(&self, output_id: &str, _reason: Option<String>) -> jsonl::Result<()> {
-        self.pending.remove(output_id);
+        self.mark_nacked_now(output_id)
+    }
+
+    pub fn mark_sent_now(&self, output_id: &str) -> jsonl::Result<()> {
+        self.pending
+            .lock()
+            .retain(|pending| pending.output_id != output_id);
+        Ok(())
+    }
+
+    pub fn mark_nacked_now(&self, output_id: &str) -> jsonl::Result<()> {
+        self.pending
+            .lock()
+            .retain(|pending| pending.output_id != output_id);
         Ok(())
     }
 
     pub fn pending_for_channel(&self, channel_kind: &str) -> Vec<PendingOutput> {
         self.pending
+            .lock()
             .iter()
-            .filter(|entry| entry.value().route_key().channel_kind == channel_kind)
-            .map(|entry| PendingOutput {
-                output_id: entry.key().clone(),
-                output: entry.value().clone(),
-            })
+            .filter(|pending| pending.output.route_key().channel_kind == channel_kind)
+            .cloned()
             .collect()
     }
 }
@@ -107,6 +124,33 @@ mod tests {
 
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].output_id, feishu_id);
+    }
+
+    #[tokio::test]
+    async fn pending_outputs_keep_enqueue_order() {
+        let outbox = ChannelOutbox::new();
+        let first = ChannelOutput::SystemText {
+            route: RouteKey::new("feishu", "chat-a"),
+            text: "first".to_string(),
+            reply_to: None,
+        };
+        let second = ChannelOutput::SystemText {
+            route: RouteKey::new("feishu", "chat-a"),
+            text: "second".to_string(),
+            reply_to: None,
+        };
+        let first_id = outbox.enqueue(first).await.unwrap();
+        let second_id = outbox.enqueue(second).await.unwrap();
+
+        let pending = outbox.pending_for_channel("feishu");
+
+        assert_eq!(
+            pending
+                .iter()
+                .map(|item| item.output_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![first_id.as_str(), second_id.as_str()]
+        );
     }
 
     #[tokio::test]

@@ -14,6 +14,8 @@ pub(super) struct LaunchPlan {
     pub macos_app_probe: Option<String>,
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub windows_process_probe: Option<String>,
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    pub windows_executable_path: Option<PathBuf>,
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -183,6 +185,7 @@ mod tests {
             workspace: Path::new("/tmp/work dir").to_path_buf(),
             macos_app_probe: None,
             windows_process_probe: None,
+            windows_executable_path: None,
         }
     }
 

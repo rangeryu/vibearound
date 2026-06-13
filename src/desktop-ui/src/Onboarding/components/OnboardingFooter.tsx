@@ -13,12 +13,15 @@ export interface PrimaryAction {
   run: () => void;
 }
 
+export type FooterAction = PrimaryAction;
+
 export function OnboardingFooter({
   activeStep,
   activeIndex,
   running,
   finishing,
   primaryAction,
+  secondaryAction,
   onBack,
   onSkip,
   onCancel,
@@ -28,6 +31,7 @@ export function OnboardingFooter({
   running: boolean;
   finishing: boolean;
   primaryAction: PrimaryAction;
+  secondaryAction?: FooterAction | null;
   onBack: () => void;
   onSkip: () => void;
   onCancel: () => void;
@@ -72,6 +76,17 @@ export function OnboardingFooter({
             disabled={running || finishing}
           >
             {t("Skip")}
+          </Button>
+        )}
+        {secondaryAction && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={secondaryAction.run}
+            disabled={secondaryAction.disabled}
+          >
+            {secondaryAction.icon}
+            {secondaryAction.label}
           </Button>
         )}
         <Button

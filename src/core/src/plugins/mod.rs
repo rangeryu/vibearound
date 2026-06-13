@@ -191,6 +191,23 @@ pub fn user_plugins_dir() -> PathBuf {
     config::data_dir().join(PROJECT_PLUGINS_DIR)
 }
 
+/// Directory for app-private dependencies owned by a plugin-like feature.
+///
+/// These directories intentionally do not contain `plugin.json`, so normal
+/// plugin discovery ignores them.
+pub fn user_plugin_dependency_dir(id: &str) -> PathBuf {
+    user_plugins_dir().join(id)
+}
+
+pub fn user_plugin_dependency_bin_path(id: &str, program: &str) -> PathBuf {
+    let binary = if cfg!(windows) && !program.ends_with(".exe") {
+        format!("{program}.exe")
+    } else {
+        program.to_string()
+    };
+    user_plugin_dependency_dir(id).join("bin").join(binary)
+}
+
 /// Return the in-tree plugins directory used during development.
 ///
 /// Only meaningful in debug builds: the path is derived from

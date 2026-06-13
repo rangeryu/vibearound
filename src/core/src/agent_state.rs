@@ -38,6 +38,8 @@ pub struct AgentLaunchPreference {
     pub profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "AgentLaunchArgs::is_empty")]
     pub launch_args: AgentLaunchArgs,
 }
@@ -191,6 +193,16 @@ pub fn resolve_agent_workspace(
         .unwrap_or_else(|| cfg.resolve_workspace(&agent_id))
 }
 
+pub fn resolve_agent_executable_path(prefs: &AgentsPrefsFile, agent_id: &str) -> Option<PathBuf> {
+    let agent_id = canonical_agent_id(agent_id);
+    prefs
+        .agents
+        .get(&agent_id)
+        .and_then(|preference| preference.executable_path.as_ref())
+        .filter(|path| !path.as_os_str().is_empty())
+        .cloned()
+}
+
 pub fn resolve_agent_terminal_args(prefs: &AgentsPrefsFile, agent_id: &str) -> Vec<String> {
     let agent_id = canonical_agent_id(agent_id);
     prefs
@@ -239,6 +251,17 @@ pub fn write_agent_workspace(agent_id: &str, workspace: PathBuf) -> anyhow::Resu
     })
 }
 
+pub fn write_agent_executable_path(
+    agent_id: &str,
+    executable_path: Option<PathBuf>,
+) -> anyhow::Result<()> {
+    update_prefs(|prefs| {
+        let entry = prefs.agents.entry(agent_id.to_string()).or_default();
+        entry.executable_path = executable_path;
+        prune_empty_agent_entry(prefs, agent_id);
+    })
+}
+
 pub fn write_agent_launch_args(agent_id: &str, launch_args: AgentLaunchArgs) -> anyhow::Result<()> {
     update_prefs(|prefs| {
         let entry = prefs.agents.entry(agent_id.to_string()).or_default();
@@ -281,6 +304,7 @@ pub fn remove_profile_references(profile_id: &str) -> anyhow::Result<()> {
         prefs.agents.retain(|_, preference| {
             preference.profile_id.is_some()
                 || preference.workspace.is_some()
+                || preference.executable_path.is_some()
                 || !preference.launch_args.is_empty()
         });
         prefs.profile_connections.remove(profile_id);
@@ -302,6 +326,7 @@ pub fn remove_workspace_references(workspace: &std::path::Path) -> anyhow::Resul
         prefs.agents.retain(|_, preference| {
             preference.profile_id.is_some()
                 || preference.workspace.is_some()
+                || preference.executable_path.is_some()
                 || !preference.launch_args.is_empty()
         });
     })
@@ -383,7 +408,10 @@ fn prune_empty_agent_entry(prefs: &mut AgentsPrefsFile, agent_id: &str) {
         .agents
         .get(agent_id)
         .map(|entry| {
-            entry.profile_id.is_none() && entry.workspace.is_none() && entry.launch_args.is_empty()
+            entry.profile_id.is_none()
+                && entry.workspace.is_none()
+                && entry.executable_path.is_none()
+                && entry.launch_args.is_empty()
         })
         .unwrap_or(false);
     if empty {

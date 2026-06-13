@@ -2,6 +2,7 @@
 //! The public URL is configured in Cloudflare Dashboard (Public Hostname), so we read it from
 //! settings.json `tunnel.cloudflare.hostname` instead of parsing stdout.
 
+use std::path::PathBuf;
 use std::process::Stdio;
 
 use crate::proc_log;
@@ -29,13 +30,15 @@ pub async fn start_web_tunnel(
     let tunnel_def = crate::resources::tunnel_by_id("cloudflare")
         .expect("cloudflare tunnel not in tunnels.json");
     let program = tunnel_def.program.as_deref().unwrap_or("cloudflared");
+    let resolved_program = resolve_cloudflared_program(tunnel_def, program, config)?;
     let base_args: Vec<&str> = tunnel_def
         .args
         .as_ref()
         .map(|a| a.iter().map(|s| s.as_str()).collect())
         .unwrap_or_else(|| vec!["tunnel", "run", "--token"]);
 
-    let mut cmd = crate::process::env::command(program);
+    let resolved_program_string = resolved_program.to_string_lossy().to_string();
+    let mut cmd = crate::process::env::command(&resolved_program_string);
     cmd.args(&base_args)
         .arg(token)
         .stdout(Stdio::null())
@@ -71,6 +74,24 @@ pub async fn start_web_tunnel(
     );
 
     Ok((crate::tunnels::TunnelGuard::Process { registry_id }, url))
+}
+
+fn resolve_cloudflared_program(
+    tunnel_def: &crate::resources::TunnelDef,
+    program: &str,
+    config: &crate::config::Config,
+) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    if config.toolchain_mode.is_managed() {
+        let dependency_id = tunnel_def
+            .dependency_id
+            .as_deref()
+            .ok_or("cloudflare managed dependency is not configured")?;
+        return Ok(crate::plugins::user_plugin_dependency_bin_path(
+            dependency_id,
+            program,
+        ));
+    }
+    Ok(PathBuf::from(program))
 }
 
 /// Cloudflare backend. Implements TunnelBackend for unified dispatch.

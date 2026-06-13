@@ -51,7 +51,7 @@ export interface Settings {
   };
   startkit?: {
     source?: string;
-    toolchain_mode?: "managed" | "system" | string;
+    toolchain_mode?: ToolchainMode | string;
     shell_path?: boolean;
   };
   tunnel?: {
@@ -181,9 +181,11 @@ export interface StartkitChoices {
   tunnel: string;
   channels: string[];
   source: string;
-  toolchainMode: "managed" | "system" | string;
-  shellPath: boolean;
+  toolchainMode: ToolchainMode;
+  shellPath: false;
 }
+
+export type ToolchainMode = "system" | "managed";
 
 export interface StartkitSource {
   label: string;
@@ -234,6 +236,8 @@ export interface StartkitItemReport {
   path?: string;
   message?: string;
   actions: string[];
+  manualCommand?: string;
+  manualUrl?: string;
   secret: boolean;
   settingsKey?: string;
 }

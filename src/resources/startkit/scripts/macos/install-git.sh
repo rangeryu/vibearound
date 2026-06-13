@@ -37,7 +37,7 @@ find_clt_label() {
       print pending
       pending = ""
     }
-  ' | sort -V | tail -n 1
+  ' | tail -n 1
 }
 
 install_clt_with_softwareupdate() {
@@ -91,7 +91,7 @@ fi
 
 if command -v xcode-select >/dev/null 2>&1; then
   xcode-select --install >/dev/null 2>&1 || true
-  printf '{"status":"blocked","message":"Apple Command Line Tools installer was opened. Complete it, then run scan again.","actions":["verify"]}\n'
+  printf '{"status":"blocked","message":"Apple Command Line Tools installer was opened. Complete it, then scan again.","actions":["verify"]}\n'
   exit 0
 fi
 

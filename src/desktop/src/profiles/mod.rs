@@ -230,6 +230,31 @@ pub fn launcher_set_agent_launch_args(
 }
 
 #[tauri::command]
+pub fn launcher_set_agent_executable_path(
+    app: tauri::AppHandle,
+    agent_id: String,
+    executable_path: Option<String>,
+) -> Result<(), String> {
+    let agent_id = resources::agent_by_alias(&agent_id)
+        .map(|def| def.id.clone())
+        .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
+    let executable_path = match executable_path {
+        Some(path) => {
+            let path = PathBuf::from(path.trim());
+            if !path.is_file() {
+                return Err(format!("executable path is not a file: {}", path.display()));
+            }
+            Some(path)
+        }
+        None => None,
+    };
+    agent_state::write_agent_executable_path(&agent_id, executable_path)
+        .map_err(|e| e.to_string())?;
+    emit_launch_config_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn launcher_set_selected_agent(app: tauri::AppHandle, agent_id: String) -> Result<(), String> {
     let agent_id = resources::agent_by_alias(&agent_id)
         .map(|def| def.id.clone())

@@ -62,6 +62,18 @@ pub enum ChannelInput {
     },
 }
 
+impl ChannelInput {
+    pub fn route_key(&self) -> Option<&RouteKey> {
+        match self {
+            Self::Message { envelope } | Self::Callback { envelope, .. } => Some(&envelope.route),
+            Self::Stop { route } | Self::Close { route, .. } | Self::SwitchAgent { route, .. } => {
+                Some(route)
+            }
+            Self::Log { .. } => None,
+        }
+    }
+}
+
 /// Channel plugin output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]

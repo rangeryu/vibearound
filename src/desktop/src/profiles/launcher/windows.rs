@@ -35,7 +35,11 @@ fn spawn_powershell(plan: LaunchPlan) -> anyhow::Result<()> {
 }
 
 fn write_powershell_launch_script(plan: &LaunchPlan) -> anyhow::Result<PathBuf> {
-    let (command, args) = normalize_windows_launch_command(&plan.command, &plan.args);
+    let (command, args) = normalize_windows_launch_command(
+        &plan.command,
+        &plan.args,
+        plan.windows_executable_path.as_deref(),
+    );
     let script_path =
         std::env::temp_dir().join(format!("vibearound-launch-{}.ps1", uuid::Uuid::new_v4()));
     let body = build_powershell_script(plan, &command, &args);
@@ -59,6 +63,7 @@ fn build_powershell_script(plan: &LaunchPlan, command: &str, args: &[String]) ->
     for (k, v) in &env {
         out.push_str(&format!("$env:{} = '{}'\n", k, v.replace('\'', "''")));
     }
+    append_powershell_launch_path(&mut out);
     append_powershell_color_env(&mut out);
     out.push_str(&format!(
         "Set-Location -LiteralPath '{}'\n",
@@ -75,6 +80,20 @@ fn build_powershell_script(plan: &LaunchPlan, command: &str, args: &[String]) ->
     out.push_str("$scriptPath = $MyInvocation.MyCommand.Path\n");
     out.push_str("if ($scriptPath) { Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue }\n");
     out
+}
+
+fn append_powershell_launch_path(out: &mut String) {
+    let env = ::common::process::env::child_env();
+    let Some(path) = ::common::process::env::path_value(&env) else {
+        return;
+    };
+    if path.trim().is_empty() {
+        return;
+    }
+    out.push_str(&format!(
+        "$env:Path = {}\n",
+        powershell_single_quoted(&path)
+    ));
 }
 
 fn append_windows_process_probe(out: &mut String, process_name: &str) {
@@ -226,13 +245,23 @@ fn escape_powershell_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-fn normalize_windows_launch_command(command: &str, args: &[String]) -> (String, Vec<String>) {
+fn normalize_windows_launch_command(
+    command: &str,
+    args: &[String],
+    executable_path: Option<&Path>,
+) -> (String, Vec<String>) {
     let argv = command_words_with_args(command, args);
     let Some((program, program_args)) = argv.split_first() else {
         return (command.to_string(), args.to_vec());
     };
 
-    if !command_stem_eq(program, "codex") {
+    if let Some((desktop_command, desktop_args)) =
+        normalize_windows_desktop_app_launch(program, program_args, executable_path)
+    {
+        return (desktop_command, desktop_args);
+    }
+
+    if !is_windows_npm_cli_launch(program) {
         return (command.to_string(), args.to_vec());
     }
 
@@ -250,14 +279,160 @@ fn normalize_windows_launch_command(command: &str, args: &[String]) -> (String, 
         return (command.to_string(), args.to_vec());
     }
 
-    let Some(codex_js) = npm_shim_js_entry(&program_path) else {
+    let Some(js_entry) = npm_shim_js_entry(&program_path) else {
         return (command.to_string(), args.to_vec());
     };
 
     let mut rewritten_args = Vec::with_capacity(program_args.len() + 1);
-    rewritten_args.push(codex_js.to_string_lossy().into_owned());
+    rewritten_args.push(js_entry.to_string_lossy().into_owned());
     rewritten_args.extend(program_args.iter().cloned());
     ("node".to_string(), rewritten_args)
+}
+
+fn is_windows_npm_cli_launch(program: &str) -> bool {
+    command_stem_eq(program, "claude") || command_stem_eq(program, "codex")
+}
+
+fn normalize_windows_desktop_app_launch(
+    program: &str,
+    args: &[String],
+    executable_path: Option<&Path>,
+) -> Option<(String, Vec<String>)> {
+    if !program.eq_ignore_ascii_case("Start-Process") {
+        return None;
+    }
+    let (target, rest) = args.split_first()?;
+    let app = windows_desktop_app_kind(target)?;
+    if let Some(app_path) = executable_path
+        .filter(|path| path.exists())
+        .map(Path::to_path_buf)
+    {
+        let mut out = Vec::with_capacity(rest.len() + 2);
+        out.push("-FilePath".to_string());
+        out.push(app_path.to_string_lossy().into_owned());
+        out.extend(rest.iter().cloned());
+        return Some(("Start-Process".to_string(), out));
+    }
+
+    if let Some(app_id) = windows_start_app_id(app) {
+        let mut out = Vec::with_capacity(rest.len() + 1);
+        out.push(format!(r"shell:AppsFolder\{app_id}"));
+        out.extend(rest.iter().cloned());
+        return Some(("explorer.exe".to_string(), out));
+    }
+
+    let app_path = find_windows_desktop_app_exe(app)?;
+    let mut out = Vec::with_capacity(rest.len() + 2);
+    out.push("-FilePath".to_string());
+    out.push(app_path.to_string_lossy().into_owned());
+    out.extend(rest.iter().cloned());
+    Some(("Start-Process".to_string(), out))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowsDesktopApp {
+    Claude,
+    Codex,
+}
+
+fn windows_desktop_app_kind(target: &str) -> Option<WindowsDesktopApp> {
+    if command_stem_eq(target, "claude") {
+        Some(WindowsDesktopApp::Claude)
+    } else if command_stem_eq(target, "codex") {
+        Some(WindowsDesktopApp::Codex)
+    } else {
+        None
+    }
+}
+
+fn windows_start_app_id(app: WindowsDesktopApp) -> Option<String> {
+    let app_name = match app {
+        WindowsDesktopApp::Claude => "Claude",
+        WindowsDesktopApp::Codex => "Codex",
+    };
+    let script = format!(
+        "$app = Get-StartApps -Name {} | Select-Object -First 1; if ($app) {{ $app.AppID }}",
+        powershell_single_quoted(app_name)
+    );
+    let output = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-Command", &script])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+fn find_windows_desktop_app_exe(app: WindowsDesktopApp) -> Option<PathBuf> {
+    let mut candidates = match app {
+        WindowsDesktopApp::Claude => claude_desktop_exe_candidates(),
+        WindowsDesktopApp::Codex => codex_desktop_exe_candidates(),
+    };
+    candidates.sort_by_key(|path| {
+        std::fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+    });
+    candidates.into_iter().rev().find(|path| path.exists())
+}
+
+fn claude_desktop_exe_candidates() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+        let localappdata = Path::new(&localappdata);
+        paths.push(
+            localappdata
+                .join("Programs")
+                .join("Claude")
+                .join("Claude.exe"),
+        );
+        paths.push(
+            localappdata
+                .join("Anthropic")
+                .join("Claude")
+                .join("Claude.exe"),
+        );
+        paths.push(localappdata.join("Claude").join("Claude.exe"));
+        paths.extend(versioned_child_exe_candidates(
+            &localappdata.join("AnthropicClaude"),
+            "Claude.exe",
+        ));
+    }
+    paths
+}
+
+fn codex_desktop_exe_candidates() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+        let localappdata = Path::new(&localappdata);
+        paths.push(
+            localappdata
+                .join("Programs")
+                .join("Codex")
+                .join("Codex.exe"),
+        );
+        paths.push(localappdata.join("OpenAI").join("Codex").join("Codex.exe"));
+    }
+    paths
+}
+
+fn versioned_child_exe_candidates(parent: &Path, exe_name: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return paths;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            paths.push(path.join(exe_name));
+        }
+    }
+    paths
 }
 
 fn command_stem_eq(command: &str, expected: &str) -> bool {
@@ -280,7 +455,8 @@ fn find_windows_command(program: &str) -> Option<PathBuf> {
         return existing_windows_command_path(path);
     }
 
-    let path_var = std::env::var_os("PATH")?;
+    let env = ::common::process::env::child_env();
+    let path_var = ::common::process::env::path_value(&env)?;
     for dir in std::env::split_paths(&path_var) {
         if let Some(candidate) = existing_windows_command_path(&dir.join(program)) {
             return Some(candidate);
@@ -390,6 +566,7 @@ mod tests {
             workspace: PathBuf::from(r"C:\Users\tester\project"),
             macos_app_probe: None,
             windows_process_probe: None,
+            windows_executable_path: None,
         }
     }
 
@@ -445,6 +622,7 @@ node "%~dp0\node_modules\@openai\codex\bin\codex.js" %*
         let (program, args) = normalize_windows_launch_command(
             &command,
             &["-c".to_string(), "features.hooks=true".to_string()],
+            None,
         );
 
         assert_eq!(program, "node");
@@ -452,6 +630,66 @@ node "%~dp0\node_modules\@openai\codex\bin\codex.js" %*
         assert_eq!(
             &args[1..],
             ["-c".to_string(), "features.hooks=true".to_string()]
+        );
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn rewrites_claude_npm_shim_to_node_and_preserves_subcommand() {
+        let root = std::env::temp_dir().join(format!("VibeAround Test {}", uuid::Uuid::new_v4()));
+        let bin_dir = root.join("bin");
+        let claude_js = bin_dir
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("cli.js");
+        std::fs::create_dir_all(claude_js.parent().expect("claude js parent"))
+            .expect("create shim fixture");
+        std::fs::write(&claude_js, "console.log('claude');\n").expect("write claude js fixture");
+        let shim = bin_dir.join("claude.cmd");
+        std::fs::write(
+            &shim,
+            r#"@ECHO off
+node "%~dp0\node_modules\@anthropic-ai\claude-code\cli.js" %*
+"#,
+        )
+        .expect("write claude cmd fixture");
+
+        let command = format!(
+            "\"{}\" code --permission-mode acceptEdits",
+            shim.to_string_lossy()
+        );
+        let (program, args) = normalize_windows_launch_command(&command, &[], None);
+
+        assert_eq!(program, "node");
+        assert_eq!(PathBuf::from(&args[0]), claude_js);
+        assert_eq!(
+            &args[1..],
+            [
+                "code".to_string(),
+                "--permission-mode".to_string(),
+                "acceptEdits".to_string()
+            ]
+        );
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn desktop_launch_uses_manual_executable_path() {
+        let root = std::env::temp_dir().join(format!("VibeAround Test {}", uuid::Uuid::new_v4()));
+        let exe = root.join("Codex.exe");
+        std::fs::create_dir_all(&root).expect("create fixture");
+        std::fs::write(&exe, "").expect("write exe fixture");
+
+        let (program, args) =
+            normalize_windows_launch_command("Start-Process Codex", &[], Some(&exe));
+
+        assert_eq!(program, "Start-Process");
+        assert_eq!(
+            args,
+            vec!["-FilePath".to_string(), exe.to_string_lossy().into_owned()]
         );
 
         std::fs::remove_dir_all(root).ok();

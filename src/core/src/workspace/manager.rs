@@ -6,8 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 
 use crate::agent_state;
 use crate::routing::RouteKey;
@@ -31,6 +32,7 @@ pub struct WorkspaceThreadManager {
     thread_store: ThreadEventStore,
     attachment_store: RouteAttachmentEventStore,
     runtimes: DashMap<WorkspaceThreadId, Arc<ThreadRuntime>>,
+    route_locks: DashMap<RouteKey, Arc<Mutex<()>>>,
     pending_selections: DashMap<RouteKey, Vec<ThreadChoice>>,
     change_tx: broadcast::Sender<()>,
 }
@@ -45,6 +47,7 @@ impl WorkspaceThreadManager {
                 RouteAttachmentEventStore::default_path(),
             ),
             runtimes: DashMap::new(),
+            route_locks: DashMap::new(),
             pending_selections: DashMap::new(),
             change_tx,
         })
@@ -61,6 +64,7 @@ impl WorkspaceThreadManager {
             thread_store: ThreadEventStore::new(thread_path),
             attachment_store: RouteAttachmentEventStore::new(attachment_path),
             runtimes: DashMap::new(),
+            route_locks: DashMap::new(),
             pending_selections: DashMap::new(),
             change_tx,
         })
@@ -70,6 +74,9 @@ impl WorkspaceThreadManager {
         &self,
         route: &RouteKey,
     ) -> anyhow::Result<Arc<ThreadRuntime>> {
+        let route_lock = self.route_lock(route);
+        let _route_guard = route_lock.lock().await;
+
         if let Some(attached) = self.current_attachment(route).await? {
             return self.runtime_for_thread(&attached.thread_id).await;
         }
@@ -83,6 +90,13 @@ impl WorkspaceThreadManager {
         self.attach_route(route.clone(), workspace.id, thread.id.clone())
             .await?;
         self.runtime_from_thread(thread).await
+    }
+
+    fn route_lock(&self, route: &RouteKey) -> Arc<Mutex<()>> {
+        self.route_locks
+            .entry(route.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     pub async fn create_thread_for_route(
@@ -714,8 +728,12 @@ impl WorkspaceThreadManager {
             self.thread_store.clone(),
             Some(self.change_tx.clone()),
         ));
-        self.runtimes
-            .insert(thread.id.clone(), Arc::clone(&runtime));
+        match self.runtimes.entry(thread.id.clone()) {
+            Entry::Occupied(entry) => return Ok(Arc::clone(entry.get())),
+            Entry::Vacant(entry) => {
+                entry.insert(Arc::clone(&runtime));
+            }
+        }
         let recovered = runtime
             .recover_interrupted_subagents()
             .await
@@ -913,6 +931,39 @@ mod tests {
                 .workspace_id,
             WorkspaceId::general()
         );
+    }
+
+    #[tokio::test]
+    async fn concurrent_route_resolve_uses_single_runtime() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let route = RouteKey::new("feishu", "chat-a");
+
+        let (first, second) = tokio::join!(
+            manager.resolve_route_runtime(&route),
+            manager.resolve_route_runtime(&route)
+        );
+        let first = first.unwrap();
+        let second = second.unwrap();
+
+        assert!(Arc::ptr_eq(&first, &second));
+        let attached_events = manager
+            .attachment_store
+            .read_events()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    RouteAttachmentEvent::Attached {
+                        route: attached_route,
+                        ..
+                    } if attached_route == &route
+                )
+            })
+            .count();
+        assert_eq!(attached_events, 1);
     }
 
     #[tokio::test]

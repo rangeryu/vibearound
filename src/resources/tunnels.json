@@ -8,17 +8,19 @@
     "display_name": "Local Tunnel",
     "program": "npx",
     "args": ["localtunnel", "--port"],
-    "spawn_error_hint": "Is Node/npx installed?"
+    "dependency_id": "tunnel-localtunnel",
+    "spawn_error_hint": "Run VibeAround setup, or install Node/npx on PATH"
   },
   {
     "id": "cloudflare",
     "display_name": "Cloudflare Tunnel",
     "program": "cloudflared",
     "args": ["tunnel", "run", "--token"],
-    "spawn_error_hint": "Is it installed? brew install cloudflared",
+    "dependency_id": "tunnel-cloudflare",
+    "spawn_error_hint": "Run VibeAround setup, or install cloudflared on PATH",
     "platform_overrides": {
       "windows": {
-        "spawn_error_hint": "Is it installed? Download from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+        "spawn_error_hint": "Run VibeAround setup, or install cloudflared on PATH"
       }
     }
   },

@@ -96,3 +96,39 @@ pub struct Attachment {
     #[serde(default)]
     pub size: Option<i64>,
 }
+
+pub fn is_external_attachment_uri(file_key: &str) -> bool {
+    file_key.starts_with("file://")
+        || file_key.starts_with("http://")
+        || file_key.starts_with("https://")
+}
+
+pub fn is_safe_attachment_file_key(file_key: &str) -> bool {
+    if is_external_attachment_uri(file_key) {
+        return true;
+    }
+    !file_key.is_empty()
+        && file_key != "."
+        && file_key != ".."
+        && !file_key.contains('/')
+        && !file_key.contains('\\')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attachment_file_key_rejects_path_traversal_segments() {
+        assert!(is_safe_attachment_file_key("upload_123"));
+        assert!(is_safe_attachment_file_key("file:///tmp/report.md"));
+        assert!(is_safe_attachment_file_key("https://example.com/report.md"));
+
+        assert!(!is_safe_attachment_file_key(""));
+        assert!(!is_safe_attachment_file_key("."));
+        assert!(!is_safe_attachment_file_key(".."));
+        assert!(!is_safe_attachment_file_key("../secret"));
+        assert!(!is_safe_attachment_file_key("nested/file"));
+        assert!(!is_safe_attachment_file_key(r"nested\file"));
+    }
+}

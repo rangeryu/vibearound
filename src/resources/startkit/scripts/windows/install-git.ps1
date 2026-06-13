@@ -23,4 +23,3 @@ if ($winget) {
 }
 
 Emit @{ status = "blocked"; message = "Git is not installed. Install Git for Windows, then run scan again."; actions = @() }
-

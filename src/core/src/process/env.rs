@@ -10,6 +10,7 @@
 //! so only well-known PATH directories are appended as a safety net.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::OnceLock;
 
 #[cfg(windows)]
@@ -41,26 +42,14 @@ pub fn enriched_env() -> &'static HashMap<String, String> {
 
 /// Return the environment VibeAround should pass to child processes.
 ///
-/// This is the cached shell environment plus the Startkit-managed toolchain
-/// paths unless the user explicitly selected `system` mode.
+/// This is the cached shell environment captured from the user's login shell.
+/// In VibeAround-managed toolchain mode, managed npm package binaries are
+/// prepended so agent/tunnel packages installed under `~/.vibearound/plugins`
+/// win over user PATH entries. Node.js and Git themselves still come from the
+/// user's system environment.
 pub fn child_env() -> HashMap<String, String> {
-    let mode = if vibearound_managed_paths_enabled() {
-        "auto"
-    } else {
-        "system"
-    };
-    child_env_for_toolchain_mode(mode)
-}
-
-/// Return the child environment for an explicit Startkit toolchain mode.
-///
-/// Onboarding uses this before settings are saved, so detection reflects the
-/// user's current UI choice instead of the last persisted value.
-pub fn child_env_for_toolchain_mode(toolchain_mode: &str) -> HashMap<String, String> {
     let mut env = enriched_env().clone();
-    if toolchain_mode != "system" {
-        prepend_vibearound_managed_paths(&mut env);
-    }
+    prepend_managed_npm_bin_path(&mut env);
     env
 }
 
@@ -71,15 +60,6 @@ pub fn command(program: &str) -> tokio::process::Command {
     hide_windows_console(&mut cmd);
     cmd.env_clear();
     cmd.envs(child_env());
-    cmd
-}
-
-/// Create a `tokio::process::Command` for an explicit Startkit toolchain mode.
-pub fn command_for_toolchain_mode(program: &str, toolchain_mode: &str) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new(program);
-    hide_windows_console(&mut cmd);
-    cmd.env_clear();
-    cmd.envs(child_env_for_toolchain_mode(toolchain_mode));
     cmd
 }
 
@@ -154,6 +134,164 @@ pub fn acp_agents_dir() -> std::path::PathBuf {
     crate::config::data_dir().join("plugins")
 }
 
+pub fn managed_npm_bin_dir() -> std::path::PathBuf {
+    acp_agents_dir().join("node_modules").join(".bin")
+}
+
+fn prepend_managed_npm_bin_path(env: &mut HashMap<String, String>) {
+    if !crate::config::ensure_loaded().toolchain_mode.is_managed() {
+        return;
+    }
+
+    let candidate = managed_npm_bin_dir();
+    if !candidate.exists() {
+        return;
+    }
+
+    let sep = path_separator();
+    let current = path_value(env).unwrap_or_default();
+    let mut parts: Vec<String> = current
+        .split(sep)
+        .filter(|part| !part.trim().is_empty())
+        .map(String::from)
+        .collect();
+
+    let value = candidate.to_string_lossy().to_string();
+    let exists = if cfg!(windows) {
+        parts.iter().any(|part| part.eq_ignore_ascii_case(&value))
+    } else {
+        parts.iter().any(|part| part == &value)
+    };
+    if !exists {
+        parts.insert(0, value);
+    }
+
+    set_path_value(env, parts.join(&sep.to_string()));
+}
+
+pub fn ensure_user_path_dir(path: &Path) -> anyhow::Result<()> {
+    if !path.exists() {
+        std::fs::create_dir_all(path)?;
+    }
+    ensure_user_path_dir_inner(path)
+}
+
+#[cfg(unix)]
+fn ensure_user_path_dir_inner(path: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+    use std::io::Write;
+
+    let profile = user_shell_profile_path();
+    let expression = shell_path_expression(path);
+    let absolute = path.to_string_lossy();
+
+    let existing = std::fs::read_to_string(&profile).unwrap_or_default();
+    if existing.contains(expression.as_str()) || existing.contains(absolute.as_ref()) {
+        return Ok(());
+    }
+
+    if let Some(parent) = profile.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating shell profile dir {:?}", parent))?;
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&profile)
+        .with_context(|| format!("opening shell profile {:?}", profile))?;
+    writeln!(
+        file,
+        "\n# VibeAround Startkit PATH\ncase \":$PATH:\" in\n  *:\"{expression}\":*) ;;\n  *) export PATH=\"$PATH:{expression}\" ;;\nesac"
+    )
+    .with_context(|| format!("updating shell profile {:?}", profile))?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn user_shell_profile_path() -> std::path::PathBuf {
+    let home = crate::config::home_dir();
+    let shell = std::env::var("SHELL").unwrap_or_default();
+    if shell.contains("zsh") {
+        return home.join(".zshrc");
+    }
+    if shell.contains("bash") {
+        return if cfg!(target_os = "macos") {
+            home.join(".bash_profile")
+        } else {
+            home.join(".bashrc")
+        };
+    }
+    home.join(".profile")
+}
+
+#[cfg(unix)]
+fn shell_path_expression(path: &Path) -> String {
+    let home = crate::config::home_dir();
+    let value = path
+        .strip_prefix(&home)
+        .ok()
+        .map(|relative| {
+            let relative = relative.to_string_lossy();
+            if relative.is_empty() {
+                "$HOME".to_string()
+            } else {
+                format!("$HOME/{}", escape_double_quoted_shell_path(&relative))
+            }
+        })
+        .unwrap_or_else(|| escape_double_quoted_shell_path(&path.to_string_lossy()));
+    value
+}
+
+#[cfg(unix)]
+fn escape_double_quoted_shell_path(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('`', "\\`")
+        .replace('$', "\\$")
+}
+
+#[cfg(windows)]
+fn ensure_user_path_dir_inner(path: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let path = windows_user_path(path.to_path_buf())
+        .to_string_lossy()
+        .to_string();
+    let script = r#"
+$dir = $args[0]
+$current = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ([string]::IsNullOrWhiteSpace($current)) {
+  [Environment]::SetEnvironmentVariable('Path', $dir, 'User')
+  exit 0
+}
+$parts = $current -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+foreach ($part in $parts) {
+  if ($part.TrimEnd('\') -ieq $dir.TrimEnd('\')) { exit 0 }
+}
+[Environment]::SetEnvironmentVariable('Path', ($current.TrimEnd(';') + ';' + $dir), 'User')
+"#;
+    let output = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .arg(path)
+        .output()
+        .context("updating user PATH")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "updating user PATH failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// Resolve the JS entry point for a pre-installed npm ACP agent binary.
 ///
 /// Looks up `~/.vibearound/plugins/node_modules/.bin/<bin_name>`.
@@ -161,14 +299,21 @@ pub fn acp_agents_dir() -> std::path::PathBuf {
 /// follow the symlink.  On Windows npm creates `.cmd` wrappers; we parse
 /// them to extract the JS path.
 pub fn resolve_acp_agent_bin(bin_name: &str) -> anyhow::Result<std::path::PathBuf> {
-    let bin_dir = acp_agents_dir().join("node_modules").join(".bin");
+    resolve_npm_bin_in_dir(&acp_agents_dir(), bin_name)
+}
+
+pub fn resolve_npm_bin_in_dir(
+    package_dir: &std::path::Path,
+    bin_name: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    let bin_dir = package_dir.join("node_modules").join(".bin");
 
     #[cfg(unix)]
     {
         let bin_path = bin_dir.join(bin_name);
         if !bin_path.exists() {
             anyhow::bail!(
-                "ACP agent binary '{}' not found at {:?}. Run onboarding to install it.",
+                "npm binary '{}' not found at {:?}. Run onboarding to install it.",
                 bin_name,
                 bin_path
             );
@@ -181,11 +326,10 @@ pub fn resolve_acp_agent_bin(bin_name: &str) -> anyhow::Result<std::path::PathBu
 
     #[cfg(windows)]
     {
-        // On Windows, npm creates <name>.cmd; parse it to find the JS entry
         let cmd_path = bin_dir.join(format!("{}.cmd", bin_name));
         if !cmd_path.exists() {
             anyhow::bail!(
-                "ACP agent binary '{}' not found at {:?}. Run onboarding to install it.",
+                "npm binary '{}' not found at {:?}. Run onboarding to install it.",
                 bin_name,
                 cmd_path
             );
@@ -290,44 +434,6 @@ fn probe_enriched_env() -> HashMap<String, String> {
     env
 }
 
-/// Prepend binaries installed by Startkit into the app-managed toolchain.
-///
-/// Startkit installs Node.js, npm global CLIs, and helper binaries under
-/// `~/.vibearound` instead of mutating system directories. Every child
-/// process launched by VibeAround should see those tools first.
-fn prepend_vibearound_managed_paths(env: &mut HashMap<String, String>) {
-    let sep = if cfg!(windows) { ';' } else { ':' };
-    let home = crate::config::data_dir();
-    let candidates = [
-        home.join("bin"),
-        home.join("runtime").join("node").join("bin"),
-        home.join("runtime").join("node"),
-        home.join("npm").join("bin"),
-        home.join("npm"),
-    ];
-
-    let current = path_value(env).unwrap_or_default();
-    let mut parts: Vec<String> = current
-        .split(sep)
-        .filter(|part| !part.trim().is_empty())
-        .map(String::from)
-        .collect();
-
-    for candidate in candidates.iter().rev() {
-        let value = candidate.to_string_lossy().to_string();
-        let exists = if cfg!(windows) {
-            parts.iter().any(|part| part.eq_ignore_ascii_case(&value))
-        } else {
-            parts.iter().any(|part| part == &value)
-        };
-        if !exists {
-            parts.insert(0, value);
-        }
-    }
-
-    set_path_value(env, parts.join(&sep.to_string()));
-}
-
 #[cfg(windows)]
 pub fn path_value(env: &HashMap<String, String>) -> Option<String> {
     env.iter()
@@ -369,10 +475,6 @@ pub fn set_path_value(env: &mut HashMap<String, String>, value: String) {
 #[cfg(not(windows))]
 pub fn set_path_value(env: &mut HashMap<String, String>, value: String) {
     env.insert(path_env_key().to_string(), value);
-}
-
-fn vibearound_managed_paths_enabled() -> bool {
-    crate::config::read_startkit_toolchain_mode() == "managed"
 }
 
 /// Probe the user's login shell for their full environment.

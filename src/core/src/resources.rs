@@ -131,6 +131,8 @@ pub struct TunnelDef {
     #[serde(default)]
     pub args: Option<Vec<String>>,
     #[serde(default)]
+    pub dependency_id: Option<String>,
+    #[serde(default)]
     pub spawn_error_hint: Option<String>,
     #[serde(default)]
     pub platform_overrides: Option<HashMap<String, TunnelOverride>>,

@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Download,
   Loader2,
+  RefreshCw,
   Rocket,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
@@ -13,12 +14,12 @@ import { cn } from "@/lib/utils";
 
 import {
   OnboardingFooter,
+  type FooterAction,
   type PrimaryAction,
 } from "./components/OnboardingFooter";
 import { OnboardingStepContent } from "./components/OnboardingStepContent";
 import { StartkitAdvancedMenu } from "./components/StartkitAdvancedMenu";
 import { ProgressStepper, QuestionPane } from "./components/WizardChrome";
-import { reportNeedsInstall } from "./components/startkitPresentation";
 import { useChannelAuth } from "./hooks/useChannelAuth";
 import { useStartkitFlow } from "./hooks/useStartkitFlow";
 import { defaultChannelVerbose } from "./lib/channelConfig";
@@ -29,7 +30,6 @@ import {
   agentIdFromReport,
   agentIdFromSdkReport,
   agentSdkCheckingReport,
-  computerCheckingReports,
   groupReportsFromReports,
   itemCheckSignature,
   localPluginReport,
@@ -51,9 +51,12 @@ import type {
   StartkitChoices,
   StartkitItemReport,
   StartkitManifestSummary,
+  ToolchainMode,
   TunnelSummary,
 } from "./types";
 import type { AgentId, TunnelProvider } from "./constants";
+
+const DEFAULT_TOOLCHAIN_MODE: ToolchainMode = "system";
 
 export default function Onboarding() {
   const { t } = useI18n();
@@ -76,10 +79,8 @@ export default function Onboarding() {
   >([]);
 
   const [downloadSource, setDownloadSource] = useState("global");
-  const [toolchainMode, setToolchainMode] = useState<"managed" | "system">(
-    "system",
-  );
-  const [shellPath, setShellPath] = useState(false);
+  const [toolchainMode, setToolchainMode] =
+    useState<ToolchainMode>(DEFAULT_TOOLCHAIN_MODE);
   const [enabledAgents, setEnabledAgents] = useState<Set<AgentId>>(new Set());
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(
     new Set(),
@@ -95,7 +96,7 @@ export default function Onboarding() {
   );
 
   const [tunnelProvider, setTunnelProvider] =
-    useState<TunnelProvider>("cloudflare");
+    useState<TunnelProvider>("none");
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
@@ -109,7 +110,6 @@ export default function Onboarding() {
   const checkedPluginSignaturesRef = useRef<Set<string>>(new Set());
   const checkedAgentSdkSignaturesRef = useRef<Set<string>>(new Set());
   const checkedTunnelSignaturesRef = useRef<Set<string>>(new Set());
-  const checkedComputerSignaturesRef = useRef<Set<string>>(new Set());
   const checkedInstallScanSignaturesRef = useRef<Set<string>>(new Set());
   const previousStartkitOptionsRef = useRef<string | null>(null);
   const refreshedPluginsAfterInstallRef = useRef(false);
@@ -123,9 +123,6 @@ export default function Onboarding() {
     [],
   );
   const [tunnelReports, setTunnelReports] = useState<StartkitItemReport[]>([]);
-  const [computerReports, setComputerReports] = useState<StartkitItemReport[]>(
-    [],
-  );
 
   useOnboardingInitialLoad({
     setSettings,
@@ -137,7 +134,6 @@ export default function Onboarding() {
     setDiscoveredPlugins,
     setDownloadSource,
     setToolchainMode,
-    setShellPath,
     setEnabledAgents,
     setEnabledChannels,
     setChannelConfigs,
@@ -161,7 +157,7 @@ export default function Onboarding() {
       channels: Array.from(enabledChannels),
       source: downloadSource,
       toolchainMode,
-      shellPath: toolchainMode === "system" ? false : shellPath,
+      shellPath: false,
     }),
     [
       enabledAgents,
@@ -169,7 +165,6 @@ export default function Onboarding() {
       enabledChannels,
       downloadSource,
       toolchainMode,
-      shellPath,
     ],
   );
 
@@ -200,7 +195,7 @@ export default function Onboarding() {
             : {}),
           source: downloadSource,
           toolchain_mode: toolchainMode,
-          shell_path: toolchainMode === "system" ? false : shellPath,
+          shell_path: false,
         },
       };
     },
@@ -219,7 +214,6 @@ export default function Onboarding() {
       cfHostname,
       downloadSource,
       toolchainMode,
-      shellPath,
     ],
   );
 
@@ -281,11 +275,7 @@ export default function Onboarding() {
 
   useEffect(() => {
     if (!loaded) return;
-    const signature = itemCheckSignature(
-      "startkit-options",
-      downloadSource,
-      toolchainMode,
-    );
+    const signature = itemCheckSignature("startkit-options", downloadSource, toolchainMode);
     if (previousStartkitOptionsRef.current === null) {
       previousStartkitOptionsRef.current = signature;
       return;
@@ -298,13 +288,11 @@ export default function Onboarding() {
     checkedPluginSignaturesRef.current.clear();
     checkedAgentSdkSignaturesRef.current.clear();
     checkedTunnelSignaturesRef.current.clear();
-    checkedComputerSignaturesRef.current.clear();
     checkedInstallScanSignaturesRef.current.clear();
     setAgentInstallReports([]);
     setPluginUpdateReports([]);
     setAgentSdkReports([]);
     setTunnelReports([]);
-    setComputerReports([]);
     startkit.reset();
   }, [downloadSource, loaded, startkit.reset, toolchainMode]);
 
@@ -313,11 +301,10 @@ export default function Onboarding() {
     const signature = itemCheckSignature(
       "install",
       downloadSource,
-      toolchainMode,
-      String(choices.shellPath),
       [...choices.agents].sort().join(","),
       [...choices.channels].sort().join(","),
       choices.tunnel,
+      choices.toolchainMode,
     );
     if (checkedInstallScanSignaturesRef.current.has(signature)) return;
     checkedInstallScanSignaturesRef.current.add(signature);
@@ -332,64 +319,19 @@ export default function Onboarding() {
     startkit.running,
     startkit.scanning,
     startkit.scan,
-    toolchainMode,
-  ]);
-
-  useEffect(() => {
-    if (!loaded || activeStep !== "install" || startkit.running || startkit.scanning) return;
-    const signature = itemCheckSignature(
-      "computer",
-      downloadSource,
-      toolchainMode,
-      String(choices.shellPath),
-      [...choices.agents].sort().join(","),
-      [...choices.channels].sort().join(","),
-      choices.tunnel,
-    );
-    if (checkedComputerSignaturesRef.current.has(signature)) return;
-    checkedComputerSignaturesRef.current.add(signature);
-
-    const checkingReports = computerCheckingReports(choices);
-    if (checkingReports.length === 0) return;
-
-    setComputerReports((previous) =>
-      mergeReportsById(previous, checkingReports),
-    );
-
-    void invoke<StartkitItemReport[]>("scan_computer_install_status", {
-      settings,
-      choices,
-    })
-      .then((reports) => {
-        setComputerReports((previous) =>
-          mergeReportsById(previous, reports),
-        );
-      })
-      .catch((error) => {
-        console.error("failed to scan computer install status", error);
-      });
-  }, [
-    activeStep,
-    choices,
-    downloadSource,
-    loaded,
-    settings,
-    startkit.running,
-    startkit.scanning,
-    toolchainMode,
   ]);
 
   useEffect(() => {
     if (!loaded || activeStep !== "install" || startkit.running || startkit.scanning) return;
     const agentIds = Array.from(enabledAgents).sort();
     const pendingAgentIds = agentIds.filter((agentId) => {
-      const signature = itemCheckSignature(agentId, "agent-sdk");
+      const signature = itemCheckSignature(agentId, "agent-sdk", toolchainMode);
       return !checkedAgentSdkSignaturesRef.current.has(signature);
     });
     if (pendingAgentIds.length === 0) return;
     for (const agentId of pendingAgentIds) {
       checkedAgentSdkSignaturesRef.current.add(
-        itemCheckSignature(agentId, "agent-sdk"),
+        itemCheckSignature(agentId, "agent-sdk", toolchainMode),
       );
     }
 
@@ -423,6 +365,7 @@ export default function Onboarding() {
     loaded,
     startkit.running,
     startkit.scanning,
+    toolchainMode,
   ]);
 
   useEffect(() => {
@@ -596,8 +539,8 @@ export default function Onboarding() {
     agentStatusChoices,
     loaded,
     settings,
-    toolchainMode,
     tunnels,
+    toolchainMode,
   ]);
 
   useEffect(() => {
@@ -710,7 +653,6 @@ export default function Onboarding() {
     const selectedAgents = new Set(choices.agents);
     const selectedChannels = new Set(choices.channels);
     return mergeReportsById([], [
-      ...computerReports,
       ...agentInstallReports.filter((report) => {
         const agentId = agentIdFromReport(report);
         return agentId ? selectedAgents.has(agentId) : false;
@@ -733,7 +675,6 @@ export default function Onboarding() {
     choices.agents,
     choices.channels,
     choices.tunnel,
-    computerReports,
     pluginUpdateReports,
     tunnelReports,
   ]);
@@ -743,7 +684,7 @@ export default function Onboarding() {
       return mergeReportsById(cachedInstallReports, startkit.reports);
     }
     if (startkit.reports.length > 0) {
-      return mergeReportsById(startkit.reports, cachedInstallReports);
+      return mergeReportsById(cachedInstallReports, startkit.reports);
     }
     return cachedInstallReports;
   }, [
@@ -783,13 +724,18 @@ export default function Onboarding() {
   ]);
   const hasScanned = installReports.some((report) => report.status !== "pending");
   const installReportsRunning = installReports.some((report) => report.status === "running");
-  const hasInstallWork = installReports.some(reportNeedsInstall);
+  const hasRunnableInstallWork = installReports.some((report) =>
+    report.actions.includes("install"),
+  );
   const hasBlockingReport = installReports.some((report) =>
     ["blocked", "error"].includes(report.status),
   );
+  const installCompletedSuccessfully =
+    startkit.complete &&
+    (startkit.finalStatus === "complete" || startkit.finalStatus === "needs_input");
   const canContinueFromInstall =
-    startkit.complete ||
-    (hasScanned && !installReportsRunning && !hasInstallWork && !hasBlockingReport);
+    installCompletedSuccessfully ||
+    (hasScanned && !installReportsRunning && !hasRunnableInstallWork && !hasBlockingReport);
   const activeIndex = WIZARD_STEPS.findIndex((step) => step.id === activeStep);
 
   const goNext = useCallback(() => {
@@ -815,6 +761,15 @@ export default function Onboarding() {
       setActiveStep("install");
     }
   }, [activeStep]);
+
+  const rerunInstallScan = useCallback(() => {
+    checkedInstallScanSignaturesRef.current.clear();
+    checkedAgentLocalSignaturesRef.current.clear();
+    checkedTunnelSignaturesRef.current.clear();
+    setAgentInstallReports([]);
+    setTunnelReports([]);
+    void startkit.scan(finalSettings, choices);
+  }, [choices, finalSettings, startkit]);
 
   const primaryAction = useMemo<PrimaryAction>(() => {
     if (activeStep === "install") {
@@ -842,12 +797,38 @@ export default function Onboarding() {
           run: () => setActiveStep("configure"),
         };
       }
-      return {
-        label: t("Install selected"),
-        icon: <Download className="h-4 w-4" />,
-        disabled: installReportsRunning,
-        run: () => void startkit.start(finalSettings, choices, installReports),
-      };
+      if (hasBlockingReport) {
+        if (hasRunnableInstallWork) {
+          return {
+            label: t("Install anyway"),
+            icon: <Download className="h-4 w-4" />,
+            disabled: installReportsRunning,
+            run: () => void startkit.start(finalSettings, choices, installReports),
+          };
+        }
+        return {
+          label: t("Check again"),
+          icon: <RefreshCw className="h-4 w-4" />,
+          disabled: !hasScanned,
+          run: rerunInstallScan,
+        };
+      }
+      if (hasRunnableInstallWork) {
+        return {
+          label: t("Install selected"),
+          icon: <Download className="h-4 w-4" />,
+          disabled: installReportsRunning,
+          run: () => void startkit.start(finalSettings, choices, installReports),
+        };
+      }
+      if (!hasRunnableInstallWork) {
+        return {
+          label: t("Check again"),
+          icon: <RefreshCw className="h-4 w-4" />,
+          disabled: !hasScanned,
+          run: rerunInstallScan,
+        };
+      }
     }
 
     if (activeStep === "configure") {
@@ -877,10 +858,44 @@ export default function Onboarding() {
     finishOnboarding,
     finishing,
     goNext,
+    hasRunnableInstallWork,
+    hasScanned,
+    hasBlockingReport,
+    installCompletedSuccessfully,
     installReports,
     installReportsRunning,
     enabledAgents,
+    rerunInstallScan,
     startkit,
+    t,
+  ]);
+
+  const secondaryAction = useMemo<FooterAction | null>(() => {
+    if (
+      activeStep !== "install" ||
+      startkit.running ||
+      installReportsRunning ||
+      canContinueFromInstall ||
+      !hasBlockingReport ||
+      !hasRunnableInstallWork
+    ) {
+      return null;
+    }
+    return {
+      label: t("Check again"),
+      icon: <RefreshCw className="h-4 w-4" />,
+      disabled: !hasScanned,
+      run: rerunInstallScan,
+    };
+  }, [
+    activeStep,
+    canContinueFromInstall,
+    hasBlockingReport,
+    hasRunnableInstallWork,
+    hasScanned,
+    installReportsRunning,
+    rerunInstallScan,
+    startkit.running,
     t,
   ]);
 
@@ -922,12 +937,9 @@ export default function Onboarding() {
           <StartkitAdvancedMenu
             sources={manifest?.sources ?? {}}
             downloadSource={downloadSource}
+            toolchainMode={toolchainMode}
             onDownloadSource={setDownloadSource}
-            installLocation={toolchainMode}
-            onInstallLocation={setToolchainMode}
-            shellPath={shellPath && toolchainMode !== "system"}
-            shellPathDisabled={toolchainMode === "system"}
-            onShellPath={setShellPath}
+            onToolchainMode={setToolchainMode}
           />
           <LanguageMenu />
         </div>
@@ -973,7 +985,6 @@ export default function Onboarding() {
           onConfigChange={updateChannelConfig}
           onVerboseChange={updateChannelVerbose}
           onInstallPlugin={installPlugin}
-          onInstallLocation={setToolchainMode}
           onStartAuth={startAuth}
           onCancelAuth={cancelAuth}
           onNgrokToken={setNgrokToken}
@@ -989,6 +1000,7 @@ export default function Onboarding() {
         running={startkit.running}
         finishing={finishing}
         primaryAction={primaryAction}
+        secondaryAction={secondaryAction}
         onBack={goBack}
         onSkip={skipStep}
         onCancel={() => void startkit.cancel()}
