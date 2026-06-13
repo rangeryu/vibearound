@@ -15,19 +15,19 @@ $cmd = Get-Command node -ErrorAction SilentlyContinue
 if ($cmd) { $candidate = $cmd.Source }
 
 if (-not $candidate) {
-  Emit @{ status = "missing"; message = "Node.js $env:STARTKIT_MIN_VERSION or newer will be installed on this computer."; actions = @("install") }
+  Emit @{ status = "missing"; message = "Install Node.js $env:STARTKIT_MIN_VERSION or newer. The Node.js installer includes npm."; actions = @("manual") }
   exit 0
 }
 
 $npm = Get-Command npm -ErrorAction SilentlyContinue
 if (-not $npm) {
-  Emit @{ status = "missing"; path = $candidate; message = "npm was not found. Install Node.js $env:STARTKIT_MIN_VERSION or newer on this computer."; actions = @("install") }
+  Emit @{ status = "missing"; path = $candidate; message = "npm was not found. Reinstall Node.js $env:STARTKIT_MIN_VERSION or newer with npm enabled."; actions = @("manual") }
   exit 0
 }
 
 $version = & $candidate --version 2>$null
 if ((Major $version) -lt $minMajor) {
-  Emit @{ status = "outdated"; version = $version; path = $candidate; message = "Node.js $version is below the required version. VibeAround will install Node.js $env:STARTKIT_MIN_VERSION or newer on this computer."; actions = @("install") }
+  Emit @{ status = "outdated"; version = $version; path = $candidate; message = "Node.js $version is below the required version. Install Node.js $env:STARTKIT_MIN_VERSION or newer; it includes npm."; actions = @("manual") }
   exit 0
 }
 

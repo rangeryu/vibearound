@@ -1528,7 +1528,7 @@ fn manual_guidance_for_item(
     match item.id.as_str() {
         "essentials.node" => Some(ManualGuidance {
             message: format!(
-                "Install Node.js {} or newer, then scan again.",
+                "Install Node.js {} or newer. The Node.js installer includes npm. Then scan again.",
                 item.min_version.as_deref().unwrap_or("22.0.0")
             ),
             command: None,
