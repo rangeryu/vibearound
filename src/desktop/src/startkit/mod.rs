@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::process::Output;
+use std::process::{Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1196,7 +1196,18 @@ async fn execute_agent_cli_item(
             .await;
 
     match output {
-        Ok(_) => Ok(scan_agent_cli_item(item, agent_id, choices).await),
+        Ok(output) if output.status.success() => {
+            Ok(scan_agent_cli_item(item, agent_id, choices).await)
+        }
+        Ok(output) => Ok(StartkitItemReport {
+            status: StartkitItemStatus::Error,
+            message: Some(shell_command_failure_message(
+                &output,
+                &manifest.runner.log_redact_keys,
+            )),
+            actions: vec!["install".to_string()],
+            ..base_report(item)
+        }),
         Err(error) => Ok(StartkitItemReport {
             status: StartkitItemStatus::Error,
             message: Some(error.to_string()),
@@ -1257,7 +1268,36 @@ async fn run_shell_command_with_cancel(
     };
     child.env_clear();
     child.envs(common::process::env::enriched_env().clone());
+    child.stdout(Stdio::piped());
+    child.stderr(Stdio::piped());
+    child.kill_on_drop(true);
     run_command_with_cancel(child, Duration::from_secs(timeout_secs), cancelled).await
+}
+
+fn shell_command_failure_message(output: &Output, redact_keys: &[String]) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = stderr
+        .lines()
+        .chain(stdout.lines())
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| truncate_message(&redact(line, redact_keys), 240));
+
+    match detail {
+        Some(detail) => format!("install command failed: {detail}"),
+        None => format!("install command failed: {}", output.status),
+    }
+}
+
+fn truncate_message(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let mut truncated = value.chars().take(max_chars).collect::<String>();
+    truncated.push_str("...");
+    truncated
 }
 
 fn scan_config_item(item: &StartkitItem, settings: &Value) -> StartkitItemReport {
@@ -1810,6 +1850,29 @@ mod tests {
 
         assert_eq!(choices.toolchain_mode, "system");
         assert!(!choices.shell_path);
+    }
+
+    #[tokio::test]
+    async fn shell_runner_captures_stdout() {
+        let output = run_shell_command_with_cancel("printf ok", 5, None)
+            .await
+            .unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
+    }
+
+    #[tokio::test]
+    async fn shell_failure_message_uses_stderr() {
+        let output = run_shell_command_with_cancel("printf nope >&2; exit 7", 5, None)
+            .await
+            .unwrap();
+
+        assert!(!output.status.success());
+        assert_eq!(
+            shell_command_failure_message(&output, &[]),
+            "install command failed: nope"
+        );
     }
 
     #[test]

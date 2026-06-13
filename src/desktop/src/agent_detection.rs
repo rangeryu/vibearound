@@ -728,12 +728,23 @@ fn managed_paths(program: &str) -> Vec<PathBuf> {
 }
 
 fn codex_app_paths() -> Vec<PathBuf> {
+    codex_app_binary_paths()
+        .into_iter()
+        .filter(|path| path.exists())
+        .collect()
+}
+
+fn codex_app_binary_paths() -> Vec<PathBuf> {
     if cfg!(target_os = "macos") {
-        ["/Applications/Codex.app/Contents/Resources/codex"]
-            .into_iter()
-            .map(PathBuf::from)
-            .filter(|path| path.exists())
-            .collect()
+        [
+            PathBuf::from("/Applications/Codex.app"),
+            common::config::home_dir()
+                .join("Applications")
+                .join("Codex.app"),
+        ]
+        .into_iter()
+        .map(|app| app.join("Contents").join("Resources").join("codex"))
+        .collect()
     } else {
         Vec::new()
     }
@@ -947,6 +958,26 @@ mod tests {
             source_package("codex", "app_bundled").as_deref(),
             Some("@openai/codex")
         );
+    }
+
+    #[test]
+    fn codex_app_binary_paths_include_user_applications() {
+        let paths = codex_app_binary_paths();
+        if cfg!(target_os = "macos") {
+            assert!(paths.contains(&PathBuf::from(
+                "/Applications/Codex.app/Contents/Resources/codex"
+            )));
+            assert!(paths.contains(
+                &common::config::home_dir()
+                    .join("Applications")
+                    .join("Codex.app")
+                    .join("Contents")
+                    .join("Resources")
+                    .join("codex")
+            ));
+        } else {
+            assert!(paths.is_empty());
+        }
     }
 
     #[test]
