@@ -7,7 +7,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::process::{Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -314,23 +313,16 @@ pub struct StartkitPaths {
     pub root: PathBuf,
     pub home: PathBuf,
     pub bin_dir: PathBuf,
-    pub runtime_dir: PathBuf,
-    pub node_dir: PathBuf,
-    pub npm_prefix: PathBuf,
     pub cache_dir: PathBuf,
 }
 
 impl StartkitPaths {
     pub fn new(root: PathBuf) -> Self {
         let home = common::config::data_dir();
-        let runtime_dir = home.join("runtime");
         Self {
             root,
             bin_dir: home.join("bin"),
-            node_dir: runtime_dir.join("node"),
-            npm_prefix: home.join("npm"),
             cache_dir: home.join("cache").join("startkit"),
-            runtime_dir,
             home,
         }
     }
@@ -505,12 +497,7 @@ pub(crate) async fn scan_computer_reports(
     let item_ids = plan
         .item_ids
         .into_iter()
-        .filter(|id| {
-            matches!(
-                id.as_str(),
-                "essentials.node" | "essentials.git" | "environment.shell_path"
-            )
-        })
+        .filter(|id| matches!(id.as_str(), "essentials.node" | "essentials.git"))
         .collect::<Vec<_>>();
     scan_startkit_item_reports(settings, choices, &item_ids, STARTKIT_ITEM_SCAN_TIMEOUT).await
 }
@@ -619,26 +606,12 @@ async fn execute_item_with_cancel(
     let paths = StartkitPaths::new(startkit_root());
     let item = find_item(&manifest, item_id)?;
     if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
-        return execute_agent_cli_item(
-            &manifest, &paths, item, agent_id, choices, cancelled, progress,
-        )
-        .await;
+        return Ok(scan_agent_cli_item(item, agent_id, choices).await);
     }
     let before = scan_item(&manifest, &paths, item, settings, choices, platform).await;
 
     if !before.status.needs_install() {
         return Ok(before);
-    }
-
-    if choices.toolchain_mode == "system" && item.managed {
-        return Ok(StartkitItemReport {
-            status: StartkitItemStatus::Blocked,
-            message: Some(
-                "System-only mode is selected, so Startkit will not install a managed copy."
-                    .to_string(),
-            ),
-            ..base_report(item)
-        });
     }
 
     let Some(script) = &item.install else {
@@ -976,7 +949,6 @@ fn install_phase_message(item: &StartkitItem) -> String {
     match item.id.as_str() {
         "essentials.node" => "Downloading Node.js".to_string(),
         "tunnels.cloudflare.binary" => "Downloading cloudflared".to_string(),
-        "environment.shell_path" => "Updating shell PATH".to_string(),
         _ => format!("Installing {}", item.label),
     }
 }
@@ -1095,16 +1067,13 @@ async fn scan_item(
 async fn scan_agent_cli_item(
     item: &StartkitItem,
     agent_id: &str,
-    choices: &StartkitChoices,
+    _choices: &StartkitChoices,
 ) -> StartkitItemReport {
     let selected = agent_detection::scan_agent_and_persist(agent_id)
         .await
         .ok()
         .and_then(|detection| {
-            agent_detection::preferred_candidate_for_toolchain_mode(
-                &detection,
-                &choices.toolchain_mode,
-            )
+            agent_detection::preferred_candidate_for_toolchain_mode(&detection, "system")
         });
 
     match selected {
@@ -1119,185 +1088,26 @@ async fn scan_agent_cli_item(
             actions: Vec::new(),
             ..base_report(item)
         },
-        None => {
-            let can_install = agent_detection::install_source_for_toolchain_mode(
-                agent_id,
-                &choices.toolchain_mode,
-            )
-            .and_then(|source| {
-                agent_detection::source_command_template(agent_id, &source, "install")
-            })
-            .is_some();
-            StartkitItemReport {
-                status: StartkitItemStatus::Missing,
-                message: Some(agent_missing_message(item, &choices.toolchain_mode)),
-                actions: if can_install {
-                    vec!["install".to_string()]
-                } else {
-                    Vec::new()
-                },
-                ..base_report(item)
-            }
-        }
+        None => StartkitItemReport {
+            status: StartkitItemStatus::Blocked,
+            message: Some(agent_missing_message(item)),
+            actions: Vec::new(),
+            ..base_report(item)
+        },
     }
 }
 
-fn agent_missing_message(item: &StartkitItem, toolchain_mode: &str) -> String {
-    if toolchain_mode == "system" {
-        format!("{} was not found in the system toolchain", item.label)
-    } else {
-        format!("{} was not found in VibeAround", item.label)
-    }
-}
-
-async fn execute_agent_cli_item(
-    manifest: &Manifest,
-    paths: &StartkitPaths,
-    item: &StartkitItem,
-    agent_id: &str,
-    choices: &StartkitChoices,
-    cancelled: Option<&Arc<AtomicBool>>,
-    progress: Option<&(dyn Fn(&StartkitItem, StartkitItemStatus, Option<String>) + Sync)>,
-) -> anyhow::Result<StartkitItemReport> {
-    let before = scan_agent_cli_item(item, agent_id, choices).await;
-    if !before.status.needs_install() {
-        return Ok(before);
-    }
-
-    let Some(source) =
-        agent_detection::install_source_for_toolchain_mode(agent_id, &choices.toolchain_mode)
-    else {
-        return Ok(StartkitItemReport {
-            status: StartkitItemStatus::Blocked,
-            message: Some("No automatic install action is available".to_string()),
-            ..base_report(item)
-        });
-    };
-    let Some(template) = agent_detection::source_command_template(agent_id, &source, "install")
-    else {
-        return Ok(StartkitItemReport {
-            status: StartkitItemStatus::Blocked,
-            message: Some("No automatic install action is available".to_string()),
-            ..base_report(item)
-        });
-    };
-    let command = render_agent_command_template(manifest, paths, choices, &template)?;
-
-    if let Some(progress) = progress {
-        progress(
-            item,
-            StartkitItemStatus::Running,
-            Some(format!("Installing {} via {}", item.label, source)),
-        );
-    }
-
-    let output =
-        run_shell_command_with_cancel(&command, manifest.runner.default_timeout_secs, cancelled)
-            .await;
-
-    match output {
-        Ok(output) if output.status.success() => {
-            Ok(scan_agent_cli_item(item, agent_id, choices).await)
-        }
-        Ok(output) => Ok(StartkitItemReport {
-            status: StartkitItemStatus::Error,
-            message: Some(shell_command_failure_message(
-                &output,
-                &manifest.runner.log_redact_keys,
-            )),
-            actions: vec!["install".to_string()],
-            ..base_report(item)
-        }),
-        Err(error) => Ok(StartkitItemReport {
-            status: StartkitItemStatus::Error,
-            message: Some(error.to_string()),
-            actions: vec!["install".to_string()],
-            ..base_report(item)
-        }),
-    }
+fn agent_missing_message(item: &StartkitItem) -> String {
+    format!(
+        "{} was not found in the system toolchain. Install it on this computer, then scan again.",
+        item.label
+    )
 }
 
 fn agent_id_from_cli_item(item_id: &str) -> Option<&str> {
     item_id
         .strip_prefix("agents.")
         .and_then(|value| value.strip_suffix(".cli"))
-}
-
-fn render_agent_command_template(
-    manifest: &Manifest,
-    paths: &StartkitPaths,
-    choices: &StartkitChoices,
-    template: &str,
-) -> anyhow::Result<String> {
-    let source = manifest
-        .sources
-        .get(&choices.source)
-        .or_else(|| manifest.sources.get("global"))
-        .ok_or_else(|| anyhow!("startkit source '{}' not found", choices.source))?;
-    Ok(template
-        .replace(
-            "{managed_npm_prefix}",
-            &shell_arg(&paths.npm_prefix.to_string_lossy()),
-        )
-        .replace("{npm_registry}", &shell_arg(&source.npm_registry)))
-}
-
-fn shell_arg(value: &str) -> String {
-    if cfg!(windows) {
-        format!("\"{}\"", value.replace('"', "\\\""))
-    } else {
-        shell_escape::unix::escape(std::borrow::Cow::Borrowed(value)).into_owned()
-    }
-}
-
-async fn run_shell_command_with_cancel(
-    command: &str,
-    timeout_secs: u64,
-    cancelled: Option<&Arc<AtomicBool>>,
-) -> anyhow::Result<Output> {
-    let mut child = if cfg!(windows) {
-        let mut cmd = Command::new("powershell.exe");
-        cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]);
-        cmd.arg(command);
-        cmd
-    } else {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c");
-        cmd.arg(command);
-        cmd
-    };
-    child.env_clear();
-    child.envs(common::process::env::enriched_env().clone());
-    child.stdout(Stdio::piped());
-    child.stderr(Stdio::piped());
-    child.kill_on_drop(true);
-    run_command_with_cancel(child, Duration::from_secs(timeout_secs), cancelled).await
-}
-
-fn shell_command_failure_message(output: &Output, redact_keys: &[String]) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let detail = stderr
-        .lines()
-        .chain(stdout.lines())
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(|line| truncate_message(&redact(line, redact_keys), 240));
-
-    match detail {
-        Some(detail) => format!("install command failed: {detail}"),
-        None => format!("install command failed: {}", output.status),
-    }
-}
-
-fn truncate_message(value: &str, max_chars: usize) -> String {
-    if value.chars().count() <= max_chars {
-        return value.to_string();
-    }
-
-    let mut truncated = value.chars().take(max_chars).collect::<String>();
-    truncated.push_str("...");
-    truncated
 }
 
 fn scan_config_item(item: &StartkitItem, settings: &Value) -> StartkitItemReport {
@@ -1459,7 +1269,6 @@ fn apply_startkit_env(
     choices: &StartkitChoices,
 ) -> anyhow::Result<()> {
     std::fs::create_dir_all(&paths.bin_dir).ok();
-    std::fs::create_dir_all(&paths.runtime_dir).ok();
     std::fs::create_dir_all(&paths.cache_dir).ok();
 
     let source = manifest
@@ -1468,36 +1277,15 @@ fn apply_startkit_env(
         .or_else(|| manifest.sources.get("global"))
         .ok_or_else(|| anyhow!("startkit source '{}' not found", choices.source))?;
 
-    let current_path =
-        common::process::env::path_value(common::process::env::enriched_env()).unwrap_or_default();
-    let sep = if cfg!(windows) { ";" } else { ":" };
-    let path = if choices.toolchain_mode == "system" {
-        current_path
-    } else {
-        let mut path = managed_path_entries()
-            .iter()
-            .map(|p| p.to_string_lossy().to_string())
-            .collect::<Vec<_>>();
-        path.push(current_path);
-        path.join(sep)
-    };
-
-    command.env(common::process::env::path_env_key(), path);
     command.env("STARTKIT_HOME", &paths.home);
     command.env("STARTKIT_ROOT", &paths.root);
     command.env("STARTKIT_BIN_DIR", &paths.bin_dir);
-    command.env("STARTKIT_RUNTIME_DIR", &paths.runtime_dir);
-    command.env("STARTKIT_NODE_DIR", &paths.node_dir);
-    command.env("STARTKIT_NPM_PREFIX", &paths.npm_prefix);
     command.env("STARTKIT_CACHE_DIR", &paths.cache_dir);
     command.env("STARTKIT_SOURCE", &choices.source);
-    command.env("STARTKIT_TOOLCHAIN_MODE", &choices.toolchain_mode);
     command.env(
         "STARTKIT_ITEM_MANAGED",
         if item.managed { "true" } else { "false" },
     );
-    command.env("STARTKIT_NODE_INDEX_URL", &source.node_index);
-    command.env("STARTKIT_NODE_DIST_BASE", &source.node_dist);
     command.env("STARTKIT_NPM_REGISTRY", &source.npm_registry);
     command.env("STARTKIT_ITEM_ID", &item.id);
     if let Some(value) = &item.min_version {
@@ -1514,17 +1302,6 @@ fn apply_startkit_env(
     }
 
     Ok(())
-}
-
-pub fn managed_path_entries() -> Vec<PathBuf> {
-    let home = common::config::data_dir();
-    vec![
-        home.join("bin"),
-        home.join("runtime").join("node").join("bin"),
-        home.join("runtime").join("node"),
-        home.join("npm").join("bin"),
-        home.join("npm"),
-    ]
 }
 
 fn report_from_script(item: &StartkitItem, output: ScriptOutput) -> StartkitItemReport {
@@ -1790,12 +1567,12 @@ mod tests {
             tunnel: "none".to_string(),
             channels: Vec::new(),
             source: "global".to_string(),
-            toolchain_mode: "managed".to_string(),
+            toolchain_mode: "system".to_string(),
             shell_path: false,
         });
 
         assert!(item_ids.contains(&"essentials.node".to_string()));
-        assert!(item_ids.contains(&"essentials.git".to_string()));
+        assert!(!item_ids.contains(&"essentials.git".to_string()));
         assert!(item_ids.contains(&"agents.codex.cli".to_string()));
         assert!(!item_ids.contains(&"agents.claude.cli".to_string()));
         assert!(!item_ids.contains(&"tunnels.cloudflare.binary".to_string()));
@@ -1808,7 +1585,7 @@ mod tests {
             tunnel: "cloudflare".to_string(),
             channels: Vec::new(),
             source: "cn".to_string(),
-            toolchain_mode: "managed".to_string(),
+            toolchain_mode: "system".to_string(),
             shell_path: false,
         });
 
@@ -1829,7 +1606,7 @@ mod tests {
             tunnel: "none".to_string(),
             channels: vec!["telegram".to_string()],
             source: "global".to_string(),
-            toolchain_mode: "managed".to_string(),
+            toolchain_mode: "system".to_string(),
             shell_path: false,
         });
 
@@ -1852,40 +1629,17 @@ mod tests {
         assert!(!choices.shell_path);
     }
 
-    #[tokio::test]
-    async fn shell_runner_captures_stdout() {
-        let output = run_shell_command_with_cancel("printf ok", 5, None)
-            .await
-            .unwrap();
-
-        assert!(output.status.success());
-        assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
-    }
-
-    #[tokio::test]
-    async fn shell_failure_message_uses_stderr() {
-        let output = run_shell_command_with_cancel("printf nope >&2; exit 7", 5, None)
-            .await
-            .unwrap();
-
-        assert!(!output.status.success());
-        assert_eq!(
-            shell_command_failure_message(&output, &[]),
-            "install command failed: nope"
-        );
-    }
-
     #[test]
-    fn shell_path_choice_adds_environment_item() {
+    fn shell_path_choice_no_longer_adds_environment_item() {
         let item_ids = ids(StartkitChoices {
             agents: vec!["codex".to_string()],
             tunnel: "none".to_string(),
             channels: Vec::new(),
             source: "global".to_string(),
-            toolchain_mode: "managed".to_string(),
+            toolchain_mode: "system".to_string(),
             shell_path: true,
         });
 
-        assert!(item_ids.contains(&"environment.shell_path".to_string()));
+        assert!(!item_ids.contains(&"environment.shell_path".to_string()));
     }
 }
