@@ -146,15 +146,6 @@ export function groupSummary(reports: StartkitItemReport[], t: Translate): strin
     : t("{{count}} items", { count: reports.length });
 }
 
-export function reportNeedsInstall(report: StartkitItemReport): boolean {
-  return (
-    report.status === "missing" ||
-    report.status === "outdated" ||
-    report.status === "broken" ||
-    report.actions.includes("install")
-  );
-}
-
 export function compactReportLabel(report: StartkitItemReport, t: Translate): string {
   if (report.status === "running") {
     return report.message ? t(report.message) : t("Checking");
@@ -196,11 +187,11 @@ export function installHeadline({
   finalStatus: string | null;
   t: Translate;
 }) {
-  if (running) return t("Installing selected setup");
+  if (running) return t("Preparing selected setup");
   if (scanning) return t("Checking this computer");
   if (complete && finalStatus === "error") return t("Setup finished with issues");
   if (complete) return t("Setup run finished");
-  return t("Ready to install");
+  return t("Ready for setup");
 }
 
 export function installProgressLabel(

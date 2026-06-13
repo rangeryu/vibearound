@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Download,
   Loader2,
+  RefreshCw,
   Rocket,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
@@ -18,7 +19,6 @@ import {
 import { OnboardingStepContent } from "./components/OnboardingStepContent";
 import { StartkitAdvancedMenu } from "./components/StartkitAdvancedMenu";
 import { ProgressStepper, QuestionPane } from "./components/WizardChrome";
-import { reportNeedsInstall } from "./components/startkitPresentation";
 import { useChannelAuth } from "./hooks/useChannelAuth";
 import { useStartkitFlow } from "./hooks/useStartkitFlow";
 import { defaultChannelVerbose } from "./lib/channelConfig";
@@ -55,6 +55,8 @@ import type {
 } from "./types";
 import type { AgentId, TunnelProvider } from "./constants";
 
+const SYSTEM_TOOLCHAIN_MODE = "system" as const;
+
 export default function Onboarding() {
   const { t } = useI18n();
   const isMacTitlebar =
@@ -76,10 +78,6 @@ export default function Onboarding() {
   >([]);
 
   const [downloadSource, setDownloadSource] = useState("global");
-  const [toolchainMode, setToolchainMode] = useState<"managed" | "system">(
-    "system",
-  );
-  const [shellPath, setShellPath] = useState(false);
   const [enabledAgents, setEnabledAgents] = useState<Set<AgentId>>(new Set());
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(
     new Set(),
@@ -136,8 +134,6 @@ export default function Onboarding() {
     setPluginRegistry,
     setDiscoveredPlugins,
     setDownloadSource,
-    setToolchainMode,
-    setShellPath,
     setEnabledAgents,
     setEnabledChannels,
     setChannelConfigs,
@@ -160,16 +156,14 @@ export default function Onboarding() {
       tunnel: tunnelProvider,
       channels: Array.from(enabledChannels),
       source: downloadSource,
-      toolchainMode,
-      shellPath: toolchainMode === "system" ? false : shellPath,
+      toolchainMode: SYSTEM_TOOLCHAIN_MODE,
+      shellPath: false,
     }),
     [
       enabledAgents,
       tunnelProvider,
       enabledChannels,
       downloadSource,
-      toolchainMode,
-      shellPath,
     ],
   );
 
@@ -199,8 +193,8 @@ export default function Onboarding() {
             ? built.startkit
             : {}),
           source: downloadSource,
-          toolchain_mode: toolchainMode,
-          shell_path: toolchainMode === "system" ? false : shellPath,
+          toolchain_mode: SYSTEM_TOOLCHAIN_MODE,
+          shell_path: false,
         },
       };
     },
@@ -218,8 +212,6 @@ export default function Onboarding() {
       cfToken,
       cfHostname,
       downloadSource,
-      toolchainMode,
-      shellPath,
     ],
   );
 
@@ -229,22 +221,22 @@ export default function Onboarding() {
       tunnel: "none",
       channels: [],
       source: downloadSource,
-      toolchainMode,
+      toolchainMode: SYSTEM_TOOLCHAIN_MODE,
       shellPath: false,
     }),
-    [downloadSource, toolchainMode],
+    [downloadSource],
   );
 
   const checkAgentUpdates = useCallback(
     (agentIds: string[]) => {
       const pendingAgentIds = agentIds.filter((agentId) => {
-        const signature = itemCheckSignature(agentId, downloadSource, toolchainMode);
+        const signature = itemCheckSignature(agentId, downloadSource);
         return !checkedAgentUpdateSignaturesRef.current.has(signature);
       });
       if (pendingAgentIds.length === 0) return;
       for (const agentId of pendingAgentIds) {
         checkedAgentUpdateSignaturesRef.current.add(
-          itemCheckSignature(agentId, downloadSource, toolchainMode),
+          itemCheckSignature(agentId, downloadSource),
         );
       }
 
@@ -276,16 +268,12 @@ export default function Onboarding() {
           );
         });
     },
-    [agentStatusChoices, downloadSource, toolchainMode],
+    [agentStatusChoices, downloadSource],
   );
 
   useEffect(() => {
     if (!loaded) return;
-    const signature = itemCheckSignature(
-      "startkit-options",
-      downloadSource,
-      toolchainMode,
-    );
+    const signature = itemCheckSignature("startkit-options", downloadSource);
     if (previousStartkitOptionsRef.current === null) {
       previousStartkitOptionsRef.current = signature;
       return;
@@ -306,15 +294,13 @@ export default function Onboarding() {
     setTunnelReports([]);
     setComputerReports([]);
     startkit.reset();
-  }, [downloadSource, loaded, startkit.reset, toolchainMode]);
+  }, [downloadSource, loaded, startkit.reset]);
 
   useEffect(() => {
     if (!loaded || activeStep !== "install" || startkit.running || startkit.scanning) return;
     const signature = itemCheckSignature(
       "install",
       downloadSource,
-      toolchainMode,
-      String(choices.shellPath),
       [...choices.agents].sort().join(","),
       [...choices.channels].sort().join(","),
       choices.tunnel,
@@ -332,7 +318,6 @@ export default function Onboarding() {
     startkit.running,
     startkit.scanning,
     startkit.scan,
-    toolchainMode,
   ]);
 
   useEffect(() => {
@@ -340,8 +325,6 @@ export default function Onboarding() {
     const signature = itemCheckSignature(
       "computer",
       downloadSource,
-      toolchainMode,
-      String(choices.shellPath),
       [...choices.agents].sort().join(","),
       [...choices.channels].sort().join(","),
       choices.tunnel,
@@ -376,7 +359,6 @@ export default function Onboarding() {
     settings,
     startkit.running,
     startkit.scanning,
-    toolchainMode,
   ]);
 
   useEffect(() => {
@@ -429,13 +411,13 @@ export default function Onboarding() {
     if (!loaded || activeStep !== "agents" || agents.length === 0 || startkit.running) return;
     const agentIds = agents.map((agent) => agent.id).sort();
     const pendingAgentIds = agentIds.filter((agentId) => {
-      const signature = itemCheckSignature(agentId, "local", toolchainMode);
+      const signature = itemCheckSignature(agentId, "local");
       return !checkedAgentLocalSignaturesRef.current.has(signature);
     });
     if (pendingAgentIds.length === 0) return;
     for (const agentId of pendingAgentIds) {
       checkedAgentLocalSignaturesRef.current.add(
-        itemCheckSignature(agentId, "local", toolchainMode),
+        itemCheckSignature(agentId, "local"),
       );
     }
     setAgentInstallReports((previous) =>
@@ -469,7 +451,6 @@ export default function Onboarding() {
     loaded,
     settings,
     startkit.running,
-    toolchainMode,
   ]);
 
   useEffect(() => {
@@ -558,13 +539,13 @@ export default function Onboarding() {
       .filter((id) => id !== "none")
       .sort();
     const pendingTunnelIds = tunnelIds.filter((id) => {
-      const signature = itemCheckSignature(id, "tunnel", toolchainMode);
+      const signature = itemCheckSignature(id, "tunnel");
       return !checkedTunnelSignaturesRef.current.has(signature);
     });
     if (pendingTunnelIds.length === 0) return;
     for (const id of pendingTunnelIds) {
       checkedTunnelSignaturesRef.current.add(
-        itemCheckSignature(id, "tunnel", toolchainMode),
+        itemCheckSignature(id, "tunnel"),
       );
     }
 
@@ -596,7 +577,6 @@ export default function Onboarding() {
     agentStatusChoices,
     loaded,
     settings,
-    toolchainMode,
     tunnels,
   ]);
 
@@ -783,13 +763,15 @@ export default function Onboarding() {
   ]);
   const hasScanned = installReports.some((report) => report.status !== "pending");
   const installReportsRunning = installReports.some((report) => report.status === "running");
-  const hasInstallWork = installReports.some(reportNeedsInstall);
+  const hasRunnableInstallWork = installReports.some((report) =>
+    report.actions.includes("install"),
+  );
   const hasBlockingReport = installReports.some((report) =>
     ["blocked", "error"].includes(report.status),
   );
   const canContinueFromInstall =
     startkit.complete ||
-    (hasScanned && !installReportsRunning && !hasInstallWork && !hasBlockingReport);
+    (hasScanned && !installReportsRunning && !hasRunnableInstallWork && !hasBlockingReport);
   const activeIndex = WIZARD_STEPS.findIndex((step) => step.id === activeStep);
 
   const goNext = useCallback(() => {
@@ -842,6 +824,23 @@ export default function Onboarding() {
           run: () => setActiveStep("configure"),
         };
       }
+      if (hasBlockingReport || !hasRunnableInstallWork) {
+        return {
+          label: t("Check again"),
+          icon: <RefreshCw className="h-4 w-4" />,
+          disabled: !hasScanned,
+          run: () => {
+            checkedInstallScanSignaturesRef.current.clear();
+            checkedComputerSignaturesRef.current.clear();
+            checkedAgentLocalSignaturesRef.current.clear();
+            checkedTunnelSignaturesRef.current.clear();
+            setAgentInstallReports([]);
+            setTunnelReports([]);
+            setComputerReports([]);
+            void startkit.scan(finalSettings, choices);
+          },
+        };
+      }
       return {
         label: t("Install selected"),
         icon: <Download className="h-4 w-4" />,
@@ -877,6 +876,9 @@ export default function Onboarding() {
     finishOnboarding,
     finishing,
     goNext,
+    hasRunnableInstallWork,
+    hasScanned,
+    hasBlockingReport,
     installReports,
     installReportsRunning,
     enabledAgents,
@@ -923,11 +925,6 @@ export default function Onboarding() {
             sources={manifest?.sources ?? {}}
             downloadSource={downloadSource}
             onDownloadSource={setDownloadSource}
-            installLocation={toolchainMode}
-            onInstallLocation={setToolchainMode}
-            shellPath={shellPath && toolchainMode !== "system"}
-            shellPathDisabled={toolchainMode === "system"}
-            onShellPath={setShellPath}
           />
           <LanguageMenu />
         </div>
@@ -973,7 +970,6 @@ export default function Onboarding() {
           onConfigChange={updateChannelConfig}
           onVerboseChange={updateChannelVerbose}
           onInstallPlugin={installPlugin}
-          onInstallLocation={setToolchainMode}
           onStartAuth={startAuth}
           onCancelAuth={cancelAuth}
           onNgrokToken={setNgrokToken}

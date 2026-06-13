@@ -38,8 +38,6 @@ export function useOnboardingInitialLoad({
   setPluginRegistry,
   setDiscoveredPlugins,
   setDownloadSource,
-  setToolchainMode,
-  setShellPath,
   setEnabledAgents,
   setEnabledChannels,
   setChannelConfigs,
@@ -58,8 +56,6 @@ export function useOnboardingInitialLoad({
   setPluginRegistry: (value: PluginRegistryEntry[]) => void;
   setDiscoveredPlugins: (value: DiscoveredChannelPlugin[]) => void;
   setDownloadSource: (value: string) => void;
-  setToolchainMode: (value: "managed" | "system") => void;
-  setShellPath: (value: boolean) => void;
   setEnabledAgents: (value: Set<AgentId>) => void;
   setEnabledChannels: (value: Set<string>) => void;
   setChannelConfigs: (value: Record<string, Record<string, string>>) => void;
@@ -98,8 +94,6 @@ export function useOnboardingInitialLoad({
 
           hydrateStartkitPrefs(loadedSettings, {
             setDownloadSource,
-            setToolchainMode,
-            setShellPath,
           });
           hydrateAgents(loadedSettings, orderedAgents, setEnabledAgents);
           hydrateChannels(loadedSettings, pluginDefs, {
@@ -138,8 +132,6 @@ export function useOnboardingInitialLoad({
     setNgrokToken,
     setPluginRegistry,
     setSettings,
-    setShellPath,
-    setToolchainMode,
     setTunnelProvider,
     setTunnels,
   ]);

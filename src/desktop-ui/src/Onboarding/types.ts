@@ -181,8 +181,8 @@ export interface StartkitChoices {
   tunnel: string;
   channels: string[];
   source: string;
-  toolchainMode: "managed" | "system" | string;
-  shellPath: boolean;
+  toolchainMode: "system";
+  shellPath: false;
 }
 
 export interface StartkitSource {

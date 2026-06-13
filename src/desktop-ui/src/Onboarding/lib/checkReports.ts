@@ -171,20 +171,6 @@ export function computerCheckingReports(
     });
   }
 
-  if (choices.shellPath) {
-    reports.push({
-      id: "environment.shell_path",
-      label: "Shell PATH",
-      group: "computer",
-      category: "environment",
-      status: "running",
-      severity: "warning",
-      message: "Checking local version",
-      actions: [],
-      secret: false,
-    });
-  }
-
   return reports;
 }
 
