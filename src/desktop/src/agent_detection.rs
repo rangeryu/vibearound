@@ -166,9 +166,7 @@ pub fn preferred_startkit_candidate(
 }
 
 pub fn agent_uses_npm_install(agent_id: &str) -> bool {
-    common::resources::agent_by_id(agent_id)
-        .and_then(|agent| agent.install.as_ref())
-        .is_some_and(|install| install.install_type == "npm")
+    source_package(agent_id, "npm_global").is_some()
 }
 
 pub fn source_command_template(agent_id: &str, source: &str, action: &str) -> Option<String> {
@@ -860,6 +858,15 @@ mod tests {
             source_package("codex", "app_bundled").as_deref(),
             Some("@openai/codex")
         );
+    }
+
+    #[test]
+    fn npm_installability_comes_from_source_catalog() {
+        assert!(agent_uses_npm_install("codex"));
+        assert!(agent_uses_npm_install("claude"));
+        assert!(agent_uses_npm_install("gemini"));
+        assert!(agent_uses_npm_install("qwen-code"));
+        assert!(!agent_uses_npm_install("cursor"));
     }
 
     #[test]

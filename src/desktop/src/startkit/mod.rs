@@ -685,10 +685,9 @@ async fn run_startkit_install<R: Runtime>(
         }
 
         let item = find_item(&manifest, item_id)?;
-        if item
-            .depends_on
+        if effective_item_dependencies(item)
             .iter()
-            .any(|dependency| blocked_item_ids.contains(dependency))
+            .any(|dependency| blocked_item_ids.contains(*dependency))
         {
             blocked_item_ids.insert(item.id.clone());
             emit_progress(
@@ -1768,9 +1767,9 @@ fn add_with_deps(
     selected: &mut HashSet<String>,
 ) -> anyhow::Result<()> {
     selected.insert(item.id.clone());
-    for dep in &item.depends_on {
+    for dep in effective_item_dependencies(item) {
         let dep_item = by_id
-            .get(dep.as_str())
+            .get(dep)
             .ok_or_else(|| anyhow!("startkit item '{}' depends on missing '{}'", item.id, dep))?;
         if !supports_platform(dep_item, platform) {
             continue;
@@ -1798,9 +1797,9 @@ fn visit(
     let item = by_id
         .get(id)
         .ok_or_else(|| anyhow!("planned startkit item missing: {id}"))?;
-    for dep in &item.depends_on {
+    for dep in effective_item_dependencies(item) {
         if selected.contains(dep) {
-            let dep_item = by_id.get(dep.as_str()).ok_or_else(|| {
+            let dep_item = by_id.get(dep).ok_or_else(|| {
                 anyhow!("startkit item '{}' depends on missing '{}'", item.id, dep)
             })?;
             if supports_platform(dep_item, platform) {
@@ -1814,6 +1813,20 @@ fn visit(
     permanent.insert(id.to_string());
     ordered.push(id.to_string());
     Ok(())
+}
+
+fn effective_item_dependencies(item: &StartkitItem) -> Vec<&str> {
+    let mut deps = item
+        .depends_on
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
+        if agent_detection::agent_uses_npm_install(agent_id) && !deps.contains(&"essentials.node") {
+            deps.push("essentials.node");
+        }
+    }
+    deps
 }
 
 fn should_include(item: &StartkitItem, choices: &StartkitChoices) -> bool {
@@ -1975,9 +1988,35 @@ mod tests {
     }
 
     #[test]
+    fn npm_source_agent_depends_on_node_even_without_static_dependency() {
+        let item_ids = ids(StartkitChoices {
+            agents: vec!["gemini".to_string()],
+            tunnel: "none".to_string(),
+            channels: Vec::new(),
+            source: "global".to_string(),
+            toolchain_mode: "system".to_string(),
+            shell_path: false,
+        });
+
+        let node = item_ids
+            .iter()
+            .position(|id| id == "essentials.node")
+            .expect("node is planned");
+        let cli = item_ids
+            .iter()
+            .position(|id| id == "agents.gemini.cli")
+            .expect("gemini cli is planned");
+        assert!(node < cli);
+        assert_eq!(
+            agent_cli_npm_install_package("gemini").as_deref(),
+            Some("@google/gemini-cli")
+        );
+    }
+
+    #[test]
     fn non_npm_agent_does_not_pull_node_or_adapter() {
         let item_ids = ids(StartkitChoices {
-            agents: vec!["qwen-code".to_string()],
+            agents: vec!["cursor".to_string()],
             tunnel: "none".to_string(),
             channels: Vec::new(),
             source: "global".to_string(),
@@ -1988,8 +2027,8 @@ mod tests {
         assert!(!item_ids.contains(&"essentials.node".to_string()));
         assert!(!item_ids.contains(&"agents.adapters".to_string()));
         assert!(!item_ids.contains(&"essentials.git".to_string()));
-        assert!(item_ids.contains(&"agents.qwen-code.cli".to_string()));
-        assert!(agent_cli_npm_install_package("qwen-code").is_none());
+        assert!(item_ids.contains(&"agents.cursor.cli".to_string()));
+        assert!(agent_cli_npm_install_package("cursor").is_none());
     }
 
     #[test]
