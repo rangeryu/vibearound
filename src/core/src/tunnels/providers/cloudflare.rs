@@ -30,7 +30,7 @@ pub async fn start_web_tunnel(
     let tunnel_def = crate::resources::tunnel_by_id("cloudflare")
         .expect("cloudflare tunnel not in tunnels.json");
     let program = tunnel_def.program.as_deref().unwrap_or("cloudflared");
-    let resolved_program = resolve_cloudflared_program(program, config);
+    let resolved_program = resolve_cloudflared_program(program);
     let base_args: Vec<&str> = tunnel_def
         .args
         .as_ref()
@@ -76,12 +76,12 @@ pub async fn start_web_tunnel(
     Ok((crate::tunnels::TunnelGuard::Process { registry_id }, url))
 }
 
-fn resolve_cloudflared_program(program: &str, config: &crate::config::Config) -> PathBuf {
-    if config.toolchain_mode.is_managed() {
-        crate::plugins::user_plugin_dependency_bin_path("tunnel-cloudflare", program)
-    } else {
-        PathBuf::from(program)
+fn resolve_cloudflared_program(program: &str) -> PathBuf {
+    let managed = crate::plugins::user_plugin_dependency_bin_path("tunnel-cloudflare", program);
+    if managed.exists() {
+        return managed;
     }
+    PathBuf::from(program)
 }
 
 /// Cloudflare backend. Implements TunnelBackend for unified dispatch.
