@@ -508,21 +508,6 @@ pub(crate) async fn scan_tunnel_reports(
     }
 }
 
-pub(crate) async fn scan_computer_reports(
-    settings: &Value,
-    choices: &StartkitChoices,
-) -> anyhow::Result<Vec<StartkitItemReport>> {
-    let manifest = load_manifest()?;
-    let platform = current_platform();
-    let plan = plan_from_manifest(&manifest, choices, platform)?;
-    let item_ids = plan
-        .item_ids
-        .into_iter()
-        .filter(|id| matches!(id.as_str(), "essentials.node" | "essentials.git"))
-        .collect::<Vec<_>>();
-    scan_startkit_item_reports(settings, choices, &item_ids, STARTKIT_ITEM_SCAN_TIMEOUT).await
-}
-
 async fn scan_startkit_item_reports(
     settings: &Value,
     choices: &StartkitChoices,

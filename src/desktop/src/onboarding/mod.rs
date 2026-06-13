@@ -344,16 +344,6 @@ pub async fn scan_tunnel_status(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-pub async fn scan_computer_install_status(
-    settings: Value,
-    choices: StartkitChoices,
-) -> Result<Vec<StartkitItemReport>, String> {
-    crate::startkit::scan_computer_reports(&settings, &choices)
-        .await
-        .map_err(|error| error.to_string())
-}
-
 async fn agent_install_report(agent: common::resources::AgentDef) -> StartkitItemReport {
     let program = program_from_command(agent.pty_command_for_current_platform())
         .unwrap_or_else(|| agent.acp.program.clone());
