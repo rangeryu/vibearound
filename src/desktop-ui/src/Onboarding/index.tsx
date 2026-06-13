@@ -683,7 +683,7 @@ export default function Onboarding() {
       return mergeReportsById(cachedInstallReports, startkit.reports);
     }
     if (startkit.reports.length > 0) {
-      return mergeReportsById(startkit.reports, cachedInstallReports);
+      return mergeReportsById(cachedInstallReports, startkit.reports);
     }
     return cachedInstallReports;
   }, [

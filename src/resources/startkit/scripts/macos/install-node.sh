@@ -5,10 +5,17 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+error_json() {
+  printf '{"status":"error","message":"%s","actions":["install"]}\n' "$(json_escape "$1")"
+}
+
 mkdir -p "$STARTKIT_CACHE_DIR"
 
 index_file="$STARTKIT_CACHE_DIR/node-index.json"
-curl -fsSL "${STARTKIT_NODE_INDEX_URL:-https://nodejs.org/dist/index.json}" -o "$index_file"
+curl -fsSL "${STARTKIT_NODE_INDEX_URL:-https://nodejs.org/dist/index.json}" -o "$index_file" || {
+  error_json "Failed to download Node.js version index."
+  exit 0
+}
 
 min_major="$(printf '%s' "${STARTKIT_MIN_VERSION:-22.0.0}" | sed 's/^v//' | cut -d. -f1)"
 node_version="$(
@@ -39,7 +46,10 @@ pkg_name="node-${node_version}.pkg"
 download_url="${STARTKIT_NODE_DIST_BASE:-https://nodejs.org/dist}/${node_version}/${pkg_name}"
 pkg_path="$STARTKIT_CACHE_DIR/$pkg_name"
 
-curl -fL "$download_url" -o "$pkg_path"
+curl -fsSL "$download_url" -o "$pkg_path" || {
+  error_json "Failed to download Node.js installer."
+  exit 0
+}
 open "$pkg_path"
 
 printf '{"status":"blocked","message":"Node.js installer was opened. Complete it, then run setup again.","path":"%s","actions":["verify"]}\n' \

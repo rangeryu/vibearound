@@ -8,6 +8,11 @@ New-Item -ItemType Directory -Force -Path $env:STARTKIT_PLUGIN_BIN_DIR, $env:STA
 $arch = if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") { "arm64" } else { "amd64" }
 $url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-$arch.exe"
 $target = Join-Path $env:STARTKIT_PLUGIN_BIN_DIR "cloudflared.exe"
-Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $target
+try {
+  Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $target
+} catch {
+  Emit @{ status = "error"; message = "Failed to download cloudflared."; actions = @("install") }
+  exit 0
+}
 $version = (& $target --version 2>&1 | Select-Object -First 1) -join ""
 Emit @{ status = "ok"; version = $version; path = $target; message = "cloudflared installed"; actions = @() }
