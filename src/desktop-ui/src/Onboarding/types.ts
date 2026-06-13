@@ -236,6 +236,8 @@ export interface StartkitItemReport {
   path?: string;
   message?: string;
   actions: string[];
+  manualCommand?: string;
+  manualUrl?: string;
   secret: boolean;
   settingsKey?: string;
 }

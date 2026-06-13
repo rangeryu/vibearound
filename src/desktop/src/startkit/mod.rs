@@ -171,6 +171,19 @@ pub struct StartkitChoices {
     pub shell_path: bool,
 }
 
+impl Default for StartkitChoices {
+    fn default() -> Self {
+        Self {
+            agents: Vec::new(),
+            tunnel: default_tunnel(),
+            channels: Vec::new(),
+            source: default_source(),
+            toolchain_mode: default_toolchain_mode(),
+            shell_path: false,
+        }
+    }
+}
+
 fn default_tunnel() -> String {
     "none".to_string()
 }
@@ -269,6 +282,10 @@ pub struct StartkitItemReport {
     pub message: Option<String>,
     #[serde(default)]
     pub actions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manual_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manual_url: Option<String>,
     #[serde(default)]
     pub secret: bool,
     #[serde(default)]
@@ -311,6 +328,10 @@ struct ScriptOutput {
     message: Option<String>,
     #[serde(default)]
     actions: Vec<String>,
+    #[serde(default)]
+    manual_command: Option<String>,
+    #[serde(default)]
+    manual_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -470,6 +491,8 @@ pub(crate) async fn scan_tunnel_reports(
             path: None,
             message: Some("Ngrok uses the built-in SDK".to_string()),
             actions: Vec::new(),
+            manual_command: None,
+            manual_url: None,
             secret: false,
             settings_key: None,
         }]),
@@ -495,6 +518,8 @@ pub(crate) async fn scan_tunnel_reports(
                     path: None,
                     message: Some("System npx will be checked during setup".to_string()),
                     actions: Vec::new(),
+                    manual_command: None,
+                    manual_url: None,
                     secret: false,
                     settings_key: None,
                 }])
@@ -1256,7 +1281,7 @@ async fn scan_item(
     )
     .await
     {
-        Ok(output) => report_from_script(item, output),
+        Ok(output) => apply_manual_guidance(report_from_script(item, output), item, choices),
         Err(err) => StartkitItemReport {
             status: StartkitItemStatus::Error,
             message: Some(err.to_string()),
@@ -1426,12 +1451,15 @@ async fn scan_agent_cli_item(
                 };
             }
 
-            StartkitItemReport {
-                status: StartkitItemStatus::Blocked,
-                message: Some(agent_missing_message(item, &choices.toolchain_mode)),
-                actions: Vec::new(),
-                ..base_report(item)
-            }
+            apply_agent_manual_guidance(
+                StartkitItemReport {
+                    status: StartkitItemStatus::Blocked,
+                    message: Some(agent_missing_message(item, &choices.toolchain_mode)),
+                    actions: Vec::new(),
+                    ..base_report(item)
+                },
+                agent_id,
+            )
         }
     }
 }
@@ -1447,6 +1475,109 @@ fn agent_missing_message(item: &StartkitItem, toolchain_mode: &str) -> String {
         "{} was not found in the system toolchain. Install it on this computer, then scan again.",
         item.label
     )
+}
+
+fn apply_manual_guidance(
+    mut report: StartkitItemReport,
+    item: &StartkitItem,
+    choices: &StartkitChoices,
+) -> StartkitItemReport {
+    if !matches!(
+        report.status,
+        StartkitItemStatus::Missing
+            | StartkitItemStatus::Outdated
+            | StartkitItemStatus::Broken
+            | StartkitItemStatus::Blocked
+    ) {
+        return report;
+    }
+
+    let Some(guidance) = manual_guidance_for_item(item, choices) else {
+        return report;
+    };
+
+    report.status = StartkitItemStatus::Blocked;
+    report.message = Some(guidance.message);
+    report.actions = vec!["manual".to_string()];
+    report.manual_command = guidance.command;
+    report.manual_url = guidance.url;
+    report
+}
+
+fn apply_agent_manual_guidance(
+    mut report: StartkitItemReport,
+    agent_id: &str,
+) -> StartkitItemReport {
+    report.actions = vec!["manual".to_string()];
+    report.manual_command = agent_detection::source_command_template(agent_id, "native", "install");
+    report.manual_url = manual_agent_url(agent_id).map(str::to_string);
+    report
+}
+
+struct ManualGuidance {
+    message: String,
+    command: Option<String>,
+    url: Option<String>,
+}
+
+fn manual_guidance_for_item(
+    item: &StartkitItem,
+    choices: &StartkitChoices,
+) -> Option<ManualGuidance> {
+    let platform = current_platform();
+    match item.id.as_str() {
+        "essentials.node" => Some(ManualGuidance {
+            message: format!(
+                "Install Node.js {} or newer, then scan again.",
+                item.min_version.as_deref().unwrap_or("22.0.0")
+            ),
+            command: None,
+            url: Some("https://nodejs.org/en/download".to_string()),
+        }),
+        "essentials.git" => {
+            let (command, url) = match platform {
+                "macos" => (
+                    Some("xcode-select --install".to_string()),
+                    Some("https://developer.apple.com/documentation/xcode/installing-the-command-line-tools/".to_string()),
+                ),
+                "windows" => (
+                    Some("winget install --id Git.Git -e --source winget".to_string()),
+                    Some("https://git-scm.com/download/win".to_string()),
+                ),
+                _ => (None, Some("https://git-scm.com/downloads".to_string())),
+            };
+            Some(ManualGuidance {
+                message: "Install Git, then scan again.".to_string(),
+                command,
+                url,
+            })
+        }
+        "tunnels.cloudflare.binary" if choices.toolchain_mode != "managed" => {
+            let command = match platform {
+                "macos" => Some("brew install cloudflared".to_string()),
+                "windows" => Some(
+                    "winget install --id Cloudflare.cloudflared -e --source winget".to_string(),
+                ),
+                _ => None,
+            };
+            Some(ManualGuidance {
+                message: "Install cloudflared on this computer, then scan again.".to_string(),
+                command,
+                url: Some(
+                    "https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/".to_string(),
+                ),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn manual_agent_url(agent_id: &str) -> Option<&'static str> {
+    match agent_id {
+        "cursor" => Some("https://cursor.com/cli"),
+        "kiro" => Some("https://kiro.dev/docs/cli/installation/"),
+        _ => None,
+    }
 }
 
 fn agent_id_from_cli_item(item_id: &str) -> Option<&str> {
@@ -1678,6 +1809,8 @@ fn report_from_script(item: &StartkitItem, output: ScriptOutput) -> StartkitItem
         path: output.path,
         message: output.message,
         actions: output.actions,
+        manual_command: output.manual_command,
+        manual_url: output.manual_url,
         ..base_report(item)
     }
 }
@@ -1695,6 +1828,8 @@ fn base_report(item: &StartkitItem) -> StartkitItemReport {
         path: None,
         message: None,
         actions: Vec::new(),
+        manual_command: None,
+        manual_url: None,
         secret: item.secret,
         settings_key: item.settings_key.clone(),
     }
@@ -2100,6 +2235,55 @@ mod tests {
 
         assert!(item_ids.contains(&"essentials.node".to_string()));
         assert!(!item_ids.contains(&"tunnels.localtunnel.package".to_string()));
+    }
+
+    #[test]
+    fn non_npm_essentials_use_manual_guidance() {
+        let manifest = load_manifest().unwrap();
+        let node = find_item(&manifest, "essentials.node").unwrap();
+        let report = apply_manual_guidance(
+            StartkitItemReport {
+                status: StartkitItemStatus::Missing,
+                message: Some("Node.js will be installed".to_string()),
+                actions: vec!["install".to_string()],
+                ..base_report(node)
+            },
+            node,
+            &StartkitChoices::default(),
+        );
+
+        assert_eq!(report.status, StartkitItemStatus::Blocked);
+        assert_eq!(report.actions, vec!["manual".to_string()]);
+        assert_eq!(
+            report.manual_url.as_deref(),
+            Some("https://nodejs.org/en/download")
+        );
+    }
+
+    #[test]
+    fn cloudflare_manual_guidance_only_applies_to_system_mode() {
+        let manifest = load_manifest().unwrap();
+        let cloudflare = find_item(&manifest, "tunnels.cloudflare.binary").unwrap();
+
+        let system = manual_guidance_for_item(
+            cloudflare,
+            &StartkitChoices {
+                tunnel: "cloudflare".to_string(),
+                toolchain_mode: "system".to_string(),
+                ..StartkitChoices::default()
+            },
+        );
+        assert!(system.is_some());
+
+        let managed = manual_guidance_for_item(
+            cloudflare,
+            &StartkitChoices {
+                tunnel: "cloudflare".to_string(),
+                toolchain_mode: "managed".to_string(),
+                ..StartkitChoices::default()
+            },
+        );
+        assert!(managed.is_none());
     }
 
     #[test]

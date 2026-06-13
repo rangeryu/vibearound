@@ -2,6 +2,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Circle,
+  Copy,
+  ExternalLink,
   Globe,
   Loader2,
   MessageSquare,
@@ -51,6 +53,32 @@ export function StartkitReportRow({
           {report.version && report.message && (
             <div className="mt-0.5 truncate font-mono text-[10px] opacity-80">
               {report.version}
+            </div>
+          )}
+          {(report.manualCommand || report.manualUrl) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {report.manualCommand && (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-foreground hover:bg-muted"
+                  onClick={() => void navigator.clipboard.writeText(report.manualCommand!)}
+                  title={report.manualCommand}
+                >
+                  <Copy className="h-3 w-3" />
+                  {t("Copy command")}
+                </button>
+              )}
+              {report.manualUrl && (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-foreground hover:bg-muted"
+                  onClick={() => window.open(report.manualUrl, "_blank", "noopener,noreferrer")}
+                  title={report.manualUrl}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {t("Open link")}
+                </button>
+              )}
             </div>
           )}
         </div>

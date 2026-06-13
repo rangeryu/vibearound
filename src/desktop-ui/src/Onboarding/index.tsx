@@ -787,6 +787,21 @@ export default function Onboarding() {
           run: () => setActiveStep("configure"),
         };
       }
+      if (hasBlockingReport) {
+        return {
+          label: t("Check again"),
+          icon: <RefreshCw className="h-4 w-4" />,
+          disabled: !hasScanned,
+          run: () => {
+            checkedInstallScanSignaturesRef.current.clear();
+            checkedAgentLocalSignaturesRef.current.clear();
+            checkedTunnelSignaturesRef.current.clear();
+            setAgentInstallReports([]);
+            setTunnelReports([]);
+            void startkit.scan(finalSettings, choices);
+          },
+        };
+      }
       if (hasRunnableInstallWork) {
         return {
           label: t("Install selected"),
@@ -795,7 +810,7 @@ export default function Onboarding() {
           run: () => void startkit.start(finalSettings, choices, installReports),
         };
       }
-      if (hasBlockingReport || !hasRunnableInstallWork) {
+      if (!hasRunnableInstallWork) {
         return {
           label: t("Check again"),
           icon: <RefreshCw className="h-4 w-4" />,

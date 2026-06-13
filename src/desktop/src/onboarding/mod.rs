@@ -294,6 +294,8 @@ pub async fn scan_agent_sdk_status(
                     path: None,
                     message: Some("Uses the agent CLI's built-in ACP mode".to_string()),
                     actions: Vec::new(),
+                    manual_command: None,
+                    manual_url: None,
                     secret: false,
                     settings_key: None,
                 });
@@ -327,6 +329,8 @@ pub async fn scan_agent_sdk_status(
                 } else {
                     vec!["install".to_string()]
                 },
+                manual_command: None,
+                manual_url: None,
                 secret: false,
                 settings_key: None,
             })
@@ -366,6 +370,8 @@ async fn agent_install_report(agent: common::resources::AgentDef) -> StartkitIte
                     path,
                     message: Some(format!("{program} is present but not usable: {error}")),
                     actions: Vec::new(),
+                    manual_command: None,
+                    manual_url: None,
                     secret: false,
                     settings_key: None,
                 };
@@ -395,6 +401,8 @@ async fn agent_install_report(agent: common::resources::AgentDef) -> StartkitIte
             format!("Install {program} on this computer, then scan again.")
         }),
         actions: Vec::new(),
+        manual_command: None,
+        manual_url: None,
         secret: false,
         settings_key: None,
     }
@@ -432,6 +440,8 @@ async fn agent_update_report(
         path: Some(candidate.path.clone()),
         message: None,
         actions: Vec::new(),
+        manual_command: None,
+        manual_url: None,
         secret: false,
         settings_key: None,
     };
@@ -557,6 +567,8 @@ async fn plugin_update_report(plugin_id: String) -> Option<StartkitItemReport> {
         } else {
             vec!["install".to_string()]
         },
+        manual_command: None,
+        manual_url: None,
         secret: false,
         settings_key: None,
     };

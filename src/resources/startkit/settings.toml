@@ -35,10 +35,6 @@ min_version = "22.0.0"
 macos = "scripts/macos/detect-node.sh"
 windows = "scripts/windows/detect-node.ps1"
 
-[items.install]
-macos = "scripts/macos/install-node.sh"
-windows = "scripts/windows/install-node.ps1"
-
 [[items]]
 id = "essentials.git"
 label = "Git"
@@ -54,10 +50,6 @@ version_arg = "--version"
 [items.detect]
 macos = "scripts/macos/detect-program.sh"
 windows = "scripts/windows/detect-program.ps1"
-
-[items.install]
-macos = "scripts/macos/install-git.sh"
-windows = "scripts/windows/install-git.ps1"
 
 [[items]]
 id = "agents.codex.cli"
