@@ -5,7 +5,7 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-mkdir -p "$STARTKIT_BIN_DIR" "$STARTKIT_CACHE_DIR"
+mkdir -p "$STARTKIT_PLUGIN_BIN_DIR" "$STARTKIT_CACHE_DIR"
 case "$(uname -m)" in
   arm64|aarch64) arch="arm64" ;;
   x86_64|amd64) arch="amd64" ;;
@@ -19,9 +19,8 @@ rm -rf "$tmp_dir"
 mkdir -p "$tmp_dir"
 curl -fL "$url" -o "$archive"
 tar -xzf "$archive" -C "$tmp_dir"
-install -m 0755 "$tmp_dir/cloudflared" "$STARTKIT_BIN_DIR/cloudflared"
+install -m 0755 "$tmp_dir/cloudflared" "$STARTKIT_PLUGIN_BIN_DIR/cloudflared"
 
-version="$("$STARTKIT_BIN_DIR/cloudflared" --version 2>&1 | head -n 1 || true)"
+version="$("$STARTKIT_PLUGIN_BIN_DIR/cloudflared" --version 2>&1 | head -n 1 || true)"
 printf '{"status":"ok","version":"%s","path":"%s","message":"cloudflared installed","actions":[]}\n' \
-  "$(json_escape "$version")" "$(json_escape "$STARTKIT_BIN_DIR/cloudflared")"
-
+  "$(json_escape "$version")" "$(json_escape "$STARTKIT_PLUGIN_BIN_DIR/cloudflared")"

@@ -51,7 +51,7 @@ export interface Settings {
   };
   startkit?: {
     source?: string;
-    toolchain_mode?: "managed" | "system" | string;
+    toolchain_mode?: "system" | string;
     shell_path?: boolean;
   };
   tunnel?: {

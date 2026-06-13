@@ -259,54 +259,8 @@ fn start_process_name(command: &str) -> Option<String> {
 }
 
 fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> String {
-    #[cfg(test)]
-    {
-        let _ = agent_id;
-        return fallback_command.to_string();
-    }
-
-    #[cfg(not(test))]
-    {
-        let toolchain_mode = agent_detection::configured_toolchain_mode();
-        let Some(candidate) =
-            agent_detection::candidate_for_toolchain_mode(agent_id, &toolchain_mode)
-        else {
-            return fallback_command.to_string();
-        };
-        replace_launch_program(fallback_command, &candidate.path)
-    }
-}
-
-fn replace_launch_program(command: &str, program_path: &str) -> String {
-    let mut parts = command.splitn(2, char::is_whitespace);
-    let Some(program) = parts.next().filter(|part| !part.is_empty()) else {
-        return command.to_string();
-    };
-    let quoted = quote_launch_program_path(program_path);
-    match parts.next() {
-        Some(rest) => {
-            let rest = rest.trim_start();
-            if rest.is_empty() {
-                quoted
-            } else {
-                format!("{quoted} {rest}")
-            }
-        }
-        None if program.is_empty() => command.to_string(),
-        None => quoted,
-    }
-}
-
-fn quote_launch_program_path(path: &str) -> String {
-    if cfg!(windows) {
-        if path.chars().any(char::is_whitespace) {
-            format!("\"{}\"", path.replace('"', "\\\""))
-        } else {
-            path.to_string()
-        }
-    } else {
-        shell_escape::unix::escape(std::borrow::Cow::Borrowed(path)).into_owned()
-    }
+    let _ = agent_id;
+    fallback_command.to_string()
 }
 
 fn materialized_profile_env(
@@ -457,25 +411,6 @@ mod tests {
             agent_id: agent_id.to_string(),
             _lock: lock,
         }
-    }
-
-    #[test]
-    fn replace_launch_program_preserves_command_tail() {
-        assert_eq!(
-            replace_launch_program("claude code --permission-mode acceptEdits", "/tmp/claude"),
-            "/tmp/claude code --permission-mode acceptEdits"
-        );
-    }
-
-    #[test]
-    fn replace_launch_program_quotes_paths_with_spaces_on_unix() {
-        if cfg!(windows) {
-            return;
-        }
-        assert_eq!(
-            replace_launch_program("codex", "/Applications/My Codex.app/Contents/codex"),
-            "'/Applications/My Codex.app/Contents/codex'"
-        );
     }
 
     fn minimax_anthropic_profile() -> ProfileDef {

@@ -108,6 +108,8 @@ pub struct StartkitItem {
     #[serde(default)]
     pub managed: bool,
     #[serde(default)]
+    pub plugin_dependency: Option<String>,
+    #[serde(default)]
     pub kind: Option<String>,
     #[serde(default)]
     pub min_version: Option<String>,
@@ -312,7 +314,6 @@ struct ScriptOutput {
 pub struct StartkitPaths {
     pub root: PathBuf,
     pub home: PathBuf,
-    pub bin_dir: PathBuf,
     pub cache_dir: PathBuf,
 }
 
@@ -321,7 +322,6 @@ impl StartkitPaths {
         let home = common::config::data_dir();
         Self {
             root,
-            bin_dir: home.join("bin"),
             cache_dir: home.join("cache").join("startkit"),
             home,
         }
@@ -948,7 +948,7 @@ async fn install_channel_plugin<R: Runtime>(
 fn install_phase_message(item: &StartkitItem) -> String {
     match item.id.as_str() {
         "essentials.node" => "Downloading Node.js".to_string(),
-        "tunnels.cloudflare.binary" => "Downloading cloudflared".to_string(),
+        "tunnels.cloudflare.binary" => "Installing cloudflared".to_string(),
         _ => format!("Installing {}", item.label),
     }
 }
@@ -1268,7 +1268,6 @@ fn apply_startkit_env(
     item: &StartkitItem,
     choices: &StartkitChoices,
 ) -> anyhow::Result<()> {
-    std::fs::create_dir_all(&paths.bin_dir).ok();
     std::fs::create_dir_all(&paths.cache_dir).ok();
 
     let source = manifest
@@ -1279,7 +1278,6 @@ fn apply_startkit_env(
 
     command.env("STARTKIT_HOME", &paths.home);
     command.env("STARTKIT_ROOT", &paths.root);
-    command.env("STARTKIT_BIN_DIR", &paths.bin_dir);
     command.env("STARTKIT_CACHE_DIR", &paths.cache_dir);
     command.env("STARTKIT_SOURCE", &choices.source);
     command.env(
@@ -1299,6 +1297,13 @@ fn apply_startkit_env(
     }
     if let Some(value) = &item.npm_package {
         command.env("STARTKIT_NPM_PACKAGE", value);
+    }
+    if let Some(value) = &item.plugin_dependency {
+        let plugin_dir = common::plugins::user_plugin_dependency_dir(value);
+        let plugin_bin_dir = plugin_dir.join("bin");
+        std::fs::create_dir_all(&plugin_bin_dir).ok();
+        command.env("STARTKIT_PLUGIN_DIR", plugin_dir);
+        command.env("STARTKIT_PLUGIN_BIN_DIR", plugin_bin_dir);
     }
 
     Ok(())
@@ -1580,6 +1585,7 @@ mod tests {
 
     #[test]
     fn cloudflare_plan_includes_binary_and_config_without_agents() {
+        let manifest = load_manifest().unwrap();
         let item_ids = ids(StartkitChoices {
             agents: Vec::new(),
             tunnel: "cloudflare".to_string(),
@@ -1596,6 +1602,11 @@ mod tests {
                 "tunnels.cloudflare.token",
                 "tunnels.cloudflare.hostname"
             ]
+        );
+        let cloudflare = find_item(&manifest, "tunnels.cloudflare.binary").unwrap();
+        assert_eq!(
+            cloudflare.plugin_dependency.as_deref(),
+            Some("tunnel-cloudflare")
         );
     }
 

@@ -9,14 +9,15 @@ program="${STARTKIT_PROGRAM:?missing STARTKIT_PROGRAM}"
 version_arg="${STARTKIT_VERSION_ARG:---version}"
 candidate=""
 
-if [ "${STARTKIT_ITEM_MANAGED:-false}" = "true" ]; then
-  if [ -x "${STARTKIT_BIN_DIR:-}/$program" ]; then
-    candidate="$STARTKIT_BIN_DIR/$program"
-  fi
+if command -v "$program" >/dev/null 2>&1; then
+  candidate="$(command -v "$program")"
 fi
 
-if [ -z "$candidate" ] && command -v "$program" >/dev/null 2>&1; then
-  candidate="$(command -v "$program")"
+if [ -z "$candidate" ] && [ "${STARTKIT_ITEM_MANAGED:-false}" = "true" ] && [ -n "${STARTKIT_PLUGIN_BIN_DIR:-}" ]; then
+  plugin_candidate="${STARTKIT_PLUGIN_BIN_DIR:-}/$program"
+  if [ -x "$plugin_candidate" ]; then
+    candidate="$plugin_candidate"
+  fi
 fi
 
 if [ -z "$candidate" ]; then

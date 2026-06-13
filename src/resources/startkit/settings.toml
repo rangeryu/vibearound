@@ -176,13 +176,14 @@ id = "tunnels.cloudflare.binary"
 label = "cloudflared"
 group = "remote"
 category = "tunnels"
-description = "Cloudflare tunnel binary for stable remote access."
+description = "Cloudflare tunnel binary from PATH or VibeAround's plugin dependency cache."
 platforms = ["macos", "windows"]
 include_if = ["tunnel:cloudflare"]
 severity = "blocker"
 program = "cloudflared"
 version_arg = "--version"
 managed = true
+plugin_dependency = "tunnel-cloudflare"
 
 [items.detect]
 macos = "scripts/macos/detect-program.sh"

@@ -9,18 +9,17 @@ $versionArg = if ($env:STARTKIT_VERSION_ARG) { $env:STARTKIT_VERSION_ARG } else 
 $cmd = $null
 
 function ManagedCommand($program) {
-  $managedExe = Join-Path $env:STARTKIT_BIN_DIR "$program.exe"
+  if (-not $env:STARTKIT_PLUGIN_BIN_DIR) { return $null }
+  $managedExe = Join-Path $env:STARTKIT_PLUGIN_BIN_DIR "$program.exe"
   if (Test-Path $managedExe) { return @{ Source = $managedExe } }
-  $managedPlain = Join-Path $env:STARTKIT_BIN_DIR $program
+  $managedPlain = Join-Path $env:STARTKIT_PLUGIN_BIN_DIR $program
   if (Test-Path $managedPlain) { return @{ Source = $managedPlain } }
   return $null
 }
 
-if ($env:STARTKIT_ITEM_MANAGED -eq "true") {
+$cmd = Get-Command $program -ErrorAction SilentlyContinue
+if ((-not $cmd) -and $env:STARTKIT_ITEM_MANAGED -eq "true") {
   $cmd = ManagedCommand $program
-}
-if (-not $cmd) {
-  $cmd = Get-Command $program -ErrorAction SilentlyContinue
 }
 
 if (-not $cmd) {

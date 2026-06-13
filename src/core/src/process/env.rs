@@ -41,27 +41,11 @@ pub fn enriched_env() -> &'static HashMap<String, String> {
 
 /// Return the environment VibeAround should pass to child processes.
 ///
-/// This is the cached shell environment plus the Startkit-managed toolchain
-/// paths unless the user explicitly selected `system` mode.
+/// This is the cached shell environment captured from the user's login shell.
+/// VibeAround-owned helper binaries are resolved explicitly by the callers
+/// that own them instead of being injected into PATH globally.
 pub fn child_env() -> HashMap<String, String> {
-    let mode = if vibearound_managed_paths_enabled() {
-        "auto"
-    } else {
-        "system"
-    };
-    child_env_for_toolchain_mode(mode)
-}
-
-/// Return the child environment for an explicit Startkit toolchain mode.
-///
-/// Onboarding uses this before settings are saved, so detection reflects the
-/// user's current UI choice instead of the last persisted value.
-pub fn child_env_for_toolchain_mode(toolchain_mode: &str) -> HashMap<String, String> {
-    let mut env = enriched_env().clone();
-    if toolchain_mode != "system" {
-        prepend_vibearound_managed_paths(&mut env);
-    }
-    env
+    enriched_env().clone()
 }
 
 /// Create a `tokio::process::Command` with the enriched environment pre-set.
@@ -71,15 +55,6 @@ pub fn command(program: &str) -> tokio::process::Command {
     hide_windows_console(&mut cmd);
     cmd.env_clear();
     cmd.envs(child_env());
-    cmd
-}
-
-/// Create a `tokio::process::Command` for an explicit Startkit toolchain mode.
-pub fn command_for_toolchain_mode(program: &str, toolchain_mode: &str) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new(program);
-    hide_windows_console(&mut cmd);
-    cmd.env_clear();
-    cmd.envs(child_env_for_toolchain_mode(toolchain_mode));
     cmd
 }
 
@@ -290,44 +265,6 @@ fn probe_enriched_env() -> HashMap<String, String> {
     env
 }
 
-/// Prepend binaries installed by Startkit into the app-managed toolchain.
-///
-/// Startkit installs Node.js, npm global CLIs, and helper binaries under
-/// `~/.vibearound` instead of mutating system directories. Every child
-/// process launched by VibeAround should see those tools first.
-fn prepend_vibearound_managed_paths(env: &mut HashMap<String, String>) {
-    let sep = if cfg!(windows) { ';' } else { ':' };
-    let home = crate::config::data_dir();
-    let candidates = [
-        home.join("bin"),
-        home.join("runtime").join("node").join("bin"),
-        home.join("runtime").join("node"),
-        home.join("npm").join("bin"),
-        home.join("npm"),
-    ];
-
-    let current = path_value(env).unwrap_or_default();
-    let mut parts: Vec<String> = current
-        .split(sep)
-        .filter(|part| !part.trim().is_empty())
-        .map(String::from)
-        .collect();
-
-    for candidate in candidates.iter().rev() {
-        let value = candidate.to_string_lossy().to_string();
-        let exists = if cfg!(windows) {
-            parts.iter().any(|part| part.eq_ignore_ascii_case(&value))
-        } else {
-            parts.iter().any(|part| part == &value)
-        };
-        if !exists {
-            parts.insert(0, value);
-        }
-    }
-
-    set_path_value(env, parts.join(&sep.to_string()));
-}
-
 #[cfg(windows)]
 pub fn path_value(env: &HashMap<String, String>) -> Option<String> {
     env.iter()
@@ -369,10 +306,6 @@ pub fn set_path_value(env: &mut HashMap<String, String>, value: String) {
 #[cfg(not(windows))]
 pub fn set_path_value(env: &mut HashMap<String, String>, value: String) {
     env.insert(path_env_key().to_string(), value);
-}
-
-fn vibearound_managed_paths_enabled() -> bool {
-    crate::config::read_startkit_toolchain_mode() == "managed"
 }
 
 /// Probe the user's login shell for their full environment.
