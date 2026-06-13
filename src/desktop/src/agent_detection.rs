@@ -138,25 +138,32 @@ pub fn read_detected_agents() -> Option<AgentDetectionFile> {
     serde_json::from_str(&contents).ok()
 }
 
-pub fn system_selected_candidate_for(agent_id: &str) -> Option<AgentCandidate> {
+pub fn startkit_candidate_for(agent_id: &str) -> Option<AgentCandidate> {
     read_detected_agents()?
         .agents
         .get(agent_id)
-        .and_then(AgentDetection::system_selected_candidate)
+        .and_then(|detection| preferred_startkit_candidate(agent_id, detection))
 }
 
-pub fn candidate_for_toolchain_mode(
+pub fn preferred_startkit_candidate(
     agent_id: &str,
-    _toolchain_mode: &str,
+    detection: &AgentDetection,
 ) -> Option<AgentCandidate> {
-    system_selected_candidate_for(agent_id)
+    detection.system_selected_candidate().or_else(|| {
+        agent_uses_npm_install(agent_id).then(|| {
+            detection
+                .candidates
+                .iter()
+                .find(|candidate| candidate.source == "npm_managed")
+                .cloned()
+        })?
+    })
 }
 
-pub fn preferred_candidate_for_toolchain_mode(
-    detection: &AgentDetection,
-    _toolchain_mode: &str,
-) -> Option<AgentCandidate> {
-    detection.system_selected_candidate()
+pub fn agent_uses_npm_install(agent_id: &str) -> bool {
+    common::resources::agent_by_id(agent_id)
+        .and_then(|agent| agent.install.as_ref())
+        .is_some_and(|install| install.install_type == "npm")
 }
 
 pub fn source_command_template(agent_id: &str, source: &str, action: &str) -> Option<String> {
@@ -692,7 +699,7 @@ fn source_label(spec: &AgentCommandSpec, source: &str) -> String {
         .and_then(|source| source.label.clone())
         .unwrap_or_else(|| {
             match source {
-                "npm_managed" => "Legacy VibeAround npm",
+                "npm_managed" => "VibeAround npm",
                 "npm_global" => "npm global",
                 "bun_global" => "Bun global",
                 "homebrew_formula" => "Homebrew formula",
@@ -877,7 +884,7 @@ mod tests {
     }
 
     #[test]
-    fn toolchain_selection_uses_system_candidate_for_legacy_modes() {
+    fn system_selection_prefers_system_candidate() {
         let system = test_candidate("/usr/local/bin/codex", "npm_global", 0);
         let managed = test_candidate("/tmp/.vibearound/npm/bin/codex", "npm_managed", 10_000);
         let detection = AgentDetection {
@@ -888,13 +895,8 @@ mod tests {
         };
 
         assert_eq!(
-            preferred_candidate_for_toolchain_mode(&detection, "system")
-                .as_ref()
-                .map(|candidate| candidate.path.as_str()),
-            Some(system.path.as_str())
-        );
-        assert_eq!(
-            preferred_candidate_for_toolchain_mode(&detection, "managed")
+            detection
+                .system_selected_candidate()
                 .as_ref()
                 .map(|candidate| candidate.path.as_str()),
             Some(system.path.as_str())
@@ -904,6 +906,24 @@ mod tests {
         assert!(json.contains("\"default\""));
         assert!(json.contains("\"systemSelected\""));
         assert!(!json.contains("\"selected\""));
+    }
+
+    #[test]
+    fn startkit_selection_accepts_managed_candidate_for_npm_agents() {
+        let managed = test_candidate("/tmp/.vibearound/npm/bin/codex", "npm_managed", 10_000);
+        let detection = AgentDetection {
+            default_candidate: Some(managed.clone()),
+            system_selected: Some(managed.clone()),
+            legacy_selected: None,
+            candidates: vec![managed.clone()],
+        };
+
+        assert_eq!(
+            preferred_startkit_candidate("codex", &detection)
+                .as_ref()
+                .map(|candidate| candidate.path.as_str()),
+            Some(managed.path.as_str())
+        );
     }
 
     #[test]

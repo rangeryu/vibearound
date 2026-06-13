@@ -143,6 +143,51 @@ where
     Ok(InstallOutput { stdout, stderr })
 }
 
+/// Install an npm-backed CLI into the active global npm prefix.
+///
+/// This is used by Startkit after Node is ready. The command runs through
+/// `node npm-cli.js` so it works with either a user Node install or the
+/// Startkit-provisioned Node runtime.
+pub async fn auto_install_npm_global_package_with_progress_and_cancel<F, C>(
+    npm_package: &str,
+    mut on_log: F,
+    is_cancelled: C,
+) -> anyhow::Result<InstallOutput>
+where
+    F: FnMut(String),
+    C: Fn() -> bool,
+{
+    let cwd = crate::config::data_dir();
+    std::fs::create_dir_all(&cwd).with_context(|| format!("creating {:?}", cwd))?;
+
+    let target = npm_global_install_target(npm_package);
+    let mut args = vec!["install".to_string(), "-g".to_string(), target.clone()];
+    args.extend(crate::process::env::npm_registry_args());
+
+    tracing::info!("[agent] installing global npm CLI: {}", target);
+    let output = npm_command_streaming(&args, &cwd, &mut on_log, is_cancelled)
+        .await
+        .with_context(|| format!("running npm install -g {}", target))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        anyhow::bail!("npm install -g {} failed: {}", target, stderr.trim());
+    }
+    tracing::info!("[agent] installed global npm CLI {}", target);
+    Ok(InstallOutput { stdout, stderr })
+}
+
+fn npm_global_install_target(npm_package: &str) -> String {
+    let package = npm_package.trim();
+    if npm_package_spec(package).requested_version.is_some() {
+        package.to_string()
+    } else {
+        format!("{package}@latest")
+    }
+}
+
 fn npm_install_args(args: &[&str]) -> Vec<String> {
     let mut out = args
         .iter()
@@ -388,7 +433,9 @@ fn has_enabled_channels(settings: &serde_json::Value) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{npm_package_bin_name, npm_package_spec, NpmPackageSpec};
+    use super::{
+        npm_global_install_target, npm_package_bin_name, npm_package_spec, NpmPackageSpec,
+    };
 
     #[test]
     fn parses_scoped_npm_package_specs() {
@@ -415,5 +462,17 @@ mod tests {
             "codex-acp"
         );
         assert_eq!(npm_package_bin_name("plain-agent@1.2.3"), "plain-agent");
+    }
+
+    #[test]
+    fn global_install_target_adds_latest_when_unpinned() {
+        assert_eq!(
+            npm_global_install_target("@anthropic-ai/claude-code"),
+            "@anthropic-ai/claude-code@latest"
+        );
+        assert_eq!(
+            npm_global_install_target("@openai/codex@1.2.3"),
+            "@openai/codex@1.2.3"
+        );
     }
 }

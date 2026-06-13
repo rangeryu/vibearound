@@ -608,7 +608,7 @@ async fn execute_item_with_cancel(
     let paths = StartkitPaths::new(startkit_root());
     let item = find_item(&manifest, item_id)?;
     if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
-        return Ok(scan_agent_cli_item(item, agent_id, choices).await);
+        return execute_agent_cli_item(item, agent_id, choices, cancelled, progress).await;
     }
     let before = scan_item(&manifest, &paths, item, settings, choices, platform).await;
 
@@ -741,6 +741,77 @@ async fn run_startkit_install<R: Runtime>(
         "complete"
     }
     .to_string())
+}
+
+async fn execute_agent_cli_item(
+    item: &StartkitItem,
+    agent_id: &str,
+    choices: &StartkitChoices,
+    cancelled: Option<&Arc<AtomicBool>>,
+    progress: Option<&(dyn Fn(&StartkitItem, StartkitItemStatus, Option<String>) + Sync)>,
+) -> anyhow::Result<StartkitItemReport> {
+    let before = scan_agent_cli_item(item, agent_id, choices).await;
+    if !before.status.needs_install() {
+        return Ok(before);
+    }
+
+    let Some(package) = agent_cli_npm_install_package(agent_id) else {
+        return Ok(StartkitItemReport {
+            status: StartkitItemStatus::Blocked,
+            message: Some("No automatic install action is available".to_string()),
+            ..base_report(item)
+        });
+    };
+
+    if let Some(progress) = progress {
+        progress(
+            item,
+            StartkitItemStatus::Running,
+            Some(format!("Installing {}", item.label)),
+        );
+    }
+
+    let result = common::agent::auto_install_npm_global_package_with_progress_and_cancel(
+        &package,
+        |line| {
+            if let Some(progress) = progress {
+                progress(item, StartkitItemStatus::Running, Some(line));
+            }
+        },
+        || {
+            cancelled
+                .map(|flag| flag.load(Ordering::Relaxed))
+                .unwrap_or(false)
+        },
+    )
+    .await;
+
+    if let Err(error) = result {
+        return Ok(StartkitItemReport {
+            status: StartkitItemStatus::Error,
+            message: Some(error.to_string()),
+            ..base_report(item)
+        });
+    }
+
+    let after = scan_agent_cli_item(item, agent_id, choices).await;
+    if matches!(after.status, StartkitItemStatus::Ok) {
+        Ok(after)
+    } else {
+        Ok(StartkitItemReport {
+            status: StartkitItemStatus::Error,
+            message: Some(format!(
+                "{} install finished, but the CLI is still unavailable{}",
+                item.label,
+                after
+                    .message
+                    .as_deref()
+                    .map(|message| format!(": {message}"))
+                    .unwrap_or_default()
+            )),
+            ..base_report(item)
+        })
+    }
 }
 
 async fn run_channel_plugins_item<R: Runtime>(
@@ -1156,6 +1227,13 @@ fn agent_adapter_installed(agent_id: &str) -> bool {
     common::agent::npm_package_installed(npm_pkg, bin_name)
 }
 
+fn agent_cli_npm_install_package(agent_id: &str) -> Option<String> {
+    if !agent_detection::agent_uses_npm_install(agent_id) {
+        return None;
+    }
+    agent_detection::source_package(agent_id, "npm_global")
+}
+
 async fn scan_agent_cli_item(
     item: &StartkitItem,
     agent_id: &str,
@@ -1164,9 +1242,7 @@ async fn scan_agent_cli_item(
     let selected = agent_detection::scan_agent_and_persist(agent_id)
         .await
         .ok()
-        .and_then(|detection| {
-            agent_detection::preferred_candidate_for_toolchain_mode(&detection, "system")
-        });
+        .and_then(|detection| agent_detection::preferred_startkit_candidate(agent_id, &detection));
 
     match selected {
         Some(candidate) => StartkitItemReport {
@@ -1180,12 +1256,23 @@ async fn scan_agent_cli_item(
             actions: Vec::new(),
             ..base_report(item)
         },
-        None => StartkitItemReport {
-            status: StartkitItemStatus::Blocked,
-            message: Some(agent_missing_message(item)),
-            actions: Vec::new(),
-            ..base_report(item)
-        },
+        None => {
+            if agent_cli_npm_install_package(agent_id).is_some() {
+                return StartkitItemReport {
+                    status: StartkitItemStatus::Missing,
+                    message: Some(format!("{} will be installed with npm", item.label)),
+                    actions: vec!["install".to_string()],
+                    ..base_report(item)
+                };
+            }
+
+            StartkitItemReport {
+                status: StartkitItemStatus::Blocked,
+                message: Some(agent_missing_message(item)),
+                actions: Vec::new(),
+                ..base_report(item)
+            }
+        }
     }
 }
 
@@ -1689,6 +1776,32 @@ mod tests {
     }
 
     #[test]
+    fn npm_cli_agent_depends_on_node_before_cli() {
+        let item_ids = ids(StartkitChoices {
+            agents: vec!["claude".to_string()],
+            tunnel: "none".to_string(),
+            channels: Vec::new(),
+            source: "global".to_string(),
+            toolchain_mode: "system".to_string(),
+            shell_path: false,
+        });
+
+        let node = item_ids
+            .iter()
+            .position(|id| id == "essentials.node")
+            .expect("node is planned");
+        let cli = item_ids
+            .iter()
+            .position(|id| id == "agents.claude.cli")
+            .expect("claude cli is planned");
+        assert!(node < cli);
+        assert_eq!(
+            agent_cli_npm_install_package("claude").as_deref(),
+            Some("@anthropic-ai/claude-code")
+        );
+    }
+
+    #[test]
     fn non_npm_agent_does_not_pull_node_or_adapter() {
         let item_ids = ids(StartkitChoices {
             agents: vec!["qwen-code".to_string()],
@@ -1703,6 +1816,7 @@ mod tests {
         assert!(!item_ids.contains(&"agents.adapters".to_string()));
         assert!(!item_ids.contains(&"essentials.git".to_string()));
         assert!(item_ids.contains(&"agents.qwen-code.cli".to_string()));
+        assert!(agent_cli_npm_install_package("qwen-code").is_none());
     }
 
     #[test]
