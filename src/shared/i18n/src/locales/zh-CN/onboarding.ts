@@ -172,11 +172,6 @@ export const zhCNOnboarding: Record<string, string> = {
   "Installing {{current}}/{{total}}": "正在安装 {{current}}/{{total}}",
   "Preparing setup plan": "正在生成安装清单",
   "The environment check starts automatically.": "检测会自动开始。",
-  "System install location only uses tools already installed on this computer. To let VibeAround install Node.js and agent CLIs, switch the install location to VibeAround.":
-    "系统安装位置只会使用本机已安装的工具。如需让 VibeAround 安装 Node.js 和 Agent CLI，请将安装位置切换为 VibeAround。",
-  "Use VibeAround install location": "使用 VibeAround 安装位置",
-  "System-only mode is selected, so Startkit will not install a managed copy.":
-    "当前选择了系统安装位置，Startkit 不会安装 VibeAround 管理的副本。",
   Details: "详情",
   "Computer basics": "基础工具",
   "Coding agents": "Coding Agent",
@@ -225,18 +220,11 @@ export const zhCNOnboarding: Record<string, string> = {
   "No extra configuration": "没有额外配置",
   "The selected setup can launch now.": "现在可以启动 VibeAround。",
   "Node/npm source": "Node/npm 下载源",
-  "Install location": "安装位置",
-  "VibeAround npm": "VibeAround npm",
-  "Install CLI tools under .vibearound/npm.":
-    "将 CLI 工具安装到 .vibearound/npm。",
   System: "系统",
   "Use the user's global toolchain when available.":
     "优先使用用户系统全局工具链。",
   "Plugins always install under .vibearound/plugins.":
     "插件始终安装到 .vibearound/plugins。",
-  "Write shell PATH": "写入终端 PATH",
-  "Terminal sessions can find managed Node, Codex, Claude, and helper tools.":
-    "勾选后，你也可以在终端里直接使用这些工具。",
   "Installing...": "安装中...",
   "Checking...": "检测中...",
   "Install selected": "开始安装",
