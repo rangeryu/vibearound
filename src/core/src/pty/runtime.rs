@@ -86,7 +86,7 @@ fn tool_exec_argv(tool: PtyTool, tmux_session: Option<&str>) -> String {
         return "bash -l".to_string();
     };
     crate::resources::agent_by_id(agent_id)
-        .map(|a| a.pty.command.clone())
+        .map(|agent| crate::agent_detection::resolve_agent_command(agent_id, &agent.pty.command))
         .unwrap_or_else(|| agent_id.to_string())
 }
 
@@ -131,27 +131,14 @@ fn command_for_tool(
         return bash_wrapper(&exec, theme, extra_env);
     }
 
-    let mut c = match tool {
-        PtyTool::Generic => {
-            let mut cmd = shell_command();
-            set_pty_env(&mut cmd, theme, extra_env);
-            return cmd;
-        }
-        PtyTool::Claude => {
-            let mut cmd = CommandBuilder::new("claude");
-            cmd.arg("code");
-            cmd
-        }
-        PtyTool::Gemini => CommandBuilder::new("gemini"),
-        PtyTool::Codex => CommandBuilder::new("codex"),
-        PtyTool::Pi => CommandBuilder::new("pi"),
-        PtyTool::OpenCode => CommandBuilder::new("opencode"),
-        PtyTool::Cursor => CommandBuilder::new("cursor"),
-        PtyTool::Kiro => CommandBuilder::new("kiro-cli"),
-        PtyTool::QwenCode => CommandBuilder::new("qwen"),
-    };
-    set_pty_env(&mut c, theme, extra_env);
-    c
+    if tool == PtyTool::Generic {
+        let mut cmd = shell_command();
+        set_pty_env(&mut cmd, theme, extra_env);
+        return cmd;
+    }
+
+    let exec = tool_exec_argv(tool, None);
+    bash_wrapper(&format!("exec {exec}"), theme, extra_env)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

@@ -260,6 +260,8 @@ fn main() {
             profiles::launcher_list_sessions,
             profiles::launcher_list_workspaces,
             profiles::launcher_get_preferences,
+            profiles::launcher_agent_executable_resolution,
+            profiles::launcher_update_agent,
             profiles::launcher_set_default,
             profiles::launcher_set_agent_profile,
             profiles::launcher_set_agent_launch_args,

@@ -58,8 +58,27 @@ pub struct AgentLaunchPreferenceSummary {
     pub profile_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable: Option<AgentExecutablePreferenceSummary>,
     #[serde(skip_serializing_if = "agent_state::AgentLaunchArgs::is_empty")]
     pub launch_args: agent_state::AgentLaunchArgs,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExecutablePreferenceSummary {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub realpath: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub source: String,
+    pub source_label: String,
+    pub rank: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
 }
 
 pub(super) fn launcher_preferences() -> LauncherPreferences {
@@ -156,19 +175,47 @@ fn summarize_agent_preferences(
         let workspace = stored
             .and_then(|preference| preference.workspace.as_ref())
             .map(|path| path.to_string_lossy().to_string());
+        let executable = stored
+            .and_then(|_| agent_state::resolve_agent_executable(agent_prefs, &agent_id))
+            .map(executable_summary);
+        let executable_path = executable
+            .as_ref()
+            .map(|executable| executable.path.clone());
         let launch_args = stored
             .map(|preference| preference.launch_args.clone())
             .unwrap_or_default();
-        if profile_id.is_some() || workspace.is_some() || !launch_args.is_empty() {
+        if profile_id.is_some()
+            || workspace.is_some()
+            || executable_path.is_some()
+            || !launch_args.is_empty()
+        {
             out.insert(
                 agent_id,
                 AgentLaunchPreferenceSummary {
                     profile_id,
                     workspace,
+                    executable_path,
+                    executable,
                     launch_args,
                 },
             );
         }
     }
     out
+}
+
+fn executable_summary(
+    executable: agent_state::AgentExecutablePreference,
+) -> AgentExecutablePreferenceSummary {
+    AgentExecutablePreferenceSummary {
+        path: executable.path.to_string_lossy().to_string(),
+        realpath: executable
+            .realpath
+            .map(|path| path.to_string_lossy().to_string()),
+        version: executable.version,
+        source: executable.source,
+        source_label: executable.source_label,
+        rank: executable.rank,
+        package: executable.package,
+    }
 }

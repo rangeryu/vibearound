@@ -288,8 +288,7 @@ fn start_process_name(command: &str) -> Option<String> {
 }
 
 fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> String {
-    let _ = agent_id;
-    fallback_command.to_string()
+    ::common::agent_detection::resolve_agent_command(agent_id, fallback_command)
 }
 
 fn materialized_profile_env(

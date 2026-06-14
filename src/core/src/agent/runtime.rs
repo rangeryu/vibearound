@@ -151,6 +151,9 @@ impl Agent {
         );
 
         let mut spec = SpawnSpec::new(program).args(resolved_args).cwd(cwd.clone());
+        if let Some(path_env) = selected_agent_path_env(&agent_id) {
+            spec = spec.env(crate::process::env::path_env_key(), path_env);
+        }
         for (k, v) in extra_env {
             spec = spec.env(k, v);
         }
@@ -338,12 +341,44 @@ async fn resolve_agent_program(agent_id: &str) -> anyhow::Result<(String, Vec<St
             vec![entry.to_string_lossy().to_string()],
         ))
     } else if let Some(install_cmd) = &agent_def.acp.install_cmd {
+        if let Some(candidate) = crate::agent_detection::selected_candidate(agent_id) {
+            return Ok((candidate.path, agent_def.acp.args.clone()));
+        }
+        let scanned = crate::agent_detection::scan_agent_and_persist(agent_id)
+            .await
+            .ok()
+            .and_then(|detection| detection.system_selected_candidate());
+        if let Some(candidate) = scanned {
+            return Ok((candidate.path, agent_def.acp.args.clone()));
+        }
         if !super::install::is_program_available(&agent_def.acp.program) {
             tracing::info!("[{}-agent] auto-installing via install cmd ...", agent_id);
             super::install::auto_install_agent_cmd(install_cmd, agent_id).await?;
         }
         Ok((agent_def.acp.program.clone(), agent_def.acp.args.clone()))
     } else {
+        if let Some(candidate) = crate::agent_detection::selected_candidate(agent_id) {
+            return Ok((candidate.path, agent_def.acp.args.clone()));
+        }
+        let scanned = crate::agent_detection::scan_agent_and_persist(agent_id)
+            .await
+            .ok()
+            .and_then(|detection| detection.system_selected_candidate());
+        if let Some(candidate) = scanned {
+            return Ok((candidate.path, agent_def.acp.args.clone()));
+        }
         Ok((agent_def.acp.program.clone(), agent_def.acp.args.clone()))
     }
+}
+
+fn selected_agent_path_env(agent_id: &str) -> Option<String> {
+    let candidate = crate::agent_detection::selected_candidate(agent_id)?;
+    let parent = std::path::Path::new(&candidate.path).parent()?;
+    let mut paths = vec![parent.to_path_buf()];
+    if let Some(current) = crate::process::env::path_value(&crate::process::env::child_env()) {
+        paths.extend(std::env::split_paths(&current));
+    }
+    std::env::join_paths(paths)
+        .ok()
+        .map(|value| value.to_string_lossy().to_string())
 }

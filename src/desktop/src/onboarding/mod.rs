@@ -349,57 +349,58 @@ pub async fn scan_tunnel_status(
 }
 
 async fn agent_install_report(agent: common::resources::AgentDef) -> StartkitItemReport {
-    let program = program_from_command(agent.pty_command_for_current_platform())
-        .unwrap_or_else(|| agent.acp.program.clone());
+    let agent_id = agent.id.clone();
     let report_id = format!("agents.{}.cli", agent.id);
-    let path = resolve_program_path(&program).await;
-    let installed = path.is_some();
-    let version = if installed {
-        match program_version(&program).await {
-            Ok(version) => version,
-            Err(error) => {
-                return StartkitItemReport {
-                    id: report_id,
-                    label: agent.display_name,
-                    group: "agents".to_string(),
-                    category: "agents".to_string(),
-                    status: StartkitItemStatus::Blocked,
-                    severity: None,
-                    version: None,
-                    latest_version: None,
-                    path,
-                    message: Some(format!("{program} is present but not usable: {error}")),
-                    actions: Vec::new(),
-                    manual_command: None,
-                    manual_url: None,
-                    secret: false,
-                    settings_key: None,
-                };
-            }
-        }
+
+    let candidate = if let Some(candidate) =
+        agent_detection::configured_candidate_with_version(&agent_id).await
+    {
+        Some(candidate)
     } else {
-        None
+        agent_detection::scan_agent_and_persist(&agent_id)
+            .await
+            .ok()
+            .and_then(|detection| detection.system_selected_candidate())
     };
 
+    if let Some(candidate) = candidate {
+        return StartkitItemReport {
+            id: report_id,
+            label: agent.display_name,
+            group: "agents".to_string(),
+            category: "agents".to_string(),
+            status: StartkitItemStatus::Ok,
+            severity: None,
+            version: candidate.version,
+            latest_version: None,
+            path: Some(candidate.path),
+            message: Some(format!(
+                "{} selected from {}",
+                agent.id, candidate.source_label
+            )),
+            actions: Vec::new(),
+            manual_command: None,
+            manual_url: None,
+            secret: false,
+            settings_key: None,
+        };
+    }
+
+    let program = program_from_command(agent.pty_command_for_current_platform())
+        .unwrap_or_else(|| agent.acp.program.clone());
     StartkitItemReport {
         id: report_id,
         label: agent.display_name.clone(),
         group: "agents".to_string(),
         category: "agents".to_string(),
-        status: if installed {
-            StartkitItemStatus::Ok
-        } else {
-            StartkitItemStatus::Blocked
-        },
+        status: StartkitItemStatus::Blocked,
         severity: None,
-        version,
+        version: None,
         latest_version: None,
-        path,
-        message: Some(if installed {
-            format!("{program} found")
-        } else {
-            format!("Install {program} on this computer, then scan again.")
-        }),
+        path: None,
+        message: Some(format!(
+            "Install {program} on this computer, then scan again."
+        )),
         actions: Vec::new(),
         manual_command: None,
         manual_url: None,
@@ -413,19 +414,25 @@ async fn agent_update_report(
     choices: StartkitChoices,
 ) -> Option<StartkitItemReport> {
     let agent = common::resources::agent_by_id(&agent_id)?;
-    let candidate = agent_detection::scan_agent_and_persist(&agent_id)
-        .await
-        .ok()
-        .and_then(|detection| {
-            agent_detection::preferred_startkit_candidate(
-                &agent_id,
-                &detection,
-                &choices.toolchain_mode,
-            )
-        })
-        .or_else(|| {
-            agent_detection::startkit_candidate_for_mode(&agent_id, &choices.toolchain_mode)
-        })?;
+    let candidate = if let Some(candidate) =
+        agent_detection::configured_candidate_with_version(&agent_id).await
+    {
+        candidate
+    } else {
+        agent_detection::scan_agent_and_persist(&agent_id)
+            .await
+            .ok()
+            .and_then(|detection| {
+                agent_detection::preferred_startkit_candidate(
+                    &agent_id,
+                    &detection,
+                    &choices.toolchain_mode,
+                )
+            })
+            .or_else(|| {
+                agent_detection::startkit_candidate_for_mode(&agent_id, &choices.toolchain_mode)
+            })?
+    };
     let source = candidate.source.clone();
     let local_version = candidate.version.as_deref().and_then(extract_semver);
     let mut report = StartkitItemReport {
@@ -598,44 +605,6 @@ fn program_from_command(command: &str) -> Option<String> {
         .next()
         .map(|program| program.trim_matches(['"', '\'']).to_string())
         .filter(|program| !program.is_empty())
-}
-
-async fn resolve_program_path(program: &str) -> Option<String> {
-    let lookup = if cfg!(windows) { "where" } else { "which" };
-    let mut command = common::process::env::command(lookup);
-    command.arg(program);
-    let output = command_output_with_timeout(command, Duration::from_secs(2))
-        .await
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(str::to_string)
-}
-
-async fn program_version(program: &str) -> Result<Option<String>, String> {
-    let mut command = common::process::env::command(program);
-    command.arg("--version");
-    let output = command_output_with_timeout(command, Duration::from_secs(3)).await?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let first_line = stdout
-        .lines()
-        .chain(stderr.lines())
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(str::to_string);
-
-    if !output.status.success() {
-        return Err(first_line.unwrap_or_else(|| format!("exited with {}", output.status)));
-    }
-
-    Ok(first_line)
 }
 
 async fn command_output_with_timeout(

@@ -39,9 +39,31 @@ pub struct AgentLaunchPreference {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executable: Option<AgentExecutablePreference>,
+    // Legacy scalar used by earlier builds. New writes use `executable`, but
+    // reads still honor this so existing agents.json files keep working.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executable_path: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "AgentLaunchArgs::is_empty")]
     pub launch_args: AgentLaunchArgs,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExecutablePreference {
+    pub path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub realpath: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default = "manual_executable_source")]
+    pub source: String,
+    #[serde(default = "manual_executable_source_label")]
+    pub source_label: String,
+    #[serde(default)]
+    pub rank: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -194,13 +216,28 @@ pub fn resolve_agent_workspace(
 }
 
 pub fn resolve_agent_executable_path(prefs: &AgentsPrefsFile, agent_id: &str) -> Option<PathBuf> {
+    resolve_agent_executable(prefs, agent_id).map(|executable| executable.path)
+}
+
+pub fn resolve_agent_executable(
+    prefs: &AgentsPrefsFile,
+    agent_id: &str,
+) -> Option<AgentExecutablePreference> {
     let agent_id = canonical_agent_id(agent_id);
-    prefs
-        .agents
-        .get(&agent_id)
-        .and_then(|preference| preference.executable_path.as_ref())
-        .filter(|path| !path.as_os_str().is_empty())
-        .cloned()
+    prefs.agents.get(&agent_id).and_then(|preference| {
+        preference
+            .executable
+            .clone()
+            .filter(|executable| !executable.path.as_os_str().is_empty())
+            .or_else(|| {
+                preference
+                    .executable_path
+                    .as_ref()
+                    .filter(|path| !path.as_os_str().is_empty())
+                    .cloned()
+                    .map(AgentExecutablePreference::manual)
+            })
+    })
 }
 
 pub fn resolve_agent_terminal_args(prefs: &AgentsPrefsFile, agent_id: &str) -> Vec<String> {
@@ -255,9 +292,20 @@ pub fn write_agent_executable_path(
     agent_id: &str,
     executable_path: Option<PathBuf>,
 ) -> anyhow::Result<()> {
+    write_agent_executable(
+        agent_id,
+        executable_path.map(AgentExecutablePreference::manual),
+    )
+}
+
+pub fn write_agent_executable(
+    agent_id: &str,
+    executable: Option<AgentExecutablePreference>,
+) -> anyhow::Result<()> {
     update_prefs(|prefs| {
         let entry = prefs.agents.entry(agent_id.to_string()).or_default();
-        entry.executable_path = executable_path;
+        entry.executable = executable;
+        entry.executable_path = None;
         prune_empty_agent_entry(prefs, agent_id);
     })
 }
@@ -304,6 +352,7 @@ pub fn remove_profile_references(profile_id: &str) -> anyhow::Result<()> {
         prefs.agents.retain(|_, preference| {
             preference.profile_id.is_some()
                 || preference.workspace.is_some()
+                || preference.executable.is_some()
                 || preference.executable_path.is_some()
                 || !preference.launch_args.is_empty()
         });
@@ -326,6 +375,7 @@ pub fn remove_workspace_references(workspace: &std::path::Path) -> anyhow::Resul
         prefs.agents.retain(|_, preference| {
             preference.profile_id.is_some()
                 || preference.workspace.is_some()
+                || preference.executable.is_some()
                 || preference.executable_path.is_some()
                 || !preference.launch_args.is_empty()
         });
@@ -410,6 +460,7 @@ fn prune_empty_agent_entry(prefs: &mut AgentsPrefsFile, agent_id: &str) {
         .map(|entry| {
             entry.profile_id.is_none()
                 && entry.workspace.is_none()
+                && entry.executable.is_none()
                 && entry.executable_path.is_none()
                 && entry.launch_args.is_empty()
         })
@@ -417,6 +468,28 @@ fn prune_empty_agent_entry(prefs: &mut AgentsPrefsFile, agent_id: &str) {
     if empty {
         prefs.agents.remove(agent_id);
     }
+}
+
+impl AgentExecutablePreference {
+    pub fn manual(path: PathBuf) -> Self {
+        Self {
+            path,
+            realpath: None,
+            version: None,
+            source: manual_executable_source(),
+            source_label: manual_executable_source_label(),
+            rank: 0,
+            package: None,
+        }
+    }
+}
+
+fn manual_executable_source() -> String {
+    "manual_path".to_string()
+}
+
+fn manual_executable_source_label() -> String {
+    "Manual path".to_string()
 }
 
 fn connection_preference_is_empty(preference: &ProfileConnectionPreference) -> bool {
@@ -556,6 +629,62 @@ mod tests {
             resolve_agent_workspace(&prefs, &cfg, "codex"),
             cfg.resolve_workspace("codex")
         );
+    }
+
+    #[test]
+    fn structured_executable_preference_wins_over_legacy_path() {
+        let prefs = AgentsPrefsFile {
+            agents: [(
+                "codex".to_string(),
+                AgentLaunchPreference {
+                    executable: Some(AgentExecutablePreference {
+                        path: PathBuf::from("/opt/homebrew/bin/codex"),
+                        realpath: Some(PathBuf::from(
+                            "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js",
+                        )),
+                        version: Some("codex-cli 0.139.0".to_string()),
+                        source: "npm_global".to_string(),
+                        source_label: "npm global (Homebrew prefix)".to_string(),
+                        rank: 1,
+                        package: Some("@openai/codex".to_string()),
+                    }),
+                    executable_path: Some(PathBuf::from("/legacy/codex")),
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+
+        let executable = resolve_agent_executable(&prefs, "openai-codex").unwrap();
+        assert_eq!(executable.path, PathBuf::from("/opt/homebrew/bin/codex"));
+        assert_eq!(executable.source, "npm_global");
+        assert_eq!(
+            resolve_agent_executable_path(&prefs, "codex").unwrap(),
+            PathBuf::from("/opt/homebrew/bin/codex")
+        );
+    }
+
+    #[test]
+    fn legacy_executable_path_reads_as_manual_preference() {
+        let prefs = AgentsPrefsFile {
+            agents: [(
+                "codex".to_string(),
+                AgentLaunchPreference {
+                    executable_path: Some(PathBuf::from("/legacy/codex")),
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+
+        let executable = resolve_agent_executable(&prefs, "codex").unwrap();
+        assert_eq!(executable.path, PathBuf::from("/legacy/codex"));
+        assert_eq!(executable.source, "manual_path");
+        assert_eq!(executable.source_label, "Manual path");
     }
 
     #[test]

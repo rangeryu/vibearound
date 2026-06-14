@@ -316,7 +316,13 @@ pub async fn create_session_handler(
                 .pty_manager
                 .create_profile_session(
                     pty_tool,
-                    command_with_args(&agent.pty.command, &command_args),
+                    command_with_args(
+                        &common::agent_detection::resolve_agent_command(
+                            agent_id,
+                            &agent.pty.command,
+                        ),
+                        &command_args,
+                    ),
                     env,
                     profile.id.clone(),
                     profile.label.clone(),
