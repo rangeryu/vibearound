@@ -29,7 +29,7 @@ interface Props {
   onClose: () => void;
   onSaveExecutablePath: (path: string | null) => Promise<void>;
   onRefreshExecutableResolution?: () => Promise<void>;
-  onUpdateAgent?: () => Promise<void>;
+  onUpdateAgent?: (path: string) => Promise<void>;
 }
 
 type ClientOs = "macos" | "windows" | "linux";
@@ -71,6 +71,22 @@ function pathMatchesCandidate(
   );
 }
 
+function versionSummary(
+  candidate: AgentExecutableCandidate,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string | null {
+  if (candidate.updateAvailable && candidate.latestVersion) {
+    return t("New {{version}}", { version: candidate.latestVersion });
+  }
+  if (candidate.updateAvailable === false && candidate.latestVersion) {
+    return t("Up to date");
+  }
+  if (candidate.latestVersion) {
+    return t("Latest {{version}}", { version: candidate.latestVersion });
+  }
+  return null;
+}
+
 export function AgentExecutablePathDialog({
   agent,
   preference,
@@ -89,12 +105,12 @@ export function AgentExecutablePathDialog({
   );
   const [executablePath, setExecutablePath] = useState(initialPath);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [updatingAgent, setUpdatingAgent] = useState(false);
+  const [updatingPath, setUpdatingPath] = useState<string | null>(null);
 
   useEffect(() => {
     setExecutablePath(initialPath);
     setSaveError(null);
-    setUpdatingAgent(false);
+    setUpdatingPath(null);
   }, [agent?.id, initialPath]);
 
   if (!agent) return null;
@@ -102,15 +118,6 @@ export function AgentExecutablePathDialog({
   const clientOs = detectClientOs();
   const isDesktopApp = agent.direct_only;
   const executableDirty = executablePath.trim() !== initialPath;
-  const draftCandidate =
-    executableResolution?.candidates.find((candidate) =>
-      pathMatchesCandidate(executablePath, candidate),
-    ) ?? null;
-  const selectedCandidate = executableResolution?.selected ?? null;
-  const updateCandidate = executableDirty
-    ? null
-    : (draftCandidate ?? selectedCandidate);
-  const updateCommand = updateCandidate?.updateCommand ?? null;
 
   async function save() {
     setSaveError(null);
@@ -138,17 +145,17 @@ export function AgentExecutablePathDialog({
     if (path) setExecutablePath(path);
   }
 
-  async function updateAgent() {
+  async function updateAgent(path: string) {
     if (!onUpdateAgent) return;
     setSaveError(null);
-    setUpdatingAgent(true);
+    setUpdatingPath(path);
     try {
-      await onUpdateAgent();
+      await onUpdateAgent(path);
       await onRefreshExecutableResolution?.();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
-      setUpdatingAgent(false);
+      setUpdatingPath(null);
     }
   }
 
@@ -168,7 +175,7 @@ export function AgentExecutablePathDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5">
           <section className="space-y-2">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
@@ -182,7 +189,7 @@ export function AgentExecutablePathDialog({
             </div>
 
             {!isDesktopApp && (
-              <div className="space-y-1.5 rounded-md border border-border bg-background/60 p-2">
+              <div className="space-y-2">
                 {executableLoading ? (
                   <div className="text-[11px] text-muted-foreground">
                     {t("Checking path")}
@@ -193,35 +200,72 @@ export function AgentExecutablePathDialog({
                       executablePath,
                       candidate,
                     );
+                    const latest = versionSummary(candidate, t);
+                    const updating = updatingPath === candidate.path;
                     return (
-                      <button
+                      <div
                         key={`${candidate.source}:${candidate.path}`}
-                        type="button"
-                        disabled={busy}
-                        className={`flex w-full min-w-0 items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors ${
+                        className={`flex w-full min-w-0 items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
                           selected
                             ? "border-primary/45 bg-primary/10"
                             : "border-border bg-card hover:border-primary/30"
                         }`}
-                        onClick={() => setExecutablePath(candidate.path)}
                       >
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-primary">
-                          {selected ? (
-                            <Check className="h-3.5 w-3.5" />
-                          ) : (
-                            <span className="h-2 w-2 rounded-full border border-muted-foreground/50" />
-                          )}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-mono text-[11px] [font-variant-ligatures:none]">
-                            {candidate.path}
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          onClick={() => setExecutablePath(candidate.path)}
+                        >
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-primary">
+                            {selected ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <span className="h-2 w-2 rounded-full border border-muted-foreground/50" />
+                            )}
                           </span>
-                          <span className="block truncate text-[10px] text-muted-foreground">
-                            {candidate.sourceLabel}
-                            {candidate.version ? ` · ${candidate.version}` : ""}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-mono text-[11px] [font-variant-ligatures:none]">
+                              {candidate.path}
+                            </span>
+                            <span className="block truncate text-[10px] text-muted-foreground">
+                              {candidate.sourceLabel}
+                              {candidate.version
+                                ? ` · ${candidate.version}`
+                                : ""}
+                            </span>
                           </span>
-                        </span>
-                      </button>
+                        </button>
+                        {latest && (
+                          <span
+                            className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] ${
+                              candidate.updateAvailable
+                                ? "border-primary/35 bg-primary/10 text-primary"
+                                : "border-border bg-muted/40 text-muted-foreground"
+                            }`}
+                          >
+                            {latest}
+                          </span>
+                        )}
+                        <Button
+                          type="button"
+                          variant={
+                            candidate.updateAvailable ? "default" : "outline"
+                          }
+                          size="xs"
+                          disabled={
+                            busy ||
+                            Boolean(updatingPath) ||
+                            !candidate.updateCommand
+                          }
+                          className="h-7 shrink-0 px-2 text-xs"
+                          title={candidate.updateCommand ?? t("No update command")}
+                          onClick={() => void updateAgent(candidate.path)}
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          {updating ? t("Updating") : t("Update")}
+                        </Button>
+                      </div>
                     );
                   })
                 ) : (
@@ -256,54 +300,7 @@ export function AgentExecutablePathDialog({
               >
                 {t("Choose")}
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={busy || !executablePath}
-                className="h-8 px-2.5 text-xs"
-                onClick={() => setExecutablePath("")}
-              >
-                {t("Clear")}
-              </Button>
             </div>
-
-            {!isDesktopApp && (
-              <div className="flex flex-wrap gap-1.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={busy || executableLoading}
-                  className="h-7 px-2 text-xs"
-                  onClick={() => void onRefreshExecutableResolution?.()}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  {t("Scan")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={
-                    busy ||
-                    updatingAgent ||
-                    executableDirty ||
-                    !updateCommand
-                  }
-                  className="h-7 px-2 text-xs"
-                  title={
-                    executableDirty
-                      ? t("Save this path before updating")
-                      : (updateCommand ?? t("No update command"))
-                  }
-                  onClick={() => void updateAgent()}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  {updatingAgent ? t("Updating") : t("Update")}
-                </Button>
-              </div>
-            )}
           </section>
 
           {saveError && (
@@ -311,24 +308,41 @@ export function AgentExecutablePathDialog({
           )}
         </div>
 
-        <DialogFooter className="shrink-0 border-t border-border px-5 py-3">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={onClose}
-          >
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={busy || !executableDirty}
-            onClick={() => void save()}
-          >
-            {t("Save")}
-          </Button>
+        <DialogFooter className="shrink-0 !flex-row items-center justify-between border-t border-border px-5 py-3 sm:justify-between">
+          <div>
+            {!isDesktopApp && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy || executableLoading}
+                className="h-8 px-2.5 text-xs"
+                onClick={() => void onRefreshExecutableResolution?.()}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t("Scan")}
+              </Button>
+            )}
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={onClose}
+            >
+              {t("Cancel")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || !executableDirty}
+              onClick={() => void save()}
+            >
+              {t("Save")}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

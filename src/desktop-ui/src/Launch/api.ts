@@ -110,6 +110,8 @@ export interface AgentExecutableCandidate {
   path: string;
   realpath?: string | null;
   version?: string | null;
+  latestVersion?: string | null;
+  updateAvailable?: boolean | null;
   source: string;
   sourceLabel: string;
   rank: number;
@@ -132,8 +134,14 @@ export function getAgentExecutableResolution(
   });
 }
 
-export function updateLauncherAgent(agentId: string): Promise<void> {
-  return invoke<void>("launcher_update_agent", { agentId });
+export function updateLauncherAgent(
+  agentId: string,
+  executablePath?: string | null,
+): Promise<void> {
+  return invoke<void>("launcher_update_agent", {
+    agentId,
+    executablePath: executablePath ?? null,
+  });
 }
 
 export interface DesktopAppDetectionFile {

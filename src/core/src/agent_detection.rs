@@ -10,6 +10,7 @@ use tokio::task::JoinSet;
 const AGENT_SOURCES_TOML: &str = include_str!("../../resources/agent-sources.toml");
 const DETECTION_SCHEMA_VERSION: u32 = 1;
 const VERSION_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+const LATEST_VERSION_CHECK_TIMEOUT: Duration = Duration::from_secs(8);
 const USER_SHELL_RANK_BASE: u32 = 0;
 const HOMEBREW_RANK_BASE: u32 = 1_000;
 const NPM_GLOBAL_RANK_BASE: u32 = 2_000;
@@ -342,6 +343,39 @@ pub fn source_package(agent_id: &str, source: &str) -> Option<String> {
                 .values()
                 .find_map(|source_spec| source_spec.package.clone())
         })
+}
+
+pub async fn latest_version_for_candidate(
+    agent_id: &str,
+    candidate: &AgentCandidate,
+) -> Option<String> {
+    if matches!(candidate.source.as_str(), "manual_path" | "app_bundled") {
+        return None;
+    }
+
+    if matches!(
+        candidate.source.as_str(),
+        "homebrew_formula" | "homebrew_cask"
+    ) {
+        let is_cask = candidate.source == "homebrew_cask";
+        let package = homebrew_package_name(agent_id, &candidate.source)?;
+        return homebrew_latest_version(&package, is_cask).await;
+    }
+
+    let package = candidate
+        .package
+        .clone()
+        .or_else(|| source_package(agent_id, &candidate.source))?;
+    npm_latest_version(&package).await
+}
+
+pub fn candidate_update_available(
+    candidate: &AgentCandidate,
+    latest_version: Option<&str>,
+) -> Option<bool> {
+    let current = comparable_version(candidate.version.as_deref()?)?;
+    let latest = comparable_version(latest_version?)?;
+    Some(current != latest)
 }
 
 pub async fn scan_and_persist() -> anyhow::Result<AgentDetectionFile> {
@@ -746,6 +780,83 @@ async fn output_lines(mut command: Command, max_duration: Duration) -> Vec<PathB
         .collect()
 }
 
+async fn command_stdout_text(
+    command: &str,
+    args: &[&str],
+    max_duration: Duration,
+) -> Option<String> {
+    let mut command = Command::new(command);
+    command.args(args);
+    let output = tokio::time::timeout(max_duration, command.output())
+        .await
+        .ok()?
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+async fn npm_latest_version(package: &str) -> Option<String> {
+    command_stdout_lines(
+        "npm",
+        &["view", package, "version"],
+        LATEST_VERSION_CHECK_TIMEOUT,
+    )
+    .await
+    .into_iter()
+    .next()
+}
+
+async fn homebrew_latest_version(package: &str, is_cask: bool) -> Option<String> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let source_arg = if is_cask { "--cask" } else { "--formula" };
+    let output = command_stdout_text(
+        "brew",
+        &["info", "--json=v2", source_arg, package],
+        LATEST_VERSION_CHECK_TIMEOUT,
+    )
+    .await?;
+    let json: serde_json::Value = serde_json::from_str(&output).ok()?;
+    if is_cask {
+        json.get("casks")?
+            .as_array()?
+            .first()?
+            .get("version")?
+            .as_str()
+            .map(str::to_string)
+    } else {
+        json.get("formulae")?
+            .as_array()?
+            .first()?
+            .get("versions")?
+            .get("stable")?
+            .as_str()
+            .map(str::to_string)
+    }
+}
+
+fn homebrew_package_name(agent_id: &str, source: &str) -> Option<String> {
+    let catalog = source_catalog().ok()?;
+    let source_spec = catalog.agents.get(agent_id)?.sources.get(source)?;
+    source_spec
+        .package
+        .clone()
+        .or_else(|| homebrew_package_name_from_command(agent_id, source))
+}
+
+fn homebrew_package_name_from_command(agent_id: &str, source: &str) -> Option<String> {
+    let command = source_command_template(agent_id, source, "upgrade")?;
+    command
+        .split_whitespace()
+        .filter(|word| !word.starts_with('-') && !matches!(*word, "brew" | "upgrade" | "install"))
+        .last()
+        .map(|word| word.trim_matches(['"', '\'']).to_string())
+        .filter(|word| !word.is_empty())
+}
+
 async fn command_version(path: &Path, version_arg: &str) -> Option<String> {
     let mut command = command_for_version_check(path, version_arg);
     let output = tokio::time::timeout(VERSION_CHECK_TIMEOUT, command.output())
@@ -962,6 +1073,27 @@ fn replace_command_program(command: &str, program: &str) -> String {
     } else {
         format!("{program} {rest}")
     }
+}
+
+fn comparable_version(value: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut started = false;
+    for ch in value.chars() {
+        if !started {
+            if ch.is_ascii_digit() {
+                started = true;
+                out.push(ch);
+            }
+            continue;
+        }
+        if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_' | '+') {
+            out.push(ch);
+        } else {
+            break;
+        }
+    }
+    let out = out.trim_matches(['.', '-', '_', '+']).to_ascii_lowercase();
+    (!out.is_empty()).then_some(out)
 }
 
 fn current_platform() -> &'static str {
@@ -1258,6 +1390,33 @@ mod tests {
                 Some("/Applications/Claude.app/Contents/Resources/claude"),
             ),
             "app_bundled"
+        );
+    }
+
+    #[test]
+    fn update_available_compares_version_numbers_inside_cli_output() {
+        let mut candidate = test_candidate("/usr/local/bin/codex", "npm_global", 0);
+        candidate.version = Some("codex-cli 0.139.0".to_string());
+
+        assert_eq!(
+            candidate_update_available(&candidate, Some("0.139.0")),
+            Some(false)
+        );
+        assert_eq!(
+            candidate_update_available(&candidate, Some("0.140.0")),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn homebrew_package_name_comes_from_upgrade_command() {
+        assert_eq!(
+            homebrew_package_name_from_command("gemini", "homebrew_formula").as_deref(),
+            Some("gemini-cli")
+        );
+        assert_eq!(
+            homebrew_package_name_from_command("kiro", "homebrew_cask").as_deref(),
+            Some("kiro-cli")
         );
     }
 

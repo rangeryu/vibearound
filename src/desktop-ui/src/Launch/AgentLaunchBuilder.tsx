@@ -817,13 +817,13 @@ export function AgentLaunchBuilder({
     }
   }
 
-  async function updateAgentExecutable() {
+  async function updateAgentExecutable(executablePath: string) {
     if (!pathAgent) return;
     const targetAgent = pathAgent;
     setBusy(true);
     onError(null);
     try {
-      await updateLauncherAgent(targetAgent.id);
+      await updateLauncherAgent(targetAgent.id, executablePath);
       await refreshAgentExecutable(targetAgent.id);
       onToast(t("Agent updated"));
     } catch (error) {

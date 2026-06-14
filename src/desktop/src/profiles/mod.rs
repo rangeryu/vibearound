@@ -48,6 +48,8 @@ pub struct AgentExecutableCandidateView {
     pub path: String,
     pub realpath: Option<String>,
     pub version: Option<String>,
+    pub latest_version: Option<String>,
+    pub update_available: Option<bool>,
     pub source: String,
     pub source_label: String,
     pub rank: u32,
@@ -180,38 +182,59 @@ pub async fn launcher_agent_executable_resolution(
     candidates.extend(detection.candidates);
 
     let selected_key = selected.as_ref().map(candidate_key);
-    let candidates = dedupe_agent_candidates(candidates)
-        .into_iter()
-        .map(|candidate| {
-            let selected = selected_key
-                .as_deref()
-                .is_some_and(|key| key == candidate_key(&candidate));
-            candidate_view(&agent_id, candidate, selected)
-        })
-        .collect();
+    let mut candidate_views = Vec::new();
+    for candidate in dedupe_agent_candidates(candidates) {
+        let selected = selected_key
+            .as_deref()
+            .is_some_and(|key| key == candidate_key(&candidate));
+        candidate_views.push(candidate_view(&agent_id, candidate, selected).await);
+    }
+    let selected = match selected {
+        Some(candidate) => Some(candidate_view(&agent_id, candidate, true).await),
+        None => None,
+    };
 
     Ok(AgentExecutableResolution {
         agent_id: agent_id.clone(),
         configured_path,
-        selected: selected.map(|candidate| candidate_view(&agent_id, candidate, true)),
-        candidates,
+        selected,
+        candidates: candidate_views,
     })
 }
 
 #[tauri::command]
-pub async fn launcher_update_agent(agent_id: String) -> Result<(), String> {
+pub async fn launcher_update_agent(
+    agent_id: String,
+    executable_path: Option<String>,
+) -> Result<(), String> {
     let agent_id = resources::agent_by_alias(&agent_id)
         .map(|def| def.id.clone())
         .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
-    let _ = common::agent_detection::scan_agent_and_persist(&agent_id).await;
-    let candidate = common::agent_detection::selected_candidate(&agent_id)
-        .or_else(|| {
-            common::agent_detection::startkit_candidate_for_mode(
-                &agent_id,
-                config::ensure_loaded().toolchain_mode.as_str(),
-            )
-        })
-        .ok_or_else(|| format!("no selected executable for '{agent_id}'"))?;
+    let detection = common::agent_detection::scan_agent_and_persist(&agent_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    let candidate = if let Some(path) = executable_path {
+        let path = PathBuf::from(path.trim());
+        if !path.is_file() {
+            return Err(format!("executable path is not a file: {}", path.display()));
+        }
+        if let Some(candidate) = common::agent_detection::candidate_for_path(&detection, &path) {
+            candidate
+        } else {
+            common::agent_detection::manual_candidate_with_version(&agent_id, path)
+                .await
+                .map_err(|error| error.to_string())?
+        }
+    } else {
+        common::agent_detection::selected_candidate(&agent_id)
+            .or_else(|| {
+                common::agent_detection::startkit_candidate_for_mode(
+                    &agent_id,
+                    config::ensure_loaded().toolchain_mode.as_str(),
+                )
+            })
+            .ok_or_else(|| format!("no selected executable for '{agent_id}'"))?
+    };
     let command =
         common::agent_detection::source_command_template(&agent_id, &candidate.source, "upgrade")
             .or_else(|| {
@@ -536,7 +559,7 @@ fn candidate_key(candidate: &common::agent_detection::AgentCandidate) -> String 
         .unwrap_or_else(|| candidate.path.clone())
 }
 
-fn candidate_view(
+async fn candidate_view(
     agent_id: &str,
     candidate: common::agent_detection::AgentCandidate,
     selected: bool,
@@ -550,10 +573,16 @@ fn candidate_view(
                     "install",
                 )
             });
+    let latest_version =
+        common::agent_detection::latest_version_for_candidate(agent_id, &candidate).await;
+    let update_available =
+        common::agent_detection::candidate_update_available(&candidate, latest_version.as_deref());
     AgentExecutableCandidateView {
         path: candidate.path,
         realpath: candidate.realpath,
         version: candidate.version,
+        latest_version,
+        update_available,
         update_command,
         source: candidate.source,
         source_label: candidate.source_label,
