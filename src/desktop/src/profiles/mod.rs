@@ -439,8 +439,12 @@ pub async fn launcher_set_agent_executable_path(
         Some(path) => {
             let path = PathBuf::from(path.trim());
             if agent.direct_only {
-                if !path.is_file() && !path.is_dir() {
-                    return Err(format!("agent path does not exist: {}", path.display()));
+                if !is_valid_direct_only_executable_path(&path) {
+                    return Err(format!(
+                        "agent path is not a valid {}: {}",
+                        direct_only_executable_path_label(),
+                        path.display()
+                    ));
                 }
                 Some(direct_only_executable_preference(&agent_id, path))
             } else {
@@ -472,6 +476,22 @@ pub async fn launcher_set_agent_executable_path(
     agent_state::write_agent_executable(&agent_id, executable).map_err(|e| e.to_string())?;
     emit_launch_config_changed(&app);
     Ok(())
+}
+
+fn is_valid_direct_only_executable_path(path: &std::path::Path) -> bool {
+    if cfg!(target_os = "macos") {
+        path.is_dir() || path.is_file()
+    } else {
+        path.is_file()
+    }
+}
+
+fn direct_only_executable_path_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "app bundle or executable"
+    } else {
+        "executable file"
+    }
 }
 
 fn direct_only_executable_preference(
