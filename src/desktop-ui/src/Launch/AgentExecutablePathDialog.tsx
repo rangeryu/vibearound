@@ -291,12 +291,12 @@ export function AgentExecutablePathDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="!flex h-[340px] max-h-[calc(100vh-64px)] w-[min(660px,calc(100vw-28px))] max-w-[calc(100vw-28px)] flex-col overflow-hidden p-0 sm:max-w-[min(660px,calc(100vw-28px))]">
+      <DialogContent className="!flex max-h-[calc(100vh-64px)] w-[min(660px,calc(100vw-28px))] max-w-[calc(100vw-28px)] flex-col overflow-hidden p-0 sm:max-w-[min(660px,calc(100vw-28px))]">
         <DialogHeader className="shrink-0 border-b border-border px-5 py-3 pr-12">
           <DialogTitle className="text-lg">
             {isDesktopApp
               ? t("{{agent}} app path", { agent: agent.display_name })
-              : t("{{agent}} CLI launch path", { agent: agent.display_name })}
+              : t("{{agent}} launch path", { agent: agent.display_name })}
           </DialogTitle>
           <DialogDescription className="sr-only">
             {isDesktopApp
@@ -305,14 +305,14 @@ export function AgentExecutablePathDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col px-5 py-3">
+        <div className="px-5">
           <section className="space-y-2">
             <div className="text-xs text-muted-foreground">
               {t("Choose the agent path.")}
             </div>
 
             {!isDesktopApp && (
-              <div className="max-h-[132px] space-y-2 overflow-y-auto pr-1">
+              <div className="max-h-[220px] space-y-2 overflow-y-auto pr-1">
                 {executableLoading ? (
                   <div className="px-1 py-2 text-xs text-muted-foreground">
                     <RefreshCw className="mr-1.5 inline h-3 w-3 animate-spin align-[-2px]" />

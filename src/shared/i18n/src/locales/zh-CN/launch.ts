@@ -238,6 +238,7 @@ export const zhCNLaunch: Record<string, string> = {
   "{{agent}} launch settings": "{{agent}} 启动设置",
   "{{agent}} app path": "{{agent}} 应用路径",
   "{{agent}} CLI launch path": "{{agent}} CLI 启动路径",
+  "{{agent}} launch path": "{{agent}} 启动路径",
   "Configure per-agent launch arguments.": "配置每个 Agent 的启动参数。",
   Choose: "选择",
   "Choose desktop app executable": "选择桌面应用可执行文件",
