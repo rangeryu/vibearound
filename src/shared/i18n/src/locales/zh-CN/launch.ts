@@ -64,6 +64,27 @@ export const zhCNLaunch: Record<string, string> = {
   "Set app default": "设为应用默认",
   "Manual config": "手动配置",
   "API bridge settings": "API 转接设置",
+  Record: "记录",
+  "Bridge recorder": "Bridge 记录器",
+  Connected: "已连接",
+  Disconnected: "未连接",
+  Requests: "请求",
+  "No records": "暂无记录",
+  "No record selected": "未选择记录",
+  "Original request": "原始请求",
+  "Bridge request": "Bridge 请求",
+  "Server response": "服务器响应",
+  "Bridge response": "Bridge 响应",
+  "Unknown target": "未知目标",
+  "WebSocket error": "WebSocket 错误",
+  Truncated: "已截断",
+  Empty: "空",
+  Clear: "清空",
+  Copy: "复制",
+  client: "客户端",
+  upstream: "上游",
+  "server {{status}}": "服务器 {{status}}",
+  "bridge {{status}}": "Bridge {{status}}",
   "{{count}} sessions": "{{count}} 个会话",
   "{{label}} (not installed)": "{{label}}（未安装）",
   "For {{workspace}}": "{{workspace}} 下",
@@ -121,6 +142,7 @@ export const zhCNLaunch: Record<string, string> = {
   "Launch mode": "启动方式",
   "Model settings": "模型设置",
   "Endpoint settings": "Endpoint 设置",
+  "Auth method": "认证方式",
   "Model routes": "模型映射",
   Endpoint: "Endpoint",
   "Base URL": "Base URL",
@@ -169,6 +191,10 @@ export const zhCNLaunch: Record<string, string> = {
   "Gemini API key": "Gemini API key",
   "Use Google Cloud access token": "使用 Google Cloud access token",
   "Google Cloud access token": "Google Cloud access token",
+  "Google account": "Google 账号",
+  "Google account not connected": "Google 账号未连接",
+  "Signed in with Google": "已通过 Google 登录",
+  "Sign in": "登录",
   "Use Kimi Coding API key": "使用 Kimi Coding API key",
   "Kimi Coding API key": "Kimi Coding API key",
   "Use MiMo API key": "使用 MiMo API key",
@@ -209,6 +235,11 @@ export const zhCNLaunch: Record<string, string> = {
   "Agent launch settings updated": "已更新 Agent 启动设置",
   "{{agent}} launch settings": "{{agent}} 启动设置",
   "Configure per-agent launch arguments.": "配置每个 Agent 的启动参数。",
+  Choose: "选择",
+  "Choose desktop app executable": "选择桌面应用可执行文件",
+  "Use a specific executable when auto-detect cannot find the app.":
+    "自动检测找不到应用时，指定可执行文件。",
+  "Desktop bridge on launch": "启动时开启桌面转接",
   Terminal: "终端",
   "Agent protocol": "Agent 协议",
   "Launch command": "启动命令",
@@ -300,10 +331,34 @@ export const zhCNLaunch: Record<string, string> = {
   "How to modify": "修改方法",
   "Open the Codex config file, then add this snippet or update the existing VibeAround profile block.":
     "打开 Codex 配置文件，添加这段配置，或更新已有的 VibeAround 配置块。",
+  "Open the Codex config file, then add this snippet or update the existing VibeAround top-level model settings.":
+    "打开 Codex 配置文件，添加这段配置，或更新已有的 VibeAround 顶层模型设置。",
+  "Codex 0.134.0 and newer reject the old top-level profile selector, so this snippet leaves that line commented as a migration hint.":
+    "Codex 0.134.0 及更新版本会拒绝旧的顶层 profile 选择器，所以这段片段会把那一行保留为注释，作为迁移提示。",
   "Open the OpenCode config file, then add or merge this provider block.":
     "打开 OpenCode 配置文件，然后添加或合并这段 provider 配置。",
+  "Copy the matching parts into the Gemini CLI settings and env files yourself. VibeAround does not edit them automatically.":
+    "将对应部分手动复制到 Gemini CLI 的 settings 和 env 文件中。VibeAround 不会自动编辑这些文件。",
+  "Open the Gemini CLI settings file and make sure selectedType is gemini-api-key.":
+    "打开 Gemini CLI settings 文件，确认 selectedType 为 gemini-api-key。",
+  "Open the Gemini CLI env file, then add or update these variables.":
+    "打开 Gemini CLI env 文件，然后添加或更新这些变量。",
+  "If Gemini keeps using OAuth, run /auth in Gemini CLI and choose Gemini API key.":
+    "如果 Gemini 仍然使用 OAuth，请在 Gemini CLI 中运行 /auth 并选择 Gemini API key。",
+  "Copy this extension into a local file and pass it to pi with --extension yourself. VibeAround does not edit Pi global config automatically.":
+    "将这个扩展手动复制到本地文件，并通过 --extension 传给 pi。VibeAround 不会自动编辑 Pi 全局配置。",
+  "Save this snippet as a local Pi extension file.":
+    "将这段片段保存为本地 Pi 扩展文件。",
+  "Start Pi with --extension pointing at that file, plus the provider and model shown in the snippet.":
+    "启动 Pi 时通过 --extension 指向该文件，并使用片段中显示的 provider 和 model。",
   "The top-level profile line makes plain codex use this VibeAround profile by default.":
     "直接运行 codex 时默认使用顶层 profile 配置。",
+  "The top-level model and provider lines make plain codex use this VibeAround bridge by default.":
+    "顶层 model 和 provider 行会让直接运行 codex 时默认使用这个 VibeAround bridge。",
+  "If Codex keeps using account login instead of this bridge config, run codex logout first.":
+    "如果 Codex 仍然使用账号登录而不是这段 bridge 配置，请先运行 codex logout。",
+  "If Claude keeps using account login instead of this env block, run claude auth logout first.":
+    "如果 Claude 仍然使用账号登录而不是这段 env 配置，请先运行 claude auth logout。",
   "Paste this property inside the root JSON object of Claude settings.":
     "把这个属性粘贴到 Claude settings 的根 JSON 对象里。",
   "If env already exists, merge these keys into the existing env object instead of creating another env block.":
@@ -311,6 +366,8 @@ export const zhCNLaunch: Record<string, string> = {
   "Config snippet": "配置片段",
   "Codex config snippet": "Codex 配置片段",
   "OpenCode config snippet": "OpenCode 配置片段",
+  "Gemini config snippet": "Gemini 配置片段",
+  "Pi extension snippet": "Pi 扩展片段",
   "Copy config": "复制配置",
   "Header name is required for {{context}}":
     "{{context}} 的请求头名称不能为空",

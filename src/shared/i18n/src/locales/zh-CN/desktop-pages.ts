@@ -3,6 +3,8 @@ export const zhCNDesktopPages: Record<string, string> = {
     "活跃的开发服务器预览和 Markdown 预览。Owner 链接长期有效，分享链接每 {{minutes}} 分钟轮换一次。",
   "No active previews. Ask your coding agent to run preview or md_preview.":
     "没有活跃预览。让你的 Coding Agent 运行 preview 或 md_preview。",
+  "API Bridge": "API 转接",
+  "Apply API Bridge Settings": "应用 API 转接设置",
   Local: "本地",
   "Tunnel · owner": "隧道 · owner",
   "Tunnel · share": "隧道 · 分享",

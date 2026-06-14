@@ -6,6 +6,7 @@ import {
   ListChecks,
   Plug,
   Plus,
+  Radio,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
@@ -73,6 +74,7 @@ interface Props {
     agentId: ConnectionAgentId,
     preference: ProfileConnectionPreference,
   ) => Promise<void>;
+  onOpenBridgeRecorder?: () => void;
 }
 
 export function ProfileConnectionDialog({
@@ -81,6 +83,7 @@ export function ProfileConnectionDialog({
   connections,
   onClose,
   onSave,
+  onOpenBridgeRecorder,
 }: Props) {
   const { t } = useI18n();
   const [draft, setDraft] = useState(() => emptyConnectionDraft(profile, connections));
@@ -99,6 +102,9 @@ export function ProfileConnectionDialog({
         : [];
     },
     [agentId, draft, profile],
+  );
+  const bridgeRecorderAvailable = resolved.some((connection) =>
+    connection.clientApiTypes.some((client) => client.status === "via_bridge"),
   );
 
   async function copyManualValue(key: string, value: string) {
@@ -575,13 +581,35 @@ export function ProfileConnectionDialog({
 
         {error && <div className="shrink-0 px-6 text-[11px] text-destructive">{error}</div>}
 
-        <DialogFooter className="shrink-0 border-t border-border px-6 py-4">
-          <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving}>
-            {t("Cancel")}
-          </Button>
-          <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? t("Saving…") : t("Save")}
-          </Button>
+        <DialogFooter className="shrink-0 items-center border-t border-border px-6 py-4 sm:justify-between">
+          <div className="flex min-w-0 flex-1 justify-start">
+            {bridgeRecorderAvailable && onOpenBridgeRecorder && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="-ml-2 gap-1.5 text-primary"
+                onClick={onOpenBridgeRecorder}
+              >
+                <Radio className="h-3.5 w-3.5" />
+                {t("Record")}
+              </Button>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onClose}
+              disabled={saving}
+            >
+              {t("Cancel")}
+            </Button>
+            <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? t("Saving…") : t("Save")}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

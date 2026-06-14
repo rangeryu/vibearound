@@ -28,6 +28,7 @@ export const zhCNOnboarding: Record<string, string> = {
     "第 {{current}} / {{total}} 步 — {{step}}",
   "Continue Anyway": "仍然继续",
   "Open VibeAround": "打开 VibeAround",
+  "Check again": "重新检测",
   "Confirming…": "确认中…",
   "Pick the CLI VibeAround should start from Launch and IM messages.":
     "选择启动页和消息里默认使用的 Coding Agent。",
@@ -167,6 +168,8 @@ export const zhCNOnboarding: Record<string, string> = {
   "Keep everything local on this computer.": "不开放远程访问，只在本机使用。",
   "Remote access provider.": "远程访问方式。",
   "Installing selected setup": "正在安装",
+  "Preparing selected setup": "正在准备所选安装项",
+  "Copy command": "复制命令",
   "Checking this computer": "正在检测环境",
   "Setup finished with issues": "安装完成，但有问题",
   "Setup run finished": "安装完成",
