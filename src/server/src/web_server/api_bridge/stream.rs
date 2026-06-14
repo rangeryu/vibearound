@@ -12,6 +12,7 @@ use va_ai_api_bridge::{
     DecodeState, EncodeState, ProviderBridgeAdapter, UniversalEvent, WireEvent,
 };
 
+use super::super::bridge_recording::{ActiveBridgeRecord, PayloadCapture};
 use super::completion::{transform_upstream_response, UpstreamResponseTransform};
 use super::{json_error, BridgeProtocol};
 
@@ -25,6 +26,7 @@ pub(super) fn translated_stream_response(
     provider_adapter: ProviderBridgeAdapter,
     agent_model: Option<String>,
     transform: UpstreamResponseTransform,
+    record: Option<ActiveBridgeRecord>,
 ) -> Response {
     let stream = map_sse_stream(
         upstream,
@@ -33,6 +35,7 @@ pub(super) fn translated_stream_response(
         provider_adapter,
         agent_model,
         transform,
+        record,
     );
     Response::builder()
         .status(StatusCode::OK)
@@ -54,9 +57,12 @@ fn map_sse_stream(
     provider_adapter: ProviderBridgeAdapter,
     agent_model: Option<String>,
     transform: UpstreamResponseTransform,
+    record: Option<ActiveBridgeRecord>,
 ) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + 'static {
+    let upstream_status = upstream.status().as_u16();
     let state = SseMapState {
         upstream: Box::pin(upstream.bytes_stream()),
+        upstream_status,
         upstream_protocol,
         agent_protocol,
         provider_adapter,
@@ -67,6 +73,9 @@ fn map_sse_stream(
         buffer: Vec::new(),
         queue: VecDeque::new(),
         done: false,
+        record,
+        server_capture: PayloadCapture::new(),
+        bridge_capture: PayloadCapture::new(),
     };
 
     futures_util::stream::unfold(state, |mut state| async move {
@@ -75,13 +84,21 @@ fn map_sse_stream(
                 return Some((item, state));
             }
             if state.done {
+                state.finish_recording();
                 return None;
             }
 
             match state.upstream.next().await {
-                Some(Ok(chunk)) => state.ingest_chunk(&chunk),
+                Some(Ok(chunk)) => {
+                    state.server_capture.push_bytes(&chunk);
+                    state.ingest_chunk(&chunk);
+                }
                 Some(Err(e)) => {
+                    if let Some(record) = state.record.as_ref() {
+                        record.error(&format!("upstream stream error: {e}"));
+                    }
                     state.done = true;
+                    state.finish_recording();
                     return Some((
                         Err(io::Error::new(
                             io::ErrorKind::Other,
@@ -90,7 +107,11 @@ fn map_sse_stream(
                         state,
                     ));
                 }
-                None => return None,
+                None => {
+                    state.done = true;
+                    state.finish_recording();
+                    return None;
+                }
             }
         }
     })
@@ -98,6 +119,7 @@ fn map_sse_stream(
 
 struct SseMapState {
     upstream: UpstreamByteStream,
+    upstream_status: u16,
     upstream_protocol: BridgeProtocol,
     agent_protocol: BridgeProtocol,
     provider_adapter: ProviderBridgeAdapter,
@@ -108,6 +130,9 @@ struct SseMapState {
     buffer: Vec<u8>,
     queue: VecDeque<Result<Bytes, io::Error>>,
     done: bool,
+    record: Option<ActiveBridgeRecord>,
+    server_capture: PayloadCapture,
+    bridge_capture: PayloadCapture,
 }
 
 impl SseMapState {
@@ -174,15 +199,35 @@ impl SseMapState {
             }
         };
         for event in wire_events {
-            self.queue
-                .push_back(Ok(Bytes::from(encode_wire_sse_event(event))));
+            let bytes = Bytes::from(encode_wire_sse_event(event));
+            self.bridge_capture.push_bytes(&bytes);
+            self.queue.push_back(Ok(bytes));
         }
     }
 
     fn fail(&mut self, message: String) {
+        if let Some(record) = self.record.as_ref() {
+            record.error(&message);
+        }
         self.done = true;
         self.queue
             .push_back(Err(io::Error::new(io::ErrorKind::InvalidData, message)));
+    }
+
+    fn finish_recording(&mut self) {
+        let Some(record) = self.record.take() else {
+            return;
+        };
+        let server_payload = std::mem::take(&mut self.server_capture).into_payload();
+        let bridge_payload = std::mem::take(&mut self.bridge_capture).into_payload();
+        record.server_response(self.upstream_status, server_payload);
+        record.bridge_response(StatusCode::OK.as_u16(), bridge_payload);
+    }
+}
+
+impl Drop for SseMapState {
+    fn drop(&mut self) {
+        self.finish_recording();
     }
 }
 

@@ -16,6 +16,7 @@ import {
   type LauncherPreferences,
 } from "./api";
 import { AgentLaunchBuilder } from "./AgentLaunchBuilder";
+import { BridgeRecordPopup } from "./BridgeRecordPopup";
 import { ProfileConnectionDialog } from "./ProfileConnectionDialog";
 import { ProfileFormDialog } from "./ProfileFormDialog";
 import type { ProfileFormSubmit } from "./ProfileFormDialog";
@@ -44,6 +45,7 @@ export function Launch({ refreshToken = 0 }: { refreshToken?: number }) {
   const [editing, setEditing] = useState<ProfileDef | null>(null);
   const [connectionEditing, setConnectionEditing] =
     useState<ConnectionEditing | null>(null);
+  const [bridgeRecorderOpen, setBridgeRecorderOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -171,8 +173,13 @@ export function Launch({ refreshToken = 0 }: { refreshToken?: number }) {
           connections={prefs?.profileConnections}
           onClose={() => setConnectionEditing(null)}
           onSave={handleSaveConnection}
+          onOpenBridgeRecorder={() => setBridgeRecorderOpen(true)}
         />
       )}
+      <BridgeRecordPopup
+        open={bridgeRecorderOpen}
+        onOpenChange={setBridgeRecorderOpen}
+      />
     </div>
   );
 }

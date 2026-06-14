@@ -6,6 +6,7 @@ mod agent_hooks;
 mod api;
 mod api_bridge;
 mod auth;
+mod bridge_recording;
 mod mcp;
 mod pair;
 mod preview;
@@ -66,6 +67,8 @@ pub(crate) struct AppState {
     port: u16,
     /// Shared HTTP client for preview proxy and API bridge forwarding.
     preview_client: reqwest::Client,
+    /// Live, non-persistent bridge body recorder for the launch popup.
+    bridge_recorder: bridge_recording::BridgeRecorder,
     /// Codex/agent lifecycle events received from bundled hook helpers.
     hook_registry: Arc<AgentHookRegistry>,
 }
@@ -172,6 +175,7 @@ pub async fn run_web_server(
         web_channel,
         port,
         preview_client,
+        bridge_recorder: bridge_recording::BridgeRecorder::default(),
         hook_registry,
     };
 
@@ -230,6 +234,10 @@ pub async fn run_web_server(
         .route(
             "/ws/agents/runtime",
             get(ws_domains::ws_agents_runtime_handler),
+        )
+        .route(
+            "/ws/bridge-recording",
+            get(bridge_recording::bridge_recording_ws_handler),
         )
         .route("/api/channels", get(api::list_channels_handler))
         .route("/api/channels/sync", post(api::sync_channels_handler))
