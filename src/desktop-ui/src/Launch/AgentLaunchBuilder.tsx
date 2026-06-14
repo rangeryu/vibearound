@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   FolderOpen,
   MessageCircle,
+  Monitor,
   Pencil,
   Rocket,
   Settings2,
@@ -972,45 +973,45 @@ export function AgentLaunchBuilder({
                           summary={selectedProfileSummary}
                         />
                       </SelectorPopup>
-                      {!selectedAgentIsDirectOnly && (
-                        <div className="mt-1 flex max-w-[680px] min-w-0 items-center gap-1.5 text-[11px] leading-4 text-muted-foreground">
+                      <div className="mt-1 flex max-w-[680px] min-w-0 items-center gap-1.5 text-[11px] leading-4 text-muted-foreground">
+                        {selectedAgentIsDirectOnly ? (
+                          <Monitor className="h-3.5 w-3.5 shrink-0" />
+                        ) : (
                           <Terminal className="h-3.5 w-3.5 shrink-0" />
-                          <span
-                            className="min-w-0 truncate font-mono [font-variant-ligatures:none]"
-                            title={selectedExecutablePath}
-                          >
-                            {agentExecutableLoading
-                              ? t("Checking path")
-                              : selectedExecutablePath}
-                          </span>
-                          <TooltipButton
-                            type="button"
-                            variant="ghost"
-                            size="icon-xs"
-                            disabled={busy}
-                            aria-label={t("Change agent path")}
-                            title={t("Change agent path")}
-                            onClick={() => openAgentPathDialog(selectedAgent)}
-                            className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </TooltipButton>
-                        </div>
-                      )}
-                      {selectedAgentIsDirectOnly && (
+                        )}
+                        <span
+                          className="min-w-0 truncate font-mono [font-variant-ligatures:none]"
+                          title={selectedExecutablePath}
+                        >
+                          {!selectedAgentIsDirectOnly && agentExecutableLoading
+                            ? t("Checking path")
+                            : selectedExecutablePath}
+                        </span>
+                        <TooltipButton
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={busy}
+                          aria-label={t("Change agent path")}
+                          title={t("Change agent path")}
+                          onClick={() => openAgentPathDialog(selectedAgent)}
+                          className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </TooltipButton>
+                      </div>
+                      {showClaudeDesktopDeveloperModeHint && (
                         <div className="mt-1 space-y-0.5">
                           <p className="max-w-[520px] text-[11px] leading-4 text-muted-foreground">
-                            {agentId === "claude-desktop" && profileChoice.kind === "profile"
-                              ? t("For Anthropic profiles, Claude Desktop opens the local bridge automatically on launch.")
-                              : t("Workspace and sessions are selected inside the desktop app.")}
+                            {t(
+                              "For Anthropic profiles, Claude Desktop opens the local bridge automatically on launch.",
+                            )}
                           </p>
-                          {showClaudeDesktopDeveloperModeHint && (
-                            <p className="max-w-[640px] text-[11px] leading-4 text-muted-foreground">
-                              {t(
-                                "Claude Desktop profile launch requires Developer Mode. Enable it in Claude Desktop: Help -> Troubleshooting -> Enable Developer Mode.",
-                              )}
-                            </p>
-                          )}
+                          <p className="max-w-[640px] text-[11px] leading-4 text-muted-foreground">
+                            {t(
+                              "Claude Desktop profile launch requires Developer Mode. Enable it in Claude Desktop: Help -> Troubleshooting -> Enable Developer Mode.",
+                            )}
+                          </p>
                         </div>
                       )}
                     </>
