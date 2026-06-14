@@ -10,27 +10,25 @@ function Major($version) {
 }
 
 $minMajor = Major($env:STARTKIT_MIN_VERSION)
-$mode = if ($env:STARTKIT_TOOLCHAIN_MODE) { $env:STARTKIT_TOOLCHAIN_MODE } else { "auto" }
 $candidate = $null
-if ($mode -ne "system" -and $env:STARTKIT_NODE_DIR) {
-  $managed = Join-Path $env:STARTKIT_NODE_DIR "node.exe"
-  if (Test-Path $managed) { $candidate = $managed }
-}
-if (-not $candidate -and $mode -ne "managed") {
-  $cmd = Get-Command node -ErrorAction SilentlyContinue
-  if ($cmd) { $candidate = $cmd.Source }
-}
+$cmd = Get-Command node -ErrorAction SilentlyContinue
+if ($cmd) { $candidate = $cmd.Source }
 
 if (-not $candidate) {
-  $message = if ($mode -eq "managed") { "Managed Node.js was not found" } else { "Node.js was not found" }
-  Emit @{ status = "missing"; message = $message; actions = @("install") }
+  Emit @{ status = "missing"; message = "Install Node.js $env:STARTKIT_MIN_VERSION or newer. The Node.js installer includes npm."; actions = @("manual") }
+  exit 0
+}
+
+$npm = Get-Command npm -ErrorAction SilentlyContinue
+if (-not $npm) {
+  Emit @{ status = "missing"; path = $candidate; message = "npm was not found. Reinstall Node.js $env:STARTKIT_MIN_VERSION or newer with npm enabled."; actions = @("manual") }
   exit 0
 }
 
 $version = & $candidate --version 2>$null
 if ((Major $version) -lt $minMajor) {
-  Emit @{ status = "outdated"; version = $version; path = $candidate; message = "Node.js $version is below the required version"; actions = @("install") }
+  Emit @{ status = "outdated"; version = $version; path = $candidate; message = "Node.js $version is below the required version. Install Node.js $env:STARTKIT_MIN_VERSION or newer; it includes npm."; actions = @("manual") }
   exit 0
 }
 
-Emit @{ status = "ok"; version = $version; path = $candidate; message = "Node.js is ready"; actions = @() }
+Emit @{ status = "ok"; version = $version; path = $candidate; message = "Node.js and npm are ready"; actions = @() }

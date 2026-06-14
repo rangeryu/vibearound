@@ -51,7 +51,6 @@ export function OnboardingStepContent({
   onConfigChange,
   onVerboseChange,
   onInstallPlugin,
-  onInstallLocation,
   onStartAuth,
   onCancelAuth,
   onNgrokToken,
@@ -97,7 +96,6 @@ export function OnboardingStepContent({
     value: boolean,
   ) => void;
   onInstallPlugin: (pluginId: string, githubUrl: string) => void;
-  onInstallLocation: (value: "managed" | "system") => void;
   onStartAuth: (pluginId: string) => void;
   onCancelAuth: (pluginId: string) => void;
   onNgrokToken: (value: string) => void;
@@ -151,7 +149,6 @@ export function OnboardingStepContent({
           tunnelProvider={tunnelProvider}
           pluginRegistry={pluginRegistry}
           discoveredPlugins={discoveredPlugins}
-          onInstallLocation={onInstallLocation}
         />
       )}
 

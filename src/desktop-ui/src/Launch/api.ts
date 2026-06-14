@@ -260,6 +260,16 @@ export function setLauncherAgentLaunchArgs(
   });
 }
 
+export function setLauncherAgentExecutablePath(
+  agentId: string,
+  executablePath: string | null,
+): Promise<void> {
+  return invoke<void>("launcher_set_agent_executable_path", {
+    agentId,
+    executablePath,
+  });
+}
+
 export function setLauncherSelectedAgent(agentId: string): Promise<void> {
   return invoke<void>("launcher_set_selected_agent", { agentId });
 }

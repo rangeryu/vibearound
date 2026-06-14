@@ -128,7 +128,7 @@ function questionCopy(step: WizardStepId): {
     case "install":
       return {
         title: "Install Components.",
-        body: "Only missing items will be installed.",
+        body: "System tools are checked; selected plugins and tunnel helpers are prepared.",
         icon: <Wrench className="h-5 w-5" />,
       };
     case "configure":

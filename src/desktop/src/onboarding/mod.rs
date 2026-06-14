@@ -226,7 +226,7 @@ async fn agent_cli_reports(
             continue;
         }
         if let Some(agent) = common::resources::agent_by_id(agent_id) {
-            reports.push(agent_install_report(agent.clone(), &choices.toolchain_mode).await);
+            reports.push(agent_install_report(agent.clone()).await);
         }
     }
 
@@ -294,6 +294,8 @@ pub async fn scan_agent_sdk_status(
                     path: None,
                     message: Some("Uses the agent CLI's built-in ACP mode".to_string()),
                     actions: Vec::new(),
+                    manual_command: None,
+                    manual_url: None,
                     secret: false,
                     settings_key: None,
                 });
@@ -327,6 +329,8 @@ pub async fn scan_agent_sdk_status(
                 } else {
                     vec!["install".to_string()]
                 },
+                manual_command: None,
+                manual_url: None,
                 secret: false,
                 settings_key: None,
             })
@@ -344,27 +348,14 @@ pub async fn scan_tunnel_status(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-pub async fn scan_computer_install_status(
-    settings: Value,
-    choices: StartkitChoices,
-) -> Result<Vec<StartkitItemReport>, String> {
-    crate::startkit::scan_computer_reports(&settings, &choices)
-        .await
-        .map_err(|error| error.to_string())
-}
-
-async fn agent_install_report(
-    agent: common::resources::AgentDef,
-    toolchain_mode: &str,
-) -> StartkitItemReport {
+async fn agent_install_report(agent: common::resources::AgentDef) -> StartkitItemReport {
     let program = program_from_command(agent.pty_command_for_current_platform())
         .unwrap_or_else(|| agent.acp.program.clone());
     let report_id = format!("agents.{}.cli", agent.id);
-    let path = resolve_program_path(&program, toolchain_mode).await;
+    let path = resolve_program_path(&program).await;
     let installed = path.is_some();
     let version = if installed {
-        match program_version(&program, toolchain_mode).await {
+        match program_version(&program).await {
             Ok(version) => version,
             Err(error) => {
                 return StartkitItemReport {
@@ -372,13 +363,15 @@ async fn agent_install_report(
                     label: agent.display_name,
                     group: "agents".to_string(),
                     category: "agents".to_string(),
-                    status: StartkitItemStatus::Broken,
+                    status: StartkitItemStatus::Blocked,
                     severity: None,
                     version: None,
                     latest_version: None,
                     path,
                     message: Some(format!("{program} is present but not usable: {error}")),
-                    actions: vec!["install".to_string()],
+                    actions: Vec::new(),
+                    manual_command: None,
+                    manual_url: None,
                     secret: false,
                     settings_key: None,
                 };
@@ -396,7 +389,7 @@ async fn agent_install_report(
         status: if installed {
             StartkitItemStatus::Ok
         } else {
-            StartkitItemStatus::Missing
+            StartkitItemStatus::Blocked
         },
         severity: None,
         version,
@@ -405,9 +398,11 @@ async fn agent_install_report(
         message: Some(if installed {
             format!("{program} found")
         } else {
-            format!("{program} not found in PATH")
+            format!("Install {program} on this computer, then scan again.")
         }),
         actions: Vec::new(),
+        manual_command: None,
+        manual_url: None,
         secret: false,
         settings_key: None,
     }
@@ -422,13 +417,14 @@ async fn agent_update_report(
         .await
         .ok()
         .and_then(|detection| {
-            agent_detection::preferred_candidate_for_toolchain_mode(
+            agent_detection::preferred_startkit_candidate(
+                &agent_id,
                 &detection,
                 &choices.toolchain_mode,
             )
         })
         .or_else(|| {
-            agent_detection::candidate_for_toolchain_mode(&agent_id, &choices.toolchain_mode)
+            agent_detection::startkit_candidate_for_mode(&agent_id, &choices.toolchain_mode)
         })?;
     let source = candidate.source.clone();
     let local_version = candidate.version.as_deref().and_then(extract_semver);
@@ -444,6 +440,8 @@ async fn agent_update_report(
         path: Some(candidate.path.clone()),
         message: None,
         actions: Vec::new(),
+        manual_command: None,
+        manual_url: None,
         secret: false,
         settings_key: None,
     };
@@ -473,15 +471,8 @@ async fn agent_update_report(
     report.id = format!("agents.{agent_id}.cli");
     report.latest_version = Some(latest.clone());
 
-    let upgrade_available =
-        agent_detection::source_command_template(&agent_id, &source, "upgrade").is_some();
-
     if local_version != latest {
-        report.message = Some(if upgrade_available {
-            format!("Update available {latest}")
-        } else {
-            format!("Manual update required {latest}")
-        });
+        report.message = Some(format!("Manual update required {latest}"));
     } else {
         report.message = Some("Already up to date".to_string());
     }
@@ -576,6 +567,8 @@ async fn plugin_update_report(plugin_id: String) -> Option<StartkitItemReport> {
         } else {
             vec!["install".to_string()]
         },
+        manual_command: None,
+        manual_url: None,
         secret: false,
         settings_key: None,
     };
@@ -607,9 +600,9 @@ fn program_from_command(command: &str) -> Option<String> {
         .filter(|program| !program.is_empty())
 }
 
-async fn resolve_program_path(program: &str, toolchain_mode: &str) -> Option<String> {
+async fn resolve_program_path(program: &str) -> Option<String> {
     let lookup = if cfg!(windows) { "where" } else { "which" };
-    let mut command = common::process::env::command_for_toolchain_mode(lookup, toolchain_mode);
+    let mut command = common::process::env::command(lookup);
     command.arg(program);
     let output = command_output_with_timeout(command, Duration::from_secs(2))
         .await
@@ -624,8 +617,8 @@ async fn resolve_program_path(program: &str, toolchain_mode: &str) -> Option<Str
         .map(str::to_string)
 }
 
-async fn program_version(program: &str, toolchain_mode: &str) -> Result<Option<String>, String> {
-    let mut command = common::process::env::command_for_toolchain_mode(program, toolchain_mode);
+async fn program_version(program: &str) -> Result<Option<String>, String> {
+    let mut command = common::process::env::command(program);
     command.arg("--version");
     let output = command_output_with_timeout(command, Duration::from_secs(3)).await?;
 

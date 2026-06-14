@@ -42,6 +42,7 @@ import {
   reorderProfiles,
   getDesktopAppEntries,
   setProfileConnection,
+  setLauncherAgentExecutablePath,
   setLauncherAgentProfile,
   setLauncherAgentLaunchArgs,
   setLauncherDefault,
@@ -754,6 +755,22 @@ export function AgentLaunchBuilder({
     }
   }
 
+  async function saveAgentExecutablePath(path: string | null) {
+    if (!settingsAgent) return;
+    setBusy(true);
+    onError(null);
+    try {
+      await setLauncherAgentExecutablePath(settingsAgent.id, path);
+      await refreshPrefs();
+      onToast(t("Agent launch settings updated"));
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!viewPrefs || agents.length === 0 || !selectedAgent) {
     if (prefs?.enabledAgents.length === 0) {
       return (
@@ -810,26 +827,24 @@ export function AgentLaunchBuilder({
                     agentId={agentId}
                     agentLabelText={selectedAgent.display_name}
                     action={
-                      showLaunchControls ? (
-                        <div className="flex items-center gap-1.5 pt-1">
-                          {terminalArgCount > 0 && (
-                            <span className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                              {t("{{count}} args", { count: terminalArgCount })}
-                            </span>
-                          )}
-                          <TooltipButton
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            disabled={busy}
-                            aria-label={t("Agent settings")}
-                            title={t("Agent settings")}
-                            onClick={() => setSettingsAgent(selectedAgent)}
-                          >
-                            <Settings2 className="h-4 w-4" />
-                          </TooltipButton>
-                        </div>
-                      ) : undefined
+                      <div className="flex items-center gap-1.5 pt-1">
+                        {showLaunchControls && terminalArgCount > 0 && (
+                          <span className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                            {t("{{count}} args", { count: terminalArgCount })}
+                          </span>
+                        )}
+                        <TooltipButton
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={busy}
+                          aria-label={t("Agent settings")}
+                          title={t("Agent settings")}
+                          onClick={() => setSettingsAgent(selectedAgent)}
+                        >
+                          <Settings2 className="h-4 w-4" />
+                        </TooltipButton>
+                      </div>
                     }
                   >
                     <>
@@ -1081,6 +1096,7 @@ export function AgentLaunchBuilder({
         busy={busy}
         onClose={() => setSettingsAgent(null)}
         onSave={saveAgentLaunchArgs}
+        onSaveExecutablePath={saveAgentExecutablePath}
       />
     </TooltipProvider>
   );

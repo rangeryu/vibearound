@@ -201,13 +201,13 @@ VibeAround 默认把 AI 编程工作留在你自己的电脑上。
 
 ## 下载
 
-最新版本：[VibeAround v0.7.1](https://github.com/jazzenchen/VibeAround/releases/tag/v0.7.1)。
+最新版本：[VibeAround v0.7.2](https://github.com/jazzenchen/VibeAround/releases/tag/v0.7.2)。
 
 | 平台 | 推荐下载 |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.7.1_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround-win-0.7.1-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.7.2_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround-win-0.7.2-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_amd64.deb) |
 
 Windows 和 Linux 包由 GitHub Actions 构建。macOS 当前只提供 Apple Silicon 版本。
 
@@ -215,13 +215,13 @@ Windows 和 Linux 包由 GitHub Actions 构建。macOS 当前只提供 Apple Sil
 
 ### 从 0.6.x 迁移指南
 
-v0.7.1 调整了 Startkit 状态、Agent 来源检测、桌面启动目标和 Profile 启动设置。如果你从 0.6.x 升级，建议做一次干净的本地状态迁移：
+v0.7.2 调整了 Startkit 状态、Agent 来源检测、桌面启动目标和 Profile 启动设置。如果你从 0.6.x 升级，建议做一次干净的本地状态迁移：
 
 1. 退出 VibeAround。
 2. 完整备份旧的 `~/.vibearound` 目录。
 3. 删除旧的 `~/.vibearound` 目录。
 4. 只从备份里恢复持久状态。
-5. 启动 VibeAround v0.7.1；如果 Launch、Profile、Startkit 或桌面版 Agent 设置看起来异常，再重新跑 onboarding / Startkit 配置。
+5. 启动 VibeAround v0.7.2；如果 Launch、Profile、Startkit 或桌面版 Agent 设置看起来异常，再重新跑 onboarding / Startkit 配置。
 
 只恢复这些持久状态：`settings.json`、`profiles/`、`google-oauth/`、`agents.json`、`launcher.json`、`state/`、`sessions/`、`launch-session-archive.json`、`workspaces/`、`worktrees/`。
 

@@ -83,11 +83,7 @@ async fn desktop_app_entry(app_name: &str) -> Option<DesktopAppEntry> {
     let (path, source, source_label) = if cfg!(target_os = "macos") {
         macos_application_entry(app_name).await?
     } else if cfg!(windows) {
-        (
-            windows_start_app_id(app_name).await?,
-            "windows_start_apps".to_string(),
-            "Windows Start Apps".to_string(),
-        )
+        windows_application_entry(app_name).await?
     } else {
         return None;
     };
@@ -142,6 +138,86 @@ async fn macos_application_entry(app_name: &str) -> Option<(String, String, Stri
         "macos_spotlight".to_string(),
         "macOS Spotlight".to_string(),
     ))
+}
+
+async fn windows_application_entry(app_name: &str) -> Option<(String, String, String)> {
+    if let Some(app_id) = windows_start_app_id(app_name).await {
+        return Some((
+            app_id,
+            "windows_start_apps".to_string(),
+            "Windows Start Apps".to_string(),
+        ));
+    }
+
+    if let Some(path) = windows_application_candidate_paths(app_name)
+        .into_iter()
+        .find(|path| path.is_file())
+    {
+        return Some((
+            path.to_string_lossy().to_string(),
+            "windows_known_location".to_string(),
+            "Windows known location".to_string(),
+        ));
+    }
+
+    None
+}
+
+fn windows_application_candidate_paths(app_name: &str) -> Vec<PathBuf> {
+    let Some(localappdata) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) else {
+        return Vec::new();
+    };
+    if app_name.eq_ignore_ascii_case("Claude") {
+        return claude_windows_candidate_paths(&localappdata);
+    }
+    if app_name.eq_ignore_ascii_case("Codex") {
+        return codex_windows_candidate_paths(&localappdata);
+    }
+    Vec::new()
+}
+
+fn claude_windows_candidate_paths(localappdata: &Path) -> Vec<PathBuf> {
+    let mut paths = vec![
+        localappdata
+            .join("Programs")
+            .join("Claude")
+            .join("Claude.exe"),
+        localappdata
+            .join("Anthropic")
+            .join("Claude")
+            .join("Claude.exe"),
+        localappdata.join("Claude").join("Claude.exe"),
+    ];
+    paths.extend(versioned_child_exe_paths(
+        &localappdata.join("AnthropicClaude"),
+        "Claude.exe",
+    ));
+    paths
+}
+
+fn codex_windows_candidate_paths(localappdata: &Path) -> Vec<PathBuf> {
+    vec![
+        localappdata
+            .join("Programs")
+            .join("Codex")
+            .join("Codex.exe"),
+        localappdata.join("OpenAI").join("Codex").join("Codex.exe"),
+    ]
+}
+
+fn versioned_child_exe_paths(parent: &Path, exe_name: &str) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return Vec::new();
+    };
+    let mut paths = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .map(|path| path.join(exe_name))
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.reverse();
+    paths
 }
 
 fn macos_application_candidate_paths(app_name: &str) -> Vec<PathBuf> {
@@ -262,5 +338,25 @@ mod tests {
     #[test]
     fn mdfind_string_quotes_single_quotes() {
         assert_eq!(mdfind_string("Dev's App.app"), "'Dev\\'s App.app'");
+    }
+
+    #[test]
+    fn windows_codex_candidates_do_not_include_cli_bin_children() {
+        let root = PathBuf::from(r"C:\Users\tester\AppData\Local");
+        assert!(!codex_windows_candidate_paths(&root)
+            .iter()
+            .any(|path| windows_path_string(path).contains(r"OpenAI\Codex\bin")));
+    }
+
+    #[test]
+    fn windows_claude_candidates_include_squirrel_root() {
+        let root = PathBuf::from(r"C:\Users\tester\AppData\Local");
+        assert!(claude_windows_candidate_paths(&root).iter().any(|path| {
+            windows_path_string(path) == r"C:\Users\tester\AppData\Local\Programs\Claude\Claude.exe"
+        }));
+    }
+
+    fn windows_path_string(path: &Path) -> String {
+        path.to_string_lossy().replace('/', r"\")
     }
 }

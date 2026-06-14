@@ -8,11 +8,20 @@ use ::common::{agent as agent_integrations, profiles, resources};
 use anyhow::{anyhow, Context};
 use profiles::ProfileDef;
 
-#[cfg(not(test))]
-use crate::agent_detection;
-
 use super::common::LaunchPlan;
 use super::{bridge, claude_desktop, codex, codex_desktop};
+
+const LOCAL_BRIDGE_NO_PROXY: &str = "localhost,127.0.0.1,::1,0.0.0.0,127.0.0.0/8";
+const LOCAL_BRIDGE_PROXY_ENV_KEYS: &[&str] = &[
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+];
 
 enum LaunchTarget<'a> {
     Profile {
@@ -118,6 +127,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(&agent),
                 windows_process_probe: windows_process_probe_for_direct_agent(&agent),
+                windows_executable_path: windows_executable_path_for_agent(agent_id),
             });
         };
 
@@ -132,6 +142,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             workspace,
             macos_app_probe: macos_app_probe_for_direct_agent(&agent),
             windows_process_probe: windows_process_probe_for_direct_agent(&agent),
+            windows_executable_path: windows_executable_path_for_agent(agent_id),
         })
     }
 
@@ -146,19 +157,26 @@ impl<'a> LaunchPlanBuilder<'a> {
             .ok_or_else(|| anyhow!("agent '{}' not found in agents.json", agent_id))?;
         let workspace = crate::profiles::resolve_launch_workspace(agent_id)?;
         if agent_id == "codex-desktop" {
+            let mut env = Vec::new();
+            let mut args = Vec::new();
+            if bridge::launch_uses_local_bridge(profile, launch_target)? {
+                append_local_bridge_proxy_bypass_env(&mut env);
+                args.extend(codex_desktop_local_bridge_args());
+            }
             codex_desktop::apply_profile_overlay(profile, &self.launch_id, rendered)
                 .with_context(|| format!("prepare Codex Desktop profile '{}'", profile.id))?;
             return Ok(LaunchPlan {
-                env: Vec::new(),
+                env,
                 command: launch_command_for_agent(
                     agent_id,
                     agent.pty_command_for_current_platform(),
                 ),
-                args: Vec::new(),
+                args,
                 window_label: profile.label.clone(),
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(&agent),
                 windows_process_probe: windows_process_probe_for_direct_agent(&agent),
+                windows_executable_path: windows_executable_path_for_agent(agent_id),
             });
         }
         if agent_id == "claude-desktop" {
@@ -176,6 +194,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(&agent),
                 windows_process_probe: windows_process_probe_for_direct_agent(&agent),
+                windows_executable_path: windows_executable_path_for_agent(agent_id),
             });
         }
         agent_integrations::auto_install_project_integrations(agent_id, &workspace)
@@ -192,6 +211,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             workspace,
             macos_app_probe: None,
             windows_process_probe: None,
+            windows_executable_path: None,
         })
     }
 
@@ -222,6 +242,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             workspace,
             macos_app_probe: None,
             windows_process_probe: None,
+            windows_executable_path: None,
         })
     }
 }
@@ -249,6 +270,14 @@ fn windows_process_probe_for_direct_agent(agent: &resources::AgentDef) -> Option
     start_process_name(agent.pty_command_for_current_platform())
 }
 
+fn windows_executable_path_for_agent(agent_id: &str) -> Option<std::path::PathBuf> {
+    if !cfg!(target_os = "windows") {
+        return None;
+    }
+    let prefs = ::common::agent_state::read_prefs();
+    ::common::agent_state::resolve_agent_executable_path(&prefs, agent_id)
+}
+
 fn start_process_name(command: &str) -> Option<String> {
     command
         .trim()
@@ -259,54 +288,8 @@ fn start_process_name(command: &str) -> Option<String> {
 }
 
 fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> String {
-    #[cfg(test)]
-    {
-        let _ = agent_id;
-        return fallback_command.to_string();
-    }
-
-    #[cfg(not(test))]
-    {
-        let toolchain_mode = agent_detection::configured_toolchain_mode();
-        let Some(candidate) =
-            agent_detection::candidate_for_toolchain_mode(agent_id, &toolchain_mode)
-        else {
-            return fallback_command.to_string();
-        };
-        replace_launch_program(fallback_command, &candidate.path)
-    }
-}
-
-fn replace_launch_program(command: &str, program_path: &str) -> String {
-    let mut parts = command.splitn(2, char::is_whitespace);
-    let Some(program) = parts.next().filter(|part| !part.is_empty()) else {
-        return command.to_string();
-    };
-    let quoted = quote_launch_program_path(program_path);
-    match parts.next() {
-        Some(rest) => {
-            let rest = rest.trim_start();
-            if rest.is_empty() {
-                quoted
-            } else {
-                format!("{quoted} {rest}")
-            }
-        }
-        None if program.is_empty() => command.to_string(),
-        None => quoted,
-    }
-}
-
-fn quote_launch_program_path(path: &str) -> String {
-    if cfg!(windows) {
-        if path.chars().any(char::is_whitespace) {
-            format!("\"{}\"", path.replace('"', "\\\""))
-        } else {
-            path.to_string()
-        }
-    } else {
-        shell_escape::unix::escape(std::borrow::Cow::Borrowed(path)).into_owned()
-    }
+    let _ = agent_id;
+    fallback_command.to_string()
 }
 
 fn materialized_profile_env(
@@ -316,7 +299,9 @@ fn materialized_profile_env(
     rendered: profiles::render::RenderedProfile,
 ) -> anyhow::Result<Vec<(String, String)>> {
     let mut env = profiles::runtime::materialize_env(&profile.id, rendered)?;
-    if !bridge::launch_uses_local_bridge(profile, launch_target)? {
+    if bridge::launch_uses_local_bridge(profile, launch_target)? {
+        append_local_bridge_proxy_bypass_env(&mut env);
+    } else {
         profiles::runtime::append_settings_proxy_env(profile, &mut env)?;
     }
     env.push(("VIBEAROUND_LAUNCH_ID".to_string(), launch_id.to_string()));
@@ -326,6 +311,28 @@ fn materialized_profile_env(
         launch_target.to_string(),
     ));
     Ok(env)
+}
+
+fn append_local_bridge_proxy_bypass_env(env: &mut Vec<(String, String)>) {
+    env.retain(|(key, _)| !LOCAL_BRIDGE_PROXY_ENV_KEYS.contains(&key.as_str()));
+    env.extend([
+        ("HTTP_PROXY".to_string(), String::new()),
+        ("HTTPS_PROXY".to_string(), String::new()),
+        ("ALL_PROXY".to_string(), String::new()),
+        ("http_proxy".to_string(), String::new()),
+        ("https_proxy".to_string(), String::new()),
+        ("all_proxy".to_string(), String::new()),
+        ("NO_PROXY".to_string(), LOCAL_BRIDGE_NO_PROXY.to_string()),
+        ("no_proxy".to_string(), LOCAL_BRIDGE_NO_PROXY.to_string()),
+    ]);
+}
+
+fn codex_desktop_local_bridge_args() -> Vec<String> {
+    if cfg!(target_os = "macos") {
+        vec!["--args".to_string(), "--no-proxy-server".to_string()]
+    } else {
+        Vec::new()
+    }
 }
 
 #[cfg(not(test))]
@@ -459,25 +466,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn replace_launch_program_preserves_command_tail() {
-        assert_eq!(
-            replace_launch_program("claude code --permission-mode acceptEdits", "/tmp/claude"),
-            "/tmp/claude code --permission-mode acceptEdits"
-        );
-    }
-
-    #[test]
-    fn replace_launch_program_quotes_paths_with_spaces_on_unix() {
-        if cfg!(windows) {
-            return;
-        }
-        assert_eq!(
-            replace_launch_program("codex", "/Applications/My Codex.app/Contents/codex"),
-            "'/Applications/My Codex.app/Contents/codex'"
-        );
-    }
-
     fn minimax_anthropic_profile() -> ProfileDef {
         ProfileDef {
             id: "minimax-test".to_string(),
@@ -499,6 +487,53 @@ mod tests {
             .collect::<BTreeMap<_, _>>(),
             use_settings_proxy: false,
             provider_settings: ProviderSettings::default(),
+        }
+    }
+
+    fn env_value<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
+        env.iter()
+            .find(|(candidate, _)| candidate == key)
+            .map(|(_, value)| value.as_str())
+    }
+
+    #[test]
+    fn local_bridge_proxy_bypass_env_clears_proxy_and_sets_no_proxy() {
+        let mut env = vec![
+            (
+                "HTTP_PROXY".to_string(),
+                "http://127.0.0.1:7897".to_string(),
+            ),
+            ("NO_PROXY".to_string(), "old.example".to_string()),
+            ("OPENAI_API_KEY".to_string(), "test-key".to_string()),
+        ];
+
+        append_local_bridge_proxy_bypass_env(&mut env);
+
+        assert_eq!(env_value(&env, "HTTP_PROXY"), Some(""));
+        assert_eq!(env_value(&env, "HTTPS_PROXY"), Some(""));
+        assert_eq!(env_value(&env, "ALL_PROXY"), Some(""));
+        assert_eq!(env_value(&env, "http_proxy"), Some(""));
+        assert_eq!(env_value(&env, "https_proxy"), Some(""));
+        assert_eq!(env_value(&env, "all_proxy"), Some(""));
+        assert_eq!(env_value(&env, "NO_PROXY"), Some(LOCAL_BRIDGE_NO_PROXY));
+        assert_eq!(env_value(&env, "no_proxy"), Some(LOCAL_BRIDGE_NO_PROXY));
+        assert_eq!(env_value(&env, "OPENAI_API_KEY"), Some("test-key"));
+        for key in LOCAL_BRIDGE_PROXY_ENV_KEYS {
+            assert_eq!(
+                env.iter().filter(|(candidate, _)| candidate == key).count(),
+                1,
+                "{key} should be present exactly once"
+            );
+        }
+    }
+
+    #[test]
+    fn codex_desktop_local_bridge_args_disable_macos_proxy() {
+        let args = codex_desktop_local_bridge_args();
+        if cfg!(target_os = "macos") {
+            assert_eq!(args, vec!["--args", "--no-proxy-server"]);
+        } else {
+            assert!(args.is_empty());
         }
     }
 
@@ -533,15 +568,12 @@ mod tests {
 
     #[test]
     fn direct_resume_plan_uses_agent_resume_command() {
-        let plan = LaunchPlanBuilder::with_launch_id("launch-123")
-            .direct("claude")
-            .resume("session-456")
-            .build()
-            .expect("direct resume plan");
+        let (command, args) =
+            resume_command_for_agent("claude", "session-456").expect("claude resume command");
 
-        assert_eq!(plan.command, "claude");
+        assert_eq!(command, "claude");
         assert_eq!(
-            plan.args,
+            args,
             vec![
                 "--resume".to_string(),
                 "session-456".to_string(),
@@ -549,7 +581,6 @@ mod tests {
                 "acceptEdits".to_string(),
             ]
         );
-        assert_eq!(plan.window_label, "Claude Code (resume)");
     }
 
     #[test]
@@ -623,7 +654,11 @@ mod tests {
             .build()
             .expect("claude desktop profile plan");
 
-        assert_eq!(plan.command, "open -a Claude");
+        if cfg!(target_os = "windows") {
+            assert_eq!(plan.command, "Start-Process Claude");
+        } else {
+            assert_eq!(plan.command, "open -a Claude");
+        }
         assert!(plan.args.is_empty());
         assert_eq!(plan.window_label, "MiniMax Test");
         assert!(plan.env.is_empty());

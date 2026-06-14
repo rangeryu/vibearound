@@ -5,6 +5,7 @@ import type {
   ChannelVerboseConfig,
   PluginRegistryEntry,
   Settings,
+  ToolchainMode,
 } from "../types";
 
 const DEFAULT_ENABLED_AGENT_IDS = new Set<AgentId>(["claude", "codex"]);
@@ -13,21 +14,17 @@ export function hydrateStartkitPrefs(
   loadedSettings: Settings,
   setters: {
     setDownloadSource: (value: string) => void;
-    setToolchainMode: (value: "managed" | "system") => void;
-    setShellPath: (value: boolean) => void;
+    setToolchainMode: (value: ToolchainMode) => void;
   },
 ) {
   if (loadedSettings.startkit?.source) {
     setters.setDownloadSource(loadedSettings.startkit.source);
   }
   if (
-    loadedSettings.startkit?.toolchain_mode === "managed" ||
-    loadedSettings.startkit?.toolchain_mode === "system"
+    loadedSettings.startkit?.toolchain_mode === "system" ||
+    loadedSettings.startkit?.toolchain_mode === "managed"
   ) {
     setters.setToolchainMode(loadedSettings.startkit.toolchain_mode);
-  }
-  if (typeof loadedSettings.startkit?.shell_path === "boolean") {
-    setters.setShellPath(loadedSettings.startkit.shell_path);
   }
 }
 
@@ -91,13 +88,15 @@ export function hydrateTunnel(
     setCfToken: (value: string) => void;
     setCfHostname: (value: string) => void;
   },
+  options: { restoreProvider?: boolean } = {},
 ) {
   const provider = loadedSettings.tunnel?.provider;
   if (
-    provider === "none" ||
-    provider === "cloudflare" ||
-    provider === "ngrok" ||
-    provider === "localtunnel"
+    options.restoreProvider &&
+    (provider === "none" ||
+      provider === "cloudflare" ||
+      provider === "ngrok" ||
+      provider === "localtunnel")
   ) {
     setters.setTunnelProvider(provider);
   }

@@ -162,7 +162,7 @@ function AgentGrid({
               <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
                 {visibleReport
                   ? compactReportLabel(visibleReport, t)
-                  : t("Not installed")}
+                  : t("Checking")}
               </span>
               {updateLabel && (
                 <span className="mt-0.5 block truncate text-[11px] text-muted-foreground/80">

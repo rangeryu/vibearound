@@ -9,6 +9,7 @@ use common::config::{self, Retry429Config};
 use common::profiles::schema::ProfileDef;
 use common::profiles::{catalog, normalize_legacy_profile_and_persist, schema};
 
+use super::super::bridge_recording::{ActiveBridgeRecord, RecordedPayload};
 use super::{json_error, BridgeProtocol};
 
 pub(super) struct UpstreamEndpoint {
@@ -417,7 +418,10 @@ fn inbound_api_key(headers: &InboundHeaderMap) -> Option<String> {
         })
 }
 
-pub(super) async fn upstream_error_response(upstream: reqwest::Response) -> Response {
+pub(super) async fn upstream_error_response(
+    upstream: reqwest::Response,
+    record: Option<&ActiveBridgeRecord>,
+) -> Response {
     let status =
         StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let content_type = upstream
@@ -427,11 +431,28 @@ pub(super) async fn upstream_error_response(upstream: reqwest::Response) -> Resp
         .map(ToString::to_string)
         .unwrap_or_else(|| "application/json".to_string());
     let body = match upstream.bytes().await {
-        Ok(bytes) => Body::from(bytes),
-        Err(e) => Body::from(
-            json!({ "error": { "message": format!("failed to read upstream error body: {e}") } })
-                .to_string(),
-        ),
+        Ok(bytes) => {
+            if let Some(record) = record {
+                let payload = RecordedPayload::from_bytes(&bytes);
+                record.server_response(status.as_u16(), payload.clone());
+                record.bridge_response(status.as_u16(), payload);
+            }
+            Body::from(bytes)
+        }
+        Err(e) => {
+            if let Some(record) = record {
+                record.error(&format!("failed to read upstream error body: {e}"));
+            }
+            let body = json!({
+                "error": {
+                    "message": format!("failed to read upstream error body: {e}")
+                }
+            });
+            if let Some(record) = record {
+                record.bridge_json_response(status, &body);
+            }
+            Body::from(body.to_string())
+        }
     };
     Response::builder()
         .status(status)

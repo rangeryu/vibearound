@@ -37,8 +37,11 @@ use crate::{config, resources};
 pub use install::{
     auto_install_agent_cmd, auto_install_agent_cmd_with_output, auto_install_npm_agent,
     auto_install_npm_agent_with_output, auto_install_npm_agent_with_progress,
-    auto_install_npm_agent_with_progress_and_cancel, install_acp_agents, is_program_available,
-    npm_package_bin_name, npm_package_installed, InstallOutput,
+    auto_install_npm_agent_with_progress_and_cancel,
+    auto_install_npm_global_package_with_progress_and_cancel,
+    auto_install_npm_package_in_dir_with_progress_and_cancel, install_acp_agents,
+    is_program_available, npm_package_bin_name, npm_package_installed,
+    npm_package_installed_in_dir, InstallOutput,
 };
 pub use runtime::{Agent, AgentClientHandler, AgentReady, StartupSession};
 

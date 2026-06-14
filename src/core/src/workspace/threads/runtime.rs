@@ -63,6 +63,7 @@ pub struct ThreadRuntime {
     thread: Mutex<WorkspaceThread>,
     workspace: PathBuf,
     agent: Mutex<Option<Arc<Agent>>>,
+    host_client_handler: Mutex<Option<Arc<dyn AgentClientHandler>>>,
     spawn_lock: Mutex<()>,
     subagents: Mutex<BTreeMap<ThreadAgentId, SubagentRuntime>>,
     session_id: Mutex<Option<String>>,
@@ -91,6 +92,7 @@ impl ThreadRuntime {
             thread: Mutex::new(thread),
             workspace,
             agent: Mutex::new(None),
+            host_client_handler: Mutex::new(None),
             spawn_lock: Mutex::new(()),
             subagents: Mutex::new(BTreeMap::new()),
             session_id: Mutex::new(session_id),
@@ -143,7 +145,7 @@ impl ThreadRuntime {
         *self.busy.lock().await = true;
         *self.failed.lock().await = None;
         self.notify_change();
-        let finish_handler = Arc::clone(&handler);
+        let fallback_finish_handler = Arc::clone(&handler);
 
         let result = async {
             self.maybe_record_first_prompt(&content_blocks).await?;
@@ -154,6 +156,12 @@ impl ThreadRuntime {
                 .await
         }
         .await;
+        let finish_handler = self
+            .host_client_handler
+            .lock()
+            .await
+            .clone()
+            .unwrap_or(fallback_finish_handler);
         if let Err(error) = finish_handler.prompt_finished(result.is_ok()).await {
             let thread_id = self.thread.lock().await.id.clone();
             tracing::warn!(
@@ -190,12 +198,14 @@ impl ThreadRuntime {
 
     pub async fn close(&self, reason: Option<String>) -> acp::Result<()> {
         self.mark_activity();
+        let _spawn_guard = self.spawn_lock.lock().await;
         if let Some(session_id) = self.session_id.lock().await.clone() {
             crate::previews::kill_by_session(&session_id);
         }
         if let Some(agent) = self.agent.lock().await.take() {
             agent.shutdown().await;
         }
+        *self.host_client_handler.lock().await = None;
         for (_, subagent) in std::mem::take(&mut *self.subagents.lock().await) {
             crate::previews::kill_by_session(&subagent.session_id);
             subagent.agent.shutdown().await;
@@ -212,12 +222,18 @@ impl ThreadRuntime {
 
     pub async fn shutdown_host(&self) {
         self.mark_activity();
+        let _spawn_guard = self.spawn_lock.lock().await;
+        self.shutdown_host_contents().await;
+    }
+
+    async fn shutdown_host_contents(&self) {
         if let Some(session_id) = self.session_id.lock().await.clone() {
             crate::previews::kill_by_session(&session_id);
         }
         if let Some(agent) = self.agent.lock().await.take() {
             agent.shutdown().await;
         }
+        *self.host_client_handler.lock().await = None;
         for (_, subagent) in std::mem::take(&mut *self.subagents.lock().await) {
             crate::previews::kill_by_session(&subagent.session_id);
             subagent.agent.shutdown().await;
@@ -252,7 +268,21 @@ impl ThreadRuntime {
         if self.idle_generation() != generation {
             return false;
         }
-        self.shutdown_host().await;
+        let _spawn_guard = self.spawn_lock.lock().await;
+        if self.idle_generation() != generation {
+            return false;
+        }
+        if *self.busy.lock().await {
+            return false;
+        }
+        if !self.subagents.lock().await.is_empty() {
+            return false;
+        }
+        let has_host = self.agent.lock().await.is_some() || self.initialize.lock().await.is_some();
+        if !has_host {
+            return false;
+        }
+        self.shutdown_host_contents().await;
         true
     }
 
@@ -262,9 +292,11 @@ impl ThreadRuntime {
         context_transfer: bool,
     ) -> acp::Result<()> {
         self.mark_activity();
+        let _spawn_guard = self.spawn_lock.lock().await;
         if let Some(agent) = self.agent.lock().await.take() {
             agent.shutdown().await;
         }
+        *self.host_client_handler.lock().await = None;
         *self.session_id.lock().await = None;
         *self.initialize.lock().await = None;
         *self.failed.lock().await = None;
@@ -763,6 +795,7 @@ impl ThreadRuntime {
             &agent_id,
         ));
 
+        let spawned_handler = Arc::clone(&handler);
         let ready = Agent::spawn(
             agent_id.clone(),
             route,
@@ -778,8 +811,14 @@ impl ThreadRuntime {
             acp::Error::new(-32603, message)
         })?;
 
+        if self.thread.lock().await.status == ThreadStatus::Closed {
+            ready.agent.shutdown().await;
+            return Err(acp::Error::new(-32603, "workspace thread is closed"));
+        }
+
         *self.initialize.lock().await = Some(ready.initialize.clone());
         *self.agent.lock().await = Some(Arc::clone(&ready.agent));
+        *self.host_client_handler.lock().await = Some(spawned_handler);
         *self.failed.lock().await = None;
         self.notify_change();
 

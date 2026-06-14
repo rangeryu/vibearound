@@ -38,35 +38,6 @@ pub fn data_dir() -> PathBuf {
     home_dir().join(".vibearound")
 }
 
-pub fn startkit_toolchain_mode_from_settings_str(contents: &str) -> String {
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(contents) else {
-        return default_startkit_toolchain_mode();
-    };
-    startkit_toolchain_mode_from_settings_value(&json)
-}
-
-pub fn startkit_toolchain_mode_from_settings_value(json: &serde_json::Value) -> String {
-    match json
-        .get("startkit")
-        .and_then(|value| value.get("toolchain_mode"))
-        .and_then(serde_json::Value::as_str)
-    {
-        Some("managed") => "managed".to_string(),
-        _ => default_startkit_toolchain_mode(),
-    }
-}
-
-pub fn read_startkit_toolchain_mode() -> String {
-    let path = data_dir().join("settings.json");
-    std::fs::read_to_string(path)
-        .map(|contents| startkit_toolchain_mode_from_settings_str(&contents))
-        .unwrap_or_else(|_| default_startkit_toolchain_mode())
-}
-
-fn default_startkit_toolchain_mode() -> String {
-    "system".to_string()
-}
-
 /// Runtime state directory for append-only stores and other non-config data.
 pub fn state_dir() -> PathBuf {
     data_dir().join("state")
@@ -172,6 +143,7 @@ pub struct Config {
     pub ngrok_domain: Option<String>,
     pub cloudflare_tunnel_token: Option<String>,
     pub cloudflare_hostname: Option<String>,
+    pub toolchain_mode: ToolchainMode,
     // --- Workspaces ---
     /// User-added project folders (not including the built-in ~/.vibearound/workspaces/).
     pub workspaces: Vec<PathBuf>,
@@ -196,6 +168,33 @@ pub struct Config {
     pub api_bridge: ApiBridgeConfig,
     // --- Raw channels JSON (for dynamic plugin config) ---
     raw_channels: serde_json::Value,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ToolchainMode {
+    #[default]
+    System,
+    Managed,
+}
+
+impl ToolchainMode {
+    pub fn from_config(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "managed" | "vibearound" | "vibearound_managed" => Self::Managed,
+            _ => Self::System,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Managed => "managed",
+        }
+    }
+
+    pub fn is_managed(self) -> bool {
+        matches!(self, Self::Managed)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -378,6 +377,12 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         .and_then(|v| v.as_str())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    let toolchain_mode = root
+        .get("startkit")
+        .and_then(|value| value.get("toolchain_mode"))
+        .and_then(|value| value.as_str())
+        .map(ToolchainMode::from_config)
+        .unwrap_or_default();
 
     let raw_channels = root
         .get("channels")
@@ -533,6 +538,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         ngrok_domain,
         cloudflare_tunnel_token,
         cloudflare_hostname,
+        toolchain_mode,
         workspaces,
         preview_base_url,
         tmux_detach_others,
@@ -748,6 +754,7 @@ impl Default for Config {
             ngrok_domain: None,
             cloudflare_tunnel_token: None,
             cloudflare_hostname: None,
+            toolchain_mode: ToolchainMode::System,
             workspaces: vec![],
             preview_base_url: None,
             tmux_detach_others: true,
@@ -779,34 +786,6 @@ mod tests {
             "vibearound-config-{name}-{}-{nonce}",
             std::process::id()
         ))
-    }
-
-    #[test]
-    fn startkit_toolchain_mode_defaults_to_system() {
-        assert_eq!(startkit_toolchain_mode_from_settings_str("{}"), "system");
-        assert_eq!(
-            startkit_toolchain_mode_from_settings_str(r#"{ "startkit": {} }"#),
-            "system"
-        );
-        assert_eq!(
-            startkit_toolchain_mode_from_settings_str(
-                r#"{ "startkit": { "toolchain_mode": "system" } }"#,
-            ),
-            "system"
-        );
-        assert_eq!(
-            startkit_toolchain_mode_from_settings_str(
-                r#"{ "startkit": { "toolchain_mode": "managed" } }"#,
-            ),
-            "managed"
-        );
-        assert_eq!(
-            startkit_toolchain_mode_from_settings_str(
-                r#"{ "startkit": { "toolchain_mode": "auto" } }"#,
-            ),
-            "system"
-        );
-        assert_eq!(startkit_toolchain_mode_from_settings_str("{"), "system");
     }
 
     #[test]

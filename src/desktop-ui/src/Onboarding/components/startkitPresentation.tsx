@@ -2,6 +2,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Circle,
+  Copy,
+  ExternalLink,
   Globe,
   Loader2,
   MessageSquare,
@@ -10,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { openExternalUrl } from "@/lib/api";
 
 import type { StartkitItemReport, StartkitStatus } from "../types";
 
@@ -51,6 +54,32 @@ export function StartkitReportRow({
           {report.version && report.message && (
             <div className="mt-0.5 truncate font-mono text-[10px] opacity-80">
               {report.version}
+            </div>
+          )}
+          {(report.manualCommand || report.manualUrl) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {report.manualCommand && (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-foreground hover:bg-muted"
+                  onClick={() => void navigator.clipboard.writeText(report.manualCommand!)}
+                  title={report.manualCommand}
+                >
+                  <Copy className="h-3 w-3" />
+                  {t("Copy command")}
+                </button>
+              )}
+              {report.manualUrl && (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-foreground hover:bg-muted"
+                  onClick={() => void openExternalUrl(report.manualUrl!)}
+                  title={report.manualUrl}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {t("Open link")}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -146,15 +175,6 @@ export function groupSummary(reports: StartkitItemReport[], t: Translate): strin
     : t("{{count}} items", { count: reports.length });
 }
 
-export function reportNeedsInstall(report: StartkitItemReport): boolean {
-  return (
-    report.status === "missing" ||
-    report.status === "outdated" ||
-    report.status === "broken" ||
-    report.actions.includes("install")
-  );
-}
-
 export function compactReportLabel(report: StartkitItemReport, t: Translate): string {
   if (report.status === "running") {
     return report.message ? t(report.message) : t("Checking");
@@ -196,11 +216,11 @@ export function installHeadline({
   finalStatus: string | null;
   t: Translate;
 }) {
-  if (running) return t("Installing selected setup");
+  if (running) return t("Preparing selected setup");
   if (scanning) return t("Checking this computer");
   if (complete && finalStatus === "error") return t("Setup finished with issues");
   if (complete) return t("Setup run finished");
-  return t("Ready to install");
+  return t("Ready for setup");
 }
 
 export function installProgressLabel(

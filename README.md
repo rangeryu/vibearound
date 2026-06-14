@@ -200,13 +200,13 @@ Detailed guides live in the [Wiki](https://github.com/jazzenchen/VibeAround/wiki
 
 ## Download
 
-Latest release: [VibeAround v0.7.1](https://github.com/jazzenchen/VibeAround/releases/tag/v0.7.1).
+Latest release: [VibeAround v0.7.2](https://github.com/jazzenchen/VibeAround/releases/tag/v0.7.2).
 
 | Platform | Recommended download |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.7.1_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround-win-0.7.1-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.1/VibeAround_0.7.1_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.7.2_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround-win-0.7.2-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.2/VibeAround_0.7.2_amd64.deb) |
 
 Windows and Linux packages are built by GitHub Actions. The macOS package is currently Apple Silicon only.
 
@@ -214,13 +214,13 @@ Windows and Linux packages are built by GitHub Actions. The macOS package is cur
 
 ### Migration Guide From 0.6.x
 
-v0.7.1 changes Startkit state, detected agent sources, desktop launch targets, and profile launch settings. If you are upgrading from 0.6.x, do a clean local-state migration:
+v0.7.2 changes Startkit state, detected agent sources, desktop launch targets, and profile launch settings. If you are upgrading from 0.6.x, do a clean local-state migration:
 
 1. Quit VibeAround.
 2. Make a full backup of the old `~/.vibearound` directory.
 3. Remove the old `~/.vibearound` directory.
 4. Restore only durable state from the backup.
-5. Launch VibeAround v0.7.1 and rerun onboarding / Startkit setup if Launch, profile, Startkit, or desktop-agent settings look stale.
+5. Launch VibeAround v0.7.2 and rerun onboarding / Startkit setup if Launch, profile, Startkit, or desktop-agent settings look stale.
 
 Restore these durable items only: `settings.json`, `profiles/`, `google-oauth/`, `agents.json`, `launcher.json`, `state/`, `sessions/`, `launch-session-archive.json`, `workspaces/`, and `worktrees/`.
 

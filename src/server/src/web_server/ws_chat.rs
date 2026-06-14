@@ -22,7 +22,9 @@ use uuid::Uuid;
 
 use agent_client_protocol::schema as acp;
 use common::channels::{ChannelEnvelope, ChannelInput, ChannelOutput};
-use common::routing::{Attachment, RouteKey};
+use common::routing::{
+    is_external_attachment_uri, is_safe_attachment_file_key, Attachment, RouteKey,
+};
 use common::workspace::threads::HostBinding;
 use common::{agent_state, config};
 
@@ -448,12 +450,22 @@ fn web_user_message_content(envelope: &ChannelEnvelope) -> Vec<serde_json::Value
         envelope
             .attachments
             .iter()
-            .map(web_attachment_content_block),
+            .filter_map(web_attachment_content_block),
     );
     blocks
 }
 
-fn web_attachment_content_block(attachment: &Attachment) -> serde_json::Value {
+fn web_attachment_content_block(attachment: &Attachment) -> Option<serde_json::Value> {
+    let uri = match web_attachment_uri(&attachment.file_key) {
+        Some(uri) => uri,
+        None => {
+            tracing::warn!(
+                file_key = %attachment.file_key,
+                "dropping web attachment with unsafe file key"
+            );
+            return None;
+        }
+    };
     let mut block = serde_json::Map::new();
     block.insert(
         "type".to_string(),
@@ -467,10 +479,7 @@ fn web_attachment_content_block(attachment: &Attachment) -> serde_json::Value {
         "title".to_string(),
         serde_json::Value::String(attachment.file_name.clone()),
     );
-    block.insert(
-        "uri".to_string(),
-        serde_json::Value::String(web_attachment_uri(&attachment.file_key)),
-    );
+    block.insert("uri".to_string(), serde_json::Value::String(uri));
     if !attachment.resource_type.trim().is_empty() {
         block.insert(
             "mimeType".to_string(),
@@ -480,23 +489,23 @@ fn web_attachment_content_block(attachment: &Attachment) -> serde_json::Value {
     if let Some(size) = attachment.size {
         block.insert("size".to_string(), serde_json::Value::Number(size.into()));
     }
-    serde_json::Value::Object(block)
+    Some(serde_json::Value::Object(block))
 }
 
-fn web_attachment_uri(file_key: &str) -> String {
-    if file_key.starts_with("file://")
-        || file_key.starts_with("http://")
-        || file_key.starts_with("https://")
-    {
-        return file_key.to_string();
+fn web_attachment_uri(file_key: &str) -> Option<String> {
+    if is_external_attachment_uri(file_key) {
+        return Some(file_key.to_string());
     }
-    format!(
+    if !is_safe_attachment_file_key(file_key) {
+        return None;
+    }
+    Some(format!(
         "file://{}",
         config::data_dir()
             .join(".cache")
             .join(file_key)
             .to_string_lossy()
-    )
+    ))
 }
 
 async fn resolve_web_session_agent(
@@ -1005,6 +1014,10 @@ fn parse_web_attachments(value: &serde_json::Value, message_id: &str) -> Vec<Att
 
 fn parse_web_attachment(value: &serde_json::Value, message_id: &str) -> Option<Attachment> {
     let file_key = string_field(value, &["fileKey", "file_key", "uri", "url"])?;
+    if !is_safe_attachment_file_key(&file_key) {
+        tracing::warn!(file_key = %file_key, "dropping web attachment with unsafe file key");
+        return None;
+    }
     let file_name = string_field(value, &["fileName", "file_name", "name"]).unwrap_or_else(|| {
         file_key
             .rsplit('/')
@@ -1461,5 +1474,27 @@ mod tests {
 
         assert_eq!(attachments.len(), 1);
         assert_eq!(attachments[0].file_key, "file:///tmp/logo.png");
+    }
+
+    #[test]
+    fn rejects_unsafe_relative_attachment_keys() {
+        let input = parse_web_chat_input(
+            "chat-1",
+            r#"{"type":"message","messageId":"msg-1","text":"see file","attachments":[{"fileKey":"../secret","name":"secret.txt"}]}"#,
+        )
+        .expect("message input");
+
+        let WebChatInput::Message {
+            input:
+                ChannelInput::Message {
+                    envelope: ChannelEnvelope { attachments, .. },
+                },
+            ..
+        } = input
+        else {
+            panic!("expected attachment message");
+        };
+
+        assert!(attachments.is_empty());
     }
 }

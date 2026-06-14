@@ -139,7 +139,10 @@ function tunnelReportForProvider(
     case "cloudflare":
       return reports.find((report) => report.id === "tunnels.cloudflare.binary");
     case "localtunnel":
-      return reports.find((report) => report.id === "essentials.node");
+      return reports.find((report) =>
+        report.id === "tunnels.localtunnel.package" ||
+        report.id === "tunnels.localtunnel.system"
+      );
     case "ngrok":
       return reports.find((report) => report.id === "tunnels.ngrok.sdk");
     default:

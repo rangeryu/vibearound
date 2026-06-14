@@ -15,6 +15,7 @@ import type {
   PluginRegistryEntry,
   Settings,
   StartkitManifestSummary,
+  ToolchainMode,
   TunnelSummary,
 } from "../types";
 
@@ -39,7 +40,6 @@ export function useOnboardingInitialLoad({
   setDiscoveredPlugins,
   setDownloadSource,
   setToolchainMode,
-  setShellPath,
   setEnabledAgents,
   setEnabledChannels,
   setChannelConfigs,
@@ -58,8 +58,7 @@ export function useOnboardingInitialLoad({
   setPluginRegistry: (value: PluginRegistryEntry[]) => void;
   setDiscoveredPlugins: (value: DiscoveredChannelPlugin[]) => void;
   setDownloadSource: (value: string) => void;
-  setToolchainMode: (value: "managed" | "system") => void;
-  setShellPath: (value: boolean) => void;
+  setToolchainMode: (value: ToolchainMode) => void;
   setEnabledAgents: (value: Set<AgentId>) => void;
   setEnabledChannels: (value: Set<string>) => void;
   setChannelConfigs: (value: Record<string, Record<string, string>>) => void;
@@ -99,7 +98,6 @@ export function useOnboardingInitialLoad({
           hydrateStartkitPrefs(loadedSettings, {
             setDownloadSource,
             setToolchainMode,
-            setShellPath,
           });
           hydrateAgents(loadedSettings, orderedAgents, setEnabledAgents);
           hydrateChannels(loadedSettings, pluginDefs, {
@@ -107,13 +105,19 @@ export function useOnboardingInitialLoad({
             setChannelConfigs,
             setChannelVerbose,
           });
-          hydrateTunnel(loadedSettings, {
-            setTunnelProvider,
-            setNgrokToken,
-            setNgrokDomain,
-            setCfToken,
-            setCfHostname,
-          });
+          hydrateTunnel(
+            loadedSettings,
+            {
+              setTunnelProvider,
+              setNgrokToken,
+              setNgrokDomain,
+              setCfToken,
+              setCfHostname,
+            },
+            {
+              restoreProvider: loadedSettings.onboarded === true,
+            },
+          );
 
           setLoaded(true);
         },
@@ -130,6 +134,7 @@ export function useOnboardingInitialLoad({
     setChannelVerbose,
     setDiscoveredPlugins,
     setDownloadSource,
+    setToolchainMode,
     setEnabledAgents,
     setEnabledChannels,
     setLoaded,
@@ -138,8 +143,6 @@ export function useOnboardingInitialLoad({
     setNgrokToken,
     setPluginRegistry,
     setSettings,
-    setShellPath,
-    setToolchainMode,
     setTunnelProvider,
     setTunnels,
   ]);

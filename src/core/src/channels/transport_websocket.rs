@@ -577,7 +577,7 @@ impl WebSocketPluginRuntime {
         })
     }
 
-    pub async fn send_output(&self, output: ChannelOutput) -> Result<(), String> {
+    pub fn send_output_now(&self, output: ChannelOutput) -> Result<(), String> {
         tracing::info!(
             "[WebSocketPluginRuntime] send_output channel_kind={} route={}",
             self.channel_kind,
@@ -588,6 +588,10 @@ impl WebSocketPluginRuntime {
             tracing::info!("[{}] {}", self.channel_kind, message);
             message
         })
+    }
+
+    pub async fn send_output(&self, output: ChannelOutput) -> Result<(), String> {
+        self.send_output_now(output)
     }
 
     pub async fn shutdown(&self) {}

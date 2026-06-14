@@ -75,6 +75,7 @@ export interface ProviderSettings {
 export interface AgentLaunchPreference {
   profileId?: string | null;
   workspace?: string | null;
+  executablePath?: string | null;
   launchArgs?: AgentLaunchArgs | null;
 }
 
