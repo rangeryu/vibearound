@@ -11,6 +11,18 @@ use profiles::ProfileDef;
 use super::common::LaunchPlan;
 use super::{bridge, claude_desktop, codex, codex_desktop};
 
+const LOCAL_BRIDGE_NO_PROXY: &str = "localhost,127.0.0.1,::1,0.0.0.0,127.0.0.0/8";
+const LOCAL_BRIDGE_PROXY_ENV_KEYS: &[&str] = &[
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+];
+
 enum LaunchTarget<'a> {
     Profile {
         profile: &'a ProfileDef,
@@ -281,7 +293,9 @@ fn materialized_profile_env(
     rendered: profiles::render::RenderedProfile,
 ) -> anyhow::Result<Vec<(String, String)>> {
     let mut env = profiles::runtime::materialize_env(&profile.id, rendered)?;
-    if !bridge::launch_uses_local_bridge(profile, launch_target)? {
+    if bridge::launch_uses_local_bridge(profile, launch_target)? {
+        append_local_bridge_proxy_bypass_env(&mut env);
+    } else {
         profiles::runtime::append_settings_proxy_env(profile, &mut env)?;
     }
     env.push(("VIBEAROUND_LAUNCH_ID".to_string(), launch_id.to_string()));
@@ -291,6 +305,20 @@ fn materialized_profile_env(
         launch_target.to_string(),
     ));
     Ok(env)
+}
+
+fn append_local_bridge_proxy_bypass_env(env: &mut Vec<(String, String)>) {
+    env.retain(|(key, _)| !LOCAL_BRIDGE_PROXY_ENV_KEYS.contains(&key.as_str()));
+    env.extend([
+        ("HTTP_PROXY".to_string(), String::new()),
+        ("HTTPS_PROXY".to_string(), String::new()),
+        ("ALL_PROXY".to_string(), String::new()),
+        ("http_proxy".to_string(), String::new()),
+        ("https_proxy".to_string(), String::new()),
+        ("all_proxy".to_string(), String::new()),
+        ("NO_PROXY".to_string(), LOCAL_BRIDGE_NO_PROXY.to_string()),
+        ("no_proxy".to_string(), LOCAL_BRIDGE_NO_PROXY.to_string()),
+    ]);
 }
 
 #[cfg(not(test))]
@@ -445,6 +473,40 @@ mod tests {
             .collect::<BTreeMap<_, _>>(),
             use_settings_proxy: false,
             provider_settings: ProviderSettings::default(),
+        }
+    }
+
+    fn env_value<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
+        env.iter()
+            .find(|(candidate, _)| candidate == key)
+            .map(|(_, value)| value.as_str())
+    }
+
+    #[test]
+    fn local_bridge_proxy_bypass_env_clears_proxy_and_sets_no_proxy() {
+        let mut env = vec![
+            ("HTTP_PROXY".to_string(), "http://127.0.0.1:7897".to_string()),
+            ("NO_PROXY".to_string(), "old.example".to_string()),
+            ("OPENAI_API_KEY".to_string(), "test-key".to_string()),
+        ];
+
+        append_local_bridge_proxy_bypass_env(&mut env);
+
+        assert_eq!(env_value(&env, "HTTP_PROXY"), Some(""));
+        assert_eq!(env_value(&env, "HTTPS_PROXY"), Some(""));
+        assert_eq!(env_value(&env, "ALL_PROXY"), Some(""));
+        assert_eq!(env_value(&env, "http_proxy"), Some(""));
+        assert_eq!(env_value(&env, "https_proxy"), Some(""));
+        assert_eq!(env_value(&env, "all_proxy"), Some(""));
+        assert_eq!(env_value(&env, "NO_PROXY"), Some(LOCAL_BRIDGE_NO_PROXY));
+        assert_eq!(env_value(&env, "no_proxy"), Some(LOCAL_BRIDGE_NO_PROXY));
+        assert_eq!(env_value(&env, "OPENAI_API_KEY"), Some("test-key"));
+        for key in LOCAL_BRIDGE_PROXY_ENV_KEYS {
+            assert_eq!(
+                env.iter().filter(|(candidate, _)| candidate == key).count(),
+                1,
+                "{key} should be present exactly once"
+            );
         }
     }
 
