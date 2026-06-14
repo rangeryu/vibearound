@@ -314,6 +314,13 @@ fn normalize_windows_desktop_app_launch(
         return Some(("Start-Process".to_string(), out));
     }
 
+    if let Some(app_id) = executable_path.and_then(windows_start_app_id_from_path) {
+        let mut out = Vec::with_capacity(rest.len() + 1);
+        out.push(format!(r"shell:AppsFolder\{app_id}"));
+        out.extend(rest.iter().cloned());
+        return Some(("explorer.exe".to_string(), out));
+    }
+
     if let Some(app_id) = windows_start_app_id(app) {
         let mut out = Vec::with_capacity(rest.len() + 1);
         out.push(format!(r"shell:AppsFolder\{app_id}"));
@@ -327,6 +334,15 @@ fn normalize_windows_desktop_app_launch(
     out.push(app_path.to_string_lossy().into_owned());
     out.extend(rest.iter().cloned());
     Some(("Start-Process".to_string(), out))
+}
+
+fn windows_start_app_id_from_path(path: &Path) -> Option<String> {
+    let value = path.to_string_lossy();
+    let value = value.trim();
+    if value.is_empty() || value.contains('\\') || value.contains('/') || !value.contains('!') {
+        return None;
+    }
+    Some(value.to_string())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -693,5 +709,19 @@ node "%~dp0\node_modules\@anthropic-ai\claude-code\cli.js" %*
         );
 
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn desktop_launch_uses_configured_windows_start_app_id() {
+        let app_id = PathBuf::from("OpenAI.Codex_2p2nqsd0c76g0!App");
+
+        let (program, args) =
+            normalize_windows_launch_command("Start-Process Codex", &[], Some(&app_id));
+
+        assert_eq!(program, "explorer.exe");
+        assert_eq!(
+            args,
+            vec![r"shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App".to_string()]
+        );
     }
 }

@@ -486,6 +486,7 @@ async fn scan_agent(agent_id: &str, spec: &AgentCommandSpec) -> AgentDetection {
         }
     }
 
+    let paths = dedupe_agent_command_paths(paths, &spec.program);
     let mut candidates = Vec::new();
     for (index, (path, from_user_shell)) in paths.into_iter().enumerate() {
         let realpath = canonicalize_to_string(&path);
@@ -1055,6 +1056,90 @@ fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     deduped
 }
 
+fn dedupe_agent_command_paths(paths: Vec<(PathBuf, bool)>, program: &str) -> Vec<(PathBuf, bool)> {
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    let mut deduped: Vec<(PathBuf, bool)> = Vec::new();
+    for (path, from_user_shell) in paths {
+        let key = agent_command_path_key(&path, program);
+        if let Some(existing_index) = seen.get(&key).copied() {
+            let merged_from_user_shell = deduped[existing_index].1 || from_user_shell;
+            if windows_command_variant_preferred(&path, &deduped[existing_index].0, program) {
+                deduped[existing_index] = (path, merged_from_user_shell);
+            } else {
+                deduped[existing_index].1 = merged_from_user_shell;
+            }
+            continue;
+        }
+        seen.insert(key, deduped.len());
+        deduped.push((path, from_user_shell));
+    }
+    deduped
+}
+
+fn agent_command_path_key(path: &Path, program: &str) -> String {
+    windows_command_variant_key(path, program).unwrap_or_else(|| normalize_path_key(path))
+}
+
+fn windows_command_variant_key(path: &Path, program: &str) -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let expected_stem = Path::new(program)
+        .file_stem()
+        .or_else(|| Path::new(program).file_name())?
+        .to_string_lossy();
+    let stem = path.file_stem()?.to_string_lossy();
+    if !stem.eq_ignore_ascii_case(&expected_stem) {
+        return None;
+    }
+    if !is_windows_command_shim_extension(path) {
+        return None;
+    }
+    let parent = path.parent()?;
+    let parent_key =
+        canonicalize_to_string(parent).unwrap_or_else(|| parent.to_string_lossy().to_string());
+    Some(format!(
+        "windows-command-shim:{}\\{}",
+        parent_key.to_ascii_lowercase(),
+        expected_stem.to_ascii_lowercase()
+    ))
+}
+
+fn is_windows_command_shim_extension(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+            .as_deref(),
+        None | Some("cmd" | "bat" | "ps1")
+    )
+}
+
+fn windows_command_variant_preferred(candidate: &Path, existing: &Path, program: &str) -> bool {
+    let Some(candidate_key) = windows_command_variant_key(candidate, program) else {
+        return false;
+    };
+    if Some(candidate_key) != windows_command_variant_key(existing, program) {
+        return false;
+    }
+    windows_command_variant_rank(candidate) < windows_command_variant_rank(existing)
+}
+
+fn windows_command_variant_rank(path: &Path) -> u8 {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("cmd") => 0,
+        Some("bat") => 1,
+        Some("ps1") => 2,
+        None => 3,
+        _ => 4,
+    }
+}
+
 fn program_from_command(command: &str) -> Option<String> {
     command.split_whitespace().next().map(str::to_string)
 }
@@ -1269,6 +1354,23 @@ mod tests {
         let second = first.clone();
         let paths = dedupe_paths(vec![first, second]);
         assert_eq!(paths.len(), 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn dedupe_agent_command_paths_prefers_cmd_over_other_windows_shims() {
+        let bin_dir = std::env::temp_dir().join("vibearound-agent-detection-windows-shims");
+        let paths = vec![
+            (bin_dir.join("codex"), true),
+            (bin_dir.join("codex.cmd"), true),
+            (bin_dir.join("codex.ps1"), true),
+        ];
+
+        let deduped = dedupe_agent_command_paths(paths, "codex");
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].0, bin_dir.join("codex.cmd"));
+        assert!(deduped[0].1);
     }
 
     #[test]

@@ -237,6 +237,7 @@ export const zhCNLaunch: Record<string, string> = {
   "Agent updated": "Agent 已更新",
   "{{agent}} launch settings": "{{agent}} 启动设置",
   "{{agent}} app path": "{{agent}} 应用路径",
+  "{{agent}} app launch target": "{{agent}} 应用启动目标",
   "{{agent}} CLI launch path": "{{agent}} CLI 启动路径",
   "{{agent}} launch path": "{{agent}} 启动路径",
   "Configure per-agent launch arguments.": "配置每个 Agent 的启动参数。",
@@ -244,10 +245,12 @@ export const zhCNLaunch: Record<string, string> = {
   "Choose desktop app executable": "选择桌面应用可执行文件",
   "Choose agent executable": "选择 Agent 可执行文件",
   "Choose the desktop app executable.": "选择桌面应用的可执行文件。",
+  "Choose the desktop app launch target.": "选择桌面应用的启动目标。",
   "Choose the CLI path used by Launch and ACP.":
     "选择 Launch 和 ACP 使用的 CLI 路径。",
   "Choose the agent path.": "选择 Agent 所在的路径。",
   "Current selected path": "当前选择的路径",
+  "Current launch target": "当前启动目标",
   "Use a specific executable when auto-detect cannot find the app.":
     "自动检测找不到应用时，指定可执行文件。",
   Executable: "可执行文件",

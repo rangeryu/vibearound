@@ -439,7 +439,7 @@ pub async fn launcher_set_agent_executable_path(
         Some(path) => {
             let path = PathBuf::from(path.trim());
             if agent.direct_only {
-                if !is_valid_direct_only_executable_path(&path) {
+                if !is_valid_direct_only_executable_path(&agent_id, &path) {
                     return Err(format!(
                         "agent path is not a valid {}: {}",
                         direct_only_executable_path_label(),
@@ -478,9 +478,11 @@ pub async fn launcher_set_agent_executable_path(
     Ok(())
 }
 
-fn is_valid_direct_only_executable_path(path: &std::path::Path) -> bool {
+fn is_valid_direct_only_executable_path(agent_id: &str, path: &std::path::Path) -> bool {
     if cfg!(target_os = "macos") {
         path.is_dir() || path.is_file()
+    } else if cfg!(target_os = "windows") {
+        path.is_file() || matches_detected_windows_start_app(agent_id, path)
     } else {
         path.is_file()
     }
@@ -489,9 +491,28 @@ fn is_valid_direct_only_executable_path(path: &std::path::Path) -> bool {
 fn direct_only_executable_path_label() -> &'static str {
     if cfg!(target_os = "macos") {
         "app bundle or executable"
+    } else if cfg!(target_os = "windows") {
+        "executable file or Start app ID"
     } else {
         "executable file"
     }
+}
+
+fn matches_detected_windows_start_app(agent_id: &str, path: &std::path::Path) -> bool {
+    if !cfg!(target_os = "windows") {
+        return false;
+    }
+    let Some(detected) = crate::desktop_detection::read_detected_desktop_apps() else {
+        return false;
+    };
+    detected
+        .apps
+        .get(agent_id)
+        .and_then(|detection| detection.entry.as_ref())
+        .is_some_and(|entry| {
+            entry.source == "windows_start_apps"
+                && path.to_string_lossy().eq_ignore_ascii_case(&entry.path)
+        })
 }
 
 fn direct_only_executable_preference(

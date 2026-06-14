@@ -257,6 +257,7 @@ export function AgentExecutablePathDialog({
 
   const clientOs = detectClientOs();
   const isDesktopApp = agent.direct_only;
+  const isWindowsDesktopApp = isDesktopApp && clientOs === "windows";
   const executableDirty = executablePath.trim() !== initialPath;
   const dialogBusy = busy || saving;
 
@@ -309,21 +310,31 @@ export function AgentExecutablePathDialog({
       <DialogContent className="!flex max-h-[calc(100vh-64px)] w-[min(660px,calc(100vw-28px))] max-w-[calc(100vw-28px)] flex-col overflow-hidden p-0 sm:max-w-[min(660px,calc(100vw-28px))]">
         <DialogHeader className="shrink-0 border-b border-border px-5 py-3 pr-12">
           <DialogTitle className="text-lg">
-            {isDesktopApp
-              ? t("{{agent}} app path", { agent: agent.display_name })
-              : t("{{agent}} launch path", { agent: agent.display_name })}
+            {isWindowsDesktopApp
+              ? t("{{agent}} app launch target", {
+                  agent: agent.display_name,
+                })
+              : isDesktopApp
+                ? t("{{agent}} app path", { agent: agent.display_name })
+                : t("{{agent}} launch path", { agent: agent.display_name })}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            {isDesktopApp
-              ? t("Choose the desktop app executable.")
-              : t("Choose the CLI path used by Launch and ACP.")}
+            {isWindowsDesktopApp
+              ? t("Choose the desktop app launch target.")
+              : isDesktopApp
+                ? t("Choose the desktop app executable.")
+                : t("Choose the CLI path used by Launch and ACP.")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="px-5">
           <section className="space-y-2">
             <div className="text-xs text-muted-foreground">
-              {t("Choose the agent path.")}
+              {isWindowsDesktopApp
+                ? t("Choose the desktop app launch target.")
+                : isDesktopApp
+                  ? t("Choose the desktop app executable.")
+                  : t("Choose the agent path.")}
             </div>
 
             {!isDesktopApp && (
@@ -445,15 +456,19 @@ export function AgentExecutablePathDialog({
 
             <div className="space-y-1 pt-1">
               <div className="text-[10px] font-medium text-muted-foreground">
-                {t("Current selected path")}
+                {isWindowsDesktopApp
+                  ? t("Current launch target")
+                  : t("Current selected path")}
               </div>
               <div className="flex gap-1.5">
                 <Input
                   value={executablePath}
                   disabled={dialogBusy}
                   placeholder={
-                    clientOs === "windows"
-                      ? "C:\\Path\\To\\Agent.exe"
+                    isWindowsDesktopApp
+                      ? "OpenAI.Codex_...!App or C:\\Path\\To\\Codex.exe"
+                      : clientOs === "windows"
+                        ? "C:\\Path\\To\\Agent.exe"
                       : isDesktopApp
                         ? "/Applications/App.app"
                         : "/opt/homebrew/bin/agent"

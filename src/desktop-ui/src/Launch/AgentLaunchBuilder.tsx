@@ -881,9 +881,22 @@ export function AgentLaunchBuilder({
   const selectedAgentPreference = viewPrefs.agentPreferences[agentId];
   const terminalArgCount = agentLaunchArgCount(selectedAgentPreference);
   const showLaunchControls = !selectedAgentIsDirectOnly;
-  const desktopAppPathForAgent = (targetAgentId: string): string | undefined =>
-    desktopAppEntries?.apps[targetAgentId]?.entry?.path ??
-    desktopAppEntries?.apps[targetAgentId]?.launchCommand;
+  const desktopAppEntryForAgent = (targetAgentId: string) =>
+    desktopAppEntries?.apps[targetAgentId]?.entry;
+  const desktopAppPathForAgent = (targetAgentId: string): string | undefined => {
+    const app = desktopAppEntries?.apps[targetAgentId];
+    return app?.entry?.path ?? app?.launchCommand;
+  };
+  const desktopAppLaunchTargetLabel = (
+    targetAgentId: string,
+    target: string,
+  ): string => {
+    const entry = desktopAppEntryForAgent(targetAgentId);
+    if (entry?.source === "windows_start_apps" && target === entry.path) {
+      return `${entry.sourceLabel}: ${target}`;
+    }
+    return target;
+  };
   const selectedExecutablePath =
     selectedAgentPreference?.executable?.path ??
     selectedAgentPreference?.executablePath ??
@@ -891,6 +904,9 @@ export function AgentLaunchBuilder({
       ? desktopAppPathForAgent(agentId)
       : agentExecutable?.selected?.path) ??
     selectedAgent.pty_command;
+  const selectedExecutableLabel = selectedAgentIsDirectOnly
+    ? desktopAppLaunchTargetLabel(agentId, selectedExecutablePath)
+    : selectedExecutablePath;
   const showClaudeDesktopDeveloperModeHint =
     agentId === "claude-desktop" && profileChoice.kind === "profile";
 
@@ -988,11 +1004,11 @@ export function AgentLaunchBuilder({
                         )}
                         <span
                           className="min-w-0 truncate font-mono [font-variant-ligatures:none]"
-                          title={selectedExecutablePath}
+                          title={selectedExecutableLabel}
                         >
                           {!selectedAgentIsDirectOnly && agentExecutableLoading
                             ? t("Checking path")
-                            : selectedExecutablePath}
+                            : selectedExecutableLabel}
                         </span>
                         <TooltipButton
                           type="button"
