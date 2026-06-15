@@ -225,7 +225,7 @@ v0.7.3 调整了 Startkit 状态、Agent 来源检测、桌面启动目标和 Pr
 
 只恢复这些持久状态：`settings.json`、`profiles/`、`google-oauth/`、`agents.json`、`launcher.json`、`state/`、`sessions/`、`launch-session-archive.json`、`workspaces/`、`worktrees/`。
 
-不要恢复这些可重建的缓存/运行期数据：`.cache/`、`cache/startkit/`、`agents.detected.json`、`desktop-apps.detected.json`、`profile-state/`、`api-bridge/launches/`、`agent-hooks/`、`logs/`、`npm-global/`、`plugins/`、`bin/`、`runtime/`、`auth.json`。
+不要恢复这些可重建的缓存/运行期数据：`.cache/`、`cache/startkit/`、`agents.detected.json`、`desktop-apps.detected.json`、`profile-state/`、`api-bridge/launches/`、`logs/`、`npm-global/`、`plugins/`、`bin/`、`runtime/`、`auth.json`。
 
 macOS / Linux：
 

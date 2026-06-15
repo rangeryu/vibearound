@@ -238,12 +238,12 @@ mod tests {
     fn build_bash_script_appends_unix_escaped_args() {
         let args = vec![
             "-c".to_string(),
-            "hooks.SessionStart=[{ hooks = [{ command = \"hook --agent codex\" }] }]".to_string(),
+            "model_catalog_json='/tmp/VibeAround Catalog/codex.json'".to_string(),
         ];
         let script = build_bash_script(&plan(Vec::new(), "codex", args));
 
-        assert!(script.contains("exec codex -c 'hooks.SessionStart="));
-        assert!(script.contains("--agent codex"));
+        assert!(script.contains("exec codex -c 'model_catalog_json="));
+        assert!(script.contains("/tmp/VibeAround Catalog/codex.json"));
     }
 
     #[test]

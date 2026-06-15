@@ -12,7 +12,7 @@ use anyhow::{anyhow, Context};
 use profiles::ProfileDef;
 
 use super::common::LaunchPlan;
-use super::{bridge, claude_desktop, codex, codex_desktop};
+use super::{bridge, claude_desktop, codex_desktop};
 
 const LOCAL_BRIDGE_NO_PROXY: &str = "localhost,127.0.0.1,::1,0.0.0.0,127.0.0.0/8";
 const LOCAL_BRIDGE_PROXY_ENV_KEYS: &[&str] = &[
@@ -90,8 +90,7 @@ impl<'a> LaunchPlanBuilder<'a> {
         profile: &ProfileDef,
         launch_target: &str,
     ) -> anyhow::Result<LaunchPlan> {
-        let mut rendered = bridge::render_for_launch(profile, launch_target, &self.launch_id)?;
-        codex::apply_session_hooks(profile, launch_target, &self.launch_id, &mut rendered)?;
+        let rendered = bridge::render_for_launch(profile, launch_target, &self.launch_id)?;
 
         match self.session_id {
             Some(session_id) => self.build_rendered_profile_resume_plan(

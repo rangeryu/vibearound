@@ -2,7 +2,6 @@
 //! agent chat WS at /ws/chat, live preview (/preview/:slug with iframe wrapper + reverse proxy),
 //! and MCP endpoint at /mcp.
 
-mod agent_hooks;
 mod api;
 mod api_bridge;
 mod auth;
@@ -25,7 +24,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
-use crate::agent_hooks::AgentHookRegistry;
 use common::auth::AuthToken;
 use common::channels::{ChannelManager, WebChannelManager};
 use common::pty::{PtySessionManager, Registry};
@@ -69,8 +67,6 @@ pub(crate) struct AppState {
     preview_client: reqwest::Client,
     /// Live, non-persistent bridge body recorder for the launch popup.
     bridge_recorder: bridge_recording::BridgeRecorder,
-    /// Codex/agent lifecycle events received from bundled hook helpers.
-    hook_registry: Arc<AgentHookRegistry>,
 }
 
 /// Ensure web dist exists (build web first).
@@ -149,7 +145,6 @@ pub async fn run_web_server(
     channel_hub: Arc<ChannelManager>,
     web_channel: Arc<WebChannelManager>,
     auth_token: Arc<AuthToken>,
-    hook_registry: Arc<AgentHookRegistry>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     verify_web_dist(&dist_path)?;
     let web_dist = dist_path
@@ -176,7 +171,6 @@ pub async fn run_web_server(
         port,
         preview_client,
         bridge_recorder: bridge_recording::BridgeRecorder::default(),
-        hook_registry,
     };
 
     let auth_state = AuthState(Arc::clone(&auth_token));
@@ -332,10 +326,6 @@ pub async fn run_web_server(
 
     let public = Router::new()
         .merge(bridge_routes)
-        .route(
-            "/internal/agent-hooks/codex",
-            post(agent_hooks::codex_hook_handler),
-        )
         // Pairing API: no auth required (pairing IS the auth flow).
         .route("/api/pair/start", post(pair::start_handler))
         .route("/api/pair/status", get(pair::status_handler))
