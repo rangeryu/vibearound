@@ -315,7 +315,7 @@ export function BridgeRecordPopup({
 function RecordDetails({ record }: { record: BridgeRecordEntry }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<PayloadTab>("originalRequest");
-  const [wrapJson, setWrapJson] = useState(true);
+  const [wrapJson, setWrapJson] = useState(false);
   const metadata = record.metadata;
   const scopeLabel = metadata?.manualScope ?? metadata?.routeScope;
   const hasStatuses =
@@ -403,19 +403,6 @@ function RecordDetails({ record }: { record: BridgeRecordEntry }) {
                 type="button"
                 className={cn(
                   "flex size-7 items-center justify-center rounded-[5px] text-muted-foreground transition-colors",
-                  wrapJson && "bg-background text-foreground shadow-sm",
-                )}
-                title={t("Wrap")}
-                aria-label={t("Wrap")}
-                aria-pressed={wrapJson}
-                onClick={() => setWrapJson(true)}
-              >
-                <WrapText className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "flex size-7 items-center justify-center rounded-[5px] text-muted-foreground transition-colors",
                   !wrapJson && "bg-background text-foreground shadow-sm",
                 )}
                 title={t("No wrap")}
@@ -424,6 +411,19 @@ function RecordDetails({ record }: { record: BridgeRecordEntry }) {
                 onClick={() => setWrapJson(false)}
               >
                 <AlignLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "flex size-7 items-center justify-center rounded-[5px] text-muted-foreground transition-colors",
+                  wrapJson && "bg-background text-foreground shadow-sm",
+                )}
+                title={t("Wrap")}
+                aria-label={t("Wrap")}
+                aria-pressed={wrapJson}
+                onClick={() => setWrapJson(true)}
+              >
+                <WrapText className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
