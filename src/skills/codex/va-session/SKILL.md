@@ -9,7 +9,21 @@ Resolve your current session ID. Other VibeAround skills reference this skill wh
 
 ## How to Resolve
 
-### Method 1: Via VibeAround env vars (preferred)
+### Method 1: Via Codex MCP metadata (preferred)
+
+Call the `get_session_id` MCP tool with `agent_kind` set to `codex`:
+
+```
+Tool: get_session_id
+Server: vibearound
+Arguments:
+  agent_kind: "codex"
+```
+
+VibeAround reads Codex's MCP call metadata and returns the current Codex
+thread/session ID.
+
+### Method 2: Via VibeAround env vars
 
 Check if the environment variables `VIBEAROUND_CHANNEL_KIND` and `VIBEAROUND_CHAT_ID` are set. If yes, call the `get_session_id` MCP tool:
 
@@ -22,15 +36,6 @@ Arguments:
 ```
 
 The tool returns the exact session ID from VibeAround's internal state.
-
-### Method 2: Fallback — agent-specific session files
-
-If the env vars are not set (running outside VibeAround), resolve from your agent's local session metadata:
-
-- **Claude Code**: Read `~/.claude/history.jsonl`, find the last entry whose `project` matches cwd, extract `sessionId`.
-- **Codex**: Read `~/.codex/history.jsonl`, take last line, extract `session_id`.
-- **Gemini**: Check recent sessions with `/resume`.
-- **Other agents**: Omit — the server will attempt auto-discovery.
 
 ## Return Value
 

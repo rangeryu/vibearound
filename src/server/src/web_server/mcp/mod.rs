@@ -83,7 +83,9 @@ async fn mcp_tools_call(
     };
 
     match tool_name {
-        "get_session_id" => tools::mcp_get_session_id(id, arguments, state).await,
+        "get_session_id" => {
+            tools::mcp_get_session_id(id, arguments, params.get("_meta"), state).await
+        }
         "prepare_handover" => tools::mcp_prepare_handover(id, arguments).await,
         "register_workspace" => tools::mcp_register_workspace(id, arguments).await,
         "initialize_subagents" => tools::mcp_initialize_subagents(id, arguments, state).await,
