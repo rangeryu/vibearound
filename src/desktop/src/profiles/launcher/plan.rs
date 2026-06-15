@@ -25,6 +25,8 @@ const LOCAL_BRIDGE_PROXY_ENV_KEYS: &[&str] = &[
     "NO_PROXY",
     "no_proxy",
 ];
+const VIBEAROUND_LAUNCH_ID_ENV: &str = "VIBEAROUND_LAUNCH_ID";
+const VIBEAROUND_LAUNCH_TARGET_ENV: &str = "VIBEAROUND_LAUNCH_TARGET";
 
 enum LaunchTarget<'a> {
     Profile {
@@ -163,6 +165,7 @@ impl<'a> LaunchPlanBuilder<'a> {
         if agent_id == "codex-desktop" {
             let mut env = Vec::new();
             let mut args = Vec::new();
+            append_vibearound_launch_context_env(&mut env, profile, launch_target, &self.launch_id);
             if bridge::launch_uses_local_bridge(profile, launch_target)? {
                 append_local_bridge_proxy_bypass_env(&mut env);
                 args.extend(codex_desktop_local_bridge_args());
@@ -188,8 +191,10 @@ impl<'a> LaunchPlanBuilder<'a> {
             let _ = rendered;
             claude_desktop::apply_profile_config(profile)
                 .with_context(|| format!("prepare Claude Desktop profile '{}'", profile.id))?;
+            let mut env = Vec::new();
+            append_vibearound_launch_context_env(&mut env, profile, launch_target, &self.launch_id);
             return Ok(LaunchPlan {
-                env: Vec::new(),
+                env,
                 command: direct_launch_command_for_agent(
                     agent_id,
                     &agent,
@@ -376,13 +381,30 @@ fn materialized_profile_env(
     } else {
         profiles::runtime::append_settings_proxy_env(profile, &mut env)?;
     }
-    env.push(("VIBEAROUND_LAUNCH_ID".to_string(), launch_id.to_string()));
-    env.push(("VIBEAROUND_PROFILE_ID".to_string(), profile.id.clone()));
+    append_vibearound_launch_context_env(&mut env, profile, launch_target, launch_id);
+    Ok(env)
+}
+
+fn append_vibearound_launch_context_env(
+    env: &mut Vec<(String, String)>,
+    profile: &ProfileDef,
+    launch_target: &str,
+    launch_id: &str,
+) {
+    env.retain(|(key, _)| {
+        key != VIBEAROUND_LAUNCH_ID_ENV
+            && key != agent_integrations::launch::VIBEAROUND_PROFILE_ID_ENV
+            && key != VIBEAROUND_LAUNCH_TARGET_ENV
+    });
+    env.push((VIBEAROUND_LAUNCH_ID_ENV.to_string(), launch_id.to_string()));
     env.push((
-        "VIBEAROUND_LAUNCH_TARGET".to_string(),
+        agent_integrations::launch::VIBEAROUND_PROFILE_ID_ENV.to_string(),
+        profile.id.clone(),
+    ));
+    env.push((
+        VIBEAROUND_LAUNCH_TARGET_ENV.to_string(),
         launch_target.to_string(),
     ));
-    Ok(env)
 }
 
 fn append_local_bridge_proxy_bypass_env(env: &mut Vec<(String, String)>) {
@@ -733,7 +755,17 @@ mod tests {
         }
         assert!(plan.args.is_empty());
         assert_eq!(plan.window_label, "MiniMax Test");
-        assert!(plan.env.is_empty());
+        assert!(plan
+            .env
+            .contains(&("VIBEAROUND_LAUNCH_ID".to_string(), "launch-123".to_string())));
+        assert!(plan.env.contains(&(
+            "VIBEAROUND_PROFILE_ID".to_string(),
+            "minimax-test".to_string()
+        )));
+        assert!(plan.env.contains(&(
+            "VIBEAROUND_LAUNCH_TARGET".to_string(),
+            "claude-desktop".to_string()
+        )));
         let meta_path = root.join("configLibrary").join("_meta.json");
         let meta: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(&meta_path).expect("read Claude Desktop meta"),
