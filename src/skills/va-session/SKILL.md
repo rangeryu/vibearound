@@ -9,25 +9,33 @@ Resolves the current session ID. Other VibeAround skills call this when they nee
 
 ## How to Resolve
 
-### Method 1: Via VibeAround env vars (preferred)
+Call the `get_session_id` MCP tool. Include only optional arguments whose
+values are present:
 
-Check if `VIBEAROUND_CHANNEL_KIND` and `VIBEAROUND_CHAT_ID` are set. If yes, call `get_session_id`:
+Read these values if available:
+
+- Current working directory
+- `$VIBEAROUND_AGENT_KIND` or `$VIBEAROUND_LAUNCH_TARGET`
+- `$VIBEAROUND_LAUNCH_ID`
+- `$VIBEAROUND_PROFILE_ID`
+- `$VIBEAROUND_CHANNEL_KIND`
+- `$VIBEAROUND_CHAT_ID`
 
 ```
 Tool: get_session_id
 Server: vibearound
 Arguments:
-  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND>"
-  chat_id: "<value of $VIBEAROUND_CHAT_ID>"
+  agent_kind: "<value of $VIBEAROUND_AGENT_KIND or $VIBEAROUND_LAUNCH_TARGET if present>"
+  cwd: "<current working directory>"
+  launch_id: "<value of $VIBEAROUND_LAUNCH_ID if present>"
+  profile_id: "<value of $VIBEAROUND_PROFILE_ID if present>"
+  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND if present>"
+  chat_id: "<value of $VIBEAROUND_CHAT_ID if present>"
 ```
 
-Returns the exact session ID from VibeAround's internal state.
-
-### Method 2: Let prepare_handover auto-discover
-
-If the env vars are not set, return nothing. The calling skill should omit
-`session_id`; the `prepare_handover` tool will attempt workspace-aware
-auto-discovery for the current agent.
+The MCP tool resolves the session from explicit parameters, VibeAround route
+state, agent metadata, or workspace-aware auto-discovery, and records it
+against the launch context when `launch_id` is available.
 
 ## Return Value
 

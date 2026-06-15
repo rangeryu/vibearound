@@ -7,18 +7,28 @@ alwaysApply: false
 
 ## How to Resolve
 
-### Method 1: Via VibeAround env vars (preferred)
+Call the `get_session_id` MCP tool. Include only optional arguments whose
+values are present:
 
-Check if `VIBEAROUND_CHANNEL_KIND` and `VIBEAROUND_CHAT_ID` env vars are set. If yes:
+Read these values if available:
+
+- Current working directory
+- `$VIBEAROUND_LAUNCH_ID`
+- `$VIBEAROUND_PROFILE_ID`
+- `$VIBEAROUND_CHANNEL_KIND`
+- `$VIBEAROUND_CHAT_ID`
 
 ```
 Tool: get_session_id
 Server: vibearound
 Arguments:
-  channel_kind: "<$VIBEAROUND_CHANNEL_KIND>"
-  chat_id: "<$VIBEAROUND_CHAT_ID>"
+  agent_kind: "cursor"
+  cwd: "<current working directory>"
+  launch_id: "<value of $VIBEAROUND_LAUNCH_ID if present>"
+  profile_id: "<value of $VIBEAROUND_PROFILE_ID if present>"
+  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND if present>"
+  chat_id: "<value of $VIBEAROUND_CHAT_ID if present>"
 ```
 
-### Method 2: Fallback
-
-If env vars are not set, omit session_id — the server will attempt auto-discovery.
+Return the session ID string from the MCP tool. If the tool cannot resolve one,
+return nothing — callers handle the missing case gracefully.

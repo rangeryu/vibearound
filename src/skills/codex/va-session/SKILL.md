@@ -9,33 +9,34 @@ Resolve your current session ID. Other VibeAround skills reference this skill wh
 
 ## How to Resolve
 
+Read these values if available:
+
+- Current working directory
+- `$VIBEAROUND_LAUNCH_ID`
+- `$VIBEAROUND_PROFILE_ID`
+- `$VIBEAROUND_CHANNEL_KIND`
+- `$VIBEAROUND_CHAT_ID`
+
 ### Method 1: Via Codex MCP metadata (preferred)
 
-Call the `get_session_id` MCP tool with `agent_kind` set to `codex`:
+Call the `get_session_id` MCP tool with `agent_kind` set to `codex`. Include
+only optional arguments whose values are present:
 
 ```
 Tool: get_session_id
 Server: vibearound
 Arguments:
   agent_kind: "codex"
+  cwd: "<current working directory>"
+  launch_id: "<value of $VIBEAROUND_LAUNCH_ID if present>"
+  profile_id: "<value of $VIBEAROUND_PROFILE_ID if present>"
+  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND if present>"
+  chat_id: "<value of $VIBEAROUND_CHAT_ID if present>"
 ```
 
 VibeAround reads Codex's MCP call metadata and returns the current Codex
-thread/session ID.
-
-### Method 2: Via VibeAround env vars
-
-Check if the environment variables `VIBEAROUND_CHANNEL_KIND` and `VIBEAROUND_CHAT_ID` are set. If yes, call the `get_session_id` MCP tool:
-
-```
-Tool: get_session_id
-Server: vibearound
-Arguments:
-  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND>"
-  chat_id: "<value of $VIBEAROUND_CHAT_ID>"
-```
-
-The tool returns the exact session ID from VibeAround's internal state.
+thread/session ID and records it against the launch context when `launch_id`
+is available.
 
 ## Return Value
 
