@@ -3,12 +3,13 @@
 //! This is intentionally read-only. Each CLI owns its own session store; we
 //! only surface enough metadata for users to choose what to resume.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -20,6 +21,8 @@ mod gemini;
 mod opencode;
 mod pi;
 mod qwen;
+
+static OBSERVED_STORE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,7 +50,8 @@ pub fn list_for_agent_workspace_with_archived(
     limit: usize,
     include_archived: bool,
 ) -> Vec<LaunchSession> {
-    let sessions = raw_sessions_for_agent_workspace(agent_id, workspace, include_archived);
+    let mut sessions = raw_sessions_for_agent_workspace(agent_id, workspace, include_archived);
+    sessions.extend(observed_sessions_for_agent_workspace(agent_id, workspace));
     finalize_sessions(agent_id, sessions, limit, include_archived)
 }
 
@@ -91,8 +95,14 @@ pub async fn list_for_agent_workspaces_with_archived_async(
             .unwrap_or_default()
         }
     };
+    sessions.extend(
+        workspaces
+            .iter()
+            .flat_map(|workspace| observed_sessions_for_agent_workspace(agent_id, workspace)),
+    );
     apply_archive_flags(agent_id, &mut sessions, include_archived);
     sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    dedupe_by_session_id(&mut sessions);
 
     let mut counts_by_workspace: HashMap<String, usize> = HashMap::new();
     sessions.retain(|session| {
@@ -133,8 +143,14 @@ fn finalize_sessions(
 ) -> Vec<LaunchSession> {
     apply_archive_flags(agent_id, &mut sessions, include_archived);
     sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    dedupe_by_session_id(&mut sessions);
     sessions.truncate(limit);
     sessions
+}
+
+fn dedupe_by_session_id(sessions: &mut Vec<LaunchSession>) {
+    let mut seen = HashSet::new();
+    sessions.retain(|session| seen.insert(session.session_id.clone()));
 }
 
 fn apply_archive_flags(agent_id: &str, sessions: &mut Vec<LaunchSession>, include_archived: bool) {
@@ -163,6 +179,184 @@ pub fn latest_for_agent_workspace(agent_id: &str, workspace: &Path) -> Option<La
     list_for_agent_workspace(agent_id, workspace, 1)
         .into_iter()
         .next()
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ObservedLaunchSessionStore {
+    #[serde(default)]
+    sessions: Vec<ObservedLaunchSession>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ObservedLaunchSession {
+    launch_id: String,
+    agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    profile_id: Option<String>,
+    session_id: String,
+    workspace: String,
+    source: String,
+    created_at: u64,
+    updated_at: u64,
+}
+
+pub fn record_observed_launch_session(
+    launch_id: Option<&str>,
+    agent_id: &str,
+    profile_id: Option<&str>,
+    workspace: Option<&Path>,
+    session_id: &str,
+    source: &str,
+) -> Result<(), String> {
+    let Some(launch_id) = clean_non_empty(launch_id) else {
+        return Ok(());
+    };
+    let Some(session_id) = clean_non_empty(Some(session_id)) else {
+        return Ok(());
+    };
+    let agent_id =
+        crate::resources::resolve_agent_id(agent_id).unwrap_or_else(|_| agent_id.to_string());
+    let workspace = workspace
+        .map(workspace_key)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let profile_id = profile_id
+        .and_then(|value| clean_non_empty(Some(value)))
+        .map(|value| crate::agent::launch::normalize_launch_profile_id(Some(&value)));
+    let source = clean_non_empty(Some(source)).unwrap_or_else(|| "mcp".to_string());
+    let now = now_secs();
+
+    mutate_observed_store(|store| {
+        if let Some(existing) = store
+            .sessions
+            .iter_mut()
+            .find(|session| session.launch_id == launch_id)
+        {
+            existing.agent_id = agent_id;
+            if profile_id.is_some() {
+                existing.profile_id = profile_id;
+            }
+            existing.session_id = session_id;
+            if !workspace.is_empty() {
+                existing.workspace = workspace;
+            }
+            existing.source = source;
+            existing.updated_at = now;
+            return;
+        }
+
+        store.sessions.push(ObservedLaunchSession {
+            launch_id,
+            agent_id,
+            profile_id,
+            session_id,
+            workspace,
+            source,
+            created_at: now,
+            updated_at: now,
+        });
+    })
+}
+
+fn observed_sessions_for_agent_workspace(agent_id: &str, workspace: &Path) -> Vec<LaunchSession> {
+    let agent_id =
+        crate::resources::resolve_agent_id(agent_id).unwrap_or_else(|_| agent_id.to_string());
+    let workspace = workspace_key(workspace);
+    read_observed_store()
+        .sessions
+        .into_iter()
+        .filter(|session| {
+            session.agent_id == agent_id
+                && session.workspace == workspace
+                && !session.session_id.is_empty()
+        })
+        .map(|session| LaunchSession {
+            agent_id: session.agent_id,
+            title: fallback_title(Path::new(&session.workspace), &session.session_id),
+            workspace: session.workspace,
+            session_id: session.session_id,
+            updated_at: session.updated_at,
+            source: format!("vibearound-{}", session.source),
+            archived: false,
+        })
+        .collect()
+}
+
+fn mutate_observed_store(
+    mutator: impl FnOnce(&mut ObservedLaunchSessionStore),
+) -> Result<(), String> {
+    let _guard = OBSERVED_STORE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut store = read_observed_store_unlocked();
+    mutator(&mut store);
+    write_observed_store_unlocked(&store)
+}
+
+fn read_observed_store() -> ObservedLaunchSessionStore {
+    let _guard = OBSERVED_STORE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    read_observed_store_unlocked()
+}
+
+fn read_observed_store_unlocked() -> ObservedLaunchSessionStore {
+    let Ok(data) = fs::read_to_string(observed_store_path()) else {
+        return ObservedLaunchSessionStore::default();
+    };
+    serde_json::from_str(&data).unwrap_or_default()
+}
+
+fn write_observed_store_unlocked(store: &ObservedLaunchSessionStore) -> Result<(), String> {
+    let path = observed_store_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create launch session store dir: {error}"))?;
+    }
+    let data = serde_json::to_string_pretty(store)
+        .map_err(|error| format!("failed to serialize launch session store: {error}"))?;
+    fs::write(&path, data)
+        .map_err(|error| format!("failed to write launch session store: {error}"))?;
+    if let Err(error) = crate::auth::set_owner_only(&path) {
+        tracing::warn!(
+            "[VibeAround] failed to restrict launch session store {:?}: {}",
+            path,
+            error
+        );
+    }
+    Ok(())
+}
+
+fn observed_store_path() -> std::path::PathBuf {
+    crate::config::data_dir().join("launch-sessions.json")
+}
+
+fn workspace_key(workspace: &Path) -> String {
+    trim_trailing_separators(workspace.to_string_lossy().as_ref())
+}
+
+fn trim_trailing_separators(value: &str) -> String {
+    let mut out = value.trim().to_string();
+    while out.len() > 1 && (out.ends_with('/') || out.ends_with('\\')) {
+        out.pop();
+    }
+    out
+}
+
+fn clean_non_empty(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 pub(super) fn dash_encoded_cwd(cwd: &Path) -> String {
