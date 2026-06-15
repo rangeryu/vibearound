@@ -1,11 +1,11 @@
 ---
 name: va-session
-description: Resolve your current session ID for use with other VibeAround tools. Called by other skills that need session context (e.g. va-preview, vibearound handover).
+description: Codex only: resolve the current Codex session ID for VibeAround tools. Called by va-preview and vibearound handover when running in Codex.
 ---
 
 # VibeAround Session ID
 
-Resolve your current session ID. Other VibeAround skills reference this skill when they need session context for lifecycle management.
+Resolve the current Codex session ID. Other VibeAround Codex skills reference this skill when they need session context for lifecycle management.
 
 ## How to Resolve
 
@@ -21,6 +21,10 @@ Read these values if available:
 
 Call the `get_session_id` MCP tool with `agent_kind` set to `codex`. Include
 only optional arguments whose values are present:
+
+Do not inspect MCP resources or resource templates for this step. VibeAround
+exposes `get_session_id` as a tool; Codex's `/mcp` command can be used only for
+human diagnostics.
 
 ```
 Tool: get_session_id
