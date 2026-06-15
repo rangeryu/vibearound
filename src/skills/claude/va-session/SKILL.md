@@ -9,29 +9,39 @@ Resolve your current session ID. Other VibeAround skills reference this skill wh
 
 ## How to Resolve
 
-### Method 1: Via VibeAround env vars (preferred)
+Read these values if available:
 
-Check if the environment variables `VIBEAROUND_CHANNEL_KIND` and `VIBEAROUND_CHAT_ID` are set. If yes, call the `get_session_id` MCP tool:
+- Current working directory
+- `$VIBEAROUND_LAUNCH_ID`
+- `$VIBEAROUND_PROFILE_ID`
+- `$VIBEAROUND_CHANNEL_KIND`
+- `$VIBEAROUND_CHAT_ID`
+
+For Claude Code and Claude Desktop, use this rendered value as the current
+session ID:
+
+```
+${CLAUDE_SESSION_ID}
+```
+
+Call the `get_session_id` MCP tool. Include only optional arguments whose
+values are present. If the rendered Claude value is empty or is still the
+literal placeholder text, omit `session_id`.
 
 ```
 Tool: get_session_id
 Server: vibearound
 Arguments:
-  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND>"
-  chat_id: "<value of $VIBEAROUND_CHAT_ID>"
+  agent_kind: "claude"
+  session_id: "<rendered ${CLAUDE_SESSION_ID} if valid>"
+  cwd: "<current working directory>"
+  launch_id: "<value of $VIBEAROUND_LAUNCH_ID if present>"
+  profile_id: "<value of $VIBEAROUND_PROFILE_ID if present>"
+  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND if present>"
+  chat_id: "<value of $VIBEAROUND_CHAT_ID if present>"
 ```
-
-The tool returns the exact session ID from VibeAround's internal state.
-
-### Method 2: Fallback — agent-specific session files
-
-If the env vars are not set (running outside VibeAround), resolve from your agent's local session metadata:
-
-- **Claude Code**: Read `~/.claude/history.jsonl`, find the last entry whose `project` matches cwd, extract `sessionId`.
-- **Codex**: Read `~/.codex/history.jsonl`, take last line, extract `session_id`.
-- **Gemini**: Check recent sessions with `/resume`.
-- **Other agents**: Omit — the server will attempt auto-discovery.
 
 ## Return Value
 
-Return the session ID string to the calling skill. If neither method succeeds, return nothing — callers handle the missing case gracefully.
+Return the session ID string from the MCP tool. If the tool cannot resolve one,
+return nothing — callers handle the missing case gracefully.

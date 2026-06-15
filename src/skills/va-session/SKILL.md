@@ -9,34 +9,33 @@ Resolves the current session ID. Other VibeAround skills call this when they nee
 
 ## How to Resolve
 
-### Method 1: Via VibeAround env vars (preferred)
+Call the `get_session_id` MCP tool. Include only optional arguments whose
+values are present:
 
-Check if `VIBEAROUND_CHANNEL_KIND` and `VIBEAROUND_CHAT_ID` are set. If yes, call `get_session_id`:
+Read these values if available:
+
+- Current working directory
+- `$VIBEAROUND_AGENT_KIND` or `$VIBEAROUND_LAUNCH_TARGET`
+- `$VIBEAROUND_LAUNCH_ID`
+- `$VIBEAROUND_PROFILE_ID`
+- `$VIBEAROUND_CHANNEL_KIND`
+- `$VIBEAROUND_CHAT_ID`
 
 ```
 Tool: get_session_id
 Server: vibearound
 Arguments:
-  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND>"
-  chat_id: "<value of $VIBEAROUND_CHAT_ID>"
+  agent_kind: "<value of $VIBEAROUND_AGENT_KIND or $VIBEAROUND_LAUNCH_TARGET if present>"
+  cwd: "<current working directory>"
+  launch_id: "<value of $VIBEAROUND_LAUNCH_ID if present>"
+  profile_id: "<value of $VIBEAROUND_PROFILE_ID if present>"
+  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND if present>"
+  chat_id: "<value of $VIBEAROUND_CHAT_ID if present>"
 ```
 
-Returns the exact session ID from VibeAround's internal state.
-
-### Method 2: Fallback — agent-specific session files
-
-If the env vars are not set (running outside VibeAround), resolve from local session metadata:
-
-- **Claude Code**: Parse `~/.claude/history.jsonl` — find the last entry whose `project` matches the current working directory:
-  ```bash
-  jq -r --arg cwd "$PWD" 'select(.project == $cwd) | .sessionId' ~/.claude/history.jsonl | tail -1
-  ```
-- **Codex**: Parse `~/.codex/history.jsonl` — extract from the last line:
-  ```bash
-  tail -1 ~/.codex/history.jsonl | jq -r '.session_id'
-  ```
-- **Gemini**: Use `/resume` to list recent sessions, then extract the session ID from the output.
-- **Other agents**: Omit the session ID — the server will attempt auto-discovery.
+The MCP tool resolves the session from explicit parameters, VibeAround route
+state, agent metadata, or workspace-aware auto-discovery, and records it
+against the launch context when `launch_id` is available.
 
 ## Return Value
 

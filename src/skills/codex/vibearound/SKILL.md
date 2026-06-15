@@ -1,11 +1,11 @@
 ---
 name: vibearound
-description: Hand over your current coding session so the user can continue the conversation on their phone or another device via any IM channel connected to VibeAround. Use when the user says "/vibearound handover", "hand over this session", "continue on my phone", or similar session transfer requests.
+description: "Codex only: hand over the current Codex coding session so the user can continue via any IM channel connected to VibeAround. Use when the user says \"/vibearound handover\", \"hand over this session\", \"continue on my phone\", or similar session transfer requests."
 ---
 
 # VibeAround Session Handover
 
-Hand over the current coding session via the VibeAround orchestrator. The user can then pick it up from any connected IM channel (the pickup is not tied to a specific channel).
+Hand over the current Codex coding session via the VibeAround orchestrator. The user can then pick it up from any connected IM channel (the pickup is not tied to a specific channel).
 
 ## When to Use
 
@@ -20,7 +20,7 @@ The VibeAround MCP server must be connected (server name: `vibearound`). If not 
 
 ### 1. Get your session ID
 
-Use the `/va-session` skill to resolve your current session ID.
+Use the `va-session` skill to resolve your current session ID.
 Also read `$VIBEAROUND_PROFILE_ID` from the environment if present. VibeAround-launched sessions should have it, including `direct`; external user-started sessions may omit it.
 
 ### 2. Call prepare_handover
@@ -31,7 +31,7 @@ Server: vibearound
 Arguments:
   session_id: "<session_id from step 1>"  (pass if available)
   cwd: "<current working directory>"
-  agent_kind: "<your agent type>"
+  agent_kind: "codex"
   profile_id: "<VIBEAROUND_PROFILE_ID if present>"  (optional; omitted means direct)
 ```
 

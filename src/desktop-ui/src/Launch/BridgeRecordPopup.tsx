@@ -1,5 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Copy, Radio, Trash2, Wifi, WifiOff } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertCircle,
+  AlignLeft,
+  Check,
+  Copy,
+  Radio,
+  Trash2,
+  Wifi,
+  WifiOff,
+  WrapText,
+} from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
@@ -179,6 +189,8 @@ export function BridgeRecordPopup({
       <DialogContent
         className="flex grid-rows-none flex-col gap-0 overflow-hidden p-0"
         style={dialogSize}
+        onInteractOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => event.preventDefault()}
       >
         <DialogHeader className="shrink-0 border-b border-border px-5 py-4">
           <div className="flex items-center justify-between gap-4 pr-8">
@@ -187,10 +199,11 @@ export function BridgeRecordPopup({
                 <Radio className="h-4 w-4 text-primary" />
                 {t("Bridge recorder")}
               </DialogTitle>
-              <DialogDescription className="mt-1 truncate text-xs">
-                {connected ? t("Connected") : t("Disconnected")}
-                {error ? ` · ${error}` : ""}
-              </DialogDescription>
+              {error && (
+                <DialogDescription className="mt-1 truncate text-xs">
+                  {error}
+                </DialogDescription>
+              )}
             </div>
             <div
               className={cn(
@@ -210,7 +223,7 @@ export function BridgeRecordPopup({
           </div>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
           <aside className="flex min-h-0 flex-col border-r border-border bg-muted/15">
             <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
               <span className="text-xs font-medium text-muted-foreground">
@@ -236,54 +249,61 @@ export function BridgeRecordPopup({
                   {t("No records")}
                 </div>
               ) : (
-                records.map((record) => (
-                  <button
-                    key={record.recordId}
-                    type="button"
-                    className={cn(
-                      "flex w-full min-w-0 flex-col gap-1 border-b border-border/70 px-3 py-2 text-left transition-colors",
-                      selected?.recordId === record.recordId
-                        ? "bg-background"
-                        : "hover:bg-background/60",
-                    )}
-                    onClick={() => setSelectedId(record.recordId)}
-                  >
-                    <span className="flex min-w-0 items-center justify-between gap-2">
-                      <span className="min-w-0 truncate text-xs font-medium">
-                        {record.metadata?.profileId ?? record.requestId.slice(0, 8)}
-                      </span>
-                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                        {formatTime(record.timestampMs)}
-                      </span>
-                    </span>
-                    <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
-                      <span className="truncate">
-                        {record.metadata?.clientProtocol ?? t("client")}
-                      </span>
-                      <span>-&gt;</span>
-                      <span className="truncate">
-                        {record.metadata?.upstreamProtocol ?? t("upstream")}
-                      </span>
-                      {record.metadata?.stream && <span>SSE</span>}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      {payloadPhases.map((phase) => (
-                        <span
-                          key={phase}
-                          className={cn(
-                            "h-1.5 w-1.5 rounded-full",
-                            record.phases.has(phase)
-                              ? "bg-primary"
-                              : "bg-muted-foreground/25",
-                          )}
-                        />
-                      ))}
-                      {record.errors.length > 0 && (
-                        <AlertCircle className="ml-1 h-3 w-3 text-destructive" />
+                records.map((record) => {
+                  const isSelected = selected?.recordId === record.recordId;
+                  return (
+                    <button
+                      key={record.recordId}
+                      type="button"
+                      aria-current={isSelected ? "true" : undefined}
+                      className={cn(
+                        "flex w-full min-w-0 flex-col gap-1 border-b px-3 py-2 text-left transition-colors",
+                        isSelected
+                          ? "border-primary/20 bg-primary/10 shadow-[inset_3px_0_0_hsl(var(--primary))]"
+                          : "border-border/70 hover:bg-background/60",
                       )}
-                    </span>
-                  </button>
-                ))
+                      onClick={() => setSelectedId(record.recordId)}
+                    >
+                      <span className="flex min-w-0 items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-xs font-medium">
+                          {record.metadata?.profileId ??
+                            record.requestId.slice(0, 8)}
+                        </span>
+                        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                          {formatTime(record.timestampMs)}
+                        </span>
+                      </span>
+                      <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+                        <span className="truncate">
+                          {record.metadata?.clientProtocol ?? t("client")}
+                        </span>
+                        <span>-&gt;</span>
+                        <span className="truncate">
+                          {record.metadata?.upstreamProtocol ?? t("upstream")}
+                        </span>
+                        {record.metadata?.stream && <span>SSE</span>}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        {payloadPhases.map((phase) => (
+                          <span
+                            key={phase}
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              record.phases.has(phase)
+                                ? "bg-primary"
+                                : "bg-muted-foreground/25",
+                            )}
+                          />
+                        ))}
+                        {record.errors.length > 0 && (
+                          <AlertCircle
+                            className="ml-1 h-3 w-3 text-destructive"
+                          />
+                        )}
+                      </span>
+                    </button>
+                  );
+                })
               )}
             </div>
           </aside>
@@ -306,7 +326,11 @@ export function BridgeRecordPopup({
 function RecordDetails({ record }: { record: BridgeRecordEntry }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<PayloadTab>("originalRequest");
-  const payload = payloadForTab(record, tab);
+  const [wrapJson, setWrapJson] = useState(false);
+  const metadata = record.metadata;
+  const scopeLabel = metadata?.manualScope ?? metadata?.routeScope;
+  const hasStatuses =
+    record.serverStatus !== undefined || record.bridgeStatus !== undefined;
 
   useEffect(() => {
     if (!payloadForTab(record, tab)) {
@@ -318,42 +342,48 @@ function RecordDetails({ record }: { record: BridgeRecordEntry }) {
   return (
     <>
       <div className="shrink-0 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate font-mono text-xs text-foreground">
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="min-w-[240px] flex-1 truncate font-mono text-xs text-foreground">
               {record.requestId}
             </div>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-              <span>{record.metadata?.targetApiType ?? t("Unknown target")}</span>
-              {record.metadata?.upstreamUrl && (
-                <span className="max-w-[900px] truncate font-mono">
-                  {record.metadata.upstreamUrl}
-                </span>
-              )}
-              {record.serverStatus && (
-                <span>
-                  {t("server {{status}}", { status: record.serverStatus })}
-                </span>
-              )}
-              {record.bridgeStatus && (
-                <span>
-                  {t("bridge {{status}}", { status: record.bridgeStatus })}
-                </span>
-              )}
-            </div>
+            {hasStatuses && (
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                {record.serverStatus !== undefined && (
+                  <StatusPill status={record.serverStatus}>
+                    {t("server {{status}}", { status: record.serverStatus })}
+                  </StatusPill>
+                )}
+                {record.bridgeStatus !== undefined && (
+                  <StatusPill status={record.bridgeStatus}>
+                    {t("bridge {{status}}", { status: record.bridgeStatus })}
+                  </StatusPill>
+                )}
+              </div>
+            )}
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!payload}
-            onClick={() => {
-              if (payload) void navigator.clipboard?.writeText(payloadText(payload));
-            }}
-          >
-            <Copy className="h-3.5 w-3.5" />
-            {t("Copy")}
-          </Button>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <MetaPill mono>
+              <span>{metadata?.clientProtocol ?? t("client")}</span>
+              <span className="text-muted-foreground/60">-&gt;</span>
+              <span>{metadata?.upstreamProtocol ?? t("upstream")}</span>
+            </MetaPill>
+            <MetaPill>{metadata?.targetApiType ?? t("Unknown target")}</MetaPill>
+            {metadata?.model && <MetaPill mono>{metadata.model}</MetaPill>}
+            {metadata?.stream && <MetaPill>SSE</MetaPill>}
+            {scopeLabel && <MetaPill mono>{scopeLabel}</MetaPill>}
+            {metadata?.passthrough && <MetaPill>passthrough</MetaPill>}
+          </div>
+          {metadata?.upstreamUrl && (
+            <div className="flex min-w-0 items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-2 py-1.5">
+              <span className="shrink-0 text-[10px] font-medium uppercase text-muted-foreground">
+                URL
+              </span>
+              <span className="min-w-0 truncate font-mono text-[11px] text-foreground/80">
+                {metadata.upstreamUrl}
+              </span>
+            </div>
+          )}
         </div>
         {record.errors.length > 0 && (
           <div className="mt-2 rounded-md border border-destructive/25 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">
@@ -366,20 +396,59 @@ function RecordDetails({ record }: { record: BridgeRecordEntry }) {
         onValueChange={(value) => setTab(value as PayloadTab)}
         className="min-h-0 flex-1 gap-0"
       >
-        <TabsList className="mx-4 mt-3 h-8 w-fit rounded-md">
-          {payloadTabs.map((value) => (
-            <TabsTrigger key={value} value={value} className="h-7 text-xs">
-              {payloadTabLabel(t, value)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div className="mx-4 mt-3 flex min-h-8 shrink-0 items-center justify-between gap-3">
+          <TabsList className="h-8 w-fit rounded-md">
+            {payloadTabs.map((value) => (
+              <TabsTrigger key={value} value={value} className="h-7 text-xs">
+                {payloadTabLabel(t, value)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <div className="flex shrink-0 items-center gap-2">
+            <div
+              className="inline-flex h-8 items-center gap-0.5 rounded-md border border-border bg-muted/40 p-1"
+              role="group"
+              aria-label={t("JSON line wrapping")}
+            >
+              <button
+                type="button"
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-[5px] text-muted-foreground transition-colors",
+                  !wrapJson && "bg-background text-foreground shadow-sm",
+                )}
+                title={t("No wrap")}
+                aria-label={t("No wrap")}
+                aria-pressed={!wrapJson}
+                onClick={() => setWrapJson(false)}
+              >
+                <AlignLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-[5px] text-muted-foreground transition-colors",
+                  wrapJson && "bg-background text-foreground shadow-sm",
+                )}
+                title={t("Wrap")}
+                aria-label={t("Wrap")}
+                aria-pressed={wrapJson}
+                onClick={() => setWrapJson(true)}
+              >
+                <WrapText className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
         {payloadTabs.map((value) => (
           <TabsContent
             key={value}
             value={value}
             className="mt-0 min-h-0 overflow-hidden px-4 pb-4 pt-3"
           >
-            <PayloadViewer payload={payloadForTab(record, value)} />
+            <PayloadViewer
+              payload={payloadForTab(record, value)}
+              wrap={wrapJson}
+            />
           </TabsContent>
         ))}
       </Tabs>
@@ -387,8 +456,27 @@ function RecordDetails({ record }: { record: BridgeRecordEntry }) {
   );
 }
 
-function PayloadViewer({ payload }: { payload?: RecordedPayload }) {
+function PayloadViewer({
+  payload,
+  wrap,
+}: {
+  payload?: RecordedPayload;
+  wrap: boolean;
+}) {
   const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setCopied(false);
+    return () => {
+      if (copiedTimerRef.current) {
+        clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
+    };
+  }, [payload]);
+
   if (!payload) {
     return (
       <div className="flex h-full items-center justify-center rounded-md border border-border bg-muted/20 text-xs text-muted-foreground">
@@ -400,9 +488,45 @@ function PayloadViewer({ payload }: { payload?: RecordedPayload }) {
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-background">
       <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3 text-[11px] text-muted-foreground">
         <span>{formatBytes(payload.byteLength)}</span>
-        {payload.truncated && <span>{t("Truncated")}</span>}
+        <span className="flex items-center gap-1.5">
+          {payload.truncated && <span>{t("Truncated")}</span>}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className={cn(
+              "-mr-1 text-muted-foreground hover:text-foreground",
+              copied && "text-emerald-600 hover:text-emerald-600",
+            )}
+            title={copied ? t("Copied") : t("Copy")}
+            aria-label={copied ? t("Copied") : t("Copy")}
+            onClick={() => {
+              void copyPayloadToClipboard(payload, () => {
+                setCopied(true);
+                if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+                copiedTimerRef.current = setTimeout(() => {
+                  setCopied(false);
+                  copiedTimerRef.current = null;
+                }, 1400);
+              });
+            }}
+          >
+            {copied ? (
+              <Check className="h-3.5 w-3.5" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </span>
       </div>
-      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-5 text-foreground [font-variant-ligatures:none]">
+      <pre
+        className={cn(
+          "min-h-0 flex-1 overflow-auto p-3 font-mono text-[11px] leading-5 text-foreground [font-variant-ligatures:none]",
+          wrap
+            ? "whitespace-pre-wrap break-words"
+            : "whitespace-pre break-normal",
+        )}
+      >
         {payloadText(payload)}
       </pre>
     </div>
@@ -438,6 +562,65 @@ function payloadTabLabel(t: (value: string) => string, tab: PayloadTab) {
     case "bridgeResponse":
       return t("Bridge response");
   }
+}
+
+function MetaPill({
+  children,
+  mono = false,
+}: {
+  children: ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2 text-[11px] text-muted-foreground",
+        mono && "font-mono text-foreground/75",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function StatusPill({
+  status,
+  children,
+}: {
+  status: number;
+  children: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center gap-1.5 rounded-md border px-2 font-mono text-[11px]",
+        statusPillClass(status),
+      )}
+    >
+      <span className={cn("h-1.5 w-1.5 rounded-full", statusDotClass(status))} />
+      {children}
+    </span>
+  );
+}
+
+function statusPillClass(status: number) {
+  if (status >= 200 && status < 300) {
+    return "border-emerald-500/25 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400";
+  }
+  if (status >= 300 && status < 400) {
+    return "border-sky-500/25 bg-sky-500/5 text-sky-700 dark:text-sky-400";
+  }
+  if (status >= 400) {
+    return "border-destructive/30 bg-destructive/5 text-destructive";
+  }
+  return "border-border bg-muted/25 text-muted-foreground";
+}
+
+function statusDotClass(status: number) {
+  if (status >= 200 && status < 300) return "bg-emerald-500";
+  if (status >= 300 && status < 400) return "bg-sky-500";
+  if (status >= 400) return "bg-destructive";
+  return "bg-muted-foreground/60";
 }
 
 function mergeRecordEvent(records: BridgeRecordEntry[], event: BridgeRecordEvent) {
@@ -500,6 +683,19 @@ function payloadText(payload: RecordedPayload) {
     }
   }
   return payload.text;
+}
+
+async function copyPayloadToClipboard(
+  payload: RecordedPayload,
+  onCopied: () => void,
+) {
+  try {
+    if (!navigator.clipboard) return;
+    await navigator.clipboard.writeText(payloadText(payload));
+    onCopied();
+  } catch {
+    // Keep the recorder UI quiet if clipboard permission is unavailable.
+  }
 }
 
 function formatTime(timestampMs: number) {

@@ -1,6 +1,6 @@
 ---
 name: va-preview
-description: Start a live preview so the user can see your work in their browser or phone. Use after starting a dev server or creating HTML files. Only available when the VibeAround MCP server is connected.
+description: "Codex only: start a live preview from a Codex session so the user can see your work in their browser or phone. Use after starting a dev server or creating HTML files. Only available when the VibeAround MCP server is connected."
 ---
 
 # VibeAround Live Preview
@@ -31,7 +31,7 @@ Before calling preview, make sure:
 
 ### 2. Get your session ID
 
-Use the `/va-session` skill to resolve your current session ID.
+Use the `va-session` skill to resolve your current session ID.
 
 ### 3. Call preview
 

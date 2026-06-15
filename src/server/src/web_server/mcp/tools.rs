@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Context};
 use axum::Json;
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::web_server::AppState;
 
@@ -29,17 +30,77 @@ use super::sessions::find_latest_session;
 pub(super) async fn mcp_get_session_id(
     id: Option<serde_json::Value>,
     arguments: &serde_json::Value,
+    metadata: Option<&serde_json::Value>,
     state: &AppState,
 ) -> Json<serde_json::Value> {
-    let channel_kind = match arguments.get("channel_kind").and_then(|v| v.as_str()) {
-        Some(c) => c,
-        None => return jsonrpc_err(id, -32602, "Missing required argument: channel_kind"),
-    };
-    let chat_id = match arguments.get("chat_id").and_then(|v| v.as_str()) {
-        Some(c) => c,
-        None => return jsonrpc_err(id, -32602, "Missing required argument: chat_id"),
-    };
+    let agent_kind = argument_string(arguments, "agent_kind")
+        .or_else(|| argument_string(arguments, "agent_type"));
 
+    if let Some(session_id) = argument_string(arguments, "session_id") {
+        record_mcp_session_observation(arguments, agent_kind.as_deref(), &session_id, "argument");
+        return mcp_text(id, &session_id);
+    }
+
+    let channel_kind = argument_string(arguments, "channel_kind");
+    let chat_id = argument_string(arguments, "chat_id");
+    if let (Some(channel_kind), Some(chat_id)) = (channel_kind.as_deref(), chat_id.as_deref()) {
+        if let Some(session_id) = session_id_from_route(channel_kind, chat_id, state).await {
+            record_mcp_session_observation(arguments, agent_kind.as_deref(), &session_id, "route");
+            return mcp_text(id, &session_id);
+        }
+        return mcp_error_text(
+            id,
+            "No active session found for this route. The agent session may not have started yet.",
+        );
+    }
+
+    if agent_kind.as_deref() == Some("codex") {
+        if let Some(session_id) = codex_session_id_from_mcp_metadata(metadata) {
+            record_mcp_session_observation(
+                arguments,
+                agent_kind.as_deref(),
+                &session_id,
+                "codex-mcp-metadata",
+            );
+            return mcp_text(id, &session_id);
+        }
+        return mcp_error_text(
+            id,
+            "Codex did not provide a session ID in MCP metadata. Retry from Codex, or pass session_id explicitly.",
+        );
+    }
+
+    if let (Some(agent_kind), Some(cwd)) =
+        (agent_kind.as_deref(), argument_string(arguments, "cwd"))
+    {
+        let cwd = common::workspace::normalize_workspace_cwd(PathBuf::from(cwd));
+        if let Some(session) = find_latest_session(agent_kind, &cwd) {
+            record_mcp_session_observation(arguments, Some(agent_kind), &session, "auto-discovery");
+            return mcp_text(id, &session);
+        }
+    }
+
+    match agent_kind.as_deref() {
+        Some(other) => mcp_error_text(
+            id,
+            &format!(
+                "Could not resolve session ID for agent_kind '{}'. Pass session_id explicitly or provide channel_kind/chat_id for a VibeAround-managed session.",
+                other
+            ),
+        ),
+        None => jsonrpc_err(
+            id,
+            -32602,
+            "Missing required arguments: provide session_id, channel_kind/chat_id, or agent_kind",
+        ),
+    }
+}
+
+async fn session_id_from_route(
+    channel_kind: &str,
+    chat_id: &str,
+    state: &AppState,
+) -> Option<String> {
     let route = common::routing::RouteKey::new(channel_kind, chat_id);
     let state_opt = state
         .channel_hub
@@ -53,15 +114,87 @@ pub(super) async fn mcp_get_session_id(
         None => None,
     };
     match state_opt {
-        Some(snapshot) if snapshot.session_id.is_some() => {
-            let sid = snapshot.session_id.unwrap();
-            mcp_text(id, &sid)
-        }
-        _ => mcp_error_text(
-            id,
-            "No active session found for this route. The agent session may not have started yet.",
-        ),
+        Some(snapshot) => snapshot.session_id,
+        None => None,
     }
+}
+
+fn record_mcp_session_observation(
+    arguments: &Value,
+    agent_kind: Option<&str>,
+    session_id: &str,
+    source: &str,
+) {
+    let fallback_agent_kind = argument_string(arguments, "launch_target")
+        .or_else(|| argument_string(arguments, "launchTarget"));
+    let agent_kind = agent_kind
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or(fallback_agent_kind.as_deref());
+    let Some(agent_kind) = agent_kind else {
+        return;
+    };
+    let launch_id =
+        argument_string(arguments, "launch_id").or_else(|| argument_string(arguments, "launchId"));
+    if launch_id.is_none() {
+        return;
+    }
+    let profile_id = argument_string(arguments, "profile_id")
+        .or_else(|| argument_string(arguments, "profileId"));
+    let cwd = argument_string(arguments, "cwd")
+        .map(PathBuf::from)
+        .map(common::workspace::normalize_workspace_cwd);
+    if let Err(error) = common::launch_sessions::record_observed_launch_session(
+        launch_id.as_deref(),
+        agent_kind,
+        profile_id.as_deref(),
+        cwd.as_deref(),
+        session_id,
+        source,
+    ) {
+        tracing::warn!(
+            error = %error,
+            launch_id = ?launch_id,
+            agent_kind = %agent_kind,
+            "failed to record MCP-observed launch session"
+        );
+    }
+}
+
+fn codex_session_id_from_mcp_metadata(metadata: Option<&Value>) -> Option<String> {
+    let metadata = metadata?;
+    codex_turn_metadata_value(metadata)
+        .as_ref()
+        .and_then(|turn| string_field(turn, "thread_id"))
+        .or_else(|| string_field(metadata, "threadId"))
+        .or_else(|| string_field(metadata, "thread_id"))
+        .or_else(|| {
+            codex_turn_metadata_value(metadata)
+                .as_ref()
+                .and_then(|turn| string_field(turn, "session_id"))
+        })
+}
+
+fn codex_turn_metadata_value(metadata: &Value) -> Option<Value> {
+    let value = metadata.get("x-codex-turn-metadata")?;
+    if value.is_object() {
+        return Some(value.clone());
+    }
+    let text = value.as_str()?;
+    serde_json::from_str(text).ok()
+}
+
+fn string_field(value: &Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn argument_string(arguments: &Value, field: &str) -> Option<String> {
+    string_field(arguments, field)
 }
 
 // ---------------------------------------------------------------------------
@@ -1035,6 +1168,39 @@ fn build_preview_url(state: &AppState, route: &str, slug: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
+    use super::codex_session_id_from_mcp_metadata;
+
+    #[test]
+    fn codex_metadata_prefers_turn_thread_id() {
+        let metadata = json!({
+            "threadId": "top-level-thread",
+            "x-codex-turn-metadata": {
+                "session_id": "turn-session",
+                "thread_id": "turn-thread",
+                "turn_id": "turn"
+            }
+        });
+
+        assert_eq!(
+            codex_session_id_from_mcp_metadata(Some(&metadata)).as_deref(),
+            Some("turn-thread")
+        );
+    }
+
+    #[test]
+    fn codex_metadata_accepts_json_encoded_turn_metadata() {
+        let metadata = json!({
+            "x-codex-turn-metadata": "{\"thread_id\":\"encoded-thread\"}"
+        });
+
+        assert_eq!(
+            codex_session_id_from_mcp_metadata(Some(&metadata)).as_deref(),
+            Some("encoded-thread")
+        );
+    }
+
     #[test]
     fn handover_profile_id_defaults_external_sessions_to_direct() {
         assert_eq!(

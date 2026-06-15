@@ -31,7 +31,7 @@ Server: vibearound
 Arguments:
   session_id: "<session_id from step 1>"  (pass if available)
   cwd: "<current working directory>"
-  agent_kind: "<your agent type>"
+  agent_kind: "qwen-code"
   profile_id: "<VIBEAROUND_PROFILE_ID if present>"  (optional; omitted means direct)
 ```
 

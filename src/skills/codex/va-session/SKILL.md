@@ -1,36 +1,46 @@
 ---
 name: va-session
-description: Resolve your current session ID for use with other VibeAround tools. Called by other skills that need session context (e.g. va-preview, vibearound handover).
+description: "Codex only: resolve the current Codex session ID for VibeAround tools. Called by va-preview and vibearound handover when running in Codex."
 ---
 
 # VibeAround Session ID
 
-Resolve your current session ID. Other VibeAround skills reference this skill when they need session context for lifecycle management.
+Resolve the current Codex session ID. Other VibeAround Codex skills reference this skill when they need session context for lifecycle management.
 
 ## How to Resolve
 
-### Method 1: Via VibeAround env vars (preferred)
+Read these values if available:
 
-Check if the environment variables `VIBEAROUND_CHANNEL_KIND` and `VIBEAROUND_CHAT_ID` are set. If yes, call the `get_session_id` MCP tool:
+- Current working directory
+- `$VIBEAROUND_LAUNCH_ID`
+- `$VIBEAROUND_PROFILE_ID`
+- `$VIBEAROUND_CHANNEL_KIND`
+- `$VIBEAROUND_CHAT_ID`
+
+### Method 1: Via Codex MCP metadata (preferred)
+
+Call the `get_session_id` MCP tool with `agent_kind` set to `codex`. Include
+only optional arguments whose values are present:
+
+Do not inspect MCP resources or resource templates for this step. VibeAround
+exposes `get_session_id` as a tool; Codex's `/mcp` command can be used only for
+human diagnostics.
 
 ```
 Tool: get_session_id
 Server: vibearound
 Arguments:
-  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND>"
-  chat_id: "<value of $VIBEAROUND_CHAT_ID>"
+  agent_kind: "codex"
+  cwd: "<current working directory>"
+  launch_id: "<value of $VIBEAROUND_LAUNCH_ID if present>"
+  profile_id: "<value of $VIBEAROUND_PROFILE_ID if present>"
+  channel_kind: "<value of $VIBEAROUND_CHANNEL_KIND if present>"
+  chat_id: "<value of $VIBEAROUND_CHAT_ID if present>"
 ```
 
-The tool returns the exact session ID from VibeAround's internal state.
-
-### Method 2: Fallback — agent-specific session files
-
-If the env vars are not set (running outside VibeAround), resolve from your agent's local session metadata:
-
-- **Claude Code**: Read `~/.claude/history.jsonl`, find the last entry whose `project` matches cwd, extract `sessionId`.
-- **Codex**: Read `~/.codex/history.jsonl`, take last line, extract `session_id`.
-- **Gemini**: Check recent sessions with `/resume`.
-- **Other agents**: Omit — the server will attempt auto-discovery.
+VibeAround reads Codex's MCP call metadata and returns the current Codex
+thread/session ID and records it against the launch context when `launch_id`
+is available.
 
 ## Return Value
 

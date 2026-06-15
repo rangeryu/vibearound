@@ -1,6 +1,6 @@
 ---
 name: agent-collaboration
-description: Initialize and wait for VibeAround subagents in a multi-agent coding turn. Use when the user's message starts with "subagent=", especially "subagent=parallel".
+description: "Codex only: initialize and wait for VibeAround Codex subagents in a multi-agent coding turn. Use when the user's message starts with \"subagent=\", especially \"subagent=parallel\"."
 ---
 
 # VibeAround Agent Collaboration

@@ -116,6 +116,10 @@ pub struct AgentGlobalConfig {
     pub mcp_entry: serde_json::Value,
     #[serde(default)]
     pub skill_dir: Option<String>,
+    /// Optional project-scoped skill directory. Some agents keep global or
+    /// legacy skills in a different location than repo-shared skills.
+    #[serde(default)]
+    pub project_skill_dir: Option<String>,
     /// Skill filename (default: "SKILL.md"). Override for agents using different
     /// rule formats (e.g. "vibearound.mdc" for Cursor, "vibearound.md" for Kiro).
     #[serde(default)]

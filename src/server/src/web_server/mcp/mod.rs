@@ -2,6 +2,8 @@
 //!
 //! Implements a JSON-RPC 2.0 server for the Model Context Protocol.
 //! Methods: initialize, notifications/initialized, tools/list, tools/call.
+//! Optional resource/prompt list methods return empty lists so clients that
+//! probe the full MCP surface do not treat VibeAround as disconnected.
 //!
 //! Most MCP tools are stateless — they validate inputs and return text.
 //! Collaboration tools are the exception: `initialize_subagents` creates
@@ -43,6 +45,9 @@ pub async fn mcp_handler(
     match req.method.as_str() {
         "initialize" => mcp_initialize(req.id).into_response(),
         "tools/list" => mcp_tools_list(req.id).into_response(),
+        "resources/list" => mcp_resources_list(req.id).into_response(),
+        "resources/templates/list" => mcp_resource_templates_list(req.id).into_response(),
+        "prompts/list" => mcp_prompts_list(req.id).into_response(),
         "tools/call" => mcp_tools_call(req.id, req.params, &state)
             .await
             .into_response(),
@@ -66,6 +71,18 @@ fn mcp_tools_list(id: Option<serde_json::Value>) -> Json<serde_json::Value> {
     jsonrpc_ok(id, common::resources::mcp_tools_list_json())
 }
 
+fn mcp_resources_list(id: Option<serde_json::Value>) -> Json<serde_json::Value> {
+    jsonrpc_ok(id, serde_json::json!({ "resources": [] }))
+}
+
+fn mcp_resource_templates_list(id: Option<serde_json::Value>) -> Json<serde_json::Value> {
+    jsonrpc_ok(id, serde_json::json!({ "resourceTemplates": [] }))
+}
+
+fn mcp_prompts_list(id: Option<serde_json::Value>) -> Json<serde_json::Value> {
+    jsonrpc_ok(id, serde_json::json!({ "prompts": [] }))
+}
+
 async fn mcp_tools_call(
     id: Option<serde_json::Value>,
     params: Option<serde_json::Value>,
@@ -83,7 +100,9 @@ async fn mcp_tools_call(
     };
 
     match tool_name {
-        "get_session_id" => tools::mcp_get_session_id(id, arguments, state).await,
+        "get_session_id" => {
+            tools::mcp_get_session_id(id, arguments, params.get("_meta"), state).await
+        }
         "prepare_handover" => tools::mcp_prepare_handover(id, arguments).await,
         "register_workspace" => tools::mcp_register_workspace(id, arguments).await,
         "initialize_subagents" => tools::mcp_initialize_subagents(id, arguments, state).await,
@@ -91,5 +110,38 @@ async fn mcp_tools_call(
         "preview" => tools::mcp_preview_start(id, arguments, state).await,
         "md_preview" => tools::mcp_md_preview(id, arguments, state).await,
         _ => jsonrpc_err(id, -32602, &format!("Unknown tool: {}", tool_name)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn optional_mcp_lists_return_empty_successes() {
+        assert_eq!(
+            super::mcp_resources_list(Some(json!(1))).0,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": { "resources": [] }
+            })
+        );
+        assert_eq!(
+            super::mcp_resource_templates_list(Some(json!(2))).0,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": { "resourceTemplates": [] }
+            })
+        );
+        assert_eq!(
+            super::mcp_prompts_list(Some(json!(3))).0,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": { "prompts": [] }
+            })
+        );
     }
 }

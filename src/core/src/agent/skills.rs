@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 
 use crate::resources;
 
@@ -27,13 +27,13 @@ pub(super) fn install_skill(agent: &str) -> anyhow::Result<()> {
         Some(cfg) => cfg,
         None => return Ok(()),
     };
-    let skill_dir_rel = match &global_config.skill_dir {
+    let skill_dir_rel = match skill_dir_for_scope(global_config, false) {
         Some(dir) => dir,
         None => return Ok(()),
     };
 
     let home = home_dir()?;
-    install_skill_at_root(agent, global_config, &home, skill_dir_rel, false)
+    install_skill_at_root(agent, global_config, &home, skill_dir_rel)
 }
 
 /// Install all skill files for a given agent into a project/workspace.
@@ -46,12 +46,12 @@ pub(super) fn install_project_skill(agent: &str, workspace: &Path) -> anyhow::Re
         Some(cfg) => cfg,
         None => return Ok(()),
     };
-    let skill_dir_rel = match &global_config.skill_dir {
+    let skill_dir_rel = match skill_dir_for_scope(global_config, true) {
         Some(dir) => dir,
         None => return Ok(()),
     };
 
-    install_skill_at_root(agent, global_config, workspace, skill_dir_rel, true)
+    install_skill_at_root(agent, global_config, workspace, skill_dir_rel)
 }
 
 fn install_skill_at_root(
@@ -59,7 +59,6 @@ fn install_skill_at_root(
     global_config: &resources::AgentGlobalConfig,
     root: &Path,
     skill_dir_rel: &str,
-    project_scoped: bool,
 ) -> anyhow::Result<()> {
     let primary_skill_dir = root.join(skill_dir_rel);
 
@@ -87,32 +86,13 @@ fn install_skill_at_root(
                 .unwrap_or("md");
             let filename = format!("{}.{}", skill_name, ext);
             let target = skill_base.join(&filename);
-            std::fs::create_dir_all(&skill_base)
-                .with_context(|| format!("Create {:?}", skill_base))?;
-            std::fs::write(&target, content).with_context(|| format!("Write {:?}", target))?;
-            tracing::info!(
-                "[integrations] Installed {}/{} skill at {:?}",
-                agent,
-                skill_name,
-                target
-            );
+            write_managed_skill_file(agent, skill_name, &target, content)?;
         } else {
             // Dedicated directory per skill (e.g. .claude/skills/vibearound/)
             let skill_dir = skill_base.join(skill_name);
             let target = skill_dir.join("SKILL.md");
-            std::fs::create_dir_all(&skill_dir)
-                .with_context(|| format!("Create {:?}", skill_dir))?;
-            std::fs::write(&target, content).with_context(|| format!("Write {:?}", target))?;
-            tracing::info!(
-                "[integrations] Installed {}/{} skill at {:?}",
-                agent,
-                skill_name,
-                target
-            );
+            write_managed_skill_file(agent, skill_name, &target, content)?;
         }
-    }
-    if project_scoped && agent == "codex" {
-        sync_codex_project_skill_config(root, &skill_base, true)?;
     }
     Ok(())
 }
@@ -130,13 +110,13 @@ pub(super) fn uninstall_skill(agent: &str) -> anyhow::Result<()> {
         Some(cfg) => cfg,
         None => return Ok(()),
     };
-    let skill_dir_rel = match &global_config.skill_dir {
+    let skill_dir_rel = match skill_dir_for_scope(global_config, false) {
         Some(dir) => dir,
         None => return Ok(()),
     };
 
     let home = home_dir()?;
-    uninstall_skill_at_root(agent, global_config, &home, skill_dir_rel, false)
+    uninstall_skill_at_root(agent, global_config, &home, skill_dir_rel)
 }
 
 /// Remove all project/workspace skill files for a given agent.
@@ -149,12 +129,12 @@ pub(super) fn uninstall_project_skill(agent: &str, workspace: &Path) -> anyhow::
         Some(cfg) => cfg,
         None => return Ok(()),
     };
-    let skill_dir_rel = match &global_config.skill_dir {
+    let skill_dir_rel = match skill_dir_for_scope(global_config, true) {
         Some(dir) => dir,
         None => return Ok(()),
     };
 
-    uninstall_skill_at_root(agent, global_config, workspace, skill_dir_rel, true)
+    uninstall_skill_at_root(agent, global_config, workspace, skill_dir_rel)
 }
 
 fn uninstall_skill_at_root(
@@ -162,7 +142,6 @@ fn uninstall_skill_at_root(
     global_config: &resources::AgentGlobalConfig,
     root: &Path,
     skill_dir_rel: &str,
-    project_scoped: bool,
 ) -> anyhow::Result<()> {
     let primary_skill_dir = root.join(skill_dir_rel);
     let has_skill_filename = global_config.skill_filename.is_some();
@@ -208,9 +187,51 @@ fn uninstall_skill_at_root(
             }
         }
     }
-    if project_scoped && agent == "codex" {
-        sync_codex_project_skill_config(root, &skill_base, false)?;
+    Ok(())
+}
+
+fn skill_dir_for_scope(
+    global_config: &resources::AgentGlobalConfig,
+    project_scoped: bool,
+) -> Option<&str> {
+    if project_scoped {
+        global_config
+            .project_skill_dir
+            .as_deref()
+            .or(global_config.skill_dir.as_deref())
+    } else {
+        global_config.skill_dir.as_deref()
     }
+}
+
+fn write_managed_skill_file(
+    agent: &str,
+    skill_name: &str,
+    target: &Path,
+    content: &str,
+) -> anyhow::Result<()> {
+    if target.exists() {
+        if !target.is_file() || !is_managed_skill_file(target)? {
+            tracing::warn!(
+                "[integrations] Skipped {}/{} skill at {:?}: existing file is not VibeAround-managed",
+                agent,
+                skill_name,
+                target
+            );
+            return Ok(());
+        }
+    }
+
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("Create {:?}", parent))?;
+    }
+    std::fs::write(target, content).with_context(|| format!("Write {:?}", target))?;
+    tracing::info!(
+        "[integrations] Installed {}/{} skill at {:?}",
+        agent,
+        skill_name,
+        target
+    );
     Ok(())
 }
 
@@ -218,82 +239,14 @@ fn is_managed_skill_file(path: &Path) -> anyhow::Result<bool> {
     if !path.exists() {
         return Ok(false);
     }
+    if !path.is_file() {
+        return Ok(false);
+    }
     let content = std::fs::read_to_string(path).with_context(|| format!("Read {:?}", path))?;
     Ok(content.contains("VibeAround")
         || content.contains("vibearound")
         || content.contains("_vibearound:")
         || content.contains("metadata: vibearound"))
-}
-
-fn sync_codex_project_skill_config(
-    workspace: &Path,
-    skill_base: &Path,
-    install: bool,
-) -> anyhow::Result<()> {
-    use toml_edit::{value, ArrayOfTables, DocumentMut, Item, Table};
-
-    let config_path = workspace.join(".codex/config.toml");
-    if !config_path.exists() && !install {
-        return Ok(());
-    }
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("Create {:?}", parent))?;
-    }
-
-    let data = match std::fs::read_to_string(&config_path) {
-        Ok(data) => data,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error).with_context(|| format!("Read {:?}", config_path)),
-    };
-    let mut doc: DocumentMut = data
-        .parse::<DocumentMut>()
-        .with_context(|| format!("Parse TOML {:?}", config_path))?;
-
-    if !doc.contains_key("skills") {
-        doc["skills"] = Item::Table(Table::new());
-    }
-    let skills = doc["skills"]
-        .as_table_mut()
-        .ok_or_else(|| anyhow!("skills is not a table in {:?}", config_path))?;
-    if !skills.contains_key("config") {
-        skills["config"] = Item::ArrayOfTables(ArrayOfTables::new());
-    }
-    let config_item = skills
-        .get_mut("config")
-        .ok_or_else(|| anyhow!("skills.config missing in {:?}", config_path))?;
-    let config = config_item.as_array_of_tables_mut().ok_or_else(|| {
-        anyhow!(
-            "skills.config is not an array of tables in {:?}",
-            config_path
-        )
-    })?;
-
-    let expected_paths: Vec<String> = agent_skills("codex")
-        .into_iter()
-        .map(|(skill_name, _)| skill_base.join(skill_name).to_string_lossy().to_string())
-        .collect();
-
-    let mut next = ArrayOfTables::new();
-    for table in config.iter() {
-        let path = table.get("path").and_then(|item| item.as_str());
-        if path.map(|path| expected_paths.iter().any(|p| p == path)) != Some(true) {
-            next.push(table.clone());
-        }
-    }
-
-    if install {
-        for path in expected_paths {
-            let mut table = Table::new();
-            table["path"] = value(path);
-            table["enabled"] = value(true);
-            next.push(table);
-        }
-    }
-
-    *config_item = Item::ArrayOfTables(next);
-    std::fs::write(&config_path, doc.to_string())
-        .with_context(|| format!("Write {:?}", config_path))?;
-    Ok(())
 }
 
 /// All skills to deploy, per agent. Returns (skill_name, content) pairs.
@@ -387,6 +340,40 @@ mod tests {
         ))
     }
 
+    fn frontmatter_field<'a>(content: &'a str, field: &str) -> Option<&'a str> {
+        let mut lines = content.lines();
+        if lines.next()? != "---" {
+            return None;
+        }
+        let prefix = format!("{field}:");
+        for line in lines {
+            if line == "---" {
+                return None;
+            }
+            if let Some(value) = line.strip_prefix(&prefix) {
+                return Some(value.trim());
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn skill_frontmatter_descriptions_quote_mapping_colons() {
+        for agent in ["claude", "codex", "gemini", "qwen-code", "cursor", "kiro"] {
+            for (skill_name, content) in agent_skills(agent) {
+                let Some(description) = frontmatter_field(content, "description") else {
+                    continue;
+                };
+                if description.contains(": ") {
+                    assert!(
+                        description.starts_with('"') || description.starts_with('\''),
+                        "{agent}/{skill_name} description contains an unquoted YAML mapping colon"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn shared_rule_uninstall_leaves_non_vibearound_file() {
         let dir = unique_test_dir("shared-foreign");
@@ -413,6 +400,51 @@ mod tests {
         uninstall_project_skill("cursor", &dir).unwrap();
         assert!(!dir.join(".cursor/rules/vibearound.mdc").exists());
         assert!(!dir.join(".cursor/rules/va-preview.mdc").exists());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn project_skill_install_uses_agent_specific_locations() {
+        let dir = unique_test_dir("matrix");
+        fs::create_dir_all(&dir).unwrap();
+
+        for (agent, expected) in [
+            ("claude", ".claude/skills/va-session/SKILL.md"),
+            ("codex", ".agents/skills/va-session/SKILL.md"),
+            ("gemini", ".gemini/skills/va-session/SKILL.md"),
+            ("qwen-code", ".qwen/skills/va-session/SKILL.md"),
+            ("cursor", ".cursor/rules/va-session.mdc"),
+            ("kiro", ".kiro/steering/va-session.md"),
+        ] {
+            install_project_skill(agent, &dir).unwrap();
+            assert!(
+                dir.join(expected).exists(),
+                "{agent} should install {expected}"
+            );
+        }
+        assert!(!dir.join(".codex/skills/va-session/SKILL.md").exists());
+        assert!(!dir.join(".codex/config.toml").exists());
+        let codex_session_skill =
+            fs::read_to_string(dir.join(".agents/skills/va-session/SKILL.md")).unwrap();
+        assert!(codex_session_skill.contains("Codex only"));
+        assert!(codex_session_skill.contains("agent_kind: \"codex\""));
+        assert!(codex_session_skill.contains("Do not inspect MCP resources"));
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn project_skill_install_does_not_overwrite_unmanaged_skill() {
+        let dir = unique_test_dir("no-overwrite");
+        let target = dir.join(".agents/skills/va-session/SKILL.md");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, "user-owned skill").unwrap();
+
+        install_project_skill("codex", &dir).unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "user-owned skill");
+        assert!(dir.join(".agents/skills/vibearound/SKILL.md").exists());
 
         fs::remove_dir_all(&dir).unwrap();
     }

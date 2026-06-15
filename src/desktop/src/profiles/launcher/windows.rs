@@ -587,16 +587,17 @@ mod tests {
     }
 
     #[test]
-    fn powershell_script_keeps_codex_hook_config_as_one_argument() {
-        let hook_config = r#"hooks.SessionStart=[{ matcher = 'startup|resume|clear', hooks = [{ type = 'command', command = '"C:\Program Files\VibeAround\vibearound-hook.exe" --agent codex --event SessionStart', timeout = 5 }] }]"#;
-        let plan = plan("codex", vec!["-c".to_string(), hook_config.to_string()]);
+    fn powershell_script_keeps_codex_config_with_spaces_as_one_argument() {
+        let config_arg =
+            r#"model_catalog_json="C:\Program Files\VibeAround\codex-model-catalog.json""#;
+        let plan = plan("codex", vec!["-c".to_string(), config_arg.to_string()]);
         let script = build_powershell_script(&plan, &plan.command, &plan.args);
 
         assert!(script.contains("$vaArgs = @(\n"));
         assert!(script.contains("  '-c'\n"));
-        assert!(script.contains("C:\\Program Files\\VibeAround\\vibearound-hook.exe"));
+        assert!(script.contains("C:\\Program Files\\VibeAround\\codex-model-catalog.json"));
         assert!(script.contains("& $vaCommand @vaArgs"));
-        assert!(!script.contains("Files\\VibeAround\\vibearound-hook.exe'\n"));
+        assert!(!script.contains("Files\\VibeAround\\codex-model-catalog.json'\n"));
     }
 
     #[test]
@@ -637,16 +638,13 @@ node "%~dp0\node_modules\@openai\codex\bin\codex.js" %*
         let command = format!("\"{}\"", shim.to_string_lossy());
         let (program, args) = normalize_windows_launch_command(
             &command,
-            &["-c".to_string(), "features.hooks=true".to_string()],
+            &["-c".to_string(), "model='gpt-5'".to_string()],
             None,
         );
 
         assert_eq!(program, "node");
         assert_eq!(PathBuf::from(&args[0]), codex_js);
-        assert_eq!(
-            &args[1..],
-            ["-c".to_string(), "features.hooks=true".to_string()]
-        );
+        assert_eq!(&args[1..], ["-c".to_string(), "model='gpt-5'".to_string()]);
 
         std::fs::remove_dir_all(root).ok();
     }

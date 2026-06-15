@@ -1,6 +1,6 @@
 ---
 name: va-md-preview
-description: Preview a markdown file with beautiful GitHub-style rendering. Use after creating or updating markdown documents like README, docs, or reports. Only available when the VibeAround MCP server is connected.
+description: "Codex only: preview a markdown file from a Codex session with beautiful GitHub-style rendering. Use after creating or updating markdown documents like README, docs, or reports. Only available when the VibeAround MCP server is connected."
 ---
 
 # VibeAround Markdown Preview
