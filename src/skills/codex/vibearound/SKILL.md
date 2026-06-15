@@ -1,6 +1,6 @@
 ---
 name: vibearound
-description: Codex only: hand over the current Codex coding session so the user can continue via any IM channel connected to VibeAround. Use when the user says "/vibearound handover", "hand over this session", "continue on my phone", or similar session transfer requests.
+description: "Codex only: hand over the current Codex coding session so the user can continue via any IM channel connected to VibeAround. Use when the user says \"/vibearound handover\", \"hand over this session\", \"continue on my phone\", or similar session transfer requests."
 ---
 
 # VibeAround Session Handover

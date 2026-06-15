@@ -1,6 +1,6 @@
 ---
 name: va-session
-description: Codex only: resolve the current Codex session ID for VibeAround tools. Called by va-preview and vibearound handover when running in Codex.
+description: "Codex only: resolve the current Codex session ID for VibeAround tools. Called by va-preview and vibearound handover when running in Codex."
 ---
 
 # VibeAround Session ID

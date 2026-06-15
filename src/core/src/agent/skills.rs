@@ -340,6 +340,40 @@ mod tests {
         ))
     }
 
+    fn frontmatter_field<'a>(content: &'a str, field: &str) -> Option<&'a str> {
+        let mut lines = content.lines();
+        if lines.next()? != "---" {
+            return None;
+        }
+        let prefix = format!("{field}:");
+        for line in lines {
+            if line == "---" {
+                return None;
+            }
+            if let Some(value) = line.strip_prefix(&prefix) {
+                return Some(value.trim());
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn skill_frontmatter_descriptions_quote_mapping_colons() {
+        for agent in ["claude", "codex", "gemini", "qwen-code", "cursor", "kiro"] {
+            for (skill_name, content) in agent_skills(agent) {
+                let Some(description) = frontmatter_field(content, "description") else {
+                    continue;
+                };
+                if description.contains(": ") {
+                    assert!(
+                        description.starts_with('"') || description.starts_with('\''),
+                        "{agent}/{skill_name} description contains an unquoted YAML mapping colon"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn shared_rule_uninstall_leaves_non_vibearound_file() {
         let dir = unique_test_dir("shared-foreign");
