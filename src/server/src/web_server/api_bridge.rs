@@ -286,15 +286,16 @@ pub(super) async fn bridge_handler(
     );
     let request_needs_web_search =
         server_tools::request_needs_web_search_fallback(&universal_request);
+    let can_use_native_web_search = target_model_capabilities.web_search
+        && protocol_encodes_native_web_search(upstream.protocol);
     let should_use_host_web_search = request_needs_web_search
         && state.host_search_available
-        && (state.replace_provider_web_search
-            || !target_model_capabilities.web_search
-            || client_protocol != upstream.protocol);
+        && (state.replace_provider_web_search || !can_use_native_web_search);
     let web_search_fallback = if should_use_host_web_search {
         server_tools::prepare_web_search_fallback(&mut universal_request)
     } else {
         if request_needs_web_search
+            && !can_use_native_web_search
             && server_tools::discard_web_search_server_tools(&mut universal_request)
         {
             tracing::info!(
@@ -305,6 +306,16 @@ pub(super) async fn bridge_handler(
                 host_search_available = state.host_search_available,
                 native_web_search = target_model_capabilities.web_search,
                 "API bridge discarded provider web search server tool"
+            );
+        }
+        if request_needs_web_search && can_use_native_web_search {
+            tracing::info!(
+                target: "server::web_server::api_bridge",
+                request_id = %request_id,
+                profile_id = %profile_id,
+                target_api_type = %target_api_type,
+                upstream_protocol = ?upstream.protocol,
+                "API bridge preserved native provider web search server tool"
             );
         }
         None
@@ -815,6 +826,10 @@ fn bridge_record_metadata(
         model: route.and_then(|route| route.model.clone()),
         passthrough,
     }
+}
+
+fn protocol_encodes_native_web_search(protocol: BridgeProtocol) -> bool {
+    matches!(protocol, BridgeProtocol::AnthropicMessages)
 }
 
 fn upstream_http_client(state: &AppState, profile: &ProfileDef) -> Result<reqwest::Client, String> {
