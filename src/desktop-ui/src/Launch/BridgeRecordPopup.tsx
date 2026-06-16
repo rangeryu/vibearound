@@ -471,20 +471,13 @@ function PayloadViewer({
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-background">
       <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3 text-[11px] text-muted-foreground">
         <span>{formatBytes(payload.byteLength)}</span>
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-2">
           {payload.truncated && <span>{t("Truncated")}</span>}
-          <WrapToggle wrap={wrap} onWrapChange={onWrapChange} />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className={cn(
-              "-mr-1 text-muted-foreground hover:text-foreground",
-              copied && "text-emerald-600 hover:text-emerald-600",
-            )}
-            title={copied ? t("Copied") : t("Copy")}
-            aria-label={copied ? t("Copied") : t("Copy")}
-            onClick={() => {
+          <PayloadActions
+            wrap={wrap}
+            copied={copied}
+            onWrapChange={onWrapChange}
+            onCopy={() => {
               void copyPayloadToClipboard(payload, () => {
                 setCopied(true);
                 if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
@@ -494,13 +487,7 @@ function PayloadViewer({
                 }, 1400);
               });
             }}
-          >
-            {copied ? (
-              <Check className="h-3.5 w-3.5" />
-            ) : (
-              <Copy className="h-3.5 w-3.5" />
-            )}
-          </Button>
+          />
         </span>
       </div>
       <pre
@@ -517,24 +504,30 @@ function PayloadViewer({
   );
 }
 
-function WrapToggle({
+function PayloadActions({
   wrap,
+  copied,
   onWrapChange,
+  onCopy,
 }: {
   wrap: boolean;
+  copied: boolean;
   onWrapChange: (value: boolean) => void;
+  onCopy: () => void;
 }) {
   const { t } = useI18n();
+  const actionClass =
+    "flex size-6 items-center justify-center rounded-[5px] text-muted-foreground transition-colors hover:bg-background hover:text-foreground";
   return (
     <span
-      className="inline-flex h-7 items-center gap-0.5 rounded-md border border-border bg-muted/40 p-0.5"
+      className="inline-flex h-8 items-center gap-0.5 rounded-md border border-border bg-muted/40 p-1"
       role="group"
-      aria-label={t("JSON line wrapping")}
+      aria-label={t("Payload actions")}
     >
       <button
         type="button"
         className={cn(
-          "flex size-5 items-center justify-center rounded-[4px] text-muted-foreground transition-colors",
+          actionClass,
           !wrap && "bg-background text-foreground shadow-sm",
         )}
         title={t("No wrap")}
@@ -542,12 +535,12 @@ function WrapToggle({
         aria-pressed={!wrap}
         onClick={() => onWrapChange(false)}
       >
-        <AlignLeft className="h-3 w-3" />
+        <AlignLeft className="h-3.5 w-3.5" />
       </button>
       <button
         type="button"
         className={cn(
-          "flex size-5 items-center justify-center rounded-[4px] text-muted-foreground transition-colors",
+          actionClass,
           wrap && "bg-background text-foreground shadow-sm",
         )}
         title={t("Wrap")}
@@ -555,7 +548,24 @@ function WrapToggle({
         aria-pressed={wrap}
         onClick={() => onWrapChange(true)}
       >
-        <WrapText className="h-3 w-3" />
+        <WrapText className="h-3.5 w-3.5" />
+      </button>
+      <span className="mx-0.5 h-4 w-px bg-border" aria-hidden="true" />
+      <button
+        type="button"
+        className={cn(
+          actionClass,
+          copied && "bg-background text-emerald-600 shadow-sm hover:text-emerald-600",
+        )}
+        title={copied ? t("Copied") : t("Copy")}
+        aria-label={copied ? t("Copied") : t("Copy")}
+        onClick={onCopy}
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
       </button>
     </span>
   );
