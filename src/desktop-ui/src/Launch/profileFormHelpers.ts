@@ -298,11 +298,12 @@ export function pruneOverrides(
     }
     if (
       canOverrideInputSupport(provider, ep) &&
-      (ov.capabilities?.image_input || ov.capabilities?.file_input)
+      (ov.capabilities?.image_input || ov.capabilities?.file_input || ov.capabilities?.web_search)
     ) {
       trimmed.capabilities = {
         ...(ov.capabilities?.image_input ? { image_input: true } : {}),
         ...(ov.capabilities?.file_input ? { file_input: true } : {}),
+        ...(ov.capabilities?.web_search ? { web_search: true } : {}),
       };
     }
     if (ov.base_url && ov.base_url.length > 0 && ov.base_url !== defaultBaseUrl) {

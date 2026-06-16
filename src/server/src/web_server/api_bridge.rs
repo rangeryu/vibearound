@@ -705,6 +705,7 @@ pub(super) async fn models_handler(
                 "capabilities": {
                     "image_input": metadata.image_input,
                     "file_input": metadata.file_input,
+                    "web_search": metadata.web_search,
                 }
             })
         })
@@ -902,6 +903,7 @@ struct BridgeModelMetadata {
     context_window: Option<u64>,
     image_input: bool,
     file_input: bool,
+    web_search: bool,
 }
 
 fn bridge_model_metadata(
@@ -921,6 +923,7 @@ fn bridge_model_metadata(
             context_window: None,
             image_input: false,
             file_input: false,
+            web_search: false,
         };
     };
     let model_def = catalog::find_model(endpoint, &model.upstream_model);
@@ -932,6 +935,7 @@ fn bridge_model_metadata(
         context_window: model_def.and_then(|model_def| model_def.context_window),
         image_input: capabilities.image_input,
         file_input: capabilities.file_input,
+        web_search: capabilities.web_search,
     }
 }
 

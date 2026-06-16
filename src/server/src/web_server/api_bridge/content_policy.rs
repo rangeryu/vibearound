@@ -459,6 +459,7 @@ mod tests {
         overrides.capabilities = Some(ContentCapabilities {
             image_input: true,
             file_input: false,
+            web_search: false,
         });
 
         validate_request_content(&profile, "openai-chat", &image_request("my-vision-model"))
@@ -475,6 +476,7 @@ mod tests {
             Some(&ContentCapabilities {
                 image_input: true,
                 file_input: false,
+                web_search: false,
             }),
         );
 
