@@ -66,9 +66,8 @@ pub(crate) struct AppState {
     port: u16,
     /// Shared HTTP client for preview proxy and API bridge forwarding.
     preview_client: reqwest::Client,
-    /// Supervised host-side search provider runtime. Missing means the
-    /// API bridge should use its built-in mock provider when search fallback
-    /// is enabled.
+    /// Supervised host-side search provider runtime. Missing means host web
+    /// search requests fail when search fallback is enabled.
     search_tool_enabled: bool,
     search_runtime: Option<Arc<SearchToolRuntime>>,
     /// Live, non-persistent bridge body recorder for the launch popup.

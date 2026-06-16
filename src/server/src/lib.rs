@@ -270,8 +270,8 @@ impl ServerDaemon {
         }
 
         // 4. Search provider runtime — supervised like ACP providers. When
-        //    enabled but unavailable, API bridge falls back to its built-in
-        //    mock provider so the host-side loop remains testable.
+        //    enabled but unavailable, host web search requests report a
+        //    provider error instead of returning synthetic results.
         let search_tool_enabled = cfg.search_tool.enabled;
         let search_runtime = SearchToolRuntime::spawn_if_enabled(&cfg.search_tool).await?;
 

@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common::search::{
-    MockSearchProvider, SearchError, SearchToolRuntime, WebSearchRequest, WebSearchResponse,
-};
+use common::search::{SearchError, SearchToolRuntime, WebSearchRequest, WebSearchResponse};
 use serde_json::{json, Value};
 use va_ai_api_bridge::{
     ContentBlock, ServerToolDeclaration, ServerToolKind, ToolChoice, UniversalItem,
@@ -27,41 +25,29 @@ pub(super) trait WebSearchProvider {
 #[derive(Clone, Default)]
 pub(super) struct HostWebSearchProvider {
     runtime: Option<Arc<SearchToolRuntime>>,
-    fallback: MockSearchProvider,
 }
 
 impl HostWebSearchProvider {
     pub(super) fn new(runtime: Option<Arc<SearchToolRuntime>>) -> Self {
-        Self {
-            runtime,
-            fallback: MockSearchProvider,
-        }
+        Self { runtime }
     }
 }
 
 #[async_trait]
 impl WebSearchProvider for HostWebSearchProvider {
     async fn search(&self, request: WebSearchRequest) -> Result<WebSearchResponse, SearchError> {
-        if let Some(runtime) = &self.runtime {
-            match runtime.search(request.clone()).await {
-                Ok(response) => return Ok(response),
-                Err(error) => {
-                    tracing::warn!(
-                        target: "server::web_server::api_bridge",
-                        error = %error,
-                        "supervised va-search-tool failed; falling back to built-in mock search"
-                    );
-                }
-            }
-        }
-        self.fallback.search(request).await
-    }
-}
-
-#[async_trait]
-impl WebSearchProvider for MockSearchProvider {
-    async fn search(&self, request: WebSearchRequest) -> Result<WebSearchResponse, SearchError> {
-        MockSearchProvider::search(self, request).await
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| SearchError::new("search provider runtime is not running"))?;
+        runtime.search(request).await.map_err(|error| {
+            tracing::warn!(
+                target: "server::web_server::api_bridge",
+                error = %error,
+                "supervised va-search-tool failed"
+            );
+            error
+        })
     }
 }
 
@@ -143,7 +129,7 @@ pub(super) async fn append_web_search_results(
             ),
             Err(error) => (
                 json!({
-                    "provider": "mock",
+                    "provider": "vibearound",
                     "error": error.to_string()
                 })
                 .to_string(),
@@ -391,24 +377,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_provider_returns_normalized_results() {
-        let provider = MockSearchProvider;
-        let response = provider
-            .search(WebSearchRequest {
-                query: "server web search".to_string(),
-                max_results: Some(2),
-                ..WebSearchRequest::default()
-            })
-            .await
-            .expect("mock search");
-
-        assert_eq!(response.provider, "mock");
-        assert_eq!(response.results.len(), 2);
-        assert!(response.results[0].url.contains("server-web-search"));
-        assert_eq!(response.citations.len(), 2);
-    }
-
-    #[tokio::test]
     async fn appends_tool_results_for_host_search_calls() {
         let fallback = WebSearchFallback {
             original_stream: false,
@@ -425,10 +393,9 @@ mod tests {
             ..UniversalResponse::default()
         };
 
-        let appended =
-            append_web_search_results(&mut request, response, &fallback, &MockSearchProvider)
-                .await
-                .expect("append results");
+        let appended = append_web_search_results(&mut request, response, &fallback, &TestProvider)
+            .await
+            .expect("append results");
 
         assert!(appended);
         assert_eq!(request.input.len(), 2);
@@ -439,5 +406,22 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    struct TestProvider;
+
+    #[async_trait]
+    impl WebSearchProvider for TestProvider {
+        async fn search(
+            &self,
+            request: WebSearchRequest,
+        ) -> Result<WebSearchResponse, SearchError> {
+            Ok(WebSearchResponse {
+                provider: "test".to_string(),
+                query: request.query,
+                results: Vec::new(),
+                citations: Vec::new(),
+            })
+        }
     }
 }

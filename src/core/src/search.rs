@@ -5,19 +5,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
+use crate::config::SearchToolConfig;
 use crate::process::bridge::{
     BridgeExit, BridgeFactory, BridgeFuture, CancelSignal, ProcessBridge,
 };
 use crate::process::registry::ProcessKind;
 use crate::process::supervisor::{ProcessId, RestartPolicy, SpawnSpec, Supervisor};
 use crate::process::StdioPipes;
-use crate::config::SearchToolConfig;
 
 const SEARCH_TOOL_ENV: &str = "VA_SEARCH_TOOL_STDIO";
 const SEARCH_TOOL_LABEL: &str = "va-search-tool";
@@ -84,79 +83,6 @@ impl std::fmt::Display for SearchError {
 
 impl std::error::Error for SearchError {}
 
-#[derive(Debug, Clone, Default)]
-pub struct MockSearchProvider;
-
-impl MockSearchProvider {
-    pub async fn search(
-        &self,
-        request: WebSearchRequest,
-    ) -> Result<WebSearchResponse, SearchError> {
-        let query = request.query.trim();
-        if query.is_empty() {
-            return Err(SearchError::new("web search query must not be empty"));
-        }
-
-        let max_results = request.max_results.unwrap_or(3).clamp(1, 10);
-        let provider = request
-            .providers
-            .iter()
-            .map(|provider| provider.trim())
-            .find(|provider| !provider.is_empty())
-            .unwrap_or("mock")
-            .to_string();
-        let today = Utc::now().date_naive().to_string();
-        let mut domains = if request.include_domains.is_empty() {
-            vec!["example.com".to_string(), "docs.example.com".to_string()]
-        } else {
-            request.include_domains.clone()
-        };
-        if !request.exclude_domains.is_empty() {
-            domains.retain(|domain| {
-                !request
-                    .exclude_domains
-                    .iter()
-                    .any(|exclude| exclude == domain)
-            });
-        }
-        if domains.is_empty() {
-            domains.push("example.com".to_string());
-        }
-
-        let slug = slugify(query);
-        let results = (0..max_results)
-            .map(|index| {
-                let domain = domains
-                    .get(index % domains.len())
-                    .map(String::as_str)
-                    .unwrap_or("example.com");
-                let url = format!("https://{domain}/mock-search/{slug}-{index}");
-                WebSearchResult {
-                    title: format!("Mock search result {} for {query}", index + 1),
-                    url: url.clone(),
-                    snippet: format!(
-                        "Mock web search snippet for '{query}'. Replace the mock provider with Exa, Tavily, Brave, or Grok to fetch live results."
-                    ),
-                    content: format!(
-                        "This deterministic mock result stands in for a live web result about '{query}'. It carries the normalized fields real providers expose: title, url, snippet/content, score, published_date, and source."
-                    ),
-                    score: 1.0 - (index as f64 * 0.08),
-                    published_date: Some(today.clone()),
-                    source: provider.clone(),
-                }
-            })
-            .collect::<Vec<_>>();
-        let citations = results.iter().map(|result| result.url.clone()).collect();
-
-        Ok(WebSearchResponse {
-            provider,
-            query: query.to_string(),
-            results,
-            citations,
-        })
-    }
-}
-
 #[derive(Clone)]
 pub struct SearchToolRuntime {
     process_id: ProcessId,
@@ -171,7 +97,9 @@ impl SearchToolRuntime {
         }
 
         let Some(executable) = search_tool_executable(config) else {
-            tracing::info!("va-search-tool executable not found; using built-in mock search");
+            tracing::warn!(
+                "va-search-tool executable not found; host web search requests will fail"
+            );
             return Ok(None);
         };
 
@@ -209,7 +137,9 @@ impl SearchToolRuntime {
             }
             Ok(Err(_)) | Err(_) => {
                 let _ = supervisor.force_stop(process_id).await;
-                tracing::warn!("va-search-tool did not become ready; using built-in mock search");
+                tracing::warn!(
+                    "va-search-tool did not become ready; host web search requests will fail"
+                );
                 return Ok(None);
             }
         }
@@ -423,11 +353,12 @@ fn search_tool_env(config: &SearchToolConfig) -> Vec<(String, String)> {
         if !source.enabled {
             continue;
         }
-        if let Some(key) = source
-            .api_key
-            .clone()
-            .or_else(|| source.api_key_env.as_deref().and_then(|name| env::var(name).ok()))
-        {
+        if let Some(key) = source.api_key.clone().or_else(|| {
+            source
+                .api_key_env
+                .as_deref()
+                .and_then(|name| env::var(name).ok())
+        }) {
             vars.push((format!("VA_SEARCH_{env_prefix}_API_KEY"), key.clone()));
             if let Some(alias) = well_known_api_key_env(name) {
                 vars.push((alias.to_string(), key));
@@ -471,28 +402,6 @@ fn dev_search_tool_executable() -> Option<PathBuf> {
     .find(|path| path.exists())
 }
 
-fn slugify(value: &str) -> String {
-    let slug = value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("-");
-    if slug.is_empty() {
-        "query".to_string()
-    } else {
-        slug
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, HashMap};
@@ -500,24 +409,6 @@ mod tests {
     use crate::config::{SearchSourceConfig, SearchToolConfig};
 
     use super::*;
-
-    #[tokio::test]
-    async fn mock_search_returns_normalized_results() {
-        let response = MockSearchProvider
-            .search(WebSearchRequest {
-                query: "server web search".to_string(),
-                max_results: Some(2),
-                providers: vec!["mock".to_string()],
-                ..WebSearchRequest::default()
-            })
-            .await
-            .expect("mock search");
-
-        assert_eq!(response.provider, "mock");
-        assert_eq!(response.results.len(), 2);
-        assert!(response.results[0].url.contains("server-web-search"));
-        assert_eq!(response.citations.len(), 2);
-    }
 
     #[test]
     fn search_tool_env_only_exports_keys_for_enabled_sources() {
@@ -550,7 +441,10 @@ mod tests {
             .into_iter()
             .collect::<HashMap<_, _>>();
 
-        assert_eq!(env.get("VA_SEARCH_SOURCES").map(String::as_str), Some("exa"));
+        assert_eq!(
+            env.get("VA_SEARCH_SOURCES").map(String::as_str),
+            Some("exa")
+        );
         assert_eq!(
             env.get("VA_SEARCH_EXA_API_KEY").map(String::as_str),
             Some("exa-key")
