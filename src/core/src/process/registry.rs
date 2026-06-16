@@ -48,6 +48,8 @@ pub enum ProcessKind {
     Pty,
     /// Tunnel provider subprocess (cloudflared, lt, …). Not ngrok (SDK).
     Tunnel,
+    /// Host-side search provider subprocess (va-search-tool stdio).
+    SearchProvider,
 }
 
 impl ProcessKind {
@@ -58,6 +60,7 @@ impl ProcessKind {
             ProcessKind::AcpAgent => "acp_agent",
             ProcessKind::Pty => "pty",
             ProcessKind::Tunnel => "tunnel",
+            ProcessKind::SearchProvider => "search_provider",
         }
     }
 }

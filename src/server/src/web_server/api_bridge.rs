@@ -462,7 +462,7 @@ async fn translated_web_search_fallback_response(
     agent_model: Option<String>,
     original_agent_request: &Value,
 ) -> Response {
-    let provider = server_tools::MockWebSearchProvider;
+    let provider = server_tools::HostWebSearchProvider::new(state.search_runtime.clone());
     let mut response = first_response;
 
     for round in 0..server_tools::MAX_WEB_SEARCH_FALLBACK_ROUNDS {

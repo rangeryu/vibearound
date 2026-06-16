@@ -27,6 +27,7 @@ use tower_http::services::ServeDir;
 use common::auth::AuthToken;
 use common::channels::{ChannelManager, WebChannelManager};
 use common::pty::{PtySessionManager, Registry};
+use common::search::SearchToolRuntime;
 use common::tunnels::TunnelManager;
 
 use self::auth::{require_auth, require_local_bridge, AuthState};
@@ -65,6 +66,9 @@ pub(crate) struct AppState {
     port: u16,
     /// Shared HTTP client for preview proxy and API bridge forwarding.
     preview_client: reqwest::Client,
+    /// Supervised host-side search provider runtime. Missing means the
+    /// API bridge should use its built-in mock provider.
+    search_runtime: Option<Arc<SearchToolRuntime>>,
     /// Live, non-persistent bridge body recorder for the launch popup.
     bridge_recorder: bridge_recording::BridgeRecorder,
 }
@@ -145,6 +149,7 @@ pub async fn run_web_server(
     channel_hub: Arc<ChannelManager>,
     web_channel: Arc<WebChannelManager>,
     auth_token: Arc<AuthToken>,
+    search_runtime: Option<Arc<SearchToolRuntime>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     verify_web_dist(&dist_path)?;
     let web_dist = dist_path
@@ -170,6 +175,7 @@ pub async fn run_web_server(
         web_channel,
         port,
         preview_client,
+        search_runtime,
         bridge_recorder: bridge_recording::BridgeRecorder::default(),
     };
 

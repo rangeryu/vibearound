@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
+use common::search::{
+    MockSearchProvider, SearchError, SearchToolRuntime, WebSearchRequest, WebSearchResponse,
+};
 use serde_json::{json, Value};
 use va_ai_api_bridge::{
     ContentBlock, ServerToolDeclaration, ServerToolKind, ToolChoice, UniversalItem,
@@ -16,123 +19,49 @@ pub(super) struct WebSearchFallback {
     default_request: WebSearchRequest,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub(super) struct WebSearchRequest {
-    pub query: String,
-    #[serde(default)]
-    pub max_results: Option<usize>,
-    #[serde(default)]
-    pub include_domains: Vec<String>,
-    #[serde(default)]
-    pub exclude_domains: Vec<String>,
-    #[serde(default)]
-    pub search_context_size: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct WebSearchResponse {
-    pub provider: String,
-    pub query: String,
-    pub results: Vec<WebSearchResult>,
-    pub citations: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct WebSearchResult {
-    pub title: String,
-    pub url: String,
-    pub snippet: String,
-    pub content: String,
-    pub score: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub published_date: Option<String>,
-    pub source: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct WebSearchError {
-    message: String,
-}
-
-impl WebSearchError {
-    fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-}
-
-impl std::fmt::Display for WebSearchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
 #[async_trait]
 pub(super) trait WebSearchProvider {
-    async fn search(&self, request: WebSearchRequest) -> Result<WebSearchResponse, WebSearchError>;
+    async fn search(&self, request: WebSearchRequest) -> Result<WebSearchResponse, SearchError>;
 }
 
-#[derive(Debug, Clone, Default)]
-pub(super) struct MockWebSearchProvider;
+#[derive(Clone, Default)]
+pub(super) struct HostWebSearchProvider {
+    runtime: Option<Arc<SearchToolRuntime>>,
+    fallback: MockSearchProvider,
+}
+
+impl HostWebSearchProvider {
+    pub(super) fn new(runtime: Option<Arc<SearchToolRuntime>>) -> Self {
+        Self {
+            runtime,
+            fallback: MockSearchProvider,
+        }
+    }
+}
 
 #[async_trait]
-impl WebSearchProvider for MockWebSearchProvider {
-    async fn search(&self, request: WebSearchRequest) -> Result<WebSearchResponse, WebSearchError> {
-        let query = request.query.trim();
-        if query.is_empty() {
-            return Err(WebSearchError::new("web search query must not be empty"));
-        }
-
-        let max_results = request.max_results.unwrap_or(3).clamp(1, 5);
-        let today = Utc::now().date_naive().to_string();
-        let mut domains = if request.include_domains.is_empty() {
-            vec!["example.com".to_string(), "docs.example.com".to_string()]
-        } else {
-            request.include_domains.clone()
-        };
-        if !request.exclude_domains.is_empty() {
-            domains.retain(|domain| {
-                !request
-                    .exclude_domains
-                    .iter()
-                    .any(|exclude| exclude == domain)
-            });
-        }
-        if domains.is_empty() {
-            domains.push("example.com".to_string());
-        }
-        let slug = slugify(query);
-        let results = (0..max_results)
-            .map(|index| {
-                let domain = domains
-                    .get(index % domains.len())
-                    .map(String::as_str)
-                    .unwrap_or("example.com");
-                let url = format!("https://{domain}/mock-search/{slug}-{index}");
-                WebSearchResult {
-                    title: format!("Mock search result {} for {query}", index + 1),
-                    url: url.clone(),
-                    snippet: format!(
-                        "Mock web search snippet for '{query}'. Replace MockWebSearchProvider with Exa, Tavily, Brave, or Grok to fetch live results."
-                    ),
-                    content: format!(
-                        "This deterministic mock result stands in for a live web result about '{query}'. It carries the same normalized fields real providers expose: title, url, snippet/content, score, published_date, and source."
-                    ),
-                    score: 1.0 - (index as f64 * 0.08),
-                    published_date: Some(today.clone()),
-                    source: "mock".to_string(),
+impl WebSearchProvider for HostWebSearchProvider {
+    async fn search(&self, request: WebSearchRequest) -> Result<WebSearchResponse, SearchError> {
+        if let Some(runtime) = &self.runtime {
+            match runtime.search(request.clone()).await {
+                Ok(response) => return Ok(response),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "server::web_server::api_bridge",
+                        error = %error,
+                        "supervised va-search-tool failed; falling back to built-in mock search"
+                    );
                 }
-            })
-            .collect::<Vec<_>>();
-        let citations = results.iter().map(|result| result.url.clone()).collect();
+            }
+        }
+        self.fallback.search(request).await
+    }
+}
 
-        Ok(WebSearchResponse {
-            provider: "mock".to_string(),
-            query: query.to_string(),
-            results,
-            citations,
-        })
+#[async_trait]
+impl WebSearchProvider for MockSearchProvider {
+    async fn search(&self, request: WebSearchRequest) -> Result<WebSearchResponse, SearchError> {
+        MockSearchProvider::search(self, request).await
     }
 }
 
@@ -301,6 +230,7 @@ fn request_defaults_from_declaration(declaration: &ServerToolDeclaration) -> Web
         include_domains,
         exclude_domains,
         search_context_size,
+        providers: Vec::new(),
     }
 }
 
@@ -411,28 +341,6 @@ fn is_web_search_kind(kind: ServerToolKind) -> bool {
     matches!(kind, ServerToolKind::WebSearch | ServerToolKind::XSearch)
 }
 
-fn slugify(value: &str) -> String {
-    let slug = value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("-");
-    if slug.is_empty() {
-        "query".to_string()
-    } else {
-        slug
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -484,7 +392,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_provider_returns_normalized_results() {
-        let provider = MockWebSearchProvider;
+        let provider = MockSearchProvider;
         let response = provider
             .search(WebSearchRequest {
                 query: "server web search".to_string(),
@@ -518,7 +426,7 @@ mod tests {
         };
 
         let appended =
-            append_web_search_results(&mut request, response, &fallback, &MockWebSearchProvider)
+            append_web_search_results(&mut request, response, &fallback, &MockSearchProvider)
                 .await
                 .expect("append results");
 

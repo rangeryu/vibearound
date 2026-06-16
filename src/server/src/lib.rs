@@ -21,6 +21,7 @@ use common::config;
 use common::plugins;
 use common::process::registry::{self as child_registry, ChildRegistry};
 use common::pty::{PtySessionManager, Registry, SessionId};
+use common::search::SearchToolRuntime;
 use common::tunnels::{self, TunnelManager};
 use common::workspace::WorkspaceThreadManager;
 
@@ -44,6 +45,7 @@ pub struct RunningDaemon {
     pub web_handle: JoinHandle<Result<(), String>>,
     pub tunnel_handle: JoinHandle<()>,
     pub web_dispatch_handle: JoinHandle<()>,
+    pub search_runtime: Option<Arc<SearchToolRuntime>>,
     pub tunnels: Arc<TunnelManager>,
     pub pty: Registry,
     /// Signal to the channel-input task that it should unwind.
@@ -62,6 +64,7 @@ impl RunningDaemon {
             web_handle,
             tunnel_handle,
             web_dispatch_handle,
+            search_runtime,
             tunnels,
             pty,
             channel_input_shutdown,
@@ -71,6 +74,9 @@ impl RunningDaemon {
 
         workspace_thread_manager.shutdown_all().await;
         channel_hub.shutdown_all().await;
+        if let Some(search_runtime) = search_runtime {
+            search_runtime.shutdown().await;
+        }
 
         // Safety net: synchronously kill any child process still registered
         // after the graceful shutdown paths ran. Covers cases where the
@@ -263,12 +269,17 @@ impl ServerDaemon {
             channel_hub.register_plugin(&name, plugin);
         }
 
-        // 4. Web server (Axum)
+        // 4. Search provider runtime — supervised like ACP providers. If
+        //    unavailable, API bridge falls back to its built-in mock provider.
+        let search_runtime = SearchToolRuntime::spawn_if_available().await?;
+
+        // 5. Web server (Axum)
         let web_tunnels = Arc::clone(&tunnels);
         let web_pty = Arc::clone(&pty);
         let web_channel_hub = Arc::clone(&channel_hub);
         let web_channel_manager = Arc::clone(&web_channel);
         let web_auth_token = Arc::clone(&self.auth_token);
+        let web_search_runtime = search_runtime.clone();
         let daemon_port = self.port;
         let web_handle = tokio::spawn(async move {
             run_web_server(
@@ -279,12 +290,13 @@ impl ServerDaemon {
                 web_channel_hub,
                 web_channel_manager,
                 web_auth_token,
+                web_search_runtime,
             )
             .await
             .map_err(|e| e.to_string())
         });
 
-        // 5. Tunnel (skip when provider is "none")
+        // 6. Tunnel (skip when provider is "none")
         let tunnel_provider = cfg.tunnel_provider;
         tracing::info!(provider = %tunnel_provider.as_str(), "tunnel configured");
         let tunnel_handle = if tunnel_provider.is_enabled() {
@@ -318,6 +330,7 @@ impl ServerDaemon {
             web_handle,
             tunnel_handle,
             web_dispatch_handle,
+            search_runtime,
             tunnels,
             pty,
             channel_input_shutdown,
