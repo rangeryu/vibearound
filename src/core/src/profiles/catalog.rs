@@ -573,6 +573,17 @@ mod tests {
     }
 
     #[test]
+    fn deepseek_anthropic_supports_web_search() {
+        let provider = get("deepseek").expect("deepseek must exist");
+        let anthropic = find_endpoint(provider, "anthropic", None)
+            .expect("deepseek anthropic endpoint must exist");
+        assert!(anthropic.capabilities.content.web_search);
+        let chat = find_endpoint(provider, "openai-chat", None)
+            .expect("deepseek chat endpoint must exist");
+        assert!(!chat.capabilities.content.web_search);
+    }
+
+    #[test]
     fn dashscope_exposes_protocol_specific_plan_endpoints() {
         let provider = get("dashscope").expect("dashscope must exist");
         let endpoints: Vec<_> = provider

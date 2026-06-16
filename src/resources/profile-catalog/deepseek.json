@@ -7,6 +7,11 @@
     {
       "api_type": "anthropic",
       "default_base_url": "https://api.deepseek.com/anthropic",
+      "capabilities": {
+        "content": {
+          "web_search": true
+        }
+      },
       "models": [
         {
           "id": "deepseek-v4-pro",
