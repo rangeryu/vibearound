@@ -184,7 +184,10 @@ pub(super) async fn bridge_handler(
                 &mut agent_request,
             );
         } else if upstream.protocol == BridgeProtocol::AnthropicMessages {
-            provider_adapter.prepare_anthropic_request(&mut agent_request);
+            provider_adapter.prepare_anthropic_request(
+                client_protocol.provider_request_source(),
+                &mut agent_request,
+            );
         }
         let route = match gemini_route {
             Some(route) => route,
@@ -367,7 +370,10 @@ pub(super) async fn bridge_handler(
             &mut upstream_request,
         );
     } else if upstream.protocol == BridgeProtocol::AnthropicMessages {
-        provider_adapter.prepare_anthropic_request(&mut upstream_request);
+        provider_adapter.prepare_anthropic_request(
+            client_protocol.provider_request_source(),
+            &mut upstream_request,
+        );
     }
     let route = match gemini_route {
         Some(route) => route,
@@ -693,7 +699,10 @@ fn encode_fallback_upstream_request(
             &mut upstream_request,
         );
     } else if upstream.protocol == BridgeProtocol::AnthropicMessages {
-        provider_adapter.prepare_anthropic_request(&mut upstream_request);
+        provider_adapter.prepare_anthropic_request(
+            client_protocol.provider_request_source(),
+            &mut upstream_request,
+        );
     }
     let route = match gemini_route {
         Some(route) => route,
