@@ -37,6 +37,13 @@ import { apiFetch } from "../lib/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { BrandIcon } from "@/components/brand-icon";
 import {
@@ -87,6 +94,13 @@ type SearchSourceForm = {
   apiKey: string;
 };
 
+type SearchContextSize = "low" | "medium" | "high";
+
+const DEFAULT_SEARCH_MAX_RESULTS = "5";
+const DEFAULT_SEARCH_CONTEXT_SIZE: SearchContextSize = "medium";
+const SEARCH_MAX_RESULTS_MIN = 1;
+const SEARCH_MAX_RESULTS_MAX = 20;
+
 const AGENT_DISPLAY_ORDER = [
   "claude",
   "codex",
@@ -102,6 +116,15 @@ const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string }> = [
   { id: "exa", label: "Exa" },
   { id: "tavily", label: "Tavily" },
   { id: "grok", label: "Grok" },
+];
+
+const SEARCH_CONTEXT_SIZE_OPTIONS: Array<{
+  value: SearchContextSize;
+  label: string;
+}> = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
 ];
 
 export function SettingsDialog({
@@ -143,6 +166,11 @@ export function SettingsDialog({
   const [retry429Unlimited, setRetry429Unlimited] = useState(false);
   const [retry429DelaySeconds, setRetry429DelaySeconds] = useState("10");
   const [searchToolEnabled, setSearchToolEnabled] = useState(false);
+  const [searchMaxResults, setSearchMaxResults] = useState(
+    DEFAULT_SEARCH_MAX_RESULTS,
+  );
+  const [searchContextSize, setSearchContextSize] =
+    useState<SearchContextSize>(DEFAULT_SEARCH_CONTEXT_SIZE);
   const [searchSources, setSearchSources] = useState<
     Record<SearchSourceId, SearchSourceForm>
   >(() => defaultSearchSourceForms());
@@ -283,6 +311,14 @@ export function SettingsDialog({
     const sources = isRecord(searchTool.sources) ? searchTool.sources : {};
     setSearchToolEnabled(
       typeof searchTool.enabled === "boolean" ? searchTool.enabled : false,
+    );
+    setSearchMaxResults(
+      searchMaxResultsInput(searchTool.max_results ?? searchTool.maxResults),
+    );
+    setSearchContextSize(
+      searchContextSizeValue(
+        searchTool.search_context_size ?? searchTool.searchContextSize,
+      ),
     );
     setSearchSources(() => {
       const next = defaultSearchSourceForms();
@@ -589,6 +625,8 @@ export function SettingsDialog({
       const nextSettings = buildSearchToolSettings({
         settings,
         enabled: searchToolEnabled,
+        maxResults: searchMaxResults,
+        searchContextSize,
         sources: searchSources,
       });
       await invoke("save_settings", { settings: nextSettings });
@@ -606,6 +644,8 @@ export function SettingsDialog({
     }
   }, [
     onServicesRestarted,
+    searchContextSize,
+    searchMaxResults,
     searchSources,
     searchToolEnabled,
     settings,
@@ -1086,8 +1126,12 @@ export function SettingsDialog({
                   <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
                     <SearchToolSettingsPanel
                       enabled={searchToolEnabled}
+                      maxResults={searchMaxResults}
+                      searchContextSize={searchContextSize}
                       sources={searchSources}
                       onEnabledChange={setSearchToolEnabled}
+                      onMaxResultsChange={setSearchMaxResults}
+                      onSearchContextSizeChange={setSearchContextSize}
                       onSourceChange={updateSearchSource}
                       notice={<SettingsNotice notice={notice} />}
                     />
@@ -1401,14 +1445,22 @@ function ProxySettingsPanel({
 
 function SearchToolSettingsPanel({
   enabled,
+  maxResults,
+  searchContextSize,
   sources,
   onEnabledChange,
+  onMaxResultsChange,
+  onSearchContextSizeChange,
   onSourceChange,
   notice,
 }: {
   enabled: boolean;
+  maxResults: string;
+  searchContextSize: SearchContextSize;
   sources: Record<SearchSourceId, SearchSourceForm>;
   onEnabledChange: (value: boolean) => void;
+  onMaxResultsChange: (value: string) => void;
+  onSearchContextSizeChange: (value: SearchContextSize) => void;
   onSourceChange: (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => void;
   notice?: ReactNode;
 }) {
@@ -1438,6 +1490,48 @@ function SearchToolSettingsPanel({
             />
           }
         />
+      </div>
+      <div className="rounded-md border border-border px-4 py-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-xs text-muted-foreground">
+              {t("Max results per source")}
+            </span>
+            <Input
+              type="number"
+              min={SEARCH_MAX_RESULTS_MIN}
+              max={SEARCH_MAX_RESULTS_MAX}
+              step={1}
+              value={maxResults}
+              onChange={(event) =>
+                onMaxResultsChange(event.currentTarget.value)
+              }
+              className="mt-1"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">
+              {t("Search context size")}
+            </span>
+            <Select
+              value={searchContextSize}
+              onValueChange={(value) =>
+                onSearchContextSizeChange(value as SearchContextSize)
+              }
+            >
+              <SelectTrigger className="mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SEARCH_CONTEXT_SIZE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {t(option.label)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
       </div>
       <div className="rounded-md border border-border">
         {SEARCH_SOURCE_DEFS.map((source) => {
@@ -1762,10 +1856,14 @@ function buildApiBridgeSettings({
 function buildSearchToolSettings({
   settings,
   enabled,
+  maxResults,
+  searchContextSize,
   sources,
 }: {
   settings: AppSettings;
   enabled: boolean;
+  maxResults: string;
+  searchContextSize: SearchContextSize;
   sources: Record<SearchSourceId, SearchSourceForm>;
 }): AppSettings {
   const result: AppSettings = { ...settings };
@@ -1778,6 +1876,8 @@ function buildSearchToolSettings({
   const nextSearchTool: Record<string, unknown> = {
     ...existingSearchTool,
     enabled,
+    max_results: normalizedSearchMaxResults(maxResults),
+    search_context_size: searchContextSize,
   };
   const nextSources: Record<string, unknown> = {};
 
@@ -1962,6 +2062,34 @@ function defaultSearchSourceForm(): SearchSourceForm {
     enabled: false,
     apiKey: "",
   };
+}
+
+function searchMaxResultsInput(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(clampSearchMaxResults(value));
+  }
+  return DEFAULT_SEARCH_MAX_RESULTS;
+}
+
+function normalizedSearchMaxResults(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return Number(DEFAULT_SEARCH_MAX_RESULTS);
+  }
+  return clampSearchMaxResults(parsed);
+}
+
+function clampSearchMaxResults(value: number): number {
+  return Math.min(
+    SEARCH_MAX_RESULTS_MAX,
+    Math.max(SEARCH_MAX_RESULTS_MIN, Math.floor(value)),
+  );
+}
+
+function searchContextSizeValue(value: unknown): SearchContextSize {
+  return value === "low" || value === "medium" || value === "high"
+    ? value
+    : DEFAULT_SEARCH_CONTEXT_SIZE;
 }
 
 function parseChannelVerbose(value: unknown): ChannelVerboseConfig {

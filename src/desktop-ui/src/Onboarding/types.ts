@@ -52,6 +52,10 @@ export interface Settings {
   search_tool?: {
     enabled?: boolean;
     stdio_path?: string;
+    max_results?: number;
+    maxResults?: number;
+    search_context_size?: string;
+    searchContextSize?: string;
     sources?: Record<
       string,
       {

@@ -219,6 +219,8 @@ pub struct ApiBridgeConfig {
 pub struct SearchToolConfig {
     pub enabled: bool,
     pub stdio_path: Option<PathBuf>,
+    pub max_results: Option<usize>,
+    pub search_context_size: Option<String>,
     pub sources: BTreeMap<String, SearchSourceConfig>,
 }
 
@@ -267,6 +269,8 @@ impl Default for SearchToolConfig {
         Self {
             enabled: false,
             stdio_path: None,
+            max_results: None,
+            search_context_size: None,
             sources: BTreeMap::new(),
         }
     }
@@ -651,6 +655,9 @@ fn load_search_tool_config(root: &serde_json::Value) -> SearchToolConfig {
 
     let stdio_path = string_setting(settings, &["stdio_path", "stdioPath", "command"])
         .map(|value| expand_home(&value));
+    let max_results = usize_setting(settings, &["max_results", "maxResults", "num_results"]);
+    let search_context_size =
+        search_context_size_setting(settings, &["search_context_size", "searchContextSize"]);
     let sources = settings
         .get("sources")
         .and_then(|value| value.as_object())
@@ -672,6 +679,8 @@ fn load_search_tool_config(root: &serde_json::Value) -> SearchToolConfig {
             .and_then(|value| value.as_bool())
             .unwrap_or(false),
         stdio_path,
+        max_results,
+        search_context_size,
         sources,
     }
 }
@@ -703,6 +712,25 @@ fn string_setting(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
+}
+
+fn usize_setting(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    keys: &[&str],
+) -> Option<usize> {
+    keys.iter()
+        .find_map(|key| settings.get(*key))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as usize)
+}
+
+fn search_context_size_setting(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    keys: &[&str],
+) -> Option<String> {
+    string_setting(settings, keys)
+        .map(|value| value.to_ascii_lowercase())
+        .filter(|value| matches!(value.as_str(), "low" | "medium" | "high"))
 }
 
 fn normalize_search_source_name(name: &str) -> Option<String> {
@@ -1118,6 +1146,8 @@ mod tests {
 
         assert!(!config.search_tool.enabled);
         assert!(config.search_tool.stdio_path.is_none());
+        assert_eq!(config.search_tool.max_results, None);
+        assert_eq!(config.search_tool.search_context_size, None);
         assert!(config.search_tool.sources.is_empty());
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -1127,6 +1157,8 @@ mod tests {
         let config = SearchToolConfig {
             enabled: true,
             stdio_path: None,
+            max_results: None,
+            search_context_size: None,
             sources: BTreeMap::from([
                 (
                     "grok".to_string(),
@@ -1182,6 +1214,8 @@ mod tests {
               "searchTool": {
                 "enabled": true,
                 "stdioPath": "~/bin/va-search-tool",
+                "maxResults": 8,
+                "searchContextSize": " high ",
                 "sources": {
                   " Exa ": {
                     "apiKey": " exa-key ",
@@ -1207,6 +1241,11 @@ mod tests {
         assert_eq!(
             config.search_tool.stdio_path.as_deref(),
             Some(home_dir().join("bin/va-search-tool").as_path())
+        );
+        assert_eq!(config.search_tool.max_results, Some(8));
+        assert_eq!(
+            config.search_tool.search_context_size.as_deref(),
+            Some("high")
         );
         let exa = config.search_tool.sources.get("exa").expect("exa source");
         assert!(exa.enabled);

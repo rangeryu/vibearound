@@ -296,8 +296,8 @@ fn web_search_fallback_tool() -> UniversalTool {
                 "max_results": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 10,
-                    "description": "Maximum number of normalized search results to return."
+                    "maximum": 20,
+                    "description": "Maximum number of normalized search results to return per enabled source."
                 },
                 "include_domains": {
                     "type": "array",

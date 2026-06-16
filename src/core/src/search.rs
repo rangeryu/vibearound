@@ -55,7 +55,8 @@ pub struct WebSearchResult {
     pub url: String,
     pub snippet: String,
     pub content: String,
-    pub score: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub published_date: Option<String>,
     pub source: String,
@@ -341,6 +342,15 @@ fn configured_search_tool_executable(config: &SearchToolConfig) -> Option<PathBu
 fn search_tool_env(config: &SearchToolConfig) -> Vec<(String, String)> {
     let enabled_sources = config.enabled_source_names();
     let mut vars = Vec::new();
+    if let Some(max_results) = config.max_results {
+        vars.push(("VA_SEARCH_MAX_RESULTS".to_string(), max_results.to_string()));
+    }
+    if let Some(search_context_size) = &config.search_context_size {
+        vars.push((
+            "VA_SEARCH_CONTEXT_SIZE".to_string(),
+            search_context_size.clone(),
+        ));
+    }
     if !enabled_sources.is_empty() {
         vars.push(("VA_SEARCH_SOURCES".to_string(), enabled_sources.join(",")));
     }
@@ -415,6 +425,8 @@ mod tests {
         let config = SearchToolConfig {
             enabled: true,
             stdio_path: None,
+            max_results: Some(7),
+            search_context_size: Some("high".to_string()),
             sources: BTreeMap::from([
                 (
                     "exa".to_string(),
@@ -444,6 +456,14 @@ mod tests {
         assert_eq!(
             env.get("VA_SEARCH_SOURCES").map(String::as_str),
             Some("exa")
+        );
+        assert_eq!(
+            env.get("VA_SEARCH_MAX_RESULTS").map(String::as_str),
+            Some("7")
+        );
+        assert_eq!(
+            env.get("VA_SEARCH_CONTEXT_SIZE").map(String::as_str),
+            Some("high")
         );
         assert_eq!(
             env.get("VA_SEARCH_EXA_API_KEY").map(String::as_str),
