@@ -67,7 +67,9 @@ pub(crate) struct AppState {
     /// Shared HTTP client for preview proxy and API bridge forwarding.
     preview_client: reqwest::Client,
     /// Supervised host-side search provider runtime. Missing means the
-    /// API bridge should use its built-in mock provider.
+    /// API bridge should use its built-in mock provider when search fallback
+    /// is enabled.
+    search_tool_enabled: bool,
     search_runtime: Option<Arc<SearchToolRuntime>>,
     /// Live, non-persistent bridge body recorder for the launch popup.
     bridge_recorder: bridge_recording::BridgeRecorder,
@@ -149,6 +151,7 @@ pub async fn run_web_server(
     channel_hub: Arc<ChannelManager>,
     web_channel: Arc<WebChannelManager>,
     auth_token: Arc<AuthToken>,
+    search_tool_enabled: bool,
     search_runtime: Option<Arc<SearchToolRuntime>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     verify_web_dist(&dist_path)?;
@@ -175,6 +178,7 @@ pub async fn run_web_server(
         web_channel,
         port,
         preview_client,
+        search_tool_enabled,
         search_runtime,
         bridge_recorder: bridge_recording::BridgeRecorder::default(),
     };

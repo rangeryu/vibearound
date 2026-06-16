@@ -283,6 +283,16 @@ impl Default for SearchSourceConfig {
     }
 }
 
+impl SearchToolConfig {
+    pub fn enabled_source_names(&self) -> Vec<String> {
+        self.sources
+            .iter()
+            .filter(|(_, source)| source.enabled)
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+}
+
 impl Default for Retry429Config {
     fn default() -> Self {
         Self {

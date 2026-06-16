@@ -269,9 +269,11 @@ impl ServerDaemon {
             channel_hub.register_plugin(&name, plugin);
         }
 
-        // 4. Search provider runtime — supervised like ACP providers. If
-        //    unavailable, API bridge falls back to its built-in mock provider.
-        let search_runtime = SearchToolRuntime::spawn_if_available().await?;
+        // 4. Search provider runtime — supervised like ACP providers. When
+        //    enabled but unavailable, API bridge falls back to its built-in
+        //    mock provider so the host-side loop remains testable.
+        let search_tool_enabled = cfg.search_tool.enabled;
+        let search_runtime = SearchToolRuntime::spawn_if_enabled(&cfg.search_tool).await?;
 
         // 5. Web server (Axum)
         let web_tunnels = Arc::clone(&tunnels);
@@ -280,6 +282,7 @@ impl ServerDaemon {
         let web_channel_manager = Arc::clone(&web_channel);
         let web_auth_token = Arc::clone(&self.auth_token);
         let web_search_runtime = search_runtime.clone();
+        let web_search_enabled = search_tool_enabled;
         let daemon_port = self.port;
         let web_handle = tokio::spawn(async move {
             run_web_server(
@@ -290,6 +293,7 @@ impl ServerDaemon {
                 web_channel_hub,
                 web_channel_manager,
                 web_auth_token,
+                web_search_enabled,
                 web_search_runtime,
             )
             .await

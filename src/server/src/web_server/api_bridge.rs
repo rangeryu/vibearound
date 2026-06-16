@@ -82,7 +82,8 @@ pub(super) async fn bridge_handler(
 
     let mut agent_request = original_request;
 
-    let same_protocol_needs_web_search_fallback = client_protocol == upstream.protocol
+    let same_protocol_needs_web_search_fallback = state.search_tool_enabled
+        && client_protocol == upstream.protocol
         && !upstream.is_google_code_assist()
         && client_protocol
             .decode_agent_request(agent_request.clone())
@@ -262,7 +263,11 @@ pub(super) async fn bridge_handler(
         upstream.protocol,
         sanitization,
     );
-    let web_search_fallback = server_tools::prepare_web_search_fallback(&mut universal_request);
+    let web_search_fallback = if state.search_tool_enabled {
+        server_tools::prepare_web_search_fallback(&mut universal_request)
+    } else {
+        None
+    };
     if let Some(fallback) = &web_search_fallback {
         tracing::info!(
             target: "server::web_server::api_bridge",

@@ -17,6 +17,7 @@ use crate::process::bridge::{
 use crate::process::registry::ProcessKind;
 use crate::process::supervisor::{ProcessId, RestartPolicy, SpawnSpec, Supervisor};
 use crate::process::StdioPipes;
+use crate::config::SearchToolConfig;
 
 const SEARCH_TOOL_ENV: &str = "VA_SEARCH_TOOL_STDIO";
 const SEARCH_TOOL_LABEL: &str = "va-search-tool";
@@ -163,8 +164,13 @@ pub struct SearchToolRuntime {
 }
 
 impl SearchToolRuntime {
-    pub async fn spawn_if_available() -> anyhow::Result<Option<Arc<Self>>> {
-        let Some(executable) = search_tool_executable() else {
+    pub async fn spawn_if_enabled(config: &SearchToolConfig) -> anyhow::Result<Option<Arc<Self>>> {
+        if !config.enabled {
+            tracing::info!("host web search fallback disabled");
+            return Ok(None);
+        }
+
+        let Some(executable) = search_tool_executable(config) else {
             tracing::info!("va-search-tool executable not found; using built-in mock search");
             return Ok(None);
         };
@@ -184,7 +190,10 @@ impl SearchToolRuntime {
             Box::new(bridge) as Box<dyn ProcessBridge>
         });
 
-        let spec = SpawnSpec::new(executable.to_string_lossy().to_string()).arg("stdio");
+        let mut spec = SpawnSpec::new(executable.to_string_lossy().to_string()).arg("stdio");
+        for (key, value) in search_tool_env(config) {
+            spec = spec.env(key, value);
+        }
         let supervisor = Supervisor::global();
         let process_id = supervisor.register(
             ProcessKind::SearchProvider,
@@ -376,11 +385,80 @@ fn fail_pending(
     }
 }
 
-fn search_tool_executable() -> Option<PathBuf> {
-    env::var_os(SEARCH_TOOL_ENV)
-        .map(PathBuf::from)
-        .filter(|path| path.exists())
+fn search_tool_executable(config: &SearchToolConfig) -> Option<PathBuf> {
+    configured_search_tool_executable(config)
+        .or_else(|| {
+            env::var_os(SEARCH_TOOL_ENV)
+                .map(PathBuf::from)
+                .filter(|path| path.exists())
+        })
         .or_else(dev_search_tool_executable)
+}
+
+fn configured_search_tool_executable(config: &SearchToolConfig) -> Option<PathBuf> {
+    let path = config.stdio_path.as_ref()?;
+    if path.exists() {
+        Some(path.clone())
+    } else {
+        tracing::warn!(
+            path = ?path,
+            "configured va-search-tool executable does not exist; falling back to discovery"
+        );
+        None
+    }
+}
+
+fn search_tool_env(config: &SearchToolConfig) -> Vec<(String, String)> {
+    let enabled_sources = config.enabled_source_names();
+    let mut vars = Vec::new();
+    if !enabled_sources.is_empty() {
+        vars.push(("VA_SEARCH_SOURCES".to_string(), enabled_sources.join(",")));
+    }
+    for (name, source) in &config.sources {
+        let env_prefix = search_source_env_prefix(name);
+        vars.push((
+            format!("VA_SEARCH_{env_prefix}_ENABLED"),
+            source.enabled.to_string(),
+        ));
+        if !source.enabled {
+            continue;
+        }
+        if let Some(key) = source
+            .api_key
+            .clone()
+            .or_else(|| source.api_key_env.as_deref().and_then(|name| env::var(name).ok()))
+        {
+            vars.push((format!("VA_SEARCH_{env_prefix}_API_KEY"), key.clone()));
+            if let Some(alias) = well_known_api_key_env(name) {
+                vars.push((alias.to_string(), key));
+            }
+        }
+        if let Some(base_url) = &source.base_url {
+            vars.push((format!("VA_SEARCH_{env_prefix}_BASE_URL"), base_url.clone()));
+        }
+    }
+    vars
+}
+
+fn search_source_env_prefix(name: &str) -> String {
+    name.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+}
+
+fn well_known_api_key_env(source: &str) -> Option<&'static str> {
+    match source {
+        "exa" => Some("EXA_API_KEY"),
+        "tavily" => Some("TAVILY_API_KEY"),
+        "grok" | "xai" => Some("XAI_API_KEY"),
+        _ => None,
+    }
 }
 
 fn dev_search_tool_executable() -> Option<PathBuf> {
@@ -417,6 +495,10 @@ fn slugify(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, HashMap};
+
+    use crate::config::{SearchSourceConfig, SearchToolConfig};
+
     use super::*;
 
     #[tokio::test]
@@ -435,5 +517,54 @@ mod tests {
         assert_eq!(response.results.len(), 2);
         assert!(response.results[0].url.contains("server-web-search"));
         assert_eq!(response.citations.len(), 2);
+    }
+
+    #[test]
+    fn search_tool_env_only_exports_keys_for_enabled_sources() {
+        let config = SearchToolConfig {
+            enabled: true,
+            stdio_path: None,
+            sources: BTreeMap::from([
+                (
+                    "exa".to_string(),
+                    SearchSourceConfig {
+                        enabled: true,
+                        api_key: Some("exa-key".to_string()),
+                        api_key_env: None,
+                        base_url: Some("https://exa.example.test".to_string()),
+                    },
+                ),
+                (
+                    "tavily".to_string(),
+                    SearchSourceConfig {
+                        enabled: false,
+                        api_key: Some("tavily-key".to_string()),
+                        api_key_env: None,
+                        base_url: None,
+                    },
+                ),
+            ]),
+        };
+
+        let env = search_tool_env(&config)
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(env.get("VA_SEARCH_SOURCES").map(String::as_str), Some("exa"));
+        assert_eq!(
+            env.get("VA_SEARCH_EXA_API_KEY").map(String::as_str),
+            Some("exa-key")
+        );
+        assert_eq!(env.get("EXA_API_KEY").map(String::as_str), Some("exa-key"));
+        assert_eq!(
+            env.get("VA_SEARCH_EXA_BASE_URL").map(String::as_str),
+            Some("https://exa.example.test")
+        );
+        assert_eq!(
+            env.get("VA_SEARCH_TAVILY_ENABLED").map(String::as_str),
+            Some("false")
+        );
+        assert!(!env.contains_key("VA_SEARCH_TAVILY_API_KEY"));
+        assert!(!env.contains_key("TAVILY_API_KEY"));
     }
 }
