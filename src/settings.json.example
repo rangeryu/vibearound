@@ -7,25 +7,18 @@
   },
   "search_tool": {
     "enabled": false,
-    "stdio_path": "",
     "sources": {
       "exa": {
         "enabled": false,
-        "api_key": "YOUR_EXA_API_KEY",
-        "api_key_env": "EXA_API_KEY",
-        "base_url": "https://api.exa.ai"
+        "api_key": "YOUR_EXA_API_KEY"
       },
       "tavily": {
         "enabled": false,
-        "api_key": "YOUR_TAVILY_API_KEY",
-        "api_key_env": "TAVILY_API_KEY",
-        "base_url": "https://api.tavily.com"
+        "api_key": "YOUR_TAVILY_API_KEY"
       },
       "grok": {
         "enabled": false,
-        "api_key": "YOUR_XAI_API_KEY",
-        "api_key_env": "XAI_API_KEY",
-        "base_url": "https://api.x.ai/v1"
+        "api_key": "YOUR_XAI_API_KEY"
       }
     }
   },

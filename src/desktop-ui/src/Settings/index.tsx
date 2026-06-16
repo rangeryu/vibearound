@@ -84,15 +84,12 @@ type SearchSourceId = "exa" | "tavily" | "grok";
 
 type SearchToolSettings = {
   enabled: boolean;
-  stdioPath?: string | null;
   sources: Record<string, SearchSourceSettings>;
 };
 
 type SearchSourceSettings = {
   enabled: boolean;
   hasApiKey: boolean;
-  apiKeyEnv?: string | null;
-  baseUrl?: string | null;
 };
 
 type SearchSourceForm = {
@@ -100,8 +97,6 @@ type SearchSourceForm = {
   apiKey: string;
   hasApiKey: boolean;
   clearApiKey: boolean;
-  apiKeyEnv: string;
-  baseUrl: string;
 };
 
 const AGENT_DISPLAY_ORDER = [
@@ -115,10 +110,10 @@ const AGENT_DISPLAY_ORDER = [
   "qwen-code",
 ];
 
-const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string; baseUrl: string }> = [
-  { id: "exa", label: "Exa", baseUrl: "https://api.exa.ai" },
-  { id: "tavily", label: "Tavily", baseUrl: "https://api.tavily.com" },
-  { id: "grok", label: "Grok", baseUrl: "https://api.x.ai/v1" },
+const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string }> = [
+  { id: "exa", label: "Exa" },
+  { id: "tavily", label: "Tavily" },
+  { id: "grok", label: "Grok" },
 ];
 
 export function SettingsDialog({
@@ -160,7 +155,6 @@ export function SettingsDialog({
   const [retry429Unlimited, setRetry429Unlimited] = useState(false);
   const [retry429DelaySeconds, setRetry429DelaySeconds] = useState("10");
   const [searchToolEnabled, setSearchToolEnabled] = useState(false);
-  const [searchToolStdioPath, setSearchToolStdioPath] = useState("");
   const [searchSources, setSearchSources] = useState<
     Record<SearchSourceId, SearchSourceForm>
   >(() => defaultSearchSourceForms());
@@ -296,7 +290,6 @@ export function SettingsDialog({
 
   const hydrateSearchTool = useCallback((loaded: SearchToolSettings) => {
     setSearchToolEnabled(Boolean(loaded.enabled));
-    setSearchToolStdioPath(loaded.stdioPath ?? "");
     setSearchSources(() => {
       const next = defaultSearchSourceForms();
       for (const def of SEARCH_SOURCE_DEFS) {
@@ -306,8 +299,6 @@ export function SettingsDialog({
           apiKey: "",
           hasApiKey: Boolean(source?.hasApiKey),
           clearApiKey: false,
-          apiKeyEnv: source?.apiKeyEnv ?? "",
-          baseUrl: source?.baseUrl ?? "",
         };
       }
       return next;
@@ -617,7 +608,6 @@ export function SettingsDialog({
         body: JSON.stringify(
           buildSearchToolSettingsUpdate({
             enabled: searchToolEnabled,
-            stdioPath: searchToolStdioPath,
             sources: searchSources,
           }),
         ),
@@ -643,7 +633,6 @@ export function SettingsDialog({
     onServicesRestarted,
     searchSources,
     searchToolEnabled,
-    searchToolStdioPath,
   ]);
 
   const uninstallIntegrations = useCallback(
@@ -1121,10 +1110,8 @@ export function SettingsDialog({
                   <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
                     <SearchToolSettingsPanel
                       enabled={searchToolEnabled}
-                      stdioPath={searchToolStdioPath}
                       sources={searchSources}
                       onEnabledChange={setSearchToolEnabled}
-                      onStdioPathChange={setSearchToolStdioPath}
                       onSourceChange={updateSearchSource}
                       notice={<SettingsNotice notice={notice} />}
                     />
@@ -1438,18 +1425,14 @@ function ProxySettingsPanel({
 
 function SearchToolSettingsPanel({
   enabled,
-  stdioPath,
   sources,
   onEnabledChange,
-  onStdioPathChange,
   onSourceChange,
   notice,
 }: {
   enabled: boolean;
-  stdioPath: string;
   sources: Record<SearchSourceId, SearchSourceForm>;
   onEnabledChange: (value: boolean) => void;
-  onStdioPathChange: (value: string) => void;
   onSourceChange: (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => void;
   notice?: ReactNode;
 }) {
@@ -1479,23 +1462,6 @@ function SearchToolSettingsPanel({
             />
           }
         />
-        <div className="grid gap-3 border-b border-border px-4 py-4 last:border-b-0">
-          <label className="block">
-            <span className="text-xs text-muted-foreground">
-              {t("Search tool executable")}
-            </span>
-            <Input
-              type="text"
-              value={stdioPath}
-              onChange={(event) => onStdioPathChange(event.currentTarget.value)}
-              placeholder="~/bin/va-search-tool"
-              className="mt-1"
-            />
-            <span className="mt-1 block text-[11px] text-muted-foreground/70">
-              {t("Leave empty to use the bundled or development va-search-tool discovery path.")}
-            </span>
-          </label>
-        </div>
       </div>
       <div className="rounded-md border border-border">
         {SEARCH_SOURCE_DEFS.map((source) => {
@@ -1531,52 +1497,18 @@ function SearchToolSettingsPanel({
                   size="sm"
                 />
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-xs text-muted-foreground">
-                    {t("API key")}
-                  </span>
-                  <Input
-                    type="password"
-                    value={form.apiKey}
-                    placeholder={keyPlaceholder}
-                    onChange={(event) =>
-                      onSourceChange(source.id, {
-                        apiKey: event.currentTarget.value,
-                        clearApiKey: false,
-                      })
-                    }
-                    className="mt-1"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-muted-foreground">
-                    {t("API key env")}
-                  </span>
-                  <Input
-                    type="text"
-                    value={form.apiKeyEnv}
-                    placeholder={`${source.id.toUpperCase()}_API_KEY`}
-                    onChange={(event) =>
-                      onSourceChange(source.id, {
-                        apiKeyEnv: event.currentTarget.value,
-                      })
-                    }
-                    className="mt-1"
-                  />
-                </label>
-              </div>
               <label className="block">
                 <span className="text-xs text-muted-foreground">
-                  {t("Base URL")}
+                  {t("API key")}
                 </span>
                 <Input
-                  type="text"
-                  value={form.baseUrl}
-                  placeholder={source.baseUrl}
+                  type="password"
+                  value={form.apiKey}
+                  placeholder={keyPlaceholder}
                   onChange={(event) =>
                     onSourceChange(source.id, {
-                      baseUrl: event.currentTarget.value,
+                      apiKey: event.currentTarget.value,
+                      clearApiKey: false,
                     })
                   }
                   className="mt-1"
@@ -1890,11 +1822,9 @@ async function fetchSearchToolSettings(): Promise<SearchToolSettings> {
 
 function buildSearchToolSettingsUpdate({
   enabled,
-  stdioPath,
   sources,
 }: {
   enabled: boolean;
-  stdioPath: string;
   sources: Record<SearchSourceId, SearchSourceForm>;
 }) {
   const sourcePayload: Record<
@@ -1902,8 +1832,6 @@ function buildSearchToolSettingsUpdate({
     {
       enabled: boolean;
       apiKey?: string | null;
-      apiKeyEnv?: string | null;
-      baseUrl?: string | null;
     }
   > = {};
 
@@ -1912,8 +1840,6 @@ function buildSearchToolSettingsUpdate({
     const payload: {
       enabled: boolean;
       apiKey?: string | null;
-      apiKeyEnv?: string | null;
-      baseUrl?: string | null;
     } = {
       enabled: source.enabled,
     };
@@ -1923,21 +1849,13 @@ function buildSearchToolSettingsUpdate({
     } else if (source.clearApiKey) {
       payload.apiKey = null;
     }
-    payload.apiKeyEnv = optionalTrimmedValue(source.apiKeyEnv);
-    payload.baseUrl = optionalTrimmedValue(source.baseUrl);
     sourcePayload[def.id] = payload;
   }
 
   return {
     enabled,
-    stdioPath: optionalTrimmedValue(stdioPath),
     sources: sourcePayload,
   };
-}
-
-function optionalTrimmedValue(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
 }
 
 function buildChannelSettings({
@@ -2097,8 +2015,6 @@ function defaultSearchSourceForm(): SearchSourceForm {
     apiKey: "",
     hasApiKey: false,
     clearApiKey: false,
-    apiKeyEnv: "",
-    baseUrl: "",
   };
 }
 
