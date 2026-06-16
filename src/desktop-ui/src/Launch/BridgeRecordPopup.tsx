@@ -288,7 +288,7 @@ export function BridgeRecordPopup({
                         {record.metadata?.stream && <span>SSE</span>}
                       </span>
                       <span className="flex items-center gap-1">
-                        {payloadPhases.map((phase) => (
+                        {payloadPhasesForRecord(record).map((phase) => (
                           <span
                             key={phase}
                             className={cn(
@@ -585,6 +585,11 @@ const payloadPhases: BridgeRecordPhase[] = [
   "serverResponse",
   "bridgeResponse",
 ];
+
+function payloadPhasesForRecord(record: BridgeRecordEntry) {
+  if (record.searchPayloads.length > 0) return payloadPhases;
+  return payloadPhases.filter((phase) => phase !== "search");
+}
 
 function searchPayloadForRecord(record: BridgeRecordEntry): RecordedPayload | undefined {
   if (record.searchPayloads.length === 0) return undefined;
