@@ -82,21 +82,9 @@ type ApiBridgeRetryFormState = {
 
 type SearchSourceId = "exa" | "tavily" | "grok";
 
-type SearchToolSettings = {
-  enabled: boolean;
-  sources: Record<string, SearchSourceSettings>;
-};
-
-type SearchSourceSettings = {
-  enabled: boolean;
-  hasApiKey: boolean;
-};
-
 type SearchSourceForm = {
   enabled: boolean;
   apiKey: string;
-  hasApiKey: boolean;
-  clearApiKey: boolean;
 };
 
 const AGENT_DISPLAY_ORDER = [
@@ -288,17 +276,21 @@ export function SettingsDialog({
     setRetry429DelaySeconds(nextForm.retry429DelaySeconds);
   }, []);
 
-  const hydrateSearchTool = useCallback((loaded: SearchToolSettings) => {
-    setSearchToolEnabled(Boolean(loaded.enabled));
+  const hydrateSearchTool = useCallback((loadedSettings: AppSettings) => {
+    const searchTool = isRecord(loadedSettings.search_tool)
+      ? loadedSettings.search_tool
+      : {};
+    const sources = isRecord(searchTool.sources) ? searchTool.sources : {};
+    setSearchToolEnabled(
+      typeof searchTool.enabled === "boolean" ? searchTool.enabled : false,
+    );
     setSearchSources(() => {
       const next = defaultSearchSourceForms();
       for (const def of SEARCH_SOURCE_DEFS) {
-        const source = loaded.sources?.[def.id];
+        const source = isRecord(sources[def.id]) ? sources[def.id] : {};
         next[def.id] = {
-          enabled: Boolean(source?.enabled),
-          apiKey: "",
-          hasApiKey: Boolean(source?.hasApiKey),
-          clearApiKey: false,
+          enabled: typeof source.enabled === "boolean" ? source.enabled : false,
+          apiKey: typeof source.api_key === "string" ? source.api_key : "",
         };
       }
       return next;
@@ -331,21 +323,13 @@ export function SettingsDialog({
     setSettingsLoaded(false);
     setNotice(null);
     try {
-      const [
-        loadedSettings,
-        agentDefs,
-        registry,
-        discovered,
-        tunnelDefs,
-        loadedSearchTool,
-      ] =
+      const [loadedSettings, agentDefs, registry, discovered, tunnelDefs] =
         await Promise.all([
           invoke<AppSettings>("get_settings"),
           invoke<AgentSummary[]>("list_agents"),
           invoke<PluginRegistryEntry[]>("list_plugin_registry"),
           invoke<DiscoveredChannelPlugin[]>("list_channel_plugins"),
           invoke<TunnelSummary[]>("list_tunnels"),
-          fetchSearchToolSettings(),
         ]);
       const orderedAgents = orderAgents(agentDefs);
       setSettings(loadedSettings);
@@ -358,7 +342,7 @@ export function SettingsDialog({
       hydrateTunnel(loadedSettings);
       hydrateProxy(loadedSettings);
       hydrateApiBridge(loadedSettings);
-      hydrateSearchTool(loadedSearchTool);
+      hydrateSearchTool(loadedSettings);
       hydrateIntegrations(loadedSettings);
       hydrateImAgent(loadedSettings);
       setSettingsLoaded(true);
@@ -602,21 +586,13 @@ export function SettingsDialog({
     setSaving("search");
     setNotice(null);
     try {
-      const response = await apiFetch("/api/settings/search-tool", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          buildSearchToolSettingsUpdate({
-            enabled: searchToolEnabled,
-            sources: searchSources,
-          }),
-        ),
+      const nextSettings = buildSearchToolSettings({
+        settings,
+        enabled: searchToolEnabled,
+        sources: searchSources,
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const updatedSearchTool = (await response.json()) as SearchToolSettings;
-      hydrateSearchTool(updatedSearchTool);
-      const loadedSettings = await invoke<AppSettings>("get_settings");
-      setSettings(loadedSettings);
+      await invoke("save_settings", { settings: nextSettings });
+      setSettings(nextSettings);
       await invoke("restart_services");
       onServicesRestarted?.();
       setNotice({ variant: "success", message: "Search tool settings applied." });
@@ -629,10 +605,10 @@ export function SettingsDialog({
       setSaving("idle");
     }
   }, [
-    hydrateSearchTool,
     onServicesRestarted,
     searchSources,
     searchToolEnabled,
+    settings,
   ]);
 
   const uninstallIntegrations = useCallback(
@@ -1466,16 +1442,6 @@ function SearchToolSettingsPanel({
       <div className="rounded-md border border-border">
         {SEARCH_SOURCE_DEFS.map((source) => {
           const form = sources[source.id];
-          const keyPlaceholder = form.hasApiKey
-            ? t("Saved key is set; leave blank to keep")
-            : t("Paste API key");
-          const keyStatus = form.apiKey.trim()
-            ? t("New key ready to save")
-            : form.clearApiKey
-              ? t("Key will be cleared")
-              : form.hasApiKey
-                ? t("API key saved")
-                : t("API key not saved");
           return (
             <div
               key={source.id}
@@ -1484,9 +1450,6 @@ function SearchToolSettingsPanel({
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{source.label}</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    {keyStatus}
-                  </div>
                 </div>
                 <Switch
                   checked={form.enabled}
@@ -1504,33 +1467,15 @@ function SearchToolSettingsPanel({
                 <Input
                   type="password"
                   value={form.apiKey}
-                  placeholder={keyPlaceholder}
+                  placeholder={t("Paste API key")}
                   onChange={(event) =>
                     onSourceChange(source.id, {
                       apiKey: event.currentTarget.value,
-                      clearApiKey: false,
                     })
                   }
                   className="mt-1"
                 />
               </label>
-              {form.hasApiKey && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() =>
-                    onSourceChange(source.id, {
-                      apiKey: "",
-                      clearApiKey: true,
-                    })
-                  }
-                >
-                  <Trash2 className="h-3 w-3" />
-                  {form.clearApiKey ? t("Key will be cleared") : t("Clear saved key")}
-                </Button>
-              )}
             </div>
           );
         })}
@@ -1814,48 +1759,51 @@ function buildApiBridgeSettings({
   return result;
 }
 
-async function fetchSearchToolSettings(): Promise<SearchToolSettings> {
-  const response = await apiFetch("/api/settings/search-tool");
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return (await response.json()) as SearchToolSettings;
-}
-
-function buildSearchToolSettingsUpdate({
+function buildSearchToolSettings({
+  settings,
   enabled,
   sources,
 }: {
+  settings: AppSettings;
   enabled: boolean;
   sources: Record<SearchSourceId, SearchSourceForm>;
-}) {
-  const sourcePayload: Record<
-    string,
-    {
-      enabled: boolean;
-      apiKey?: string | null;
-    }
-  > = {};
+}): AppSettings {
+  const result: AppSettings = { ...settings };
+  const existingSearchTool = isRecord(settings.search_tool)
+    ? settings.search_tool
+    : {};
+  const existingSources = isRecord(existingSearchTool.sources)
+    ? existingSearchTool.sources
+    : {};
+  const nextSearchTool: Record<string, unknown> = {
+    ...existingSearchTool,
+    enabled,
+  };
+  const nextSources: Record<string, unknown> = {};
+
+  for (const [name, source] of Object.entries(existingSources)) {
+    nextSources[name] = isRecord(source) ? { ...source } : source;
+  }
 
   for (const def of SEARCH_SOURCE_DEFS) {
     const source = sources[def.id];
-    const payload: {
-      enabled: boolean;
-      apiKey?: string | null;
-    } = {
-      enabled: source.enabled,
-    };
+    const existingSource = nextSources[def.id];
+    const payload: Record<string, unknown> = isRecord(existingSource)
+      ? { ...existingSource }
+      : {};
+    payload.enabled = source.enabled;
     const apiKey = source.apiKey.trim();
     if (apiKey) {
-      payload.apiKey = apiKey;
-    } else if (source.clearApiKey) {
-      payload.apiKey = null;
+      payload.api_key = apiKey;
+    } else {
+      delete payload.api_key;
     }
-    sourcePayload[def.id] = payload;
+    nextSources[def.id] = payload;
   }
 
-  return {
-    enabled,
-    sources: sourcePayload,
-  };
+  nextSearchTool.sources = nextSources;
+  result.search_tool = nextSearchTool as AppSettings["search_tool"];
+  return result;
 }
 
 function buildChannelSettings({
@@ -2013,8 +1961,6 @@ function defaultSearchSourceForm(): SearchSourceForm {
   return {
     enabled: false,
     apiKey: "",
-    hasApiKey: false,
-    clearApiKey: false,
   };
 }
 
