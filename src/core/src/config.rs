@@ -285,11 +285,20 @@ impl Default for SearchSourceConfig {
 
 impl SearchToolConfig {
     pub fn enabled_source_names(&self) -> Vec<String> {
-        self.sources
-            .iter()
-            .filter(|(_, source)| source.enabled)
-            .map(|(name, _)| name.clone())
-            .collect()
+        let mut names = ["exa", "tavily", "grok"]
+            .into_iter()
+            .filter(|name| self.sources.get(*name).is_some_and(|source| source.enabled))
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        names.extend(
+            self.sources
+                .iter()
+                .filter(|(name, source)| {
+                    source.enabled && !matches!(name.as_str(), "exa" | "tavily" | "grok")
+                })
+                .map(|(name, _)| name.clone()),
+        );
+        names
     }
 }
 
@@ -1111,6 +1120,54 @@ mod tests {
         assert!(config.search_tool.stdio_path.is_none());
         assert!(config.search_tool.sources.is_empty());
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn search_tool_enabled_source_names_use_preferred_order() {
+        let config = SearchToolConfig {
+            enabled: true,
+            stdio_path: None,
+            sources: BTreeMap::from([
+                (
+                    "grok".to_string(),
+                    SearchSourceConfig {
+                        enabled: true,
+                        ..SearchSourceConfig::default()
+                    },
+                ),
+                (
+                    "brave".to_string(),
+                    SearchSourceConfig {
+                        enabled: true,
+                        ..SearchSourceConfig::default()
+                    },
+                ),
+                (
+                    "exa".to_string(),
+                    SearchSourceConfig {
+                        enabled: true,
+                        ..SearchSourceConfig::default()
+                    },
+                ),
+                (
+                    "tavily".to_string(),
+                    SearchSourceConfig {
+                        enabled: true,
+                        ..SearchSourceConfig::default()
+                    },
+                ),
+            ]),
+        };
+
+        assert_eq!(
+            config.enabled_source_names(),
+            vec![
+                "exa".to_string(),
+                "tavily".to_string(),
+                "grok".to_string(),
+                "brave".to_string(),
+            ]
+        );
     }
 
     #[test]
