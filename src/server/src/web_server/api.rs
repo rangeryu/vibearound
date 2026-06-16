@@ -9,6 +9,7 @@ mod previews;
 mod profiles;
 mod runtime;
 mod sessions;
+mod settings;
 mod workspaces;
 
 pub use files::{download_chat_file_handler, upload_chat_file_handler};
@@ -26,6 +27,7 @@ pub use sessions::{
     list_tmux_sessions_handler, unarchive_launch_session_delete_handler,
     unarchive_launch_session_handler,
 };
+pub use settings::{get_search_tool_settings_handler, update_search_tool_settings_handler};
 pub use workspaces::{
     add_workspace_handler, create_workspace_handler, list_workspaces_handler,
     remove_workspace_handler,

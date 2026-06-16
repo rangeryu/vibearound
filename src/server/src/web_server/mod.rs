@@ -246,6 +246,11 @@ pub async fn run_web_server(
         .route("/api/channels", get(api::list_channels_handler))
         .route("/api/channels/sync", post(api::sync_channels_handler))
         .route("/api/settings/reload", post(api::reload_settings_handler))
+        .route(
+            "/api/settings/search-tool",
+            get(api::get_search_tool_settings_handler)
+                .put(api::update_search_tool_settings_handler),
+        )
         .route("/api/tunnels", get(api::list_tunnels_handler))
         .route("/api/agents/runtime", get(api::list_agents_runtime_handler))
         .route("/api/channels/{kind}/stop", post(api::stop_channel_handler))
