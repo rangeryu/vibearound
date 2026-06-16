@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Network,
   RotateCw,
+  Search,
   SlidersHorizontal,
   Trash2,
   WandSparkles,
@@ -62,6 +63,7 @@ type SaveState =
   | "idle"
   | "agents"
   | "api-bridge"
+  | "search"
   | "proxy"
   | "im"
   | "sessions"
@@ -78,6 +80,30 @@ type ApiBridgeRetryFormState = {
   retry429DelaySeconds: string;
 };
 
+type SearchSourceId = "exa" | "tavily";
+
+type SearchToolSettings = {
+  enabled: boolean;
+  stdioPath?: string | null;
+  sources: Record<string, SearchSourceSettings>;
+};
+
+type SearchSourceSettings = {
+  enabled: boolean;
+  hasApiKey: boolean;
+  apiKeyEnv?: string | null;
+  baseUrl?: string | null;
+};
+
+type SearchSourceForm = {
+  enabled: boolean;
+  apiKey: string;
+  hasApiKey: boolean;
+  clearApiKey: boolean;
+  apiKeyEnv: string;
+  baseUrl: string;
+};
+
 const AGENT_DISPLAY_ORDER = [
   "claude",
   "codex",
@@ -87,6 +113,11 @@ const AGENT_DISPLAY_ORDER = [
   "cursor",
   "kiro",
   "qwen-code",
+];
+
+const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string; baseUrl: string }> = [
+  { id: "exa", label: "Exa", baseUrl: "https://api.exa.ai" },
+  { id: "tavily", label: "Tavily", baseUrl: "https://api.tavily.com" },
 ];
 
 export function SettingsDialog({
@@ -127,6 +158,11 @@ export function SettingsDialog({
   const [retry429MaxRetries, setRetry429MaxRetries] = useState("10");
   const [retry429Unlimited, setRetry429Unlimited] = useState(false);
   const [retry429DelaySeconds, setRetry429DelaySeconds] = useState("10");
+  const [searchToolEnabled, setSearchToolEnabled] = useState(false);
+  const [searchToolStdioPath, setSearchToolStdioPath] = useState("");
+  const [searchSources, setSearchSources] = useState<
+    Record<SearchSourceId, SearchSourceForm>
+  >(() => defaultSearchSourceForms());
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
@@ -257,6 +293,26 @@ export function SettingsDialog({
     setRetry429DelaySeconds(nextForm.retry429DelaySeconds);
   }, []);
 
+  const hydrateSearchTool = useCallback((loaded: SearchToolSettings) => {
+    setSearchToolEnabled(Boolean(loaded.enabled));
+    setSearchToolStdioPath(loaded.stdioPath ?? "");
+    setSearchSources(() => {
+      const next = defaultSearchSourceForms();
+      for (const def of SEARCH_SOURCE_DEFS) {
+        const source = loaded.sources?.[def.id];
+        next[def.id] = {
+          enabled: Boolean(source?.enabled),
+          apiKey: "",
+          hasApiKey: Boolean(source?.hasApiKey),
+          clearApiKey: false,
+          apiKeyEnv: source?.apiKeyEnv ?? "",
+          baseUrl: source?.baseUrl ?? "",
+        };
+      }
+      return next;
+    });
+  }, []);
+
   const hydrateIntegrations = useCallback((loadedSettings: AppSettings) => {
     const integrations = loadedSettings.integrations;
     setMcpAutoInstall(integrations?.mcp_auto_install ?? true);
@@ -283,13 +339,21 @@ export function SettingsDialog({
     setSettingsLoaded(false);
     setNotice(null);
     try {
-      const [loadedSettings, agentDefs, registry, discovered, tunnelDefs] =
+      const [
+        loadedSettings,
+        agentDefs,
+        registry,
+        discovered,
+        tunnelDefs,
+        loadedSearchTool,
+      ] =
         await Promise.all([
           invoke<AppSettings>("get_settings"),
           invoke<AgentSummary[]>("list_agents"),
           invoke<PluginRegistryEntry[]>("list_plugin_registry"),
           invoke<DiscoveredChannelPlugin[]>("list_channel_plugins"),
           invoke<TunnelSummary[]>("list_tunnels"),
+          fetchSearchToolSettings(),
         ]);
       const orderedAgents = orderAgents(agentDefs);
       setSettings(loadedSettings);
@@ -302,6 +366,7 @@ export function SettingsDialog({
       hydrateTunnel(loadedSettings);
       hydrateProxy(loadedSettings);
       hydrateApiBridge(loadedSettings);
+      hydrateSearchTool(loadedSearchTool);
       hydrateIntegrations(loadedSettings);
       hydrateImAgent(loadedSettings);
       setSettingsLoaded(true);
@@ -320,6 +385,7 @@ export function SettingsDialog({
     hydrateIntegrations,
     hydrateImAgent,
     hydrateProxy,
+    hydrateSearchTool,
     hydrateTunnel,
   ]);
 
@@ -381,6 +447,19 @@ export function SettingsDialog({
       return next;
     });
   }, []);
+
+  const updateSearchSource = useCallback(
+    (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => {
+      setSearchSources((previous) => ({
+        ...previous,
+        [sourceId]: {
+          ...previous[sourceId],
+          ...patch,
+        },
+      }));
+    },
+    [],
+  );
 
   const installPlugin = useCallback(
     async (pluginId: string, githubUrl: string) => {
@@ -525,6 +604,45 @@ export function SettingsDialog({
     apiBridgeRetryForm,
     apiBridgeRetryFormKey,
     onServicesRestarted,
+  ]);
+
+  const applySearchToolSettings = useCallback(async () => {
+    setSaving("search");
+    setNotice(null);
+    try {
+      const response = await apiFetch("/api/settings/search-tool", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          buildSearchToolSettingsUpdate({
+            enabled: searchToolEnabled,
+            stdioPath: searchToolStdioPath,
+            sources: searchSources,
+          }),
+        ),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const updatedSearchTool = (await response.json()) as SearchToolSettings;
+      hydrateSearchTool(updatedSearchTool);
+      const loadedSettings = await invoke<AppSettings>("get_settings");
+      setSettings(loadedSettings);
+      await invoke("restart_services");
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "Search tool settings applied." });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving("idle");
+    }
+  }, [
+    hydrateSearchTool,
+    onServicesRestarted,
+    searchSources,
+    searchToolEnabled,
+    searchToolStdioPath,
   ]);
 
   const uninstallIntegrations = useCallback(
@@ -696,6 +814,13 @@ export function SettingsDialog({
               >
                 <RotateCw className="h-3 w-3" />
                 {t("API Bridge")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="search"
+                className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Search className="h-3 w-3" />
+                {t("Search")}
               </TabsTrigger>
               <TabsTrigger
                 value="im"
@@ -976,6 +1101,43 @@ export function SettingsDialog({
                       {saving === "proxy"
                         ? t("Applying…")
                         : t("Apply Proxy Settings")}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent
+              value="search"
+              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+            >
+              {loading ? (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <LoadingBlock />
+                </div>
+              ) : (
+                <>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                    <SearchToolSettingsPanel
+                      enabled={searchToolEnabled}
+                      stdioPath={searchToolStdioPath}
+                      sources={searchSources}
+                      onEnabledChange={setSearchToolEnabled}
+                      onStdioPathChange={setSearchToolStdioPath}
+                      onSourceChange={updateSearchSource}
+                      notice={<SettingsNotice notice={notice} />}
+                    />
+                  </div>
+                  <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!canSubmit}
+                      onClick={() => void applySearchToolSettings()}
+                    >
+                      {saving === "search"
+                        ? t("Restarting services…")
+                        : t("Apply & Restart Services")}
                     </Button>
                   </div>
                 </>
@@ -1273,6 +1435,177 @@ function ProxySettingsPanel({
   );
 }
 
+function SearchToolSettingsPanel({
+  enabled,
+  stdioPath,
+  sources,
+  onEnabledChange,
+  onStdioPathChange,
+  onSourceChange,
+  notice,
+}: {
+  enabled: boolean;
+  stdioPath: string;
+  sources: Record<SearchSourceId, SearchSourceForm>;
+  onEnabledChange: (value: boolean) => void;
+  onStdioPathChange: (value: string) => void;
+  onSourceChange: (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => void;
+  notice?: ReactNode;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <Search className="h-4 w-4 text-primary" />
+          {t("Search")}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("Run host-side web search when the upstream model provider cannot use native web search. Changes restart local services.")}
+        </p>
+        {notice}
+      </div>
+      <div className="rounded-md border border-border">
+        <SettingsActionRow
+          label={t("Enable search tool")}
+          description={t("Allow VibeAround to answer provider-side web_search requests through the host search provider.")}
+          action={
+            <Switch
+              checked={enabled}
+              onCheckedChange={onEnabledChange}
+              aria-label={t("Enable search tool")}
+              size="sm"
+            />
+          }
+        />
+        <div className="grid gap-3 border-b border-border px-4 py-4 last:border-b-0">
+          <label className="block">
+            <span className="text-xs text-muted-foreground">
+              {t("Search tool executable")}
+            </span>
+            <Input
+              type="text"
+              value={stdioPath}
+              onChange={(event) => onStdioPathChange(event.currentTarget.value)}
+              placeholder="~/bin/va-search-tool"
+              className="mt-1"
+            />
+            <span className="mt-1 block text-[11px] text-muted-foreground/70">
+              {t("Leave empty to use the bundled or development va-search-tool discovery path.")}
+            </span>
+          </label>
+        </div>
+      </div>
+      <div className="rounded-md border border-border">
+        {SEARCH_SOURCE_DEFS.map((source) => {
+          const form = sources[source.id];
+          const keyPlaceholder = form.hasApiKey
+            ? t("Saved key is set; leave blank to keep")
+            : t("Paste API key");
+          const keyStatus = form.apiKey.trim()
+            ? t("New key ready to save")
+            : form.clearApiKey
+              ? t("Key will be cleared")
+              : form.hasApiKey
+                ? t("API key saved")
+                : t("API key not saved");
+          return (
+            <div
+              key={source.id}
+              className="space-y-3 border-b border-border px-4 py-4 last:border-b-0"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{source.label}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {keyStatus}
+                  </div>
+                </div>
+                <Switch
+                  checked={form.enabled}
+                  onCheckedChange={(value) =>
+                    onSourceChange(source.id, { enabled: value })
+                  }
+                  aria-label={t("Enable source")}
+                  size="sm"
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs text-muted-foreground">
+                    {t("API key")}
+                  </span>
+                  <Input
+                    type="password"
+                    value={form.apiKey}
+                    placeholder={keyPlaceholder}
+                    onChange={(event) =>
+                      onSourceChange(source.id, {
+                        apiKey: event.currentTarget.value,
+                        clearApiKey: false,
+                      })
+                    }
+                    className="mt-1"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-muted-foreground">
+                    {t("API key env")}
+                  </span>
+                  <Input
+                    type="text"
+                    value={form.apiKeyEnv}
+                    placeholder={`${source.id.toUpperCase()}_API_KEY`}
+                    onChange={(event) =>
+                      onSourceChange(source.id, {
+                        apiKeyEnv: event.currentTarget.value,
+                      })
+                    }
+                    className="mt-1"
+                  />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-xs text-muted-foreground">
+                  {t("Base URL")}
+                </span>
+                <Input
+                  type="text"
+                  value={form.baseUrl}
+                  placeholder={source.baseUrl}
+                  onChange={(event) =>
+                    onSourceChange(source.id, {
+                      baseUrl: event.currentTarget.value,
+                    })
+                  }
+                  className="mt-1"
+                />
+              </label>
+              {form.hasApiKey && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() =>
+                    onSourceChange(source.id, {
+                      apiKey: "",
+                      clearApiKey: true,
+                    })
+                  }
+                >
+                  <Trash2 className="h-3 w-3" />
+                  {form.clearApiKey ? t("Key will be cleared") : t("Clear saved key")}
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ApiBridgeRetrySettingsPanel({
   retry429Enabled,
   retry429MaxRetries,
@@ -1548,6 +1881,64 @@ function buildApiBridgeSettings({
   return result;
 }
 
+async function fetchSearchToolSettings(): Promise<SearchToolSettings> {
+  const response = await apiFetch("/api/settings/search-tool");
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return (await response.json()) as SearchToolSettings;
+}
+
+function buildSearchToolSettingsUpdate({
+  enabled,
+  stdioPath,
+  sources,
+}: {
+  enabled: boolean;
+  stdioPath: string;
+  sources: Record<SearchSourceId, SearchSourceForm>;
+}) {
+  const sourcePayload: Record<
+    string,
+    {
+      enabled: boolean;
+      apiKey?: string | null;
+      apiKeyEnv?: string | null;
+      baseUrl?: string | null;
+    }
+  > = {};
+
+  for (const def of SEARCH_SOURCE_DEFS) {
+    const source = sources[def.id];
+    const payload: {
+      enabled: boolean;
+      apiKey?: string | null;
+      apiKeyEnv?: string | null;
+      baseUrl?: string | null;
+    } = {
+      enabled: source.enabled,
+    };
+    const apiKey = source.apiKey.trim();
+    if (apiKey) {
+      payload.apiKey = apiKey;
+    } else if (source.clearApiKey) {
+      payload.apiKey = null;
+    }
+    payload.apiKeyEnv = optionalTrimmedValue(source.apiKeyEnv);
+    payload.baseUrl = optionalTrimmedValue(source.baseUrl);
+    sourcePayload[def.id] = payload;
+  }
+
+  return {
+    enabled,
+    stdioPath: optionalTrimmedValue(stdioPath),
+    sources: sourcePayload,
+  };
+}
+
+function optionalTrimmedValue(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
 function buildChannelSettings({
   settings,
   pluginRegistry,
@@ -1688,6 +2079,24 @@ function defaultChannelVerbose(): ChannelVerboseConfig {
   return {
     show_thinking: false,
     show_tool_use: false,
+  };
+}
+
+function defaultSearchSourceForms(): Record<SearchSourceId, SearchSourceForm> {
+  return {
+    exa: defaultSearchSourceForm(),
+    tavily: defaultSearchSourceForm(),
+  };
+}
+
+function defaultSearchSourceForm(): SearchSourceForm {
+  return {
+    enabled: false,
+    apiKey: "",
+    hasApiKey: false,
+    clearApiKey: false,
+    apiKeyEnv: "",
+    baseUrl: "",
   };
 }
 

@@ -49,6 +49,19 @@ export interface Settings {
       delay_seconds?: number;
     };
   };
+  search_tool?: {
+    enabled?: boolean;
+    stdio_path?: string;
+    sources?: Record<
+      string,
+      {
+        enabled?: boolean;
+        api_key?: string;
+        api_key_env?: string;
+        base_url?: string;
+      }
+    >;
+  };
   startkit?: {
     source?: string;
     toolchain_mode?: ToolchainMode | string;
