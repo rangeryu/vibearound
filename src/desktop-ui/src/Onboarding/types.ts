@@ -43,6 +43,8 @@ export interface Settings {
     no_proxy?: string;
   };
   api_bridge?: {
+    replace_provider_web_search?: boolean;
+    replaceProviderWebSearch?: boolean;
     retry_429?: {
       enabled?: boolean;
       max_retries?: number | null;
@@ -50,7 +52,6 @@ export interface Settings {
     };
   };
   search_tool?: {
-    enabled?: boolean;
     stdio_path?: string;
     max_results?: number;
     maxResults?: number;

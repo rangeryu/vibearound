@@ -70,7 +70,6 @@ type SaveState =
   | "idle"
   | "agents"
   | "api-bridge"
-  | "search"
   | "proxy"
   | "im"
   | "sessions"
@@ -165,7 +164,8 @@ export function SettingsDialog({
   const [retry429MaxRetries, setRetry429MaxRetries] = useState("10");
   const [retry429Unlimited, setRetry429Unlimited] = useState(false);
   const [retry429DelaySeconds, setRetry429DelaySeconds] = useState("10");
-  const [searchToolEnabled, setSearchToolEnabled] = useState(false);
+  const [replaceProviderWebSearch, setReplaceProviderWebSearch] =
+    useState(false);
   const [searchMaxResults, setSearchMaxResults] = useState(
     DEFAULT_SEARCH_MAX_RESULTS,
   );
@@ -283,6 +283,8 @@ export function SettingsDialog({
       : {};
     const maxRetries = retry429.max_retries;
     const delaySeconds = retry429.delay_seconds;
+    const replaceWebSearch =
+      apiBridge.replace_provider_web_search ?? apiBridge.replaceProviderWebSearch;
 
     const nextForm = {
       retry429Enabled:
@@ -302,6 +304,9 @@ export function SettingsDialog({
     setRetry429Unlimited(nextForm.retry429Unlimited);
     setRetry429MaxRetries(nextForm.retry429MaxRetries);
     setRetry429DelaySeconds(nextForm.retry429DelaySeconds);
+    setReplaceProviderWebSearch(
+      typeof replaceWebSearch === "boolean" ? replaceWebSearch : false,
+    );
   }, []);
 
   const hydrateSearchTool = useCallback((loadedSettings: AppSettings) => {
@@ -309,9 +314,6 @@ export function SettingsDialog({
       ? loadedSettings.search_tool
       : {};
     const sources = isRecord(searchTool.sources) ? searchTool.sources : {};
-    setSearchToolEnabled(
-      typeof searchTool.enabled === "boolean" ? searchTool.enabled : false,
-    );
     setSearchMaxResults(
       searchMaxResultsInput(searchTool.max_results ?? searchTool.maxResults),
     );
@@ -593,14 +595,20 @@ export function SettingsDialog({
     setSaving("api-bridge");
     setNotice(null);
     try {
-      const nextSettings = buildApiBridgeSettings({
+      let nextSettings = buildApiBridgeSettings({
         settings,
         retry429Form: apiBridgeRetryForm,
+        replaceProviderWebSearch,
+      });
+      nextSettings = buildSearchToolSettings({
+        settings: nextSettings,
+        maxResults: searchMaxResults,
+        searchContextSize,
+        sources: searchSources,
       });
       await invoke("save_settings", { settings: nextSettings });
       setSettings(nextSettings);
-      const response = await apiFetch("/api/settings/reload", { method: "POST" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await invoke("restart_services");
       onServicesRestarted?.();
       setNotice({ variant: "success", message: "API bridge settings applied." });
     } catch (error) {
@@ -615,40 +623,11 @@ export function SettingsDialog({
     settings,
     apiBridgeRetryForm,
     apiBridgeRetryFormKey,
-    onServicesRestarted,
-  ]);
-
-  const applySearchToolSettings = useCallback(async () => {
-    setSaving("search");
-    setNotice(null);
-    try {
-      const nextSettings = buildSearchToolSettings({
-        settings,
-        enabled: searchToolEnabled,
-        maxResults: searchMaxResults,
-        searchContextSize,
-        sources: searchSources,
-      });
-      await invoke("save_settings", { settings: nextSettings });
-      setSettings(nextSettings);
-      await invoke("restart_services");
-      onServicesRestarted?.();
-      setNotice({ variant: "success", message: "Search tool settings applied." });
-    } catch (error) {
-      setNotice({
-        variant: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setSaving("idle");
-    }
-  }, [
-    onServicesRestarted,
+    replaceProviderWebSearch,
     searchContextSize,
     searchMaxResults,
     searchSources,
-    searchToolEnabled,
-    settings,
+    onServicesRestarted,
   ]);
 
   const uninstallIntegrations = useCallback(
@@ -820,13 +799,6 @@ export function SettingsDialog({
               >
                 <RotateCw className="h-3 w-3" />
                 {t("API Bridge")}
-              </TabsTrigger>
-              <TabsTrigger
-                value="search"
-                className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
-              >
-                <Search className="h-3 w-3" />
-                {t("Search")}
               </TabsTrigger>
               <TabsTrigger
                 value="im"
@@ -1047,18 +1019,32 @@ export function SettingsDialog({
               ) : (
                 <>
                   <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
-                    <ApiBridgeRetrySettingsPanel
-                      retry429Enabled={retry429Enabled}
-                      retry429MaxRetries={retry429MaxRetries}
-                      retry429Unlimited={retry429Unlimited}
-                      retry429DelaySeconds={retry429DelaySeconds}
-                      onRetry429EnabledChange={setRetry429Enabled}
-                      onRetry429MaxRetriesChange={setRetry429MaxRetries}
-                      onRetry429UnlimitedChange={setRetry429Unlimited}
-                      onRetry429DelaySecondsChange={setRetry429DelaySeconds}
-                      disabled={!canSubmit}
-                      notice={<SettingsNotice notice={notice} />}
-                    />
+                    <div className="space-y-6">
+                      <ApiBridgeRetrySettingsPanel
+                        retry429Enabled={retry429Enabled}
+                        retry429MaxRetries={retry429MaxRetries}
+                        retry429Unlimited={retry429Unlimited}
+                        retry429DelaySeconds={retry429DelaySeconds}
+                        onRetry429EnabledChange={setRetry429Enabled}
+                        onRetry429MaxRetriesChange={setRetry429MaxRetries}
+                        onRetry429UnlimitedChange={setRetry429Unlimited}
+                        onRetry429DelaySecondsChange={setRetry429DelaySeconds}
+                        disabled={!canSubmit}
+                        notice={<SettingsNotice notice={notice} />}
+                      />
+                      <SearchToolSettingsPanel
+                        replaceProviderWebSearch={replaceProviderWebSearch}
+                        maxResults={searchMaxResults}
+                        searchContextSize={searchContextSize}
+                        sources={searchSources}
+                        onReplaceProviderWebSearchChange={
+                          setReplaceProviderWebSearch
+                        }
+                        onMaxResultsChange={setSearchMaxResults}
+                        onSearchContextSizeChange={setSearchContextSize}
+                        onSourceChange={updateSearchSource}
+                      />
+                    </div>
                   </div>
                   <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
                     <Button
@@ -1068,8 +1054,8 @@ export function SettingsDialog({
                       onClick={() => void applyApiBridgeSettings()}
                     >
                       {saving === "api-bridge"
-                        ? t("Applying…")
-                        : t("Apply API Bridge Settings")}
+                        ? t("Restarting services…")
+                        : t("Apply & Restart Services")}
                     </Button>
                   </div>
                 </>
@@ -1107,45 +1093,6 @@ export function SettingsDialog({
                       {saving === "proxy"
                         ? t("Applying…")
                         : t("Apply Proxy Settings")}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </TabsContent>
-
-            <TabsContent
-              value="search"
-              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-            >
-              {loading ? (
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
-                  <LoadingBlock />
-                </div>
-              ) : (
-                <>
-                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
-                    <SearchToolSettingsPanel
-                      enabled={searchToolEnabled}
-                      maxResults={searchMaxResults}
-                      searchContextSize={searchContextSize}
-                      sources={searchSources}
-                      onEnabledChange={setSearchToolEnabled}
-                      onMaxResultsChange={setSearchMaxResults}
-                      onSearchContextSizeChange={setSearchContextSize}
-                      onSourceChange={updateSearchSource}
-                      notice={<SettingsNotice notice={notice} />}
-                    />
-                  </div>
-                  <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!canSubmit}
-                      onClick={() => void applySearchToolSettings()}
-                    >
-                      {saving === "search"
-                        ? t("Restarting services…")
-                        : t("Apply & Restart Services")}
                     </Button>
                   </div>
                 </>
@@ -1444,25 +1391,23 @@ function ProxySettingsPanel({
 }
 
 function SearchToolSettingsPanel({
-  enabled,
+  replaceProviderWebSearch,
   maxResults,
   searchContextSize,
   sources,
-  onEnabledChange,
+  onReplaceProviderWebSearchChange,
   onMaxResultsChange,
   onSearchContextSizeChange,
   onSourceChange,
-  notice,
 }: {
-  enabled: boolean;
+  replaceProviderWebSearch: boolean;
   maxResults: string;
   searchContextSize: SearchContextSize;
   sources: Record<SearchSourceId, SearchSourceForm>;
-  onEnabledChange: (value: boolean) => void;
+  onReplaceProviderWebSearchChange: (value: boolean) => void;
   onMaxResultsChange: (value: string) => void;
   onSearchContextSizeChange: (value: SearchContextSize) => void;
   onSourceChange: (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => void;
-  notice?: ReactNode;
 }) {
   const { t } = useI18n();
   return (
@@ -1470,22 +1415,21 @@ function SearchToolSettingsPanel({
       <div>
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <Search className="h-4 w-4 text-primary" />
-          {t("Search")}
+          {t("Web search")}
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          {t("Run host-side web search when the upstream model provider cannot use native web search. Changes restart local services.")}
+          {t("Host-side web search is available when at least one search source is enabled.")}
         </p>
-        {notice}
       </div>
       <div className="rounded-md border border-border">
         <SettingsActionRow
-          label={t("Enable search tool")}
-          description={t("Allow VibeAround to answer provider-side web_search requests through the host search provider.")}
+          label={t("Replace provider web search")}
+          description={t("Use VibeAround host search even when the upstream model supports provider-native web_search.")}
           action={
             <Switch
-              checked={enabled}
-              onCheckedChange={onEnabledChange}
-              aria-label={t("Enable search tool")}
+              checked={replaceProviderWebSearch}
+              onCheckedChange={onReplaceProviderWebSearchChange}
+              aria-label={t("Replace provider web search")}
               size="sm"
             />
           }
@@ -1826,9 +1770,11 @@ function buildProxySettings({
 function buildApiBridgeSettings({
   settings,
   retry429Form,
+  replaceProviderWebSearch,
 }: {
   settings: AppSettings;
   retry429Form: ApiBridgeRetryFormState;
+  replaceProviderWebSearch: boolean;
 }): AppSettings {
   const result: AppSettings = { ...settings };
   const apiBridge = isRecord(settings.api_bridge)
@@ -1849,19 +1795,19 @@ function buildApiBridgeSettings({
   );
 
   apiBridge.retry_429 = retry429;
+  apiBridge.replace_provider_web_search = replaceProviderWebSearch;
+  delete apiBridge.replaceProviderWebSearch;
   result.api_bridge = apiBridge as AppSettings["api_bridge"];
   return result;
 }
 
 function buildSearchToolSettings({
   settings,
-  enabled,
   maxResults,
   searchContextSize,
   sources,
 }: {
   settings: AppSettings;
-  enabled: boolean;
   maxResults: string;
   searchContextSize: SearchContextSize;
   sources: Record<SearchSourceId, SearchSourceForm>;
@@ -1875,10 +1821,10 @@ function buildSearchToolSettings({
     : {};
   const nextSearchTool: Record<string, unknown> = {
     ...existingSearchTool,
-    enabled,
     max_results: normalizedSearchMaxResults(maxResults),
     search_context_size: searchContextSize,
   };
+  delete nextSearchTool.enabled;
   const nextSources: Record<string, unknown> = {};
 
   for (const [name, source] of Object.entries(existingSources)) {
