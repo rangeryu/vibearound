@@ -531,6 +531,8 @@ async fn translated_web_search_fallback_response(
             upstream_response,
             &fallback,
             &provider,
+            record,
+            round + 1,
         )
         .await
         {

@@ -8,6 +8,8 @@ use va_ai_api_bridge::{
     UniversalRequest, UniversalResponse, UniversalTool,
 };
 
+use super::super::bridge_recording::ActiveBridgeRecord;
+
 pub(super) const WEB_SEARCH_FALLBACK_TOOL_NAME: &str = "vibearound_web_search";
 pub(super) const MAX_WEB_SEARCH_FALLBACK_ROUNDS: usize = 4;
 
@@ -125,6 +127,8 @@ pub(super) async fn append_web_search_results(
     response: UniversalResponse,
     fallback: &WebSearchFallback,
     provider: &impl WebSearchProvider,
+    record: Option<&ActiveBridgeRecord>,
+    round: usize,
 ) -> Result<bool, String> {
     let (calls, has_other_tool_calls) = collect_host_tool_calls(&response);
     if calls.is_empty() {
@@ -139,22 +143,45 @@ pub(super) async fn append_web_search_results(
 
     request.input.extend(response.output);
     for call in calls {
+        let tool_call_id = call.id.clone();
         let search_request = search_request_from_tool_arguments(&fallback.default_request, &call);
-        let (content, is_error) = match provider.search(search_request).await {
-            Ok(response) => (
-                serde_json::to_string_pretty(&response)
-                    .unwrap_or_else(|_| json!(response).to_string()),
-                false,
-            ),
-            Err(error) => (
-                json!({
-                    "provider": "vibearound",
-                    "error": error.to_string()
-                })
-                .to_string(),
-                true,
-            ),
+        let (content, is_error, trace) = match provider.search(search_request.clone()).await {
+            Ok(response) => {
+                let content = serde_json::to_string_pretty(&response)
+                    .unwrap_or_else(|_| json!(response).to_string());
+                (
+                    content,
+                    false,
+                    json!({
+                        "round": round,
+                        "toolCallId": tool_call_id,
+                        "request": search_request,
+                        "response": response
+                    }),
+                )
+            }
+            Err(error) => {
+                let error = error.to_string();
+                let trace_error = error.clone();
+                (
+                    json!({
+                        "provider": "vibearound",
+                        "error": error
+                    })
+                    .to_string(),
+                    true,
+                    json!({
+                        "round": round,
+                        "toolCallId": tool_call_id,
+                        "request": search_request,
+                        "error": trace_error
+                    }),
+                )
+            }
         };
+        if let Some(record) = record {
+            record.search(&trace);
+        }
         request.input.push(UniversalItem::ToolResult {
             tool_call_id: call.id,
             content: vec![ContentBlock::Text { text: content }],
@@ -435,9 +462,10 @@ mod tests {
             ..UniversalResponse::default()
         };
 
-        let appended = append_web_search_results(&mut request, response, &fallback, &TestProvider)
-            .await
-            .expect("append results");
+        let appended =
+            append_web_search_results(&mut request, response, &fallback, &TestProvider, None, 1)
+                .await
+                .expect("append results");
 
         assert!(appended);
         assert_eq!(request.input.len(), 2);

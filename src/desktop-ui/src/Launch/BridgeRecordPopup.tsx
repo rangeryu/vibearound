@@ -31,6 +31,7 @@ type BridgeRecordPhase =
   | "bridgeRequest"
   | "serverResponse"
   | "bridgeResponse"
+  | "search"
   | "error";
 
 interface RecordedPayload {
@@ -63,6 +64,7 @@ interface BridgeRecordEvent {
   bridgeRequest?: RecordedPayload;
   serverResponse?: RecordedPayload;
   bridgeResponse?: RecordedPayload;
+  search?: RecordedPayload;
   error?: string;
   status?: number;
 }
@@ -77,6 +79,7 @@ interface BridgeRecordEntry {
   bridgeRequest?: RecordedPayload;
   serverResponse?: RecordedPayload;
   bridgeResponse?: RecordedPayload;
+  searchPayloads: RecordedPayload[];
   serverStatus?: number;
   bridgeStatus?: number;
   errors: string[];
@@ -87,7 +90,8 @@ type PayloadTab =
   | "originalRequest"
   | "bridgeRequest"
   | "serverResponse"
-  | "bridgeResponse";
+  | "bridgeResponse"
+  | "search";
 
 export function BridgeRecordPopup({
   open,
@@ -331,13 +335,23 @@ function RecordDetails({ record }: { record: BridgeRecordEntry }) {
   const scopeLabel = metadata?.manualScope ?? metadata?.routeScope;
   const hasStatuses =
     record.serverStatus !== undefined || record.bridgeStatus !== undefined;
+  const searchPayload = useMemo(() => searchPayloadForRecord(record), [record]);
+  const visibleTabs = useMemo(
+    () =>
+      searchPayload
+        ? [...payloadTabs, "search" as const]
+        : payloadTabs,
+    [searchPayload],
+  );
 
   useEffect(() => {
-    if (!payloadForTab(record, tab)) {
-      const first = payloadTabs.find((candidate) => payloadForTab(record, candidate));
+    if (!payloadForTab(record, tab, searchPayload)) {
+      const first = visibleTabs.find((candidate) =>
+        payloadForTab(record, candidate, searchPayload),
+      );
       if (first) setTab(first);
     }
-  }, [record, tab]);
+  }, [record, searchPayload, tab, visibleTabs]);
 
   return (
     <>
@@ -396,58 +410,25 @@ function RecordDetails({ record }: { record: BridgeRecordEntry }) {
         onValueChange={(value) => setTab(value as PayloadTab)}
         className="min-h-0 flex-1 gap-0"
       >
-        <div className="mx-4 mt-3 flex min-h-8 shrink-0 items-center justify-between gap-3">
+        <div className="mx-4 mt-3 flex min-h-8 shrink-0 items-center gap-3">
           <TabsList className="h-8 w-fit rounded-md">
-            {payloadTabs.map((value) => (
+            {visibleTabs.map((value) => (
               <TabsTrigger key={value} value={value} className="h-7 text-xs">
                 {payloadTabLabel(t, value)}
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="flex shrink-0 items-center gap-2">
-            <div
-              className="inline-flex h-8 items-center gap-0.5 rounded-md border border-border bg-muted/40 p-1"
-              role="group"
-              aria-label={t("JSON line wrapping")}
-            >
-              <button
-                type="button"
-                className={cn(
-                  "flex size-6 items-center justify-center rounded-[5px] text-muted-foreground transition-colors",
-                  !wrapJson && "bg-background text-foreground shadow-sm",
-                )}
-                title={t("No wrap")}
-                aria-label={t("No wrap")}
-                aria-pressed={!wrapJson}
-                onClick={() => setWrapJson(false)}
-              >
-                <AlignLeft className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "flex size-6 items-center justify-center rounded-[5px] text-muted-foreground transition-colors",
-                  wrapJson && "bg-background text-foreground shadow-sm",
-                )}
-                title={t("Wrap")}
-                aria-label={t("Wrap")}
-                aria-pressed={wrapJson}
-                onClick={() => setWrapJson(true)}
-              >
-                <WrapText className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
         </div>
-        {payloadTabs.map((value) => (
+        {visibleTabs.map((value) => (
           <TabsContent
             key={value}
             value={value}
             className="mt-0 min-h-0 overflow-hidden px-4 pb-4 pt-3"
           >
             <PayloadViewer
-              payload={payloadForTab(record, value)}
+              payload={payloadForTab(record, value, searchPayload)}
               wrap={wrapJson}
+              onWrapChange={setWrapJson}
             />
           </TabsContent>
         ))}
@@ -459,9 +440,11 @@ function RecordDetails({ record }: { record: BridgeRecordEntry }) {
 function PayloadViewer({
   payload,
   wrap,
+  onWrapChange,
 }: {
   payload?: RecordedPayload;
   wrap: boolean;
+  onWrapChange: (value: boolean) => void;
 }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -490,6 +473,7 @@ function PayloadViewer({
         <span>{formatBytes(payload.byteLength)}</span>
         <span className="flex items-center gap-1.5">
           {payload.truncated && <span>{t("Truncated")}</span>}
+          <WrapToggle wrap={wrap} onWrapChange={onWrapChange} />
           <Button
             type="button"
             variant="ghost"
@@ -533,6 +517,50 @@ function PayloadViewer({
   );
 }
 
+function WrapToggle({
+  wrap,
+  onWrapChange,
+}: {
+  wrap: boolean;
+  onWrapChange: (value: boolean) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <span
+      className="inline-flex h-7 items-center gap-0.5 rounded-md border border-border bg-muted/40 p-0.5"
+      role="group"
+      aria-label={t("JSON line wrapping")}
+    >
+      <button
+        type="button"
+        className={cn(
+          "flex size-5 items-center justify-center rounded-[4px] text-muted-foreground transition-colors",
+          !wrap && "bg-background text-foreground shadow-sm",
+        )}
+        title={t("No wrap")}
+        aria-label={t("No wrap")}
+        aria-pressed={!wrap}
+        onClick={() => onWrapChange(false)}
+      >
+        <AlignLeft className="h-3 w-3" />
+      </button>
+      <button
+        type="button"
+        className={cn(
+          "flex size-5 items-center justify-center rounded-[4px] text-muted-foreground transition-colors",
+          wrap && "bg-background text-foreground shadow-sm",
+        )}
+        title={t("Wrap")}
+        aria-label={t("Wrap")}
+        aria-pressed={wrap}
+        onClick={() => onWrapChange(true)}
+      >
+        <WrapText className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
 const payloadTabs: PayloadTab[] = [
   "originalRequest",
   "bridgeRequest",
@@ -543,11 +571,32 @@ const payloadTabs: PayloadTab[] = [
 const payloadPhases: BridgeRecordPhase[] = [
   "start",
   "bridgeRequest",
+  "search",
   "serverResponse",
   "bridgeResponse",
 ];
 
-function payloadForTab(record: BridgeRecordEntry, tab: PayloadTab) {
+function searchPayloadForRecord(record: BridgeRecordEntry): RecordedPayload | undefined {
+  if (record.searchPayloads.length === 0) return undefined;
+  const json = record.searchPayloads.map((payload, index) => ({
+    index: index + 1,
+    payload: payload.json ?? payload.text,
+  }));
+  const text = JSON.stringify(json, null, 2);
+  return {
+    byteLength: new TextEncoder().encode(text).length,
+    truncated: record.searchPayloads.some((payload) => payload.truncated),
+    text,
+    json,
+  };
+}
+
+function payloadForTab(
+  record: BridgeRecordEntry,
+  tab: PayloadTab,
+  searchPayload?: RecordedPayload,
+) {
+  if (tab === "search") return searchPayload;
   return record[tab];
 }
 
@@ -561,6 +610,8 @@ function payloadTabLabel(t: (value: string) => string, tab: PayloadTab) {
       return t("Server response");
     case "bridgeResponse":
       return t("Bridge response");
+    case "search":
+      return t("Search");
   }
 }
 
@@ -641,6 +692,7 @@ function newRecord(event: BridgeRecordEvent): BridgeRecordEntry {
     requestId: event.requestId,
     timestampMs: event.timestampMs,
     updatedAtMs: event.timestampMs,
+    searchPayloads: [],
     errors: [],
     phases: new Set(),
   };
@@ -661,6 +713,9 @@ function mergeIntoRecord(
     bridgeRequest: event.bridgeRequest ?? record.bridgeRequest,
     serverResponse: event.serverResponse ?? record.serverResponse,
     bridgeResponse: event.bridgeResponse ?? record.bridgeResponse,
+    searchPayloads: event.search
+      ? [...record.searchPayloads, event.search]
+      : record.searchPayloads,
     serverStatus:
       event.phase === "serverResponse" && event.status
         ? event.status
