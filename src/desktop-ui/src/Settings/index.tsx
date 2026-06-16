@@ -80,7 +80,7 @@ type ApiBridgeRetryFormState = {
   retry429DelaySeconds: string;
 };
 
-type SearchSourceId = "exa" | "tavily";
+type SearchSourceId = "exa" | "tavily" | "grok";
 
 type SearchToolSettings = {
   enabled: boolean;
@@ -118,6 +118,7 @@ const AGENT_DISPLAY_ORDER = [
 const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string; baseUrl: string }> = [
   { id: "exa", label: "Exa", baseUrl: "https://api.exa.ai" },
   { id: "tavily", label: "Tavily", baseUrl: "https://api.tavily.com" },
+  { id: "grok", label: "Grok", baseUrl: "https://api.x.ai/v1" },
 ];
 
 export function SettingsDialog({
@@ -2086,6 +2087,7 @@ function defaultSearchSourceForms(): Record<SearchSourceId, SearchSourceForm> {
   return {
     exa: defaultSearchSourceForm(),
     tavily: defaultSearchSourceForm(),
+    grok: defaultSearchSourceForm(),
   };
 }
 

@@ -20,6 +20,12 @@
         "api_key": "YOUR_TAVILY_API_KEY",
         "api_key_env": "TAVILY_API_KEY",
         "base_url": "https://api.tavily.com"
+      },
+      "grok": {
+        "enabled": false,
+        "api_key": "YOUR_XAI_API_KEY",
+        "api_key_env": "XAI_API_KEY",
+        "base_url": "https://api.x.ai/v1"
       }
     }
   },
