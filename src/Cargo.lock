@@ -5737,8 +5737,6 @@ dependencies = [
 [[package]]
 name = "va-ai-api-bridge"
 version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d87100ff7ddc6709fc40414d55fec5b93bfb9d83fe94742a02d251473b37865"
 dependencies = [
  "base64 0.22.1",
  "serde",
