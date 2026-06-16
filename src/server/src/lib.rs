@@ -269,10 +269,10 @@ impl ServerDaemon {
             channel_hub.register_plugin(&name, plugin);
         }
 
-        // 4. Search provider runtime — supervised like ACP providers. When
-        //    enabled but unavailable, host web search requests report a
-        //    provider error instead of returning synthetic results.
-        let search_tool_enabled = cfg.search_tool.enabled;
+        // 4. Search provider runtime — supervised like ACP providers. It
+        //    starts when at least one host search source is enabled.
+        let host_search_available = cfg.search_tool.has_enabled_sources();
+        let replace_provider_web_search = cfg.api_bridge.replace_provider_web_search;
         let search_runtime = SearchToolRuntime::spawn_if_enabled(&cfg.search_tool).await?;
 
         // 5. Web server (Axum)
@@ -282,7 +282,8 @@ impl ServerDaemon {
         let web_channel_manager = Arc::clone(&web_channel);
         let web_auth_token = Arc::clone(&self.auth_token);
         let web_search_runtime = search_runtime.clone();
-        let web_search_enabled = search_tool_enabled;
+        let web_search_available = host_search_available;
+        let web_replace_provider_search = replace_provider_web_search;
         let daemon_port = self.port;
         let web_handle = tokio::spawn(async move {
             run_web_server(
@@ -293,7 +294,8 @@ impl ServerDaemon {
                 web_channel_hub,
                 web_channel_manager,
                 web_auth_token,
-                web_search_enabled,
+                web_search_available,
+                web_replace_provider_search,
                 web_search_runtime,
             )
             .await

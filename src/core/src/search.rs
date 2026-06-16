@@ -92,8 +92,8 @@ pub struct SearchToolRuntime {
 
 impl SearchToolRuntime {
     pub async fn spawn_if_enabled(config: &SearchToolConfig) -> anyhow::Result<Option<Arc<Self>>> {
-        if !config.enabled {
-            tracing::info!("host web search fallback disabled");
+        if !config.has_enabled_sources() {
+            tracing::info!("host web search fallback unavailable; no search sources enabled");
             return Ok(None);
         }
 
@@ -423,7 +423,6 @@ mod tests {
     #[test]
     fn search_tool_env_only_exports_keys_for_enabled_sources() {
         let config = SearchToolConfig {
-            enabled: true,
             stdio_path: None,
             max_results: Some(7),
             search_context_size: Some("high".to_string()),

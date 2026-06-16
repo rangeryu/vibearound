@@ -213,11 +213,11 @@ pub struct ImAgentConfig {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiBridgeConfig {
     pub retry_429: Retry429Config,
+    pub replace_provider_web_search: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SearchToolConfig {
-    pub enabled: bool,
     pub stdio_path: Option<PathBuf>,
     pub max_results: Option<usize>,
     pub search_context_size: Option<String>,
@@ -260,6 +260,7 @@ impl Default for ApiBridgeConfig {
     fn default() -> Self {
         Self {
             retry_429: Retry429Config::default(),
+            replace_provider_web_search: false,
         }
     }
 }
@@ -267,7 +268,6 @@ impl Default for ApiBridgeConfig {
 impl Default for SearchToolConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
             stdio_path: None,
             max_results: None,
             search_context_size: None,
@@ -288,6 +288,10 @@ impl Default for SearchSourceConfig {
 }
 
 impl SearchToolConfig {
+    pub fn has_enabled_sources(&self) -> bool {
+        self.sources.values().any(|source| source.enabled)
+    }
+
     pub fn enabled_source_names(&self) -> Vec<String> {
         let mut names = ["exa", "tavily", "grok"]
             .into_iter()
@@ -640,6 +644,11 @@ fn load_api_bridge_config(root: &serde_json::Value) -> ApiBridgeConfig {
                 .and_then(|value| value.as_object())
                 .map(load_retry_429_config)
                 .unwrap_or_default(),
+            replace_provider_web_search: bool_setting(
+                settings,
+                &["replace_provider_web_search", "replaceProviderWebSearch"],
+            )
+            .unwrap_or(false),
         })
         .unwrap_or_default()
 }
@@ -674,10 +683,6 @@ fn load_search_tool_config(root: &serde_json::Value) -> SearchToolConfig {
         .unwrap_or_default();
 
     SearchToolConfig {
-        enabled: settings
-            .get("enabled")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false),
         stdio_path,
         max_results,
         search_context_size,
@@ -712,6 +717,15 @@ fn string_setting(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
+}
+
+fn bool_setting(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    keys: &[&str],
+) -> Option<bool> {
+    keys.iter()
+        .find_map(|key| settings.get(*key))
+        .and_then(|value| value.as_bool())
 }
 
 fn usize_setting(
@@ -1095,6 +1109,7 @@ mod tests {
         assert!(config.api_bridge.retry_429.enabled);
         assert_eq!(config.api_bridge.retry_429.max_retries, Some(10));
         assert_eq!(config.api_bridge.retry_429.delay_seconds, 10);
+        assert!(!config.api_bridge.replace_provider_web_search);
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1105,12 +1120,13 @@ mod tests {
         let path = dir.join("settings.json");
         fs::write(
             &path,
-            r#"{ "api_bridge": { "retry_429": { "enabled": false, "max_retries": 4, "delay_seconds": 12 } } }"#,
+            r#"{ "api_bridge": { "replaceProviderWebSearch": true, "retry_429": { "enabled": false, "max_retries": 4, "delay_seconds": 12 } } }"#,
         )
         .unwrap();
 
         let config = load_settings_from(&path);
 
+        assert!(config.api_bridge.replace_provider_web_search);
         assert!(!config.api_bridge.retry_429.enabled);
         assert_eq!(config.api_bridge.retry_429.max_retries, Some(4));
         assert_eq!(config.api_bridge.retry_429.delay_seconds, 12);
@@ -1144,18 +1160,17 @@ mod tests {
 
         let config = load_settings_from(&path);
 
-        assert!(!config.search_tool.enabled);
         assert!(config.search_tool.stdio_path.is_none());
         assert_eq!(config.search_tool.max_results, None);
         assert_eq!(config.search_tool.search_context_size, None);
         assert!(config.search_tool.sources.is_empty());
+        assert!(!config.search_tool.has_enabled_sources());
         fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn search_tool_enabled_source_names_use_preferred_order() {
         let config = SearchToolConfig {
-            enabled: true,
             stdio_path: None,
             max_results: None,
             search_context_size: None,
@@ -1212,7 +1227,6 @@ mod tests {
             r#"
             {
               "searchTool": {
-                "enabled": true,
                 "stdioPath": "~/bin/va-search-tool",
                 "maxResults": 8,
                 "searchContextSize": " high ",
@@ -1237,11 +1251,11 @@ mod tests {
 
         let config = load_settings_from(&path);
 
-        assert!(config.search_tool.enabled);
         assert_eq!(
             config.search_tool.stdio_path.as_deref(),
             Some(home_dir().join("bin/va-search-tool").as_path())
         );
+        assert!(config.search_tool.has_enabled_sources());
         assert_eq!(config.search_tool.max_results, Some(8));
         assert_eq!(
             config.search_tool.search_context_size.as_deref(),

@@ -2,6 +2,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use common::config;
+use common::profiles::catalog::ContentCapabilities;
 use common::profiles::headers::merged_upstream_headers;
 use common::profiles::schema::ProfileDef;
 use common::profiles::{catalog, connections};
@@ -82,25 +83,51 @@ pub(super) async fn bridge_handler(
 
     let mut agent_request = original_request;
 
-    let same_protocol_needs_web_search_fallback = state.search_tool_enabled
-        && client_protocol == upstream.protocol
+    let requested_agent_model = wire_model(&agent_request);
+    let model_mapping = bridge_model_mapping(
+        &upstream.profile,
+        bridge_preference.as_ref(),
+        &target_api_type,
+        requested_agent_model.as_deref(),
+    );
+    let upstream_model_for_capabilities = model_mapping
+        .as_ref()
+        .map(|mapping| mapping.upstream_model.as_str())
+        .or(requested_agent_model.as_deref());
+    let target_model_capabilities = resolved_bridge_model_capabilities(
+        &upstream.profile,
+        &target_api_type,
+        upstream_model_for_capabilities,
+        model_mapping.as_ref().map(|mapping| &mapping.capabilities),
+    );
+    let requested_web_search_same_protocol = client_protocol == upstream.protocol
         && !upstream.is_google_code_assist()
         && client_protocol
             .decode_agent_request(agent_request.clone())
             .map(|request| server_tools::request_needs_web_search_fallback(&request))
             .unwrap_or(false);
+    let same_protocol_needs_web_search_fallback = requested_web_search_same_protocol
+        && state.host_search_available
+        && (state.replace_provider_web_search || !target_model_capabilities.web_search);
+    let same_protocol_needs_web_search_discard = requested_web_search_same_protocol
+        && !state.host_search_available
+        && !target_model_capabilities.web_search;
+
+    if same_protocol_needs_web_search_discard {
+        tracing::info!(
+            target: "server::web_server::api_bridge",
+            request_id = %request_id,
+            profile_id = %profile_id,
+            target_api_type = %target_api_type,
+            "API bridge will translate request to discard unsupported provider web search"
+        );
+    }
 
     if client_protocol == upstream.protocol
         && !upstream.is_google_code_assist()
         && !same_protocol_needs_web_search_fallback
+        && !same_protocol_needs_web_search_discard
     {
-        let requested_agent_model = wire_model(&agent_request);
-        let model_mapping = bridge_model_mapping(
-            &upstream.profile,
-            bridge_preference.as_ref(),
-            &target_api_type,
-            requested_agent_model.as_deref(),
-        );
         let original_agent_request = agent_request.clone();
         if let Some(mapping) = &model_mapping {
             apply_wire_model(&mut agent_request, &mapping.upstream_model);
@@ -241,12 +268,6 @@ pub(super) async fn bridge_handler(
             return record_json_error(record.as_ref(), StatusCode::BAD_REQUEST, &error.to_string());
         }
     };
-    let model_mapping = bridge_model_mapping(
-        &upstream.profile,
-        bridge_preference.as_ref(),
-        &target_api_type,
-        universal_request.model.as_deref(),
-    );
     if let Some(mapping) = &model_mapping {
         universal_request.model = Some(mapping.upstream_model.clone());
     }
@@ -263,9 +284,29 @@ pub(super) async fn bridge_handler(
         upstream.protocol,
         sanitization,
     );
-    let web_search_fallback = if state.search_tool_enabled {
+    let request_needs_web_search =
+        server_tools::request_needs_web_search_fallback(&universal_request);
+    let should_use_host_web_search = request_needs_web_search
+        && state.host_search_available
+        && (state.replace_provider_web_search
+            || !target_model_capabilities.web_search
+            || client_protocol != upstream.protocol);
+    let web_search_fallback = if should_use_host_web_search {
         server_tools::prepare_web_search_fallback(&mut universal_request)
     } else {
+        if request_needs_web_search
+            && server_tools::discard_web_search_server_tools(&mut universal_request)
+        {
+            tracing::info!(
+                target: "server::web_server::api_bridge",
+                request_id = %request_id,
+                profile_id = %profile_id,
+                target_api_type = %target_api_type,
+                host_search_available = state.host_search_available,
+                native_web_search = target_model_capabilities.web_search,
+                "API bridge discarded provider web search server tool"
+            );
+        }
         None
     };
     if let Some(fallback) = &web_search_fallback {
@@ -906,6 +947,46 @@ struct BridgeModelMetadata {
     web_search: bool,
 }
 
+fn resolved_bridge_model_capabilities(
+    profile: &common::profiles::schema::ProfileDef,
+    target_api_type: &str,
+    upstream_model: Option<&str>,
+    capability_overrides: Option<&ContentCapabilities>,
+) -> ContentCapabilities {
+    let overrides = profile.overrides.get(target_api_type);
+    let mut capabilities = if let Some(capabilities) =
+        overrides.and_then(|overrides| overrides.capabilities.clone())
+    {
+        capabilities
+    } else {
+        let Some(provider) = catalog::get(&profile.provider) else {
+            return capability_overrides.cloned().unwrap_or_default();
+        };
+        let endpoint_id = overrides.and_then(|overrides| overrides.endpoint_id.as_deref());
+        let Some(endpoint) = catalog::find_endpoint(provider, target_api_type, endpoint_id) else {
+            return capability_overrides.cloned().unwrap_or_default();
+        };
+        let mut capabilities = endpoint.capabilities.content.clone();
+        let model = upstream_model
+            .or_else(|| {
+                overrides
+                    .and_then(|overrides| overrides.model.as_deref())
+                    .map(str::trim)
+                    .filter(|model| !model.is_empty())
+            })
+            .or_else(|| endpoint.models.first().map(|model| model.id.as_str()));
+        if let Some(model) = model.and_then(|model| catalog::find_model(endpoint, model)) {
+            capabilities = capabilities.merge(&model.capabilities);
+        }
+        capabilities
+    };
+
+    if let Some(overrides) = capability_overrides {
+        capabilities = capabilities.merge(overrides);
+    }
+    capabilities
+}
+
 fn bridge_model_metadata(
     profile: &common::profiles::schema::ProfileDef,
     target_api_type: &str,
@@ -927,10 +1008,12 @@ fn bridge_model_metadata(
         };
     };
     let model_def = catalog::find_model(endpoint, &model.upstream_model);
-    let capabilities = model_def
-        .map(|model_def| endpoint.capabilities.content.merge(&model_def.capabilities))
-        .unwrap_or_else(|| endpoint.capabilities.content.clone())
-        .merge(&model.capabilities);
+    let capabilities = resolved_bridge_model_capabilities(
+        profile,
+        target_api_type,
+        Some(&model.upstream_model),
+        Some(&model.capabilities),
+    );
     BridgeModelMetadata {
         context_window: model_def.and_then(|model_def| model_def.context_window),
         image_input: capabilities.image_input,
