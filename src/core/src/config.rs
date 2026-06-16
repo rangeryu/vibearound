@@ -166,6 +166,8 @@ pub struct Config {
     pub proxy: HttpProxyConfig,
     // --- API bridge behavior ---
     pub api_bridge: ApiBridgeConfig,
+    // --- Host-side web search fallback ---
+    pub search_tool: SearchToolConfig,
     // --- Raw channels JSON (for dynamic plugin config) ---
     raw_channels: serde_json::Value,
 }
@@ -214,6 +216,21 @@ pub struct ApiBridgeConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchToolConfig {
+    pub enabled: bool,
+    pub stdio_path: Option<PathBuf>,
+    pub sources: BTreeMap<String, SearchSourceConfig>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchSourceConfig {
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub api_key_env: Option<String>,
+    pub base_url: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Retry429Config {
     pub enabled: bool,
     pub max_retries: Option<usize>,
@@ -241,6 +258,27 @@ impl Default for ApiBridgeConfig {
     fn default() -> Self {
         Self {
             retry_429: Retry429Config::default(),
+        }
+    }
+}
+
+impl Default for SearchToolConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            stdio_path: None,
+            sources: BTreeMap::new(),
+        }
+    }
+}
+
+impl Default for SearchSourceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_key: None,
+            api_key_env: None,
+            base_url: None,
         }
     }
 }
@@ -504,6 +542,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
 
     let im_agent = load_im_agent_config(&root);
     let api_bridge = load_api_bridge_config(&root);
+    let search_tool = load_search_tool_config(&root);
 
     let proxy = root
         .get("proxy")
@@ -549,6 +588,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         integrations,
         proxy,
         api_bridge,
+        search_tool,
         raw_channels,
     }
 }
@@ -579,6 +619,80 @@ fn load_api_bridge_config(root: &serde_json::Value) -> ApiBridgeConfig {
                 .unwrap_or_default(),
         })
         .unwrap_or_default()
+}
+
+fn load_search_tool_config(root: &serde_json::Value) -> SearchToolConfig {
+    let Some(settings) = root
+        .get("search_tool")
+        .or_else(|| root.get("searchTool"))
+        .and_then(|value| value.as_object())
+    else {
+        return SearchToolConfig::default();
+    };
+
+    let stdio_path = string_setting(settings, &["stdio_path", "stdioPath", "command"])
+        .map(|value| expand_home(&value));
+    let sources = settings
+        .get("sources")
+        .and_then(|value| value.as_object())
+        .map(|sources| {
+            sources
+                .iter()
+                .filter_map(|(name, value)| {
+                    let name = normalize_search_source_name(name)?;
+                    let settings = value.as_object()?;
+                    Some((name, load_search_source_config(settings)))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+
+    SearchToolConfig {
+        enabled: settings
+            .get("enabled")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        stdio_path,
+        sources,
+    }
+}
+
+fn load_search_source_config(
+    settings: &serde_json::Map<String, serde_json::Value>,
+) -> SearchSourceConfig {
+    let api_key = string_setting(settings, &["api_key", "apiKey", "key"]);
+    let api_key_env = string_setting(settings, &["api_key_env", "apiKeyEnv", "keyEnv"]);
+    let base_url = string_setting(settings, &["base_url", "baseUrl", "url"]);
+    SearchSourceConfig {
+        enabled: settings
+            .get("enabled")
+            .and_then(|value| value.as_bool())
+            .unwrap_or_else(|| api_key.is_some() || api_key_env.is_some()),
+        api_key,
+        api_key_env,
+        base_url,
+    }
+}
+
+fn string_setting(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    keys: &[&str],
+) -> Option<String> {
+    keys.iter()
+        .find_map(|key| settings.get(*key))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn normalize_search_source_name(name: &str) -> Option<String> {
+    let normalized = name.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
 }
 
 fn load_retry_429_config(settings: &serde_json::Map<String, serde_json::Value>) -> Retry429Config {
@@ -768,6 +882,7 @@ impl Default for Config {
             integrations: AgentIntegrationsConfig::default(),
             proxy: HttpProxyConfig::default(),
             api_bridge: ApiBridgeConfig::default(),
+            search_tool: SearchToolConfig::default(),
             raw_channels: serde_json::Value::Object(serde_json::Map::new()),
         }
     }
@@ -970,6 +1085,76 @@ mod tests {
 
         assert_eq!(config.api_bridge.retry_429.max_retries, None);
         assert_eq!(config.api_bridge.retry_429.delay_seconds, 3);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn search_tool_defaults_to_disabled() {
+        let dir = unique_test_dir("search-tool-default");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, "{}").unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert!(!config.search_tool.enabled);
+        assert!(config.search_tool.stdio_path.is_none());
+        assert!(config.search_tool.sources.is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn search_tool_settings_can_be_configured() {
+        let dir = unique_test_dir("search-tool-configured");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(
+            &path,
+            r#"
+            {
+              "searchTool": {
+                "enabled": true,
+                "stdioPath": "~/bin/va-search-tool",
+                "sources": {
+                  " Exa ": {
+                    "apiKey": " exa-key ",
+                    "baseUrl": " https://api.exa.ai "
+                  },
+                  "tavily": {
+                    "enabled": false,
+                    "api_key_env": " TAVILY_API_KEY "
+                  },
+                  "grok": {
+                    "key": "xai-key"
+                  }
+                }
+              }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert!(config.search_tool.enabled);
+        assert_eq!(
+            config.search_tool.stdio_path.as_deref(),
+            Some(home_dir().join("bin/va-search-tool").as_path())
+        );
+        let exa = config.search_tool.sources.get("exa").expect("exa source");
+        assert!(exa.enabled);
+        assert_eq!(exa.api_key.as_deref(), Some("exa-key"));
+        assert_eq!(exa.base_url.as_deref(), Some("https://api.exa.ai"));
+        let tavily = config
+            .search_tool
+            .sources
+            .get("tavily")
+            .expect("tavily source");
+        assert!(!tavily.enabled);
+        assert_eq!(tavily.api_key_env.as_deref(), Some("TAVILY_API_KEY"));
+        let grok = config.search_tool.sources.get("grok").expect("grok source");
+        assert!(grok.enabled);
+        assert_eq!(grok.api_key.as_deref(), Some("xai-key"));
         fs::remove_dir_all(&dir).unwrap();
     }
 
