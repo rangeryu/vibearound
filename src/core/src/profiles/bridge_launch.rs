@@ -27,10 +27,10 @@ pub(super) fn render_bridge_launch(
         fake_model_id,
         bridge_models,
     )?;
-    let scope_agent_id = if launch_target == "claude-desktop" {
-        "claude"
-    } else {
-        launch_target
+    let scope_agent_id = match launch_target {
+        "claude-desktop" => "claude",
+        "codex-desktop" => "codex",
+        _ => launch_target,
     };
     settings.scope = format!("{scope_agent_id}-{client_api_type}");
     match launch_target {
@@ -1018,6 +1018,26 @@ mod tests {
                 .map(|(_, value)| value.as_str()),
             Some("http://127.0.0.1:12358/va/local-api/dashscope-test/claude-anthropic/openai-chat")
         );
+    }
+
+    #[test]
+    fn codex_desktop_bridge_launch_reuses_codex_scope() {
+        let profile = deepseek_profile();
+        let rendered = render_bridge_launch(
+            &profile,
+            "codex-desktop",
+            "launch-test",
+            "openai-responses",
+            "openai-chat",
+            None,
+            Some("GPT-5.5"),
+            &[],
+        )
+        .expect("codex desktop bridge launch renders");
+
+        assert!(rendered.command_args.iter().any(|arg| {
+            arg == "model_providers.deepseek.base_url='http://127.0.0.1:12358/va/local-api/deepseek-test/codex-openai-responses/openai-chat/v1'"
+        }));
     }
 
     fn dashscope_profile() -> ProfileDef {

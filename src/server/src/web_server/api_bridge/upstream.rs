@@ -422,6 +422,14 @@ pub(super) async fn upstream_error_response(
     upstream: reqwest::Response,
     record: Option<&ActiveBridgeRecord>,
 ) -> Response {
+    upstream_error_response_with_hint(upstream, record, None).await
+}
+
+pub(super) async fn upstream_error_response_with_hint(
+    upstream: reqwest::Response,
+    record: Option<&ActiveBridgeRecord>,
+    hint: Option<&str>,
+) -> Response {
     let status =
         StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let content_type = upstream
@@ -434,8 +442,22 @@ pub(super) async fn upstream_error_response(
         Ok(bytes) => {
             if let Some(record) = record {
                 let payload = RecordedPayload::from_bytes(&bytes);
-                record.server_response(status.as_u16(), payload.clone());
-                record.bridge_response(status.as_u16(), payload);
+                record.server_response(status.as_u16(), payload);
+            }
+            if let Some(enriched) = enriched_content_risk_body(&bytes, hint) {
+                if let Some(record) = record {
+                    record.bridge_json_response(status, &enriched);
+                }
+                return Response::builder()
+                    .status(status)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(enriched.to_string()))
+                    .unwrap_or_else(|_| {
+                        json_error(StatusCode::BAD_GATEWAY, "upstream request failed")
+                    });
+            }
+            if let Some(record) = record {
+                record.bridge_response(status.as_u16(), RecordedPayload::from_bytes(&bytes));
             }
             Body::from(bytes)
         }
@@ -461,6 +483,27 @@ pub(super) async fn upstream_error_response(
         .unwrap_or_else(|_| json_error(StatusCode::BAD_GATEWAY, "upstream request failed"))
 }
 
+fn enriched_content_risk_body(bytes: &[u8], hint: Option<&str>) -> Option<Value> {
+    let hint = hint?;
+    let upstream_error: Value = serde_json::from_slice(bytes).ok()?;
+    let message = upstream_error
+        .get("error")
+        .and_then(|error| error.get("message"))
+        .and_then(Value::as_str)?;
+    if message != "Content Exists Risk" {
+        return None;
+    }
+
+    Some(json!({
+        "error": {
+            "message": format!("{hint}: DeepSeek rejected the request with Content Exists Risk. This usually means the prompt or injected web search result triggered DeepSeek content moderation."),
+            "type": "vibearound_bridge_upstream_content_risk",
+            "code": "upstream_content_risk",
+            "upstream_error": upstream_error.get("error").cloned().unwrap_or(upstream_error),
+        }
+    }))
+}
+
 pub(super) fn redacted_url(url: &str) -> String {
     match reqwest::Url::parse(url) {
         Ok(mut parsed) => {
@@ -481,8 +524,9 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        apply_upstream_auth, join_gemini_generate_content_endpoint, join_protocol_endpoint,
-        rate_limit_retry_delay, request_stream, BridgeProtocol, UpstreamEndpoint, UpstreamKind,
+        apply_upstream_auth, enriched_content_risk_body, join_gemini_generate_content_endpoint,
+        join_protocol_endpoint, rate_limit_retry_delay, request_stream, BridgeProtocol,
+        UpstreamEndpoint, UpstreamKind,
     };
 
     #[test]
@@ -543,6 +587,38 @@ mod tests {
             BridgeProtocol::GeminiGenerateContent,
             &json!({ "__va_stream": false, "stream": true })
         ));
+    }
+
+    #[test]
+    fn enriches_deepseek_content_risk_with_web_search_hint() {
+        let body = json!({
+            "error": {
+                "message": "Content Exists Risk",
+                "type": "invalid_request_error",
+                "param": null,
+                "code": "invalid_request_error"
+            }
+        })
+        .to_string();
+
+        let enriched = enriched_content_risk_body(
+            body.as_bytes(),
+            Some("Web search fallback failed after sending search results to the upstream model"),
+        )
+        .expect("content risk should be enriched");
+
+        assert_eq!(
+            enriched["error"]["type"],
+            "vibearound_bridge_upstream_content_risk"
+        );
+        assert_eq!(
+            enriched["error"]["upstream_error"]["message"],
+            "Content Exists Risk"
+        );
+        assert!(enriched["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("injected web search result"));
     }
 
     #[test]
