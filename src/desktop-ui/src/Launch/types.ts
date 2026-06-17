@@ -7,7 +7,14 @@
 
 export type AuthMode = "api_key" | "oauth_via_cli" | "google_oauth";
 export type CompatibilityBridgeMode = "auto" | "on" | "off";
-export type ConnectionAgentId = "claude" | "codex" | "gemini" | "opencode" | "pi";
+export type ConnectionAgentId =
+  | "claude"
+  | "claude-desktop"
+  | "codex"
+  | "codex-desktop"
+  | "gemini"
+  | "opencode"
+  | "pi";
 
 export interface ProfileSummary {
   id: string;

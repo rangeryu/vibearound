@@ -45,8 +45,20 @@ export const CONNECTION_AGENTS: ConnectionAgentDef[] = [
     defaultApiType: "anthropic",
   },
   {
+    id: "claude-desktop",
+    label: "Claude Desktop",
+    supportedApiTypes: ["anthropic"],
+    defaultApiType: "anthropic",
+  },
+  {
     id: "codex",
     label: "Codex CLI",
+    supportedApiTypes: ["openai-responses"],
+    defaultApiType: "openai-responses",
+  },
+  {
+    id: "codex-desktop",
+    label: "Codex Desktop",
     supportedApiTypes: ["openai-responses"],
     defaultApiType: "openai-responses",
   },
@@ -154,7 +166,10 @@ export function recommendedBridgeTarget(
 ): string | null {
   const anthropicClient =
     clientApiType === "anthropic" &&
-    (agentId === "claude" || agentId === "opencode" || agentId === "pi");
+    (agentId === "claude" ||
+      agentId === "claude-desktop" ||
+      agentId === "opencode" ||
+      agentId === "pi");
   const order =
     agentId === "gemini" && clientApiType === "gemini"
       ? ["openai-chat", "openai-responses", "anthropic"]
