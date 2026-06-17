@@ -1048,6 +1048,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn codex_desktop_chat_bridge_launch_uses_desktop_scope() {
+        let profile = deepseek_profile();
+        let rendered = render_bridge_launch(
+            &profile,
+            "codex-desktop",
+            "launch-test",
+            "openai-responses",
+            "openai-chat",
+            None,
+            Some("GPT-5.5"),
+            &[],
+        )
+        .expect("codex desktop bridge launch renders");
+
+        assert!(rendered.command_args.iter().any(|arg| {
+            arg == "model_providers.deepseek.base_url='http://127.0.0.1:12358/va/local-api/deepseek-test/codex-desktop-openai-responses/openai-chat/v1'"
+        }));
+    }
+
     fn dashscope_profile() -> ProfileDef {
         let mut credentials = BTreeMap::new();
         credentials.insert("api_key".to_string(), "test-key".to_string());

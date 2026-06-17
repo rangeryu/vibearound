@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common::search::{SearchError, SearchToolRuntime, WebSearchRequest, WebSearchResponse};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use va_ai_api_bridge::{
     ContentBlock, ServerToolDeclaration, ServerToolKind, ToolChoice, UniversalItem,
     UniversalRequest, UniversalResponse, UniversalTool,
@@ -147,8 +147,7 @@ pub(super) async fn append_web_search_results(
         let search_request = search_request_from_tool_arguments(&fallback.default_request, &call);
         let (content, is_error, trace) = match provider.search(search_request.clone()).await {
             Ok(response) => {
-                let content = serde_json::to_string_pretty(&response)
-                    .unwrap_or_else(|_| json!(response).to_string());
+                let content = search_tool_result_content(&response, &search_request);
                 (
                     content,
                     false,
@@ -191,6 +190,69 @@ pub(super) async fn append_web_search_results(
     }
     request.tool_choice = Some(ToolChoice::Auto);
     Ok(true)
+}
+
+fn search_tool_result_content(response: &WebSearchResponse, request: &WebSearchRequest) -> String {
+    let snippet_limit = snippet_char_limit(request.search_context_size.as_deref());
+    let results = response
+        .results
+        .iter()
+        .enumerate()
+        .map(|(index, result)| {
+            let mut value = Map::new();
+            value.insert("index".to_string(), json!(index + 1));
+            insert_non_empty(&mut value, "title", &result.title, usize::MAX);
+            insert_non_empty(&mut value, "url", &result.url, usize::MAX);
+            insert_non_empty(&mut value, "source", &result.source, usize::MAX);
+            insert_non_empty(&mut value, "snippet", &result.snippet, snippet_limit);
+            insert_non_empty(&mut value, "content", &result.content, snippet_limit);
+            if let Some(score) = result.score {
+                value.insert("score".to_string(), json!(score));
+            }
+            if let Some(published_date) = &result.published_date {
+                insert_non_empty(&mut value, "publishedDate", published_date, usize::MAX);
+            }
+            Value::Object(value)
+        })
+        .collect::<Vec<_>>();
+
+    json!({
+        "provider": response.provider,
+        "query": response.query,
+        "results": results,
+        "citations": response.citations,
+    })
+    .to_string()
+}
+
+fn snippet_char_limit(search_context_size: Option<&str>) -> usize {
+    match search_context_size {
+        Some("low") => 320,
+        Some("high") => 1_600,
+        _ => 800,
+    }
+}
+
+fn insert_non_empty(object: &mut Map<String, Value>, key: &str, value: &str, limit: usize) {
+    if let Some(text) = compact_text(value, limit) {
+        object.insert(key.to_string(), Value::String(text));
+    }
+}
+
+fn compact_text(value: &str, limit: usize) -> Option<String> {
+    let text = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return None;
+    }
+    if text.chars().count() <= limit {
+        return Some(text);
+    }
+    let mut clipped = text
+        .chars()
+        .take(limit.saturating_sub(3))
+        .collect::<String>();
+    clipped.push_str("...");
+    Some(clipped)
 }
 
 fn collect_host_tool_calls(response: &UniversalResponse) -> (Vec<HostToolCall>, bool) {
@@ -493,5 +555,41 @@ mod tests {
                 citations: Vec::new(),
             })
         }
+    }
+
+    #[test]
+    fn formats_compact_search_results_with_content() {
+        let request = WebSearchRequest {
+            query: "today news".to_string(),
+            search_context_size: Some("low".to_string()),
+            ..WebSearchRequest::default()
+        };
+        let response = WebSearchResponse {
+            provider: "test".to_string(),
+            query: request.query.clone(),
+            citations: vec!["https://example.com/news".to_string()],
+            results: vec![common::search::WebSearchResult {
+                title: "Example News".to_string(),
+                url: "https://example.com/news".to_string(),
+                snippet: "A concise snippet that is safe to pass through.".to_string(),
+                content: "Raw provider content is still forwarded for model grounding.".to_string(),
+                score: Some(0.8),
+                published_date: Some("2026-06-17".to_string()),
+                source: "exa".to_string(),
+            }],
+        };
+
+        let content = search_tool_result_content(&response, &request);
+        let payload: Value = serde_json::from_str(&content).expect("json payload");
+
+        assert_eq!(payload["results"][0]["title"], "Example News");
+        assert_eq!(
+            payload["results"][0]["snippet"],
+            "A concise snippet that is safe to pass through."
+        );
+        assert_eq!(
+            payload["results"][0]["content"],
+            "Raw provider content is still forwarded for model grounding."
+        );
     }
 }

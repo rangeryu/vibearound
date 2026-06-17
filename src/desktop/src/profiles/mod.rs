@@ -11,6 +11,7 @@ mod sessions;
 mod store;
 mod summary;
 mod terminal;
+mod test_connection;
 mod workspace;
 
 use std::path::PathBuf;
@@ -36,6 +37,7 @@ pub use sessions::LaunchSessionSummary;
 pub(crate) use store::ordered_profiles;
 pub use store::ProfileDraft;
 pub use summary::{CatalogEntry, ProfileSummary};
+pub use test_connection::ProfileConnectionTestResult;
 pub use workspace::WorkspaceOption;
 
 // ---------------------------------------------------------------------------
@@ -151,6 +153,13 @@ pub async fn profiles_google_oauth_login() -> Result<GoogleOAuthStatus, String> 
     common::profiles::google_oauth::login_with_browser_default_client()
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn profiles_test_connection(
+    draft: ProfileDraft,
+) -> Result<ProfileConnectionTestResult, String> {
+    test_connection::test_connection(draft).await
 }
 
 // ---------------------------------------------------------------------------

@@ -42,7 +42,8 @@ pub use routes::{
 use stream::{translated_events_stream_response, translated_stream_response};
 use upstream::{
     apply_upstream_auth, redacted_url, request_stream, send_upstream_request_with_rate_limit_retry,
-    upstream_endpoint, upstream_error_response, RateLimitRetryContext, ResolvedUpstreamRoute,
+    upstream_endpoint, upstream_error_response, upstream_error_response_with_hint,
+    RateLimitRetryContext, ResolvedUpstreamRoute,
 };
 
 use super::bridge_recording::{ActiveBridgeRecord, BridgeRecordMetadata};
@@ -650,7 +651,14 @@ async fn translated_web_search_fallback_response(
             }
         };
         if !response.status().is_success() {
-            return upstream_error_response(response, record).await;
+            return upstream_error_response_with_hint(
+                response,
+                record,
+                Some(
+                    "Web search fallback failed after sending search results to the upstream model",
+                ),
+            )
+            .await;
         }
     }
 
@@ -1121,9 +1129,17 @@ fn log_content_sanitization(
 }
 
 fn client_api_type_from_scope(scope: &str) -> Option<&str> {
-    ["claude", "codex", "gemini", "opencode", "pi"]
-        .iter()
-        .find_map(|agent_id| scope.strip_prefix(&format!("{agent_id}-")))
+    [
+        "claude-desktop",
+        "codex-desktop",
+        "claude",
+        "codex",
+        "gemini",
+        "opencode",
+        "pi",
+    ]
+    .iter()
+    .find_map(|agent_id| scope.strip_prefix(&format!("{agent_id}-")))
 }
 
 fn validate_manual_scope(scope: &str) -> Result<(), (StatusCode, String)> {
@@ -1196,7 +1212,7 @@ fn json_error_body(message: &str) -> Value {
 mod tests {
     use common::config::HttpProxyConfig;
 
-    use super::{proxy_http_client, validate_manual_scope};
+    use super::{client_api_type_from_scope, proxy_http_client, validate_manual_scope};
 
     #[test]
     fn accepts_manual_bridge_scope() {
@@ -1209,6 +1225,18 @@ mod tests {
         assert!(validate_manual_scope("codex/project").is_err());
         assert!(validate_manual_scope("codex project").is_err());
         assert!(validate_manual_scope(&"a".repeat(129)).is_err());
+    }
+
+    #[test]
+    fn client_api_type_parser_accepts_desktop_scopes() {
+        assert_eq!(
+            client_api_type_from_scope("codex-desktop-openai-responses"),
+            Some("openai-responses")
+        );
+        assert_eq!(
+            client_api_type_from_scope("claude-desktop-anthropic"),
+            Some("anthropic")
+        );
     }
 
     #[test]
