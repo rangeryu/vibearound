@@ -29,6 +29,7 @@ import { StepChannels } from "../Onboarding/components/StepChannels";
 import { StepTunnel } from "../Onboarding/components/StepTunnel";
 import { useChannelAuth } from "../Onboarding/hooks/useChannelAuth";
 import {
+  agentSdkCheckingReport,
   localPluginReport,
   mergeReportsById,
   pluginCheckingReport,
@@ -41,6 +42,7 @@ import type {
   DiscoveredChannelPlugin,
   PluginRegistryEntry,
   Settings as AppSettings,
+  StartkitChoices,
   StartkitItemReport,
   TunnelSummary,
 } from "../Onboarding/types";
@@ -196,8 +198,14 @@ export function SettingsDialog({
   const [pluginUpdateReports, setPluginUpdateReports] = useState<
     StartkitItemReport[]
   >([]);
+  const [agentSdkReports, setAgentSdkReports] = useState<StartkitItemReport[]>(
+    [],
+  );
   const [checkingPluginUpdates, setCheckingPluginUpdates] = useState(false);
   const [pluginUpdatesChecked, setPluginUpdatesChecked] = useState(false);
+  const [installingAgentAcpPlugins, setInstallingAgentAcpPlugins] = useState<
+    Set<string>
+  >(() => new Set());
   const [loading, setLoading] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [saving, setSaving] = useState<SaveState>("idle");
@@ -378,6 +386,7 @@ export function SettingsDialog({
     setLoading(true);
     setSettingsLoaded(false);
     setPluginUpdateReports([]);
+    setAgentSdkReports([]);
     setPluginUpdatesChecked(false);
     pluginUpdatesAutoCheckedRef.current = false;
     setNotice(null);
@@ -397,6 +406,9 @@ export function SettingsDialog({
       setDiscoveredPlugins(discovered);
       setPluginUpdateReports(
         registry.map((entry) => localPluginReport(entry, discovered)),
+      );
+      setAgentSdkReports(
+        orderedAgents.filter(isAgentAcpPlugin).map(agentSdkLocalReport),
       );
       setTunnels(tunnelDefs);
       hydrateAgents(loadedSettings, orderedAgents);
@@ -499,18 +511,35 @@ export function SettingsDialog({
     [],
   );
 
+  const pluginAcpAgents = useMemo(
+    () => agents.filter(isAgentAcpPlugin),
+    [agents],
+  );
+  const pluginScanChoices = useMemo<StartkitChoices>(
+    () => ({
+      agents: pluginAcpAgents.map((agent) => agent.id),
+      tunnel: tunnelProvider,
+      channels: Array.from(enabledChannels),
+      source: "default",
+      toolchainMode: "system",
+      shellPath: false,
+    }),
+    [enabledChannels, pluginAcpAgents, tunnelProvider],
+  );
+
   const checkPluginUpdates = useCallback(
     async (
       pluginIds?: string[],
       discoveredForReports: DiscoveredChannelPlugin[] = discoveredPlugins,
       clearNotice = true,
+      manageBusy = true,
     ) => {
       const ids = pluginIds ?? pluginRegistry.map((plugin) => plugin.id);
       const registryIds = new Set(pluginRegistry.map((plugin) => plugin.id));
       const checkableIds = ids.filter((id) => registryIds.has(id));
       if (checkableIds.length === 0) return;
 
-      setCheckingPluginUpdates(true);
+      if (manageBusy) setCheckingPluginUpdates(true);
       setPluginUpdatesChecked(true);
       if (clearNotice) setNotice(null);
       setPluginUpdateReports((previous) =>
@@ -537,11 +566,60 @@ export function SettingsDialog({
           message: error instanceof Error ? error.message : String(error),
         });
       } finally {
-        setCheckingPluginUpdates(false);
+        if (manageBusy) setCheckingPluginUpdates(false);
       }
     },
     [discoveredPlugins, pluginRegistry],
   );
+
+  const scanAgentSdkStatus = useCallback(
+    async (agentIds?: string[], manageBusy = true) => {
+      const ids = agentIds ?? pluginAcpAgents.map((agent) => agent.id);
+      if (ids.length === 0) return;
+      if (manageBusy) setCheckingPluginUpdates(true);
+      setPluginUpdatesChecked(true);
+      setAgentSdkReports((previous) =>
+        mergeReportsById(
+          previous,
+          ids.map((id) => agentSdkCheckingReport(id, agents)),
+        ),
+      );
+      try {
+        const reports = await invoke<StartkitItemReport[]>(
+          "scan_agent_sdk_status",
+          {
+            choices: {
+              ...pluginScanChoices,
+              agents: ids,
+            },
+          },
+        );
+        setAgentSdkReports((previous) => mergeReportsById(previous, reports));
+      } catch (error) {
+        setNotice({
+          variant: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        if (manageBusy) setCheckingPluginUpdates(false);
+      }
+    },
+    [agents, pluginAcpAgents, pluginScanChoices],
+  );
+
+  const refreshPluginInventory = useCallback(async () => {
+    setCheckingPluginUpdates(true);
+    setPluginUpdatesChecked(true);
+    setNotice(null);
+    try {
+      await Promise.all([
+        checkPluginUpdates(undefined, discoveredPlugins, false, false),
+        scanAgentSdkStatus(undefined, false),
+      ]);
+    } finally {
+      setCheckingPluginUpdates(false);
+    }
+  }, [checkPluginUpdates, discoveredPlugins, scanAgentSdkStatus]);
 
   const installPlugin = useCallback(
     async (pluginId: string, githubUrl: string) => {
@@ -577,19 +655,52 @@ export function SettingsDialog({
     [checkPluginUpdates, pluginRegistry],
   );
 
+  const installAgentAcpPlugin = useCallback(
+    async (agentId: string) => {
+      setInstallingAgentAcpPlugins((prev) => new Set(prev).add(agentId));
+      setNotice(null);
+      try {
+        const report = await invoke<StartkitItemReport>(
+          "install_agent_acp_plugin",
+          {
+            request: { agentId },
+          },
+        );
+        setAgentSdkReports((previous) => mergeReportsById(previous, [report]));
+        setNotice({ variant: "success", message: "ACP adapter installed." });
+      } catch (error) {
+        setNotice({
+          variant: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        setInstallingAgentAcpPlugins((prev) => {
+          const next = new Set(prev);
+          next.delete(agentId);
+          return next;
+        });
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (
       !open ||
       settingsTab !== "plugins" ||
       loading ||
-      pluginRegistry.length === 0 ||
       pluginUpdatesAutoCheckedRef.current
     ) {
       return;
     }
     pluginUpdatesAutoCheckedRef.current = true;
-    void checkPluginUpdates();
-  }, [checkPluginUpdates, loading, open, pluginRegistry.length, settingsTab]);
+    void refreshPluginInventory();
+  }, [
+    loading,
+    open,
+    refreshPluginInventory,
+    settingsTab,
+  ]);
 
   const { authStates, startAuth, cancelAuth } = useChannelAuth({
     active: open,
@@ -1040,14 +1151,20 @@ export function SettingsDialog({
               ) : (
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
                   <PluginsSettingsPanel
+                    agents={pluginAcpAgents}
                     pluginRegistry={pluginRegistry}
                     discoveredPlugins={discoveredPlugins}
                     updateReports={pluginUpdateReports}
+                    agentSdkReports={agentSdkReports}
+                    searchSources={searchSources}
                     installingPlugins={installingPlugins}
+                    installingAgentAcpPlugins={installingAgentAcpPlugins}
                     checkingUpdates={checkingPluginUpdates}
                     updatesChecked={pluginUpdatesChecked}
                     onInstallPlugin={installPlugin}
-                    onCheckUpdates={() => void checkPluginUpdates()}
+                    onInstallAgentAcpPlugin={installAgentAcpPlugin}
+                    onConfigureSearch={() => changeSettingsTab("api-bridge")}
+                    onCheckUpdates={() => void refreshPluginInventory()}
                     notice={<SettingsNotice notice={notice} />}
                   />
                 </div>
@@ -1279,15 +1396,24 @@ export function SettingsDialog({
   );
 }
 
-type PluginInventoryFilter = "all" | "updates" | "installed" | "available";
+type PluginInstallStatusFilter =
+  | "all"
+  | "updates"
+  | "installed"
+  | "not-installed";
+type PluginCategoryFilter = "all" | "acp" | "im" | "search";
 
 type PluginInventoryItem = {
   id: string;
+  category: Exclude<PluginCategoryFilter, "all">;
   kind: string;
   name: string;
   description: string;
   githubUrl?: string;
   installed: boolean;
+  installable?: boolean;
+  agentId?: string;
+  searchSourceId?: SearchSourceId;
   source?: DiscoveredChannelPlugin["source"];
   version?: string;
   latestVersion?: string;
@@ -1295,28 +1421,43 @@ type PluginInventoryItem = {
 };
 
 function PluginsSettingsPanel({
+  agents,
   pluginRegistry,
   discoveredPlugins,
   updateReports,
+  agentSdkReports,
+  searchSources,
   installingPlugins,
+  installingAgentAcpPlugins,
   checkingUpdates,
   updatesChecked,
   onInstallPlugin,
+  onInstallAgentAcpPlugin,
+  onConfigureSearch,
   onCheckUpdates,
   notice,
 }: {
+  agents: AgentSummary[];
   pluginRegistry: PluginRegistryEntry[];
   discoveredPlugins: DiscoveredChannelPlugin[];
   updateReports: StartkitItemReport[];
+  agentSdkReports: StartkitItemReport[];
+  searchSources: Record<SearchSourceId, SearchSourceForm>;
   installingPlugins: Set<string>;
+  installingAgentAcpPlugins: Set<string>;
   checkingUpdates: boolean;
   updatesChecked: boolean;
   onInstallPlugin: (pluginId: string, githubUrl: string) => void;
+  onInstallAgentAcpPlugin: (agentId: string) => void;
+  onConfigureSearch: () => void;
   onCheckUpdates: () => void;
   notice?: ReactNode;
 }) {
   const { t } = useI18n();
-  const [filter, setFilter] = useState<PluginInventoryFilter>("all");
+  const [statusFilter, setStatusFilter] =
+    useState<PluginInstallStatusFilter>("all");
+  const [categoryFilter, setCategoryFilter] =
+    useState<PluginCategoryFilter>("all");
 
   const items = useMemo(() => {
     const discoveredById = new Map(
@@ -1329,17 +1470,26 @@ function PluginsSettingsPanel({
           Boolean(entry[0]),
         ),
     );
+    const reportByAgentId = new Map(
+      agentSdkReports
+        .map((report) => [agentIdFromAgentSdkReport(report), report] as const)
+        .filter((entry): entry is readonly [string, StartkitItemReport] =>
+          Boolean(entry[0]),
+        ),
+    );
     const registryIds = new Set(pluginRegistry.map((plugin) => plugin.id));
     const registryItems: PluginInventoryItem[] = pluginRegistry.map((entry) => {
       const discovered = discoveredById.get(entry.id);
       const report = reportByPluginId.get(entry.id);
       return {
         id: entry.id,
+        category: "im",
         kind: entry.kind,
         name: entry.name,
         description: entry.description,
         githubUrl: entry.github,
         installed: Boolean(discovered),
+        installable: true,
         source: discovered?.source,
         version: discovered?.version ?? report?.version,
         latestVersion: report?.latestVersion,
@@ -1350,6 +1500,7 @@ function PluginsSettingsPanel({
       .filter((plugin) => !registryIds.has(plugin.id))
       .map((plugin) => ({
         id: plugin.id,
+        category: "im",
         kind: plugin.kind,
         name: plugin.name,
         description: `${plugin.kind} plugin`,
@@ -1357,33 +1508,101 @@ function PluginsSettingsPanel({
         source: plugin.source,
         version: plugin.version,
       }));
+    const acpItems: PluginInventoryItem[] = agents.map((agent) => {
+      const report = reportByAgentId.get(agent.id) ?? agentSdkLocalReport(agent);
+      return {
+        id: `acp:${agent.id}`,
+        category: "acp",
+        kind: "ACP plugin",
+        name: `${agent.display_name} ACP`,
+        description: agent.acp_npm_package
+          ? `Adapter package ${agent.acp_npm_package}`
+          : `Uses ${agent.acp_program || agent.id} ACP mode`,
+        installed: agentAcpInstalled(report),
+        installable: Boolean(agent.acp_npm_package),
+        agentId: agent.id,
+        report,
+      };
+    });
+    const searchItems: PluginInventoryItem[] = SEARCH_SOURCE_DEFS.map(
+      (source) => {
+        const form = searchSources[source.id];
+        const report = searchSourceReport(source.id, source.label, form);
+        return {
+          id: `search:${source.id}`,
+          category: "search",
+          kind: "Search plugin",
+          name: source.label,
+          description: "Host-side web search source",
+          installed: report.status === "ok",
+          installable: false,
+          searchSourceId: source.id,
+          report,
+        };
+      },
+    );
 
-    return [...registryItems, ...localOnlyItems].sort((left, right) =>
+    return [...registryItems, ...localOnlyItems, ...acpItems, ...searchItems].sort((left, right) =>
       left.name.localeCompare(right.name),
     );
-  }, [discoveredPlugins, pluginRegistry, updateReports]);
+  }, [
+    agentSdkReports,
+    agents,
+    discoveredPlugins,
+    pluginRegistry,
+    searchSources,
+    updateReports,
+  ]);
 
   const updateItems = items.filter((item) => item.report?.status === "outdated");
   const installedItems = items.filter((item) => item.installed);
-  const availableItems = items.filter((item) => !item.installed);
-  const visibleItems =
-    filter === "updates"
-      ? updateItems
-      : filter === "installed"
-        ? installedItems
-        : filter === "available"
-          ? availableItems
-          : items;
+  const notInstalledItems = items.filter((item) => !item.installed);
+  const visibleItems = items.filter((item) => {
+    const statusMatch =
+      statusFilter === "all" ||
+      (statusFilter === "updates" && item.report?.status === "outdated") ||
+      (statusFilter === "installed" && item.installed) ||
+      (statusFilter === "not-installed" && !item.installed);
+    const categoryMatch =
+      categoryFilter === "all" || item.category === categoryFilter;
+    return statusMatch && categoryMatch;
+  });
 
-  const filterOptions: Array<{
-    value: PluginInventoryFilter;
+  const statusFilterOptions: Array<{
+    value: PluginInstallStatusFilter;
     label: string;
     count: number;
   }> = [
     { value: "all", label: "All", count: items.length },
     { value: "updates", label: "Needs update", count: updateItems.length },
     { value: "installed", label: "Installed", count: installedItems.length },
-    { value: "available", label: "Not installed", count: availableItems.length },
+    {
+      value: "not-installed",
+      label: "Not installed",
+      count: notInstalledItems.length,
+    },
+  ];
+  const categoryFilterOptions: Array<{
+    value: PluginCategoryFilter;
+    label: string;
+    count: number;
+  }> = [
+    { value: "all", label: "All categories", count: items.length },
+    {
+      value: "acp",
+      label: "ACP plugin",
+      count: items.filter((item) => item.category === "acp").length,
+    },
+    {
+      value: "im",
+      label: "IM plugin",
+      count: items.filter((item) => item.category === "im").length,
+    },
+    {
+      value: "search",
+      label: "Search plugin",
+      count: items.filter((item) => item.category === "search").length,
+    },
   ];
 
   return (
@@ -1395,7 +1614,7 @@ function PluginsSettingsPanel({
             {t("Plugins")}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {t("Install registry plugins, refresh installed plugins, and check for updates.")}
+            {t("Manage IM plugins, ACP adapters, and search sources from one inventory.")}
           </p>
           {notice}
         </div>
@@ -1404,7 +1623,7 @@ function PluginsSettingsPanel({
           variant="outline"
           size="sm"
           className="text-xs"
-          disabled={checkingUpdates || pluginRegistry.length === 0}
+          disabled={checkingUpdates}
           onClick={onCheckUpdates}
         >
           {checkingUpdates ? (
@@ -1412,38 +1631,28 @@ function PluginsSettingsPanel({
           ) : (
             <RotateCw className="h-3 w-3" />
           )}
-          {checkingUpdates ? t("Checking…") : t("Check updates")}
+          {checkingUpdates ? t("Refreshing…") : t("Refresh status")}
         </Button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-4">
-        {filterOptions.map((option) => {
-          const active = filter === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              className={`rounded-md border px-3 py-2 text-left transition-colors ${
-                active
-                  ? "border-primary/40 bg-primary/5 text-primary"
-                  : "border-border hover:border-border/80"
-              }`}
-              onClick={() => setFilter(option.value)}
-            >
-              <div className="text-lg font-semibold tabular-nums">
-                {option.count}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {t(option.label)}
-              </div>
-            </button>
-          );
-        })}
+      <div className="space-y-3 rounded-md border border-border px-3 py-3">
+        <PluginFilterGroup
+          label={t("Install status")}
+          options={statusFilterOptions}
+          value={statusFilter}
+          onChange={setStatusFilter}
+        />
+        <PluginFilterGroup
+          label={t("Category")}
+          options={categoryFilterOptions}
+          value={categoryFilter}
+          onChange={setCategoryFilter}
+        />
       </div>
 
       {!updatesChecked && (
         <StatusBanner variant="warning">
-          {t("Plugin update status has not been checked yet.")}
+          {t("Plugin status has not been refreshed yet.")}
         </StatusBanner>
       )}
 
@@ -1457,11 +1666,60 @@ function PluginsSettingsPanel({
             <PluginInventoryCard
               key={item.id}
               item={item}
-              installing={installingPlugins.has(item.id)}
+              installing={
+                item.category === "im"
+                  ? installingPlugins.has(item.id)
+                  : item.category === "acp" && item.agentId
+                    ? installingAgentAcpPlugins.has(item.agentId)
+                    : false
+              }
               onInstallPlugin={onInstallPlugin}
+              onInstallAgentAcpPlugin={onInstallAgentAcpPlugin}
+              onConfigureSearch={onConfigureSearch}
             />
           ))
         )}
+      </div>
+    </div>
+  );
+}
+
+function PluginFilterGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: Array<{ value: T; label: string; count: number }>;
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="grid gap-2 sm:grid-cols-[110px_1fr] sm:items-center">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((option) => {
+          const active = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors ${
+                active
+                  ? "border-primary/40 bg-primary/5 text-primary"
+                  : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+              }`}
+              onClick={() => onChange(option.value)}
+            >
+              <span>{t(option.label)}</span>
+              <span className="font-mono text-[10px] opacity-70">
+                {option.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -1471,31 +1729,50 @@ function PluginInventoryCard({
   item,
   installing,
   onInstallPlugin,
+  onInstallAgentAcpPlugin,
+  onConfigureSearch,
 }: {
   item: PluginInventoryItem;
   installing: boolean;
   onInstallPlugin: (pluginId: string, githubUrl: string) => void;
+  onInstallAgentAcpPlugin: (agentId: string) => void;
+  onConfigureSearch: () => void;
 }) {
   const { t } = useI18n();
   const status = pluginStatus(item);
-  const canInstall = Boolean(item.githubUrl);
-  const actionLabel =
-    item.report?.status === "outdated"
-      ? "Update"
-      : item.installed
-        ? "Refresh"
-        : "Install";
+  const ActionIcon =
+    item.category === "search"
+      ? SlidersHorizontal
+      : item.report?.status === "outdated"
+        ? RotateCw
+        : Download;
+  const canRunAction =
+    item.category === "im"
+      ? Boolean(item.githubUrl)
+      : item.category === "acp"
+        ? Boolean(item.agentId && item.installable)
+        : true;
+  const actionLabel = pluginActionLabel(item);
+  const Icon =
+    item.category === "acp"
+      ? Bot
+      : item.category === "im"
+        ? MessageSquare
+        : Search;
 
   return (
     <section className="rounded-md border border-border bg-card px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 gap-3">
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/30 text-primary">
-            <Puzzle className="h-4 w-4" />
+            <Icon className="h-4 w-4" />
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium">{item.name}</span>
+              <Badge variant="outline" className="rounded-md text-[10px]">
+                {t(pluginCategoryLabel(item.category))}
+              </Badge>
               <Badge variant="outline" className="rounded-md text-[10px]">
                 {item.kind}
               </Badge>
@@ -1559,17 +1836,21 @@ function PluginInventoryCard({
             variant={item.report?.status === "outdated" ? "default" : "outline"}
             size="sm"
             className="min-w-20 text-xs"
-            disabled={installing || !canInstall}
+            disabled={installing || !canRunAction}
             onClick={() => {
-              if (item.githubUrl) onInstallPlugin(item.id, item.githubUrl);
+              if (item.category === "im" && item.githubUrl) {
+                onInstallPlugin(item.id, item.githubUrl);
+              } else if (item.category === "acp" && item.agentId) {
+                onInstallAgentAcpPlugin(item.agentId);
+              } else if (item.category === "search") {
+                onConfigureSearch();
+              }
             }}
           >
             {installing ? (
               <Loader2 className="h-3 w-3 animate-spin" />
-            ) : item.report?.status === "outdated" ? (
-              <RotateCw className="h-3 w-3" />
             ) : (
-              <Download className="h-3 w-3" />
+              <ActionIcon className="h-3 w-3" />
             )}
             {installing ? t("Installing…") : t(actionLabel)}
           </Button>
@@ -2507,6 +2788,86 @@ function pluginIdFromPluginReport(report: StartkitItemReport): string | null {
   return match?.[1] ?? null;
 }
 
+function agentIdFromAgentSdkReport(report: StartkitItemReport): string | null {
+  const match = /^agents\.(.+)\.sdk$/.exec(report.id);
+  return match?.[1] ?? null;
+}
+
+function isAgentAcpPlugin(agent: AgentSummary): boolean {
+  return Boolean(agent.acp_npm_package || agent.acp_program?.trim());
+}
+
+function agentSdkLocalReport(agent: AgentSummary): StartkitItemReport {
+  const builtIn = !agent.acp_npm_package;
+  return {
+    id: `agents.${agent.id}.sdk`,
+    label: builtIn
+      ? `${agent.display_name} ACP mode`
+      : `${agent.display_name} ACP adapter`,
+    group: "agents",
+    category: "agent_sdk",
+    status: builtIn ? "skipped" : "pending",
+    severity: builtIn ? undefined : "blocker",
+    message: builtIn
+      ? "Uses the agent CLI's built-in ACP mode"
+      : "Refresh status to scan this ACP adapter",
+    actions: builtIn ? [] : ["install"],
+    secret: false,
+  };
+}
+
+function agentAcpInstalled(report: StartkitItemReport): boolean {
+  return report.status === "ok" || report.status === "skipped";
+}
+
+function searchSourceReport(
+  sourceId: SearchSourceId,
+  label: string,
+  form: SearchSourceForm,
+): StartkitItemReport {
+  const enabled = form.enabled;
+  const hasApiKey = Boolean(form.apiKey.trim());
+  const status = enabled && hasApiKey ? "ok" : enabled ? "needs_config" : "missing";
+  return {
+    id: `search.sources.${sourceId}`,
+    label,
+    group: "search",
+    category: "search_source",
+    status,
+    message:
+      status === "ok"
+        ? "Search source is configured"
+        : status === "needs_config"
+          ? "API key is required"
+          : "Search source is disabled",
+    actions: ["configure"],
+    secret: true,
+  };
+}
+
+function pluginCategoryLabel(
+  category: Exclude<PluginCategoryFilter, "all">,
+): string {
+  switch (category) {
+    case "acp":
+      return "ACP plugin";
+    case "im":
+      return "IM plugin";
+    case "search":
+      return "Search plugin";
+  }
+}
+
+function pluginActionLabel(item: PluginInventoryItem): string {
+  if (item.category === "search") return "Configure";
+  if (item.category === "acp") {
+    if (item.installed) return "Refresh";
+    return item.installable ? "Install" : "Built in";
+  }
+  if (item.report?.status === "outdated") return "Update";
+  return item.installed ? "Refresh" : "Install";
+}
+
 function pluginStatus(item: PluginInventoryItem): {
   label: string;
   className: string;
@@ -2526,6 +2887,21 @@ function pluginStatus(item: PluginInventoryItem): {
       return {
         label: "Not installed",
         className: "border-muted-foreground/20 bg-muted/40 text-muted-foreground",
+      };
+    case "needs_config":
+      return {
+        label: "Needs config",
+        className: "border-amber-500/30 bg-amber-500/10 text-amber-700",
+      };
+    case "pending":
+      return {
+        label: "Unknown",
+        className: "border-muted-foreground/20 bg-muted/40 text-muted-foreground",
+      };
+    case "skipped":
+      return {
+        label: "Built in",
+        className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
       };
     case "error":
     case "broken":

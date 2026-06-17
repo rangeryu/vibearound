@@ -65,6 +65,12 @@ pub struct PluginUpdateCheckRequest {
     pub plugin_ids: Vec<String>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAcpPluginInstallRequest {
+    pub agent_id: String,
+}
+
 // ---------------------------------------------------------------------------
 // Settings helpers
 // ---------------------------------------------------------------------------
@@ -279,63 +285,25 @@ pub async fn scan_agent_sdk_status(
     Ok(choices
         .agents
         .iter()
-        .filter_map(|agent_id| {
-            let agent = common::resources::agent_by_id(agent_id)?;
-            let Some(npm_pkg) = agent.acp.npm_package.as_deref() else {
-                return Some(StartkitItemReport {
-                    id: format!("agents.{agent_id}.sdk"),
-                    label: format!("{} ACP mode", agent.display_name),
-                    group: "agents".to_string(),
-                    category: "agent_sdk".to_string(),
-                    status: StartkitItemStatus::Skipped,
-                    severity: None,
-                    version: None,
-                    latest_version: None,
-                    path: None,
-                    message: Some("Uses the agent CLI's built-in ACP mode".to_string()),
-                    actions: Vec::new(),
-                    manual_command: None,
-                    manual_url: None,
-                    secret: false,
-                    settings_key: None,
-                });
-            };
-            let default_bin_name = common::agent::npm_package_bin_name(npm_pkg);
-            let bin_name = agent.acp.bin_name.as_deref().unwrap_or(&default_bin_name);
-            let installed = common::agent::npm_package_installed(npm_pkg, bin_name);
-            Some(StartkitItemReport {
-                id: format!("agents.{agent_id}.sdk"),
-                label: format!("{} ACP adapter", agent.display_name),
-                group: "agents".to_string(),
-                category: "agent_sdk".to_string(),
-                status: if installed {
-                    StartkitItemStatus::Ok
-                } else {
-                    StartkitItemStatus::Missing
-                },
-                severity: Some("blocker".to_string()),
-                version: None,
-                latest_version: None,
-                path: common::process::env::resolve_acp_agent_bin(bin_name)
-                    .ok()
-                    .map(|path| path.to_string_lossy().to_string()),
-                message: Some(if installed {
-                    "ACP adapter is installed".to_string()
-                } else {
-                    "ACP adapter is not installed".to_string()
-                }),
-                actions: if installed {
-                    Vec::new()
-                } else {
-                    vec!["install".to_string()]
-                },
-                manual_command: None,
-                manual_url: None,
-                secret: false,
-                settings_key: None,
-            })
-        })
+        .filter_map(|agent_id| common::resources::agent_by_id(agent_id))
+        .map(|agent| agent_sdk_report(&agent))
         .collect())
+}
+
+#[tauri::command]
+pub async fn install_agent_acp_plugin(
+    request: AgentAcpPluginInstallRequest,
+) -> Result<StartkitItemReport, String> {
+    let agent = common::resources::agent_by_id(&request.agent_id)
+        .ok_or_else(|| format!("unknown agent '{}'", request.agent_id))?;
+    let Some(npm_pkg) = agent.acp.npm_package.as_deref() else {
+        return Ok(agent_sdk_report(&agent));
+    };
+
+    common::agent::auto_install_npm_agent(npm_pkg)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(agent_sdk_report(&agent))
 }
 
 #[tauri::command]
@@ -346,6 +314,63 @@ pub async fn scan_tunnel_status(
     crate::startkit::scan_tunnel_reports(&settings, &choices)
         .await
         .map_err(|error| error.to_string())
+}
+
+fn agent_sdk_report(agent: &common::resources::AgentDef) -> StartkitItemReport {
+    let agent_id = &agent.id;
+    let Some(npm_pkg) = agent.acp.npm_package.as_deref() else {
+        return StartkitItemReport {
+            id: format!("agents.{agent_id}.sdk"),
+            label: format!("{} ACP mode", agent.display_name),
+            group: "agents".to_string(),
+            category: "agent_sdk".to_string(),
+            status: StartkitItemStatus::Skipped,
+            severity: None,
+            version: None,
+            latest_version: None,
+            path: None,
+            message: Some("Uses the agent CLI's built-in ACP mode".to_string()),
+            actions: Vec::new(),
+            manual_command: None,
+            manual_url: None,
+            secret: false,
+            settings_key: None,
+        };
+    };
+    let default_bin_name = common::agent::npm_package_bin_name(npm_pkg);
+    let bin_name = agent.acp.bin_name.as_deref().unwrap_or(&default_bin_name);
+    let installed = common::agent::npm_package_installed(npm_pkg, bin_name);
+    StartkitItemReport {
+        id: format!("agents.{agent_id}.sdk"),
+        label: format!("{} ACP adapter", agent.display_name),
+        group: "agents".to_string(),
+        category: "agent_sdk".to_string(),
+        status: if installed {
+            StartkitItemStatus::Ok
+        } else {
+            StartkitItemStatus::Missing
+        },
+        severity: Some("blocker".to_string()),
+        version: None,
+        latest_version: None,
+        path: common::process::env::resolve_acp_agent_bin(bin_name)
+            .ok()
+            .map(|path| path.to_string_lossy().to_string()),
+        message: Some(if installed {
+            "ACP adapter is installed".to_string()
+        } else {
+            "ACP adapter is not installed".to_string()
+        }),
+        actions: if installed {
+            Vec::new()
+        } else {
+            vec!["install".to_string()]
+        },
+        manual_command: None,
+        manual_url: None,
+        secret: false,
+        settings_key: None,
+    }
 }
 
 async fn agent_install_report(agent: common::resources::AgentDef) -> StartkitItemReport {
