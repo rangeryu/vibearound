@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
 use common::{agent, plugins, resources};
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,6 @@ pub enum ManagedPluginStatus {
     Ok,
     Missing,
     Outdated,
-    NeedsConfig,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,7 +76,6 @@ async fn build_managed_plugins(include_latest: bool) -> Vec<ManagedPluginSummary
     let mut items = Vec::new();
     items.extend(im_plugins(include_latest).await);
     items.extend(acp_plugins());
-    items.extend(search_plugins());
     items.sort_by(|left, right| {
         left.category
             .label()
@@ -273,73 +271,6 @@ fn acp_bin_name(agent_def: &resources::AgentDef) -> String {
         .bin_name
         .clone()
         .unwrap_or_else(|| agent::npm_package_bin_name(npm_package))
-}
-
-fn search_plugins() -> Vec<ManagedPluginSummary> {
-    let settings = super::read_settings_value();
-    let sources = settings
-        .get("search_tool")
-        .and_then(|search_tool| search_tool.get("sources"))
-        .and_then(serde_json::Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-
-    search_source_defs()
-        .into_iter()
-        .map(|(id, name)| search_plugin(id, name, &sources))
-        .collect()
-}
-
-fn search_plugin(
-    id: &str,
-    name: &str,
-    sources: &serde_json::Map<String, serde_json::Value>,
-) -> ManagedPluginSummary {
-    let source = sources.get(id).and_then(serde_json::Value::as_object);
-    let enabled = source
-        .and_then(|source| source.get("enabled"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let has_key = source
-        .and_then(|source| source.get("api_key"))
-        .and_then(serde_json::Value::as_str)
-        .is_some_and(|key| !key.trim().is_empty());
-    let status = if enabled && has_key {
-        ManagedPluginStatus::Ok
-    } else if enabled {
-        ManagedPluginStatus::NeedsConfig
-    } else {
-        ManagedPluginStatus::Missing
-    };
-
-    ManagedPluginSummary {
-        category: ManagedPluginCategory::Search,
-        id: id.to_string(),
-        kind: "Search source".to_string(),
-        name: name.to_string(),
-        description: "Host-side web search source".to_string(),
-        status,
-        installed: status == ManagedPluginStatus::Ok,
-        installable: false,
-        version: None,
-        latest_version: None,
-        source: None,
-        path: None,
-        github: None,
-        message: Some(
-            match status {
-                ManagedPluginStatus::Ok => "Search source is configured",
-                ManagedPluginStatus::NeedsConfig => "API key is required",
-                _ => "Search source is disabled",
-            }
-            .to_string(),
-        ),
-        actions: vec!["configure".to_string()],
-    }
-}
-
-fn search_source_defs() -> BTreeMap<&'static str, &'static str> {
-    BTreeMap::from([("exa", "Exa"), ("grok", "Grok"), ("tavily", "Tavily")])
 }
 
 impl ManagedPluginCategory {

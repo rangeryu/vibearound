@@ -19,6 +19,10 @@
       "grok": {
         "enabled": false,
         "api_key": "YOUR_XAI_API_KEY"
+      },
+      "brave": {
+        "enabled": false,
+        "api_key": "YOUR_BRAVE_API_KEY"
       }
     }
   },

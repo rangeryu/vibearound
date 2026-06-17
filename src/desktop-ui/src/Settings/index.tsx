@@ -92,7 +92,7 @@ type ApiBridgeRetryFormState = {
   retry429DelaySeconds: string;
 };
 
-type SearchSourceId = "exa" | "tavily" | "grok";
+type SearchSourceId = "exa" | "tavily" | "grok" | "brave";
 
 type SearchSourceForm = {
   enabled: boolean;
@@ -105,8 +105,7 @@ type ManagedPluginCategory = "im" | "acp" | "search";
 type ManagedPluginStatus =
   | "ok"
   | "missing"
-  | "outdated"
-  | "needs_config";
+  | "outdated";
 
 type ManagedPluginSummary = {
   category: ManagedPluginCategory;
@@ -146,6 +145,7 @@ const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string }> = [
   { id: "exa", label: "Exa" },
   { id: "tavily", label: "Tavily" },
   { id: "grok", label: "Grok" },
+  { id: "brave", label: "Brave" },
 ];
 
 const SEARCH_CONTEXT_SIZE_OPTIONS: Array<{
@@ -1382,7 +1382,7 @@ function PluginsSettingsPanel({
       count: notInstalledItems.length,
     },
   ];
-  const categoryFilterOptions: Array<{
+  const allCategoryFilterOptions: Array<{
     value: PluginCategoryFilter;
     label: string;
     count: number;
@@ -1404,6 +1404,9 @@ function PluginsSettingsPanel({
       count: items.filter((item) => item.category === "search").length,
     },
   ];
+  const categoryFilterOptions = allCategoryFilterOptions.filter(
+    (option) => option.value === "all" || option.count > 0,
+  );
 
   return (
     <div className="space-y-5">
@@ -1414,7 +1417,7 @@ function PluginsSettingsPanel({
             {t("Plugins")}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {t("Manage IM plugins, ACP adapters, and search sources from one inventory.")}
+            {t("Manage installed and installable plugins from one inventory.")}
           </p>
           {notice}
         </div>
@@ -2494,6 +2497,7 @@ function defaultSearchSourceForms(): Record<SearchSourceId, SearchSourceForm> {
     exa: defaultSearchSourceForm(),
     tavily: defaultSearchSourceForm(),
     grok: defaultSearchSourceForm(),
+    brave: defaultSearchSourceForm(),
   };
 }
 
@@ -2629,11 +2633,6 @@ function pluginStatus(item: PluginInventoryItem): {
       return {
         label: "Not installed",
         className: "border-muted-foreground/20 bg-muted/40 text-muted-foreground",
-      };
-    case "needs_config":
-      return {
-        label: "Needs config",
-        className: "border-amber-500/30 bg-amber-500/10 text-amber-700",
       };
     case "ok":
       return {
