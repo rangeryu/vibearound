@@ -54,6 +54,8 @@ pub(crate) struct BridgeRecordEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) bridge_response: Option<RecordedPayload>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) search: Option<RecordedPayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) status: Option<u16>,
@@ -87,6 +89,7 @@ pub(crate) enum BridgeRecordPhase {
     BridgeRequest,
     ServerResponse,
     BridgeResponse,
+    Search,
     Error,
 }
 
@@ -156,6 +159,7 @@ impl BridgeRecorder {
             bridge_request: None,
             server_response: None,
             bridge_response: None,
+            search: None,
             error: None,
             status: None,
         });
@@ -213,6 +217,7 @@ impl ActiveBridgeRecord {
             bridge_request: Some(RecordedPayload::from_json(body)),
             server_response: None,
             bridge_response: None,
+            search: None,
             error: None,
             status: None,
         });
@@ -229,6 +234,7 @@ impl ActiveBridgeRecord {
             bridge_request: None,
             server_response: Some(payload),
             bridge_response: None,
+            search: None,
             error: None,
             status: Some(status),
         });
@@ -245,6 +251,7 @@ impl ActiveBridgeRecord {
             bridge_request: None,
             server_response: None,
             bridge_response: Some(payload),
+            search: None,
             error: None,
             status: Some(status),
         });
@@ -252,6 +259,23 @@ impl ActiveBridgeRecord {
 
     pub(crate) fn bridge_json_response(&self, status: StatusCode, body: &Value) {
         self.bridge_response(status.as_u16(), RecordedPayload::from_json(body));
+    }
+
+    pub(crate) fn search(&self, body: &Value) {
+        self.emit(BridgeRecordEvent {
+            record_id: self.record_id,
+            request_id: self.request_id.clone(),
+            phase: BridgeRecordPhase::Search,
+            timestamp_ms: timestamp_ms(),
+            metadata: None,
+            original_request: None,
+            bridge_request: None,
+            server_response: None,
+            bridge_response: None,
+            search: Some(RecordedPayload::from_json(body)),
+            error: None,
+            status: None,
+        });
     }
 
     pub(crate) fn error(&self, message: &str) {
@@ -265,6 +289,7 @@ impl ActiveBridgeRecord {
             bridge_request: None,
             server_response: None,
             bridge_response: None,
+            search: None,
             error: Some(message.to_string()),
             status: None,
         });

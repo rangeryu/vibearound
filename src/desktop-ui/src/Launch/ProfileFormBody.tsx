@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Loader2,
   LogIn,
+  Search,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
@@ -475,6 +476,22 @@ export function FormBody({
                               })
                             }
                           />
+                          <CheckRow
+                            label="Web search"
+                            checked={!!ov.capabilities?.web_search}
+                            onChange={(checked) =>
+                              setOverrides({
+                                ...overrides,
+                                [apiType]: {
+                                  ...ov,
+                                  capabilities: {
+                                    ...(ov.capabilities ?? {}),
+                                    web_search: checked,
+                                  },
+                                },
+                              })
+                            }
+                          />
                         </div>
                       </FieldRow>
                     )}
@@ -601,6 +618,12 @@ function ModelMetadataRow({
           {t("files")}
         </span>
       )}
+      {capabilities.web_search && (
+        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
+          <Search className="h-3 w-3" />
+          {t("web search")}
+        </span>
+      )}
     </div>
   );
 }
@@ -627,6 +650,9 @@ function mergedModelCapabilities(
     file_input:
       !!endpoint.capabilities?.content?.file_input ||
       !!option?.capabilities?.file_input,
+    web_search:
+      !!endpoint.capabilities?.content?.web_search ||
+      !!option?.capabilities?.web_search,
   };
 }
 

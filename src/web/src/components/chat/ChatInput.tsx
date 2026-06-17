@@ -12,6 +12,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  Command as CommandIcon,
   Hand,
   Paperclip,
   ShieldAlert,
@@ -36,6 +37,19 @@ export type { ChatSessionSelection } from "./chatTypes";
 const TEXTAREA_MAX_HEIGHT_PX = 256;
 const TEXTAREA_MIN_HEIGHT_PX = 72;
 const HERO_TEXTAREA_MIN_HEIGHT_PX = 128;
+
+const CHAT_COMMANDS = [
+  { label: "/status", value: "/status" },
+  { label: "/workspace", value: "/workspace" },
+  { label: "/workspace --switch", value: "/workspace --switch " },
+  { label: "/agent", value: "/agent" },
+  { label: "/agent --switch", value: "/agent --switch " },
+  { label: "/agent /help", value: "/agent /help" },
+  { label: "/profile", value: "/profile" },
+  { label: "/profile --switch", value: "/profile --switch " },
+  { label: "/session", value: "/session" },
+  { label: "/session --switch", value: "/session --switch " },
+];
 
 export interface ChatInputProps {
   value: string;
@@ -309,6 +323,13 @@ export function ChatInput({
                 onChange={onSessionModeChange}
               />
             )}
+            <CommandPicker
+              disabled={disabled}
+              onSelect={(command) => {
+                onChange(command);
+                requestAnimationFrame(() => textareaRef.current?.focus());
+              }}
+            />
             <span className="min-w-0 truncate px-1 text-xs font-medium text-muted-foreground">
               {targetLabel}
             </span>
@@ -330,6 +351,45 @@ export function ChatInput({
         </div>
       </div>
     </div>
+  );
+}
+
+function CommandPicker({
+  disabled,
+  onSelect,
+}: {
+  disabled: boolean;
+  onSelect: (command: string) => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          disabled={disabled}
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+          aria-label={t("Commands")}
+          title={t("Commands")}
+        >
+          <CommandIcon className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="w-64">
+        {CHAT_COMMANDS.map((command) => (
+          <DropdownMenuItem
+            key={command.label}
+            className="font-mono text-xs"
+            onSelect={() => onSelect(command.value)}
+          >
+            {command.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

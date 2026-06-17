@@ -53,6 +53,10 @@ fn model_catalog_entry(spec: &CodexModelCatalogSpec<'_>) -> Option<Value> {
     object.insert("context_window".to_string(), context_window.clone());
     object.insert("max_context_window".to_string(), context_window);
     object.insert("input_modalities".to_string(), input_modalities(spec));
+    object.insert(
+        "supports_search_tool".to_string(),
+        Value::Bool(spec.capabilities.web_search),
+    );
     Some(model)
 }
 

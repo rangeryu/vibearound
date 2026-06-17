@@ -298,6 +298,40 @@ impl WorkspaceThreadManager {
         })
     }
 
+    pub async fn list_workspaces(&self) -> anyhow::Result<Vec<WorkspaceRecord>> {
+        Ok(self
+            .workspace_projection()
+            .await?
+            .active()
+            .cloned()
+            .collect())
+    }
+
+    pub async fn switch_workspace_id(
+        &self,
+        route: &RouteKey,
+        workspace_id: &str,
+    ) -> anyhow::Result<WorkspaceSwitch> {
+        let workspace_id = WorkspaceId::from(workspace_id.trim());
+        let workspace = self
+            .workspace(&workspace_id)
+            .await?
+            .filter(|workspace| !workspace.archived)
+            .ok_or_else(|| anyhow!("workspace '{}' not found", workspace_id))?;
+        let threads = self.open_threads_for_workspace(&workspace.id).await?;
+        if threads.is_empty() {
+            let runtime = self.create_thread_for_route(route, workspace.id).await?;
+            return Ok(WorkspaceSwitch::Started(runtime));
+        }
+        let choices: Vec<ThreadChoice> = threads.into_iter().map(ThreadChoice::from).collect();
+        self.pending_selections
+            .insert(route.clone(), choices.clone());
+        Ok(WorkspaceSwitch::NeedsSelection {
+            workspace,
+            threads: choices,
+        })
+    }
+
     pub async fn select_pending_thread(
         &self,
         route: &RouteKey,

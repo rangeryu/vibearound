@@ -162,6 +162,7 @@ export interface EndpointCapabilities {
 export interface ContentCapabilities {
   image_input?: boolean | null;
   file_input?: boolean | null;
+  web_search?: boolean | null;
 }
 
 export interface CatalogEntry {

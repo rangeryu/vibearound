@@ -7,7 +7,12 @@ export interface AgentSummary {
   display_name: string;
   description: string;
   install_type?: "npm" | "script" | "path";
+  pty_command?: string;
   direct_only?: boolean;
+  acp_program?: string;
+  acp_args?: string[];
+  acp_npm_package?: string | null;
+  acp_bin_name?: string | null;
 }
 
 export interface TunnelSummary {
@@ -43,11 +48,29 @@ export interface Settings {
     no_proxy?: string;
   };
   api_bridge?: {
+    replace_provider_web_search?: boolean;
+    replaceProviderWebSearch?: boolean;
     retry_429?: {
       enabled?: boolean;
       max_retries?: number | null;
       delay_seconds?: number;
     };
+  };
+  search_tool?: {
+    stdio_path?: string;
+    max_results?: number;
+    maxResults?: number;
+    search_context_size?: string;
+    searchContextSize?: string;
+    sources?: Record<
+      string,
+      {
+        enabled?: boolean;
+        api_key?: string;
+        api_key_env?: string;
+        base_url?: string;
+      }
+    >;
   };
   startkit?: {
     source?: string;
@@ -161,6 +184,7 @@ export interface StepTunnelProps {
   onCfToken: (value: string) => void;
   cfHostname: string;
   onCfHostname: (value: string) => void;
+  showProviderSelect?: boolean;
   notice?: ReactNode;
 }
 

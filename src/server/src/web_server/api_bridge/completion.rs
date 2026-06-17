@@ -27,6 +27,28 @@ pub(super) async fn translated_completion_response(
     transform: UpstreamResponseTransform,
     record: Option<&ActiveBridgeRecord>,
 ) -> Response {
+    let events = match decode_completion_response(
+        upstream,
+        upstream_protocol,
+        provider_adapter,
+        transform,
+        record,
+    )
+    .await
+    {
+        Ok(events) => events,
+        Err(response) => return response,
+    };
+    translated_completion_events_response(events, agent_protocol, agent_model, record)
+}
+
+pub(super) async fn decode_completion_response(
+    upstream: reqwest::Response,
+    upstream_protocol: BridgeProtocol,
+    provider_adapter: &mut ProviderBridgeAdapter,
+    transform: UpstreamResponseTransform,
+    record: Option<&ActiveBridgeRecord>,
+) -> Result<Vec<UniversalEvent>, Response> {
     let upstream_status = upstream.status().as_u16();
     let bytes = match upstream.bytes().await {
         Ok(bytes) => bytes,
@@ -34,11 +56,11 @@ pub(super) async fn translated_completion_response(
             if let Some(record) = record {
                 record.error(&format!("failed to read upstream response: {e}"));
             }
-            return record_json_error(
+            return Err(record_json_error(
                 record,
                 StatusCode::BAD_GATEWAY,
                 &format!("failed to read upstream response: {e}"),
-            );
+            ));
         }
     };
     if let Some(record) = record {
@@ -47,16 +69,16 @@ pub(super) async fn translated_completion_response(
     let raw = match serde_json::from_slice::<Value>(&bytes) {
         Ok(value) => value,
         Err(e) => {
-            return record_json_error(
+            return Err(record_json_error(
                 record,
                 StatusCode::BAD_GATEWAY,
                 &format!("upstream returned invalid JSON: {e}"),
-            );
+            ));
         }
     };
     let mut raw = match transform_upstream_response(raw, transform) {
         Ok(raw) => raw,
-        Err(message) => return record_json_error(record, StatusCode::BAD_GATEWAY, &message),
+        Err(message) => return Err(record_json_error(record, StatusCode::BAD_GATEWAY, &message)),
     };
     if upstream_protocol == BridgeProtocol::OpenAiChat {
         provider_adapter.normalize_chat_response(&mut raw);
@@ -64,10 +86,23 @@ pub(super) async fn translated_completion_response(
     let mut events = match upstream_protocol.decode_upstream_response(raw) {
         Ok(events) => events,
         Err(error) => {
-            return record_json_error(record, StatusCode::BAD_GATEWAY, &error.to_string());
+            return Err(record_json_error(
+                record,
+                StatusCode::BAD_GATEWAY,
+                &error.to_string(),
+            ));
         }
     };
     provider_adapter.transform_upstream_events(&mut events);
+    Ok(events)
+}
+
+pub(super) fn translated_completion_events_response(
+    mut events: Vec<UniversalEvent>,
+    agent_protocol: BridgeProtocol,
+    agent_model: Option<String>,
+    record: Option<&ActiveBridgeRecord>,
+) -> Response {
     apply_agent_model(&mut events, agent_model.as_deref());
     let body = match agent_protocol {
         BridgeProtocol::OpenAiResponses => events_to_openai_response(&events),

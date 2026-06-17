@@ -2,17 +2,23 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Bot,
+  Download,
+  ExternalLink,
   Globe,
   History,
+  Loader2,
   MessageSquare,
   Network,
+  Puzzle,
   RotateCw,
+  Search,
   SlidersHorizontal,
   Trash2,
   WandSparkles,
@@ -33,9 +39,17 @@ import type {
   TunnelSummary,
 } from "../Onboarding/types";
 import { apiFetch } from "../lib/api";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { BrandIcon } from "@/components/brand-icon";
 import {
@@ -62,6 +76,7 @@ type SaveState =
   | "idle"
   | "agents"
   | "api-bridge"
+  | "web-search"
   | "proxy"
   | "im"
   | "sessions"
@@ -78,6 +93,61 @@ type ApiBridgeRetryFormState = {
   retry429DelaySeconds: string;
 };
 
+type SearchSourceId = "exa" | "tavily" | "grok" | "brave";
+
+type SearchSourceForm = {
+  enabled: boolean;
+  apiKey: string;
+};
+
+type SearchContextSize = "low" | "medium" | "high";
+
+type ManagedPluginCategory = "im" | "acp" | "search";
+type ManagedPluginStatus =
+  | "ok"
+  | "missing"
+  | "outdated";
+
+type ManagedPluginSummary = {
+  category: ManagedPluginCategory;
+  id: string;
+  kind: string;
+  name: string;
+  description: string;
+  status: ManagedPluginStatus;
+  installed: boolean;
+  installable: boolean;
+  version?: string;
+  latestVersion?: string;
+  source?: DiscoveredChannelPlugin["source"];
+  path?: string;
+  github?: string;
+  message?: string;
+  actions: string[];
+};
+
+type TestSearchResult = {
+  title: string;
+  url: string;
+  snippet: string;
+  content: string;
+  score?: number;
+  publishedDate?: string;
+  source: string;
+};
+
+type TestSearchResponse = {
+  provider: string;
+  query: string;
+  results: TestSearchResult[];
+  citations: string[];
+};
+
+const DEFAULT_SEARCH_MAX_RESULTS = "5";
+const DEFAULT_SEARCH_CONTEXT_SIZE: SearchContextSize = "medium";
+const SEARCH_MAX_RESULTS_MIN = 1;
+const SEARCH_MAX_RESULTS_MAX = 20;
+
 const AGENT_DISPLAY_ORDER = [
   "claude",
   "codex",
@@ -87,6 +157,22 @@ const AGENT_DISPLAY_ORDER = [
   "cursor",
   "kiro",
   "qwen-code",
+];
+
+const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string }> = [
+  { id: "exa", label: "Exa" },
+  { id: "tavily", label: "Tavily" },
+  { id: "grok", label: "Grok" },
+  { id: "brave", label: "Brave" },
+];
+
+const SEARCH_CONTEXT_SIZE_OPTIONS: Array<{
+  value: SearchContextSize;
+  label: string;
+}> = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
 ];
 
 export function SettingsDialog({
@@ -127,6 +213,20 @@ export function SettingsDialog({
   const [retry429MaxRetries, setRetry429MaxRetries] = useState("10");
   const [retry429Unlimited, setRetry429Unlimited] = useState(false);
   const [retry429DelaySeconds, setRetry429DelaySeconds] = useState("10");
+  const [replaceProviderWebSearch, setReplaceProviderWebSearch] =
+    useState(false);
+  const [searchMaxResults, setSearchMaxResults] = useState(
+    DEFAULT_SEARCH_MAX_RESULTS,
+  );
+  const [searchContextSize, setSearchContextSize] =
+    useState<SearchContextSize>(DEFAULT_SEARCH_CONTEXT_SIZE);
+  const [searchSources, setSearchSources] = useState<
+    Record<SearchSourceId, SearchSourceForm>
+  >(() => defaultSearchSourceForms());
+  const [testSearchQuery, setTestSearchQuery] = useState("");
+  const [testSearchResult, setTestSearchResult] =
+    useState<TestSearchResponse | null>(null);
+  const [testingSearch, setTestingSearch] = useState(false);
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
@@ -134,11 +234,20 @@ export function SettingsDialog({
   const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(
     () => new Set(),
   );
+  const [managedPlugins, setManagedPlugins] = useState<ManagedPluginSummary[]>(
+    [],
+  );
+  const [checkingPluginUpdates, setCheckingPluginUpdates] = useState(false);
+  const [pluginUpdatesChecked, setPluginUpdatesChecked] = useState(false);
+  const [installingManagedPlugins, setInstallingManagedPlugins] = useState<
+    Set<string>
+  >(() => new Set());
   const [loading, setLoading] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [saving, setSaving] = useState<SaveState>("idle");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [settingsTab, setSettingsTab] = useState("general");
+  const pluginUpdatesAutoCheckedRef = useRef(false);
   const apiBridgeRetryForm = useMemo<ApiBridgeRetryFormState>(
     () => ({
       retry429Enabled,
@@ -236,6 +345,8 @@ export function SettingsDialog({
       : {};
     const maxRetries = retry429.max_retries;
     const delaySeconds = retry429.delay_seconds;
+    const replaceWebSearch =
+      apiBridge.replace_provider_web_search ?? apiBridge.replaceProviderWebSearch;
 
     const nextForm = {
       retry429Enabled:
@@ -255,6 +366,35 @@ export function SettingsDialog({
     setRetry429Unlimited(nextForm.retry429Unlimited);
     setRetry429MaxRetries(nextForm.retry429MaxRetries);
     setRetry429DelaySeconds(nextForm.retry429DelaySeconds);
+    setReplaceProviderWebSearch(
+      typeof replaceWebSearch === "boolean" ? replaceWebSearch : false,
+    );
+  }, []);
+
+  const hydrateSearchTool = useCallback((loadedSettings: AppSettings) => {
+    const searchTool = isRecord(loadedSettings.search_tool)
+      ? loadedSettings.search_tool
+      : {};
+    const sources = isRecord(searchTool.sources) ? searchTool.sources : {};
+    setSearchMaxResults(
+      searchMaxResultsInput(searchTool.max_results ?? searchTool.maxResults),
+    );
+    setSearchContextSize(
+      searchContextSizeValue(
+        searchTool.search_context_size ?? searchTool.searchContextSize,
+      ),
+    );
+    setSearchSources(() => {
+      const next = defaultSearchSourceForms();
+      for (const def of SEARCH_SOURCE_DEFS) {
+        const source = isRecord(sources[def.id]) ? sources[def.id] : {};
+        next[def.id] = {
+          enabled: typeof source.enabled === "boolean" ? source.enabled : false,
+          apiKey: typeof source.api_key === "string" ? source.api_key : "",
+        };
+      }
+      return next;
+    });
   }, []);
 
   const hydrateIntegrations = useCallback((loadedSettings: AppSettings) => {
@@ -281,27 +421,40 @@ export function SettingsDialog({
   const load = useCallback(async () => {
     setLoading(true);
     setSettingsLoaded(false);
+    setManagedPlugins([]);
+    setPluginUpdatesChecked(false);
+    pluginUpdatesAutoCheckedRef.current = false;
     setNotice(null);
     try {
-      const [loadedSettings, agentDefs, registry, discovered, tunnelDefs] =
+      const [
+        loadedSettings,
+        agentDefs,
+        registry,
+        discovered,
+        tunnelDefs,
+        managedPluginDefs,
+      ] =
         await Promise.all([
           invoke<AppSettings>("get_settings"),
           invoke<AgentSummary[]>("list_agents"),
           invoke<PluginRegistryEntry[]>("list_plugin_registry"),
           invoke<DiscoveredChannelPlugin[]>("list_channel_plugins"),
           invoke<TunnelSummary[]>("list_tunnels"),
+          invoke<ManagedPluginSummary[]>("list_managed_plugins"),
         ]);
       const orderedAgents = orderAgents(agentDefs);
       setSettings(loadedSettings);
       setAgents(orderedAgents);
       setPluginRegistry(registry);
       setDiscoveredPlugins(discovered);
+      setManagedPlugins(managedPluginDefs);
       setTunnels(tunnelDefs);
       hydrateAgents(loadedSettings, orderedAgents);
       hydrateChannels(loadedSettings, registry, discovered);
       hydrateTunnel(loadedSettings);
       hydrateProxy(loadedSettings);
       hydrateApiBridge(loadedSettings);
+      hydrateSearchTool(loadedSettings);
       hydrateIntegrations(loadedSettings);
       hydrateImAgent(loadedSettings);
       setSettingsLoaded(true);
@@ -320,6 +473,7 @@ export function SettingsDialog({
     hydrateIntegrations,
     hydrateImAgent,
     hydrateProxy,
+    hydrateSearchTool,
     hydrateTunnel,
   ]);
 
@@ -382,21 +536,118 @@ export function SettingsDialog({
     });
   }, []);
 
-  const installPlugin = useCallback(
-    async (pluginId: string, githubUrl: string) => {
-      setInstallingPlugins((prev) => new Set(prev).add(pluginId));
+  const updateSearchSource = useCallback(
+    (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => {
+      setSearchSources((previous) => ({
+        ...previous,
+        [sourceId]: {
+          ...previous[sourceId],
+          ...patch,
+        },
+      }));
+    },
+    [],
+  );
+
+  const refreshPluginInventory = useCallback(async () => {
+    setCheckingPluginUpdates(true);
+    setPluginUpdatesChecked(true);
+    setNotice(null);
+    try {
+      const plugins = await invoke<ManagedPluginSummary[]>(
+        "refresh_managed_plugins",
+      );
+      setManagedPlugins(plugins);
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setCheckingPluginUpdates(false);
+    }
+  }, []);
+
+  const installManagedPlugin = useCallback(
+    async (
+      category: ManagedPluginCategory,
+      id: string,
+      successMessage = "Plugin refreshed.",
+    ) => {
+      const key = managedPluginKey(category, id);
+      setInstallingManagedPlugins((prev) => new Set(prev).add(key));
       setNotice(null);
       try {
-        await invoke("install_plugin", { request: { pluginId, githubUrl } });
-        const plugins = await invoke<DiscoveredChannelPlugin[]>(
-          "list_channel_plugins",
+        const plugin = await invoke<ManagedPluginSummary>(
+          "install_managed_plugin",
+          {
+            request: { category, id },
+          },
         );
-        setDiscoveredPlugins(plugins);
+        setManagedPlugins((previous) =>
+          mergeManagedPlugins(previous, [plugin]),
+        );
+        if (category === "im") {
+          const discovered = await invoke<DiscoveredChannelPlugin[]>(
+            "list_channel_plugins",
+          );
+          setDiscoveredPlugins(discovered);
+        }
+        setNotice({ variant: "success", message: successMessage });
       } catch (error) {
         setNotice({
           variant: "error",
           message: error instanceof Error ? error.message : String(error),
         });
+      } finally {
+        setInstallingManagedPlugins((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
+    },
+    [],
+  );
+
+  const testWebSearch = useCallback(async () => {
+    const query = testSearchQuery.trim();
+    if (!query) {
+      setNotice({ variant: "warning", message: "Search query is required." });
+      return;
+    }
+    setTestingSearch(true);
+    setNotice(null);
+    setTestSearchResult(null);
+    try {
+      const response = await invoke<TestSearchResponse>("test_web_search", {
+        request: {
+          query,
+          maxResults: normalizedSearchMaxResults(searchMaxResults),
+          searchContextSize,
+          sources: searchSources,
+        },
+      });
+      setTestSearchResult(response);
+      setNotice({
+        variant: "success",
+        message: "Test search completed.",
+      });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setTestingSearch(false);
+    }
+  }, [searchContextSize, searchMaxResults, searchSources, testSearchQuery]);
+
+  const installPlugin = useCallback(
+    async (pluginId: string, _githubUrl: string) => {
+      setInstallingPlugins((prev) => new Set(prev).add(pluginId));
+      try {
+        await installManagedPlugin("im", pluginId);
       } finally {
         setInstallingPlugins((prev) => {
           const next = new Set(prev);
@@ -405,8 +656,26 @@ export function SettingsDialog({
         });
       }
     },
-    [],
+    [installManagedPlugin],
   );
+
+  useEffect(() => {
+    if (
+      !open ||
+      settingsTab !== "plugins" ||
+      loading ||
+      pluginUpdatesAutoCheckedRef.current
+    ) {
+      return;
+    }
+    pluginUpdatesAutoCheckedRef.current = true;
+    void refreshPluginInventory();
+  }, [
+    loading,
+    open,
+    refreshPluginInventory,
+    settingsTab,
+  ]);
 
   const { authStates, startAuth, cancelAuth } = useChannelAuth({
     active: open,
@@ -508,8 +777,7 @@ export function SettingsDialog({
       });
       await invoke("save_settings", { settings: nextSettings });
       setSettings(nextSettings);
-      const response = await apiFetch("/api/settings/reload", { method: "POST" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await invoke("restart_services");
       onServicesRestarted?.();
       setNotice({ variant: "success", message: "API bridge settings applied." });
     } catch (error) {
@@ -524,6 +792,39 @@ export function SettingsDialog({
     settings,
     apiBridgeRetryForm,
     apiBridgeRetryFormKey,
+    onServicesRestarted,
+  ]);
+
+  const applyWebSearchSettings = useCallback(async () => {
+    setSaving("web-search");
+    setNotice(null);
+    try {
+      const nextSettings = buildWebSearchSettings({
+        settings,
+        replaceProviderWebSearch,
+        maxResults: searchMaxResults,
+        searchContextSize,
+        sources: searchSources,
+      });
+      await invoke("save_settings", { settings: nextSettings });
+      setSettings(nextSettings);
+      await invoke("restart_services");
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "Web search settings applied." });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving("idle");
+    }
+  }, [
+    settings,
+    replaceProviderWebSearch,
+    searchContextSize,
+    searchMaxResults,
+    searchSources,
     onServicesRestarted,
   ]);
 
@@ -698,6 +999,20 @@ export function SettingsDialog({
                 {t("API Bridge")}
               </TabsTrigger>
               <TabsTrigger
+                value="web-search"
+                className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Search className="h-3 w-3" />
+                {t("Web Search")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="plugins"
+                className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Puzzle className="h-3 w-3" />
+                {t("Plugins")}
+              </TabsTrigger>
+              <TabsTrigger
                 value="im"
                 className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
               >
@@ -830,6 +1145,31 @@ export function SettingsDialog({
             </TabsContent>
 
             <TabsContent
+              value="plugins"
+              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+            >
+              {loading ? (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <LoadingBlock />
+                </div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <PluginsSettingsPanel
+                    plugins={managedPlugins}
+                    enabledAgents={enabledAgents}
+                    installingPlugins={installingManagedPlugins}
+                    checkingUpdates={checkingPluginUpdates}
+                    updatesChecked={pluginUpdatesChecked}
+                    onInstallPlugin={installManagedPlugin}
+                    onConfigureSearch={() => changeSettingsTab("web-search")}
+                    onCheckUpdates={() => void refreshPluginInventory()}
+                    notice={<SettingsNotice notice={notice} />}
+                  />
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent
               value="sessions"
               className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
             >
@@ -916,18 +1256,20 @@ export function SettingsDialog({
               ) : (
                 <>
                   <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
-                    <ApiBridgeRetrySettingsPanel
-                      retry429Enabled={retry429Enabled}
-                      retry429MaxRetries={retry429MaxRetries}
-                      retry429Unlimited={retry429Unlimited}
-                      retry429DelaySeconds={retry429DelaySeconds}
-                      onRetry429EnabledChange={setRetry429Enabled}
-                      onRetry429MaxRetriesChange={setRetry429MaxRetries}
-                      onRetry429UnlimitedChange={setRetry429Unlimited}
-                      onRetry429DelaySecondsChange={setRetry429DelaySeconds}
-                      disabled={!canSubmit}
-                      notice={<SettingsNotice notice={notice} />}
-                    />
+                    <div className="space-y-6">
+                      <ApiBridgeRetrySettingsPanel
+                        retry429Enabled={retry429Enabled}
+                        retry429MaxRetries={retry429MaxRetries}
+                        retry429Unlimited={retry429Unlimited}
+                        retry429DelaySeconds={retry429DelaySeconds}
+                        onRetry429EnabledChange={setRetry429Enabled}
+                        onRetry429MaxRetriesChange={setRetry429MaxRetries}
+                        onRetry429UnlimitedChange={setRetry429Unlimited}
+                        onRetry429DelaySecondsChange={setRetry429DelaySeconds}
+                        disabled={!canSubmit}
+                        notice={<SettingsNotice notice={notice} />}
+                      />
+                    </div>
                   </div>
                   <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
                     <Button
@@ -937,8 +1279,54 @@ export function SettingsDialog({
                       onClick={() => void applyApiBridgeSettings()}
                     >
                       {saving === "api-bridge"
-                        ? t("Applying…")
-                        : t("Apply API Bridge Settings")}
+                        ? t("Restarting services…")
+                        : t("Apply & Restart Services")}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent
+              value="web-search"
+              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+            >
+              {loading ? (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <LoadingBlock />
+                </div>
+              ) : (
+                <>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                    <SearchToolSettingsPanel
+                      replaceProviderWebSearch={replaceProviderWebSearch}
+                      maxResults={searchMaxResults}
+                      searchContextSize={searchContextSize}
+                      sources={searchSources}
+                      testQuery={testSearchQuery}
+                      testResult={testSearchResult}
+                      testing={testingSearch}
+                      onReplaceProviderWebSearchChange={
+                        setReplaceProviderWebSearch
+                      }
+                      onMaxResultsChange={setSearchMaxResults}
+                      onSearchContextSizeChange={setSearchContextSize}
+                      onSourceChange={updateSearchSource}
+                      onTestQueryChange={setTestSearchQuery}
+                      onTestSearch={() => void testWebSearch()}
+                      notice={<SettingsNotice notice={notice} />}
+                    />
+                  </div>
+                  <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!canSubmit}
+                      onClick={() => void applyWebSearchSettings()}
+                    >
+                      {saving === "web-search"
+                        ? t("Restarting services…")
+                        : t("Apply & Restart Services")}
                     </Button>
                   </div>
                 </>
@@ -1005,6 +1393,7 @@ export function SettingsDialog({
                       onCfToken={setCfToken}
                       cfHostname={cfHostname}
                       onCfHostname={setCfHostname}
+                      showProviderSelect
                       notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
@@ -1037,6 +1426,355 @@ export function SettingsDialog({
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type PluginInstallStatusFilter =
+  | "all"
+  | "updates"
+  | "installed"
+  | "not-installed";
+type PluginCategoryFilter = "all" | "acp" | "im" | "search";
+
+type PluginInventoryItem = ManagedPluginSummary;
+
+function PluginsSettingsPanel({
+  plugins,
+  enabledAgents,
+  installingPlugins,
+  checkingUpdates,
+  updatesChecked,
+  onInstallPlugin,
+  onConfigureSearch,
+  onCheckUpdates,
+  notice,
+}: {
+  plugins: ManagedPluginSummary[];
+  enabledAgents: Set<string>;
+  installingPlugins: Set<string>;
+  checkingUpdates: boolean;
+  updatesChecked: boolean;
+  onInstallPlugin: (category: ManagedPluginCategory, id: string) => void;
+  onConfigureSearch: () => void;
+  onCheckUpdates: () => void;
+  notice?: ReactNode;
+}) {
+  const { t } = useI18n();
+  const [statusFilter, setStatusFilter] =
+    useState<PluginInstallStatusFilter>("all");
+  const [categoryFilter, setCategoryFilter] =
+    useState<PluginCategoryFilter>("all");
+
+  const items = useMemo(
+    () =>
+      plugins.filter(
+        (plugin) => plugin.category !== "acp" || enabledAgents.has(plugin.id),
+      ),
+    [enabledAgents, plugins],
+  );
+
+  const updateItems = items.filter((item) => item.status === "outdated");
+  const installedItems = items.filter((item) => item.installed);
+  const notInstalledItems = items.filter((item) => !item.installed);
+  const visibleItems = items.filter((item) => {
+    const statusMatch =
+      statusFilter === "all" ||
+      (statusFilter === "updates" && item.status === "outdated") ||
+      (statusFilter === "installed" && item.installed) ||
+      (statusFilter === "not-installed" && !item.installed);
+    const categoryMatch =
+      categoryFilter === "all" || item.category === categoryFilter;
+    return statusMatch && categoryMatch;
+  });
+
+  const statusFilterOptions: Array<{
+    value: PluginInstallStatusFilter;
+    label: string;
+    count: number;
+  }> = [
+    { value: "all", label: "All", count: items.length },
+    { value: "updates", label: "Needs update", count: updateItems.length },
+    { value: "installed", label: "Installed", count: installedItems.length },
+    {
+      value: "not-installed",
+      label: "Not installed",
+      count: notInstalledItems.length,
+    },
+  ];
+  const allCategoryFilterOptions: Array<{
+    value: PluginCategoryFilter;
+    label: string;
+    count: number;
+  }> = [
+    { value: "all", label: "All categories", count: items.length },
+    {
+      value: "acp",
+      label: "ACP plugin",
+      count: items.filter((item) => item.category === "acp").length,
+    },
+    {
+      value: "im",
+      label: "IM plugin",
+      count: items.filter((item) => item.category === "im").length,
+    },
+    {
+      value: "search",
+      label: "Search plugin",
+      count: items.filter((item) => item.category === "search").length,
+    },
+  ];
+  const categoryFilterOptions = allCategoryFilterOptions.filter(
+    (option) => option.value === "all" || option.count > 0,
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold">
+            <Puzzle className="h-4 w-4 text-primary" />
+            {t("Plugins")}
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("Manage installed and installable plugins from one inventory.")}
+          </p>
+          {notice}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="text-xs"
+          disabled={checkingUpdates}
+          onClick={onCheckUpdates}
+        >
+          {checkingUpdates ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RotateCw className="h-3 w-3" />
+          )}
+          {checkingUpdates ? t("Refreshing…") : t("Refresh status")}
+        </Button>
+      </div>
+
+      <div className="space-y-3 rounded-md border border-border px-3 py-3">
+        <PluginFilterGroup
+          label={t("Install status")}
+          options={statusFilterOptions}
+          value={statusFilter}
+          onChange={setStatusFilter}
+        />
+        <PluginFilterGroup
+          label={t("Category")}
+          options={categoryFilterOptions}
+          value={categoryFilter}
+          onChange={setCategoryFilter}
+        />
+      </div>
+
+      {!updatesChecked && (
+        <StatusBanner variant="warning">
+          {t("Plugin status has not been refreshed yet.")}
+        </StatusBanner>
+      )}
+
+      <div className="space-y-2">
+        {visibleItems.length === 0 ? (
+          <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">
+            {t("No plugins in this view.")}
+          </div>
+        ) : (
+          visibleItems.map((item) => (
+            <PluginInventoryCard
+              key={managedPluginKey(item.category, item.id)}
+              item={item}
+              installing={installingPlugins.has(
+                managedPluginKey(item.category, item.id),
+              )}
+              onInstallPlugin={onInstallPlugin}
+              onConfigureSearch={onConfigureSearch}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PluginFilterGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: Array<{ value: T; label: string; count: number }>;
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="grid gap-2 sm:grid-cols-[110px_1fr] sm:items-center">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((option) => {
+          const active = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors ${
+                active
+                  ? "border-primary/40 bg-primary/5 text-primary"
+                  : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+              }`}
+              onClick={() => onChange(option.value)}
+            >
+              <span>{t(option.label)}</span>
+              <span className="font-mono text-[10px] opacity-70">
+                {option.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PluginInventoryCard({
+  item,
+  installing,
+  onInstallPlugin,
+  onConfigureSearch,
+}: {
+  item: PluginInventoryItem;
+  installing: boolean;
+  onInstallPlugin: (category: ManagedPluginCategory, id: string) => void;
+  onConfigureSearch: () => void;
+}) {
+  const { t } = useI18n();
+  const status = pluginStatus(item);
+  const categoryLabel = pluginCategoryLabel(item.category);
+  const showKindBadge = item.kind !== categoryLabel;
+  const ActionIcon =
+    item.status === "outdated"
+        ? RotateCw
+        : item.installed
+          ? RotateCw
+          : Download;
+  const canRunAction = Boolean(item.installable);
+  const actionLabel = pluginActionLabel(item);
+  const Icon =
+    item.category === "acp"
+      ? Bot
+      : item.category === "im"
+        ? MessageSquare
+        : Search;
+
+  return (
+    <section className="rounded-md border border-border bg-card px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 gap-3">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/30 text-primary">
+            <Icon className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{item.name}</span>
+              <Badge variant="outline" className="rounded-md text-[10px]">
+                {t(categoryLabel)}
+              </Badge>
+              {showKindBadge && (
+                <Badge variant="outline" className="rounded-md text-[10px]">
+                  {item.kind}
+                </Badge>
+              )}
+              {item.source && (
+                <Badge variant="secondary" className="rounded-md text-[10px]">
+                  {t(item.source === "project" ? "Project" : "User")}
+                </Badge>
+              )}
+              <Badge
+                variant="outline"
+                className={`rounded-md text-[10px] ${status.className}`}
+              >
+                {t(status.label)}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t(item.description)}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              <span className="font-mono">{item.id}</span>
+              {item.version && (
+                <span>
+                  {t("Installed")} {item.version}
+                </span>
+              )}
+              {item.latestVersion && item.latestVersion !== item.version && (
+                <span>
+                  {t("Latest")} {item.latestVersion}
+                </span>
+              )}
+              {item.message && (
+                <span className="text-muted-foreground/80">
+                  {t(item.message)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {item.github && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              asChild
+            >
+              <a
+                href={item.github}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={t("View on GitHub")}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </Button>
+          )}
+          {item.category === "search" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={onConfigureSearch}
+            >
+              <SlidersHorizontal className="h-3 w-3" />
+              {t("Configure")}
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant={item.status === "outdated" ? "default" : "outline"}
+            size="sm"
+            className="min-w-20 text-xs"
+            disabled={installing || !canRunAction}
+            onClick={() => onInstallPlugin(item.category, item.id)}
+          >
+            {installing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <ActionIcon className="h-3 w-3" />
+            )}
+            {installing ? t("Installing…") : t(actionLabel)}
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1273,6 +2011,234 @@ function ProxySettingsPanel({
   );
 }
 
+function SearchToolSettingsPanel({
+  replaceProviderWebSearch,
+  maxResults,
+  searchContextSize,
+  sources,
+  testQuery,
+  testResult,
+  testing,
+  onReplaceProviderWebSearchChange,
+  onMaxResultsChange,
+  onSearchContextSizeChange,
+  onSourceChange,
+  onTestQueryChange,
+  onTestSearch,
+  notice,
+}: {
+  replaceProviderWebSearch: boolean;
+  maxResults: string;
+  searchContextSize: SearchContextSize;
+  sources: Record<SearchSourceId, SearchSourceForm>;
+  testQuery: string;
+  testResult: TestSearchResponse | null;
+  testing: boolean;
+  onReplaceProviderWebSearchChange: (value: boolean) => void;
+  onMaxResultsChange: (value: string) => void;
+  onSearchContextSizeChange: (value: SearchContextSize) => void;
+  onSourceChange: (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => void;
+  onTestQueryChange: (value: string) => void;
+  onTestSearch: () => void;
+  notice?: ReactNode;
+}) {
+  const { t } = useI18n();
+  const enabledSourceCount = SEARCH_SOURCE_DEFS.filter(
+    (source) => sources[source.id]?.enabled,
+  ).length;
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <Search className="h-4 w-4 text-primary" />
+          {t("Web search")}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("Host-side web search is available when at least one search source is enabled.")}
+        </p>
+        {notice}
+      </div>
+      <div className="rounded-md border border-border">
+        <SettingsActionRow
+          label={t("Replace provider web search")}
+          description={t("Use VibeAround host search even when the upstream model supports provider-native web_search.")}
+          action={
+            <Switch
+              checked={replaceProviderWebSearch}
+              onCheckedChange={onReplaceProviderWebSearchChange}
+              aria-label={t("Replace provider web search")}
+              size="sm"
+            />
+          }
+        />
+      </div>
+      <div className="rounded-md border border-border px-4 py-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-xs text-muted-foreground">
+              {t("Max results per source")}
+            </span>
+            <Input
+              type="number"
+              min={SEARCH_MAX_RESULTS_MIN}
+              max={SEARCH_MAX_RESULTS_MAX}
+              step={1}
+              value={maxResults}
+              onChange={(event) =>
+                onMaxResultsChange(event.currentTarget.value)
+              }
+              className="mt-1"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">
+              {t("Search context size")}
+            </span>
+            <Select
+              value={searchContextSize}
+              onValueChange={(value) =>
+                onSearchContextSizeChange(value as SearchContextSize)
+              }
+            >
+              <SelectTrigger className="mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SEARCH_CONTEXT_SIZE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {t(option.label)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+      </div>
+      <div className="rounded-md border border-border">
+        {SEARCH_SOURCE_DEFS.map((source) => {
+          const form = sources[source.id];
+          return (
+            <div
+              key={source.id}
+              className="space-y-3 border-b border-border px-4 py-4 last:border-b-0"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{source.label}</div>
+                </div>
+                <Switch
+                  checked={form.enabled}
+                  onCheckedChange={(value) =>
+                    onSourceChange(source.id, { enabled: value })
+                  }
+                  aria-label={t("Enable source")}
+                  size="sm"
+                />
+              </div>
+              <label className="block">
+                <span className="text-xs text-muted-foreground">
+                  {t("API key")}
+                </span>
+                <Input
+                  type="password"
+                  value={form.apiKey}
+                  placeholder={t("Paste API key")}
+                  onChange={(event) =>
+                    onSourceChange(source.id, {
+                      apiKey: event.currentTarget.value,
+                    })
+                  }
+                  className="mt-1"
+                />
+              </label>
+            </div>
+          );
+        })}
+      </div>
+      <div className="rounded-md border border-border px-4 py-4">
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <label className="block">
+            <span className="text-xs text-muted-foreground">
+              {t("Test query")}
+            </span>
+            <Input
+              type="text"
+              value={testQuery}
+              placeholder={t("Search the web")}
+              onChange={(event) => onTestQueryChange(event.currentTarget.value)}
+              className="mt-1"
+            />
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-xs"
+            disabled={testing || enabledSourceCount === 0 || !testQuery.trim()}
+            onClick={onTestSearch}
+          >
+            {testing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Search className="h-3 w-3" />
+            )}
+            {testing ? t("Searching…") : t("Test search")}
+          </Button>
+        </div>
+        {enabledSourceCount === 0 && (
+          <div className="mt-2 text-xs text-muted-foreground">
+            {t("Enable at least one source before testing search.")}
+          </div>
+        )}
+        {testResult && (
+          <div className="mt-4 rounded-md border border-border bg-muted/15 px-3 py-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-mono text-foreground/80">
+                {testResult.provider}
+              </span>
+              <span>
+                {t("{{count}} results", {
+                  count: testResult.results.length,
+                })}
+              </span>
+              <span>
+                {t("{{count}} citations", {
+                  count: testResult.citations.length,
+                })}
+              </span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {testResult.results.slice(0, 5).map((result, index) => (
+                <div
+                  key={`${result.source}:${result.url}:${index}`}
+                  className="min-w-0 rounded-md border border-border/70 bg-background px-3 py-2"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                      {result.source}
+                    </span>
+                    <span className="min-w-0 truncate text-xs font-medium">
+                      {result.title || result.url}
+                    </span>
+                  </div>
+                  <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                    {result.url}
+                  </div>
+                  {result.snippet && (
+                    <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      {result.snippet}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ApiBridgeRetrySettingsPanel({
   retry429Enabled,
   retry429MaxRetries,
@@ -1303,10 +2269,10 @@ function ApiBridgeRetrySettingsPanel({
       <div>
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <RotateCw className="h-4 w-4 text-primary" />
-          {t("API bridge retry")}
+          {t("API Bridge")}
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          {t("Automatically retry upstream requests that return 429.")}
+          {t("Configure bridge-wide request behavior for provider API calls.")}
         </p>
         {notice}
       </div>
@@ -1548,6 +2514,85 @@ function buildApiBridgeSettings({
   return result;
 }
 
+function buildWebSearchSettings({
+  settings,
+  replaceProviderWebSearch,
+  maxResults,
+  searchContextSize,
+  sources,
+}: {
+  settings: AppSettings;
+  replaceProviderWebSearch: boolean;
+  maxResults: string;
+  searchContextSize: SearchContextSize;
+  sources: Record<SearchSourceId, SearchSourceForm>;
+}): AppSettings {
+  const result = buildSearchToolSettings({
+    settings,
+    maxResults,
+    searchContextSize,
+    sources,
+  });
+  const apiBridge = isRecord(result.api_bridge)
+    ? { ...result.api_bridge }
+    : {};
+  apiBridge.replace_provider_web_search = replaceProviderWebSearch;
+  delete apiBridge.replaceProviderWebSearch;
+  result.api_bridge = apiBridge as AppSettings["api_bridge"];
+  return result;
+}
+
+function buildSearchToolSettings({
+  settings,
+  maxResults,
+  searchContextSize,
+  sources,
+}: {
+  settings: AppSettings;
+  maxResults: string;
+  searchContextSize: SearchContextSize;
+  sources: Record<SearchSourceId, SearchSourceForm>;
+}): AppSettings {
+  const result: AppSettings = { ...settings };
+  const existingSearchTool = isRecord(settings.search_tool)
+    ? settings.search_tool
+    : {};
+  const existingSources = isRecord(existingSearchTool.sources)
+    ? existingSearchTool.sources
+    : {};
+  const nextSearchTool: Record<string, unknown> = {
+    ...existingSearchTool,
+    max_results: normalizedSearchMaxResults(maxResults),
+    search_context_size: searchContextSize,
+  };
+  delete nextSearchTool.enabled;
+  const nextSources: Record<string, unknown> = {};
+
+  for (const [name, source] of Object.entries(existingSources)) {
+    nextSources[name] = isRecord(source) ? { ...source } : source;
+  }
+
+  for (const def of SEARCH_SOURCE_DEFS) {
+    const source = sources[def.id];
+    const existingSource = nextSources[def.id];
+    const payload: Record<string, unknown> = isRecord(existingSource)
+      ? { ...existingSource }
+      : {};
+    payload.enabled = source.enabled;
+    const apiKey = source.apiKey.trim();
+    if (apiKey) {
+      payload.api_key = apiKey;
+    } else {
+      delete payload.api_key;
+    }
+    nextSources[def.id] = payload;
+  }
+
+  nextSearchTool.sources = nextSources;
+  result.search_tool = nextSearchTool as AppSettings["search_tool"];
+  return result;
+}
+
 function buildChannelSettings({
   settings,
   pluginRegistry,
@@ -1691,6 +2736,50 @@ function defaultChannelVerbose(): ChannelVerboseConfig {
   };
 }
 
+function defaultSearchSourceForms(): Record<SearchSourceId, SearchSourceForm> {
+  return {
+    exa: defaultSearchSourceForm(),
+    tavily: defaultSearchSourceForm(),
+    grok: defaultSearchSourceForm(),
+    brave: defaultSearchSourceForm(),
+  };
+}
+
+function defaultSearchSourceForm(): SearchSourceForm {
+  return {
+    enabled: false,
+    apiKey: "",
+  };
+}
+
+function searchMaxResultsInput(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(clampSearchMaxResults(value));
+  }
+  return DEFAULT_SEARCH_MAX_RESULTS;
+}
+
+function normalizedSearchMaxResults(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return Number(DEFAULT_SEARCH_MAX_RESULTS);
+  }
+  return clampSearchMaxResults(parsed);
+}
+
+function clampSearchMaxResults(value: number): number {
+  return Math.min(
+    SEARCH_MAX_RESULTS_MAX,
+    Math.max(SEARCH_MAX_RESULTS_MIN, Math.floor(value)),
+  );
+}
+
+function searchContextSizeValue(value: unknown): SearchContextSize {
+  return value === "low" || value === "medium" || value === "high"
+    ? value
+    : DEFAULT_SEARCH_CONTEXT_SIZE;
+}
+
 function parseChannelVerbose(value: unknown): ChannelVerboseConfig {
   if (!isRecord(value)) return defaultChannelVerbose();
   return {
@@ -1731,6 +2820,71 @@ function parseIntegerSetting(value: string, fallback: number, min: number): numb
   const parsed = Number.parseInt(value.trim(), 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, parsed);
+}
+
+function managedPluginKey(category: ManagedPluginCategory, id: string): string {
+  return `${category}:${id}`;
+}
+
+function mergeManagedPlugins(
+  previous: ManagedPluginSummary[],
+  incoming: ManagedPluginSummary[],
+): ManagedPluginSummary[] {
+  const merged = new Map(
+    previous.map((plugin) => [
+      managedPluginKey(plugin.category, plugin.id),
+      plugin,
+    ]),
+  );
+  for (const plugin of incoming) {
+    merged.set(managedPluginKey(plugin.category, plugin.id), plugin);
+  }
+  return Array.from(merged.values()).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+}
+
+function pluginCategoryLabel(
+  category: Exclude<PluginCategoryFilter, "all">,
+): string {
+  switch (category) {
+    case "acp":
+      return "ACP plugin";
+    case "im":
+      return "IM plugin";
+    case "search":
+      return "Search plugin";
+  }
+}
+
+function pluginActionLabel(item: PluginInventoryItem): string {
+  if (item.status === "outdated") return "Update";
+  return item.installed ? "Refresh" : "Install";
+}
+
+function pluginStatus(item: PluginInventoryItem): {
+  label: string;
+  className: string;
+} {
+  switch (item.status) {
+    case "outdated":
+      return {
+        label: "Needs update",
+        className: "border-amber-500/30 bg-amber-500/10 text-amber-700",
+      };
+    case "missing":
+      return {
+        label: "Not installed",
+        className: "border-muted-foreground/20 bg-muted/40 text-muted-foreground",
+      };
+    case "ok":
+      return {
+        label: item.installed ? "Up to date" : "Not installed",
+        className: item.installed
+          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+          : "border-muted-foreground/20 bg-muted/40 text-muted-foreground",
+      };
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

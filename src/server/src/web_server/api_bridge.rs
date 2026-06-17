@@ -2,12 +2,14 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use common::config;
+use common::profiles::catalog::ContentCapabilities;
 use common::profiles::headers::merged_upstream_headers;
 use common::profiles::schema::ProfileDef;
 use common::profiles::{catalog, connections};
 use serde_json::{json, Value};
 use va_ai_api_bridge::{
-    DeepSeekBridgeSettings, ProviderBridgeAdapter, ProviderBridgeAdapterConfig,
+    DeepSeekBridgeSettings, ProviderBridgeAdapter, ProviderBridgeAdapterConfig, UniversalRequest,
+    UniversalResponse,
 };
 
 mod completion;
@@ -18,10 +20,14 @@ mod normalization;
 mod passthrough;
 mod protocol;
 mod routes;
+mod server_tools;
 mod stream;
 mod upstream;
 
-use completion::{translated_completion_response, UpstreamResponseTransform};
+use completion::{
+    decode_completion_response, translated_completion_events_response,
+    translated_completion_response, UpstreamResponseTransform,
+};
 use content_policy::{sanitize_request_content_with_capabilities, ContentSanitization};
 use model_mapping::{bridge_model_mapping, bridge_route_preference};
 use normalization::normalize_target_request;
@@ -33,7 +39,7 @@ pub use routes::{
     local_chat_completions_handler, local_gemini_generate_content_handler, local_messages_handler,
     local_models_handler, local_responses_handler,
 };
-use stream::translated_stream_response;
+use stream::{translated_events_stream_response, translated_stream_response};
 use upstream::{
     apply_upstream_auth, redacted_url, request_stream, send_upstream_request_with_rate_limit_retry,
     upstream_endpoint, upstream_error_response, RateLimitRetryContext, ResolvedUpstreamRoute,
@@ -77,14 +83,51 @@ pub(super) async fn bridge_handler(
 
     let mut agent_request = original_request;
 
-    if client_protocol == upstream.protocol && !upstream.is_google_code_assist() {
-        let requested_agent_model = wire_model(&agent_request);
-        let model_mapping = bridge_model_mapping(
-            &upstream.profile,
-            bridge_preference.as_ref(),
-            &target_api_type,
-            requested_agent_model.as_deref(),
+    let requested_agent_model = wire_model(&agent_request);
+    let model_mapping = bridge_model_mapping(
+        &upstream.profile,
+        bridge_preference.as_ref(),
+        &target_api_type,
+        requested_agent_model.as_deref(),
+    );
+    let upstream_model_for_capabilities = model_mapping
+        .as_ref()
+        .map(|mapping| mapping.upstream_model.as_str())
+        .or(requested_agent_model.as_deref());
+    let target_model_capabilities = resolved_bridge_model_capabilities(
+        &upstream.profile,
+        &target_api_type,
+        upstream_model_for_capabilities,
+        model_mapping.as_ref().map(|mapping| &mapping.capabilities),
+    );
+    let requested_web_search_same_protocol = client_protocol == upstream.protocol
+        && !upstream.is_google_code_assist()
+        && client_protocol
+            .decode_agent_request(agent_request.clone())
+            .map(|request| server_tools::request_needs_web_search_fallback(&request))
+            .unwrap_or(false);
+    let same_protocol_needs_web_search_fallback = requested_web_search_same_protocol
+        && state.host_search_available
+        && (state.replace_provider_web_search || !target_model_capabilities.web_search);
+    let same_protocol_needs_web_search_discard = requested_web_search_same_protocol
+        && !state.host_search_available
+        && !target_model_capabilities.web_search;
+
+    if same_protocol_needs_web_search_discard {
+        tracing::info!(
+            target: "server::web_server::api_bridge",
+            request_id = %request_id,
+            profile_id = %profile_id,
+            target_api_type = %target_api_type,
+            "API bridge will translate request to discard unsupported provider web search"
         );
+    }
+
+    if client_protocol == upstream.protocol
+        && !upstream.is_google_code_assist()
+        && !same_protocol_needs_web_search_fallback
+        && !same_protocol_needs_web_search_discard
+    {
         let original_agent_request = agent_request.clone();
         if let Some(mapping) = &model_mapping {
             apply_wire_model(&mut agent_request, &mapping.upstream_model);
@@ -141,7 +184,10 @@ pub(super) async fn bridge_handler(
                 &mut agent_request,
             );
         } else if upstream.protocol == BridgeProtocol::AnthropicMessages {
-            provider_adapter.prepare_anthropic_request(&mut agent_request);
+            provider_adapter.prepare_anthropic_request(
+                client_protocol.provider_request_source(),
+                &mut agent_request,
+            );
         }
         let route = match gemini_route {
             Some(route) => route,
@@ -225,12 +271,6 @@ pub(super) async fn bridge_handler(
             return record_json_error(record.as_ref(), StatusCode::BAD_REQUEST, &error.to_string());
         }
     };
-    let model_mapping = bridge_model_mapping(
-        &upstream.profile,
-        bridge_preference.as_ref(),
-        &target_api_type,
-        universal_request.model.as_deref(),
-    );
     if let Some(mapping) = &model_mapping {
         universal_request.model = Some(mapping.upstream_model.clone());
     }
@@ -247,6 +287,54 @@ pub(super) async fn bridge_handler(
         upstream.protocol,
         sanitization,
     );
+    let request_needs_web_search =
+        server_tools::request_needs_web_search_fallback(&universal_request);
+    let can_use_native_web_search = target_model_capabilities.web_search
+        && protocol_encodes_native_web_search(upstream.protocol);
+    let should_use_host_web_search = request_needs_web_search
+        && state.host_search_available
+        && (state.replace_provider_web_search || !can_use_native_web_search);
+    let web_search_fallback = if should_use_host_web_search {
+        server_tools::prepare_web_search_fallback(&mut universal_request)
+    } else {
+        if request_needs_web_search
+            && !can_use_native_web_search
+            && server_tools::discard_web_search_server_tools(&mut universal_request)
+        {
+            tracing::info!(
+                target: "server::web_server::api_bridge",
+                request_id = %request_id,
+                profile_id = %profile_id,
+                target_api_type = %target_api_type,
+                host_search_available = state.host_search_available,
+                native_web_search = target_model_capabilities.web_search,
+                "API bridge discarded provider web search server tool"
+            );
+        }
+        if request_needs_web_search && can_use_native_web_search {
+            tracing::info!(
+                target: "server::web_server::api_bridge",
+                request_id = %request_id,
+                profile_id = %profile_id,
+                target_api_type = %target_api_type,
+                upstream_protocol = ?upstream.protocol,
+                "API bridge preserved native provider web search server tool"
+            );
+        }
+        None
+    };
+    if let Some(fallback) = &web_search_fallback {
+        tracing::info!(
+            target: "server::web_server::api_bridge",
+            request_id = %request_id,
+            profile_id = %profile_id,
+            target_api_type = %target_api_type,
+            client_protocol = ?client_protocol,
+            upstream_protocol = ?upstream.protocol,
+            original_stream = fallback.original_stream,
+            "API bridge injected host web search fallback tool"
+        );
+    }
     let mut upstream_request = match upstream
         .protocol
         .encode_upstream_request(&universal_request)
@@ -282,7 +370,10 @@ pub(super) async fn bridge_handler(
             &mut upstream_request,
         );
     } else if upstream.protocol == BridgeProtocol::AnthropicMessages {
-        provider_adapter.prepare_anthropic_request(&mut upstream_request);
+        provider_adapter.prepare_anthropic_request(
+            client_protocol.provider_request_source(),
+            &mut upstream_request,
+        );
     }
     let route = match gemini_route {
         Some(route) => route,
@@ -363,6 +454,31 @@ pub(super) async fn bridge_handler(
         UpstreamResponseTransform::Identity
     };
 
+    if let Some(fallback) = web_search_fallback {
+        return translated_web_search_fallback_response(
+            &state,
+            &upstream,
+            bridge_preference.as_ref(),
+            &headers,
+            manual_profile_api_key.as_deref(),
+            record.as_ref(),
+            &request_id,
+            &profile_id,
+            route_scope.as_ref(),
+            manual_scope.as_ref(),
+            &target_api_type,
+            client_protocol,
+            &mut provider_adapter,
+            universal_request,
+            fallback,
+            response,
+            response_transform,
+            model_mapping.map(|mapping| mapping.agent_model),
+            &agent_request,
+        )
+        .await;
+    }
+
     if route.stream {
         translated_stream_response(
             response,
@@ -385,6 +501,217 @@ pub(super) async fn bridge_handler(
         )
         .await
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn translated_web_search_fallback_response(
+    state: &AppState,
+    upstream: &upstream::UpstreamEndpoint,
+    bridge_preference: Option<&common::agent_state::ProfileBridgePreference>,
+    headers: &HeaderMap,
+    manual_profile_api_key: Option<&str>,
+    record: Option<&ActiveBridgeRecord>,
+    request_id: &str,
+    profile_id: &str,
+    route_scope: Option<&String>,
+    manual_scope: Option<&String>,
+    target_api_type: &str,
+    client_protocol: BridgeProtocol,
+    provider_adapter: &mut ProviderBridgeAdapter,
+    mut universal_request: UniversalRequest,
+    fallback: server_tools::WebSearchFallback,
+    first_response: reqwest::Response,
+    response_transform: UpstreamResponseTransform,
+    agent_model: Option<String>,
+    original_agent_request: &Value,
+) -> Response {
+    let provider = server_tools::HostWebSearchProvider::new(state.search_runtime.clone());
+    let mut response = first_response;
+
+    for round in 0..server_tools::MAX_WEB_SEARCH_FALLBACK_ROUNDS {
+        let events = match decode_completion_response(
+            response,
+            upstream.protocol,
+            provider_adapter,
+            response_transform,
+            record,
+        )
+        .await
+        {
+            Ok(events) => events,
+            Err(response) => return response,
+        };
+
+        let upstream_response = UniversalResponse::from_events(&events);
+        let should_continue = match server_tools::append_web_search_results(
+            &mut universal_request,
+            upstream_response,
+            &fallback,
+            &provider,
+            record,
+            round + 1,
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(message) => {
+                return record_json_error(record, StatusCode::BAD_GATEWAY, &message);
+            }
+        };
+
+        if !should_continue {
+            if fallback.original_stream {
+                return translated_events_stream_response(
+                    events,
+                    client_protocol,
+                    agent_model,
+                    record,
+                );
+            }
+            return translated_completion_events_response(
+                events,
+                client_protocol,
+                agent_model,
+                record,
+            );
+        }
+
+        tracing::info!(
+            target: "server::web_server::api_bridge",
+            request_id = %request_id,
+            profile_id = %profile_id,
+            target_api_type = %target_api_type,
+            round = round + 1,
+            "API bridge consumed host web search fallback tool call"
+        );
+
+        if round + 1 >= server_tools::MAX_WEB_SEARCH_FALLBACK_ROUNDS {
+            return record_json_error(
+                record,
+                StatusCode::BAD_GATEWAY,
+                "web search fallback exceeded the maximum internal tool-call rounds",
+            );
+        }
+
+        let (next_body, next_route) = match encode_fallback_upstream_request(
+            upstream,
+            client_protocol,
+            original_agent_request,
+            provider_adapter,
+            &universal_request,
+            record,
+        ) {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+        let request = match build_upstream_request(
+            state,
+            upstream,
+            &next_route,
+            next_body,
+            bridge_preference,
+            headers,
+            manual_profile_api_key,
+            record,
+            bridge_record_metadata(
+                profile_id,
+                route_scope,
+                manual_scope,
+                target_api_type,
+                client_protocol,
+                Some(upstream.protocol),
+                Some(&next_route),
+                false,
+            ),
+        )
+        .await
+        {
+            Ok(request) => request,
+            Err(response) => return response,
+        };
+        let retry_context = retry_context(
+            request_id,
+            profile_id,
+            route_scope,
+            target_api_type,
+            client_protocol,
+            &next_route,
+        );
+        response = match send_upstream_request_with_rate_limit_retry(request, Some(&retry_context))
+            .await
+        {
+            Ok(response) => response,
+            Err(e) => {
+                return record_json_error(
+                    record,
+                    StatusCode::BAD_GATEWAY,
+                    &format!("failed to reach upstream bridge endpoint: {e}"),
+                );
+            }
+        };
+        if !response.status().is_success() {
+            return upstream_error_response(response, record).await;
+        }
+    }
+
+    record_json_error(
+        record,
+        StatusCode::BAD_GATEWAY,
+        "web search fallback stopped unexpectedly",
+    )
+}
+
+fn encode_fallback_upstream_request(
+    upstream: &upstream::UpstreamEndpoint,
+    client_protocol: BridgeProtocol,
+    original_agent_request: &Value,
+    provider_adapter: &mut ProviderBridgeAdapter,
+    universal_request: &UniversalRequest,
+    record: Option<&ActiveBridgeRecord>,
+) -> Result<(Value, ResolvedUpstreamRoute), Response> {
+    let mut upstream_request = upstream
+        .protocol
+        .encode_upstream_request(universal_request)
+        .map_err(|error| {
+            record_json_error(record, StatusCode::UNPROCESSABLE_ENTITY, &error.to_string())
+        })?;
+    let gemini_route = if upstream.protocol == BridgeProtocol::GeminiGenerateContent {
+        match resolve_upstream_route(upstream, &upstream_request) {
+            Ok(route) => Some(route),
+            Err((status, message)) => return Err(record_json_error(record, status, &message)),
+        }
+    } else {
+        None
+    };
+    if let Err(message) = normalize_target_request(&mut upstream_request, upstream.protocol) {
+        return Err(record_json_error(
+            record,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            &message,
+        ));
+    }
+    if upstream.protocol == BridgeProtocol::OpenAiResponses {
+        provider_adapter.prepare_responses_request(&mut upstream_request);
+    } else if upstream.protocol == BridgeProtocol::OpenAiChat {
+        provider_adapter.prepare_chat_request(
+            client_protocol.provider_request_source(),
+            original_agent_request,
+            &mut upstream_request,
+        );
+    } else if upstream.protocol == BridgeProtocol::AnthropicMessages {
+        provider_adapter.prepare_anthropic_request(
+            client_protocol.provider_request_source(),
+            &mut upstream_request,
+        );
+    }
+    let route = match gemini_route {
+        Some(route) => route,
+        None => match resolve_upstream_route(upstream, &upstream_request) {
+            Ok(route) => route,
+            Err((status, message)) => return Err(record_json_error(record, status, &message)),
+        },
+    };
+    Ok((upstream_request, route))
 }
 
 pub(super) async fn models_handler(
@@ -441,6 +768,7 @@ pub(super) async fn models_handler(
                 "capabilities": {
                     "image_input": metadata.image_input,
                     "file_input": metadata.file_input,
+                    "web_search": metadata.web_search,
                 }
             })
         })
@@ -507,6 +835,10 @@ fn bridge_record_metadata(
         model: route.and_then(|route| route.model.clone()),
         passthrough,
     }
+}
+
+fn protocol_encodes_native_web_search(protocol: BridgeProtocol) -> bool {
+    matches!(protocol, BridgeProtocol::AnthropicMessages)
 }
 
 fn upstream_http_client(state: &AppState, profile: &ProfileDef) -> Result<reqwest::Client, String> {
@@ -638,6 +970,47 @@ struct BridgeModelMetadata {
     context_window: Option<u64>,
     image_input: bool,
     file_input: bool,
+    web_search: bool,
+}
+
+fn resolved_bridge_model_capabilities(
+    profile: &common::profiles::schema::ProfileDef,
+    target_api_type: &str,
+    upstream_model: Option<&str>,
+    capability_overrides: Option<&ContentCapabilities>,
+) -> ContentCapabilities {
+    let overrides = profile.overrides.get(target_api_type);
+    let mut capabilities = if let Some(capabilities) =
+        overrides.and_then(|overrides| overrides.capabilities.clone())
+    {
+        capabilities
+    } else {
+        let Some(provider) = catalog::get(&profile.provider) else {
+            return capability_overrides.cloned().unwrap_or_default();
+        };
+        let endpoint_id = overrides.and_then(|overrides| overrides.endpoint_id.as_deref());
+        let Some(endpoint) = catalog::find_endpoint(provider, target_api_type, endpoint_id) else {
+            return capability_overrides.cloned().unwrap_or_default();
+        };
+        let mut capabilities = endpoint.capabilities.content.clone();
+        let model = upstream_model
+            .or_else(|| {
+                overrides
+                    .and_then(|overrides| overrides.model.as_deref())
+                    .map(str::trim)
+                    .filter(|model| !model.is_empty())
+            })
+            .or_else(|| endpoint.models.first().map(|model| model.id.as_str()));
+        if let Some(model) = model.and_then(|model| catalog::find_model(endpoint, model)) {
+            capabilities = capabilities.merge(&model.capabilities);
+        }
+        capabilities
+    };
+
+    if let Some(overrides) = capability_overrides {
+        capabilities = capabilities.merge(overrides);
+    }
+    capabilities
 }
 
 fn bridge_model_metadata(
@@ -657,17 +1030,21 @@ fn bridge_model_metadata(
             context_window: None,
             image_input: false,
             file_input: false,
+            web_search: false,
         };
     };
     let model_def = catalog::find_model(endpoint, &model.upstream_model);
-    let capabilities = model_def
-        .map(|model_def| endpoint.capabilities.content.merge(&model_def.capabilities))
-        .unwrap_or_else(|| endpoint.capabilities.content.clone())
-        .merge(&model.capabilities);
+    let capabilities = resolved_bridge_model_capabilities(
+        profile,
+        target_api_type,
+        Some(&model.upstream_model),
+        Some(&model.capabilities),
+    );
     BridgeModelMetadata {
         context_window: model_def.and_then(|model_def| model_def.context_window),
         image_input: capabilities.image_input,
         file_input: capabilities.file_input,
+        web_search: capabilities.web_search,
     }
 }
 

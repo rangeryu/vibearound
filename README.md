@@ -74,6 +74,17 @@ Built-in provider presets include DeepSeek, Alibaba DashScope, Moonshot / Kimi, 
 - Bridge OpenAI Responses, OpenAI Chat Completions, Anthropic Messages, and Gemini Generate Content shapes.
 - Run the same AI agent with different API profiles across sessions.
 
+## Host-side Web Search
+
+Give agents web search even when the selected model provider does not expose native server-side search.
+
+VibeAround can replace provider-native `web_search` with a local search runtime, then feed normalized results back into the model through the bridge. Search sources are configured in Settings and run through a git-installed `va-search-tool` plugin.
+
+- Use Exa, Tavily, Grok / xAI, and Brave Search as host-side sources.
+- Test search settings before saving from the Web Search settings page.
+- Inspect search requests and source-separated results in the Bridge recorder.
+- Keep API keys in local settings while the AI provider only receives normalized search results.
+
 ## Unified Workspace
 
 One workspace for every AI agent.
@@ -200,13 +211,13 @@ Detailed guides live in the [Wiki](https://github.com/jazzenchen/VibeAround/wiki
 
 ## Download
 
-Latest release: [VibeAround v0.7.4](https://github.com/jazzenchen/VibeAround/releases/tag/v0.7.4).
+Latest release: [VibeAround v0.7.5](https://github.com/jazzenchen/VibeAround/releases/tag/v0.7.5).
 
 | Platform | Recommended download |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.7.4_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround-win-0.7.4-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.7.5_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_x64-setup.exe), [MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_x64_en-US.msi), or [portable ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround-win-0.7.5-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_amd64.AppImage) or [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_amd64.deb) |
 
 Windows and Linux packages are built by GitHub Actions. The macOS package is currently Apple Silicon only.
 

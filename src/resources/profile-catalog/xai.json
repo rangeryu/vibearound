@@ -42,7 +42,8 @@
       "capabilities": {
         "reasoning_effort": true,
         "content": {
-          "image_input": true
+          "image_input": true,
+          "web_search": true
         }
       },
       "auth_modes": [

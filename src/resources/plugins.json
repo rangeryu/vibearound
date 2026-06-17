@@ -70,5 +70,13 @@
     "description": "Connect QQ Guild Bot via WebSocket gateway (no public IP required).",
     "github": "https://github.com/jazzenchen/va-plugin-channel-qqbot",
     "install_steps": ["git_clone", "npm_install", "npm_build"]
+  },
+  {
+    "id": "va-search-tool",
+    "kind": "search",
+    "name": "VibeAround Search Tool",
+    "description": "Host-side web search runtime for Exa, Tavily, Grok, and Brave.",
+    "github": "https://github.com/jazzenchen/va-search-tool",
+    "install_steps": ["git_clone", "npm_install", "npm_build"]
   }
 ]

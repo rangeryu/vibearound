@@ -74,6 +74,17 @@ Agent 侧 API 形态                  VibeAround API Bridge                  Pro
 - 在 OpenAI Responses、OpenAI Chat Completions、Anthropic Messages 和 Gemini Generate Content 等 API 形态之间自由转换。
 - 支持同一个 AI Agent 在多个 session 里同时运行不同 API 配置。
 
+## Host-side Web Search
+
+即使当前模型 provider 不提供原生服务端搜索，VibeAround 也可以为 Agent 补上 Web Search 能力。
+
+VibeAround 可以把 provider 原生的 `web_search` 替换成本机搜索运行时，再通过 bridge 把标准化后的搜索结果交回给模型。搜索源在 Settings 中配置，并通过 git 安装的 `va-search-tool` 插件运行。
+
+- 支持 Exa、Tavily、Grok / xAI 和 Brave Search 作为 host-side 搜索源。
+- 可以在 Web Search 设置页保存前直接测试当前搜索配置。
+- Bridge recorder 中可以查看搜索请求，并按 source 区分搜索结果。
+- API key 保存在本地设置中，AI provider 只会收到标准化后的搜索结果。
+
 ## Unified Workspace
 
 统一的 AI Agent 工作空间。
@@ -201,13 +212,13 @@ VibeAround 默认把 AI 编程工作留在你自己的电脑上。
 
 ## 下载
 
-最新版本：[VibeAround v0.7.4](https://github.com/jazzenchen/VibeAround/releases/tag/v0.7.4)。
+最新版本：[VibeAround v0.7.5](https://github.com/jazzenchen/VibeAround/releases/tag/v0.7.5)。
 
 | 平台 | 推荐下载 |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.7.4_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_arm64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround-win-0.7.4-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.4/VibeAround_0.7.4_amd64.deb) |
+| macOS Apple Silicon | [VibeAround_0.7.5_arm64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_arm64.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround-win-0.7.5-portable.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.5/VibeAround_0.7.5_amd64.deb) |
 
 Windows 和 Linux 包由 GitHub Actions 构建。macOS 当前只提供 Apple Silicon 版本。
 

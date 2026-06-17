@@ -50,6 +50,48 @@ pub(super) fn translated_stream_response(
         })
 }
 
+pub(super) fn translated_events_stream_response(
+    mut events: Vec<UniversalEvent>,
+    agent_protocol: BridgeProtocol,
+    agent_model: Option<String>,
+    record: Option<&ActiveBridgeRecord>,
+) -> Response {
+    apply_agent_model(&mut events, agent_model.as_deref());
+    let mut encode_state = EncodeState::default();
+    let wire_events = match agent_protocol.encode_agent_events(&events, &mut encode_state) {
+        Ok(events) => events,
+        Err(error) => {
+            if let Some(record) = record {
+                record.error(&error.to_string());
+            }
+            return json_error(StatusCode::BAD_GATEWAY, &error.to_string());
+        }
+    };
+
+    let mut body = String::new();
+    let mut capture = PayloadCapture::new();
+    for event in wire_events {
+        let frame = encode_wire_sse_event(event);
+        capture.push(frame.as_bytes());
+        body.push_str(&frame);
+    }
+    if let Some(record) = record {
+        record.bridge_response(StatusCode::OK.as_u16(), capture.into_payload());
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/event-stream")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .body(Body::from(body))
+        .unwrap_or_else(|_| {
+            json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to build bridge stream response",
+            )
+        })
+}
+
 fn map_sse_stream(
     upstream: reqwest::Response,
     upstream_protocol: BridgeProtocol,

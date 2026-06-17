@@ -4,7 +4,9 @@
 
 mod agent_integrations;
 pub(crate) mod plugin_install;
+mod plugin_manager;
 mod plugin_session;
+mod search_settings;
 
 pub use plugin_install::{
     __cmd__check_plugin_status,
@@ -16,7 +18,16 @@ pub use plugin_install::{
     check_plugin_status,
     install_plugin,
 };
+pub use plugin_manager::{
+    __cmd__install_managed_plugin, __cmd__list_managed_plugins, __cmd__refresh_managed_plugins,
+    __tauri_command_name_install_managed_plugin, __tauri_command_name_list_managed_plugins,
+    __tauri_command_name_refresh_managed_plugins, install_managed_plugin, list_managed_plugins,
+    refresh_managed_plugins,
+};
 pub use plugin_session::PluginSession;
+pub use search_settings::{
+    __cmd__test_web_search, __tauri_command_name_test_web_search, test_web_search,
+};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -270,72 +281,6 @@ pub async fn check_plugin_updates(
         }
     }
     Ok(reports)
-}
-
-#[tauri::command]
-pub async fn scan_agent_sdk_status(
-    choices: StartkitChoices,
-) -> Result<Vec<StartkitItemReport>, String> {
-    Ok(choices
-        .agents
-        .iter()
-        .filter_map(|agent_id| {
-            let agent = common::resources::agent_by_id(agent_id)?;
-            let Some(npm_pkg) = agent.acp.npm_package.as_deref() else {
-                return Some(StartkitItemReport {
-                    id: format!("agents.{agent_id}.sdk"),
-                    label: format!("{} ACP mode", agent.display_name),
-                    group: "agents".to_string(),
-                    category: "agent_sdk".to_string(),
-                    status: StartkitItemStatus::Skipped,
-                    severity: None,
-                    version: None,
-                    latest_version: None,
-                    path: None,
-                    message: Some("Uses the agent CLI's built-in ACP mode".to_string()),
-                    actions: Vec::new(),
-                    manual_command: None,
-                    manual_url: None,
-                    secret: false,
-                    settings_key: None,
-                });
-            };
-            let default_bin_name = common::agent::npm_package_bin_name(npm_pkg);
-            let bin_name = agent.acp.bin_name.as_deref().unwrap_or(&default_bin_name);
-            let installed = common::agent::npm_package_installed(npm_pkg, bin_name);
-            Some(StartkitItemReport {
-                id: format!("agents.{agent_id}.sdk"),
-                label: format!("{} ACP adapter", agent.display_name),
-                group: "agents".to_string(),
-                category: "agent_sdk".to_string(),
-                status: if installed {
-                    StartkitItemStatus::Ok
-                } else {
-                    StartkitItemStatus::Missing
-                },
-                severity: Some("blocker".to_string()),
-                version: None,
-                latest_version: None,
-                path: common::process::env::resolve_acp_agent_bin(bin_name)
-                    .ok()
-                    .map(|path| path.to_string_lossy().to_string()),
-                message: Some(if installed {
-                    "ACP adapter is installed".to_string()
-                } else {
-                    "ACP adapter is not installed".to_string()
-                }),
-                actions: if installed {
-                    Vec::new()
-                } else {
-                    vec!["install".to_string()]
-                },
-                manual_command: None,
-                manual_url: None,
-                secret: false,
-                settings_key: None,
-            })
-        })
-        .collect())
 }
 
 #[tauri::command]
@@ -693,7 +638,7 @@ async fn npm_latest_version(package: &str, source: &str) -> anyhow::Result<Optio
         .map(str::to_string))
 }
 
-async fn github_plugin_version(github_url: &str) -> anyhow::Result<Option<String>> {
+pub(super) async fn github_plugin_version(github_url: &str) -> anyhow::Result<Option<String>> {
     let Some(package_url) = github_raw_file_url(github_url, "package.json") else {
         return Ok(None);
     };

@@ -694,6 +694,7 @@ mod tests {
                 capabilities: catalog::ContentCapabilities {
                     image_input: true,
                     file_input: true,
+                    web_search: false,
                 },
             }],
         )

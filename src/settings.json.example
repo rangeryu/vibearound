@@ -5,6 +5,27 @@
     "mcp_auto_install": true,
     "skill_auto_install": true
   },
+  "search_tool": {
+    "enabled": false,
+    "sources": {
+      "exa": {
+        "enabled": false,
+        "api_key": "YOUR_EXA_API_KEY"
+      },
+      "tavily": {
+        "enabled": false,
+        "api_key": "YOUR_TAVILY_API_KEY"
+      },
+      "grok": {
+        "enabled": false,
+        "api_key": "YOUR_XAI_API_KEY"
+      },
+      "brave": {
+        "enabled": false,
+        "api_key": "YOUR_BRAVE_API_KEY"
+      }
+    }
+  },
   "tunnel": {
     "provider": "ngrok",
     "ngrok": {
