@@ -28,8 +28,6 @@ import { useOnboardingInitialLoad } from "./hooks/useOnboardingInitialLoad";
 import {
   agentCheckingReport,
   agentIdFromReport,
-  agentIdFromSdkReport,
-  agentSdkCheckingReport,
   groupReportsFromReports,
   itemCheckSignature,
   localPluginReport,
@@ -108,7 +106,6 @@ export default function Onboarding() {
   const checkedAgentLocalSignaturesRef = useRef<Set<string>>(new Set());
   const checkedAgentUpdateSignaturesRef = useRef<Set<string>>(new Set());
   const checkedPluginSignaturesRef = useRef<Set<string>>(new Set());
-  const checkedAgentSdkSignaturesRef = useRef<Set<string>>(new Set());
   const checkedTunnelSignaturesRef = useRef<Set<string>>(new Set());
   const checkedInstallScanSignaturesRef = useRef<Set<string>>(new Set());
   const previousStartkitOptionsRef = useRef<string | null>(null);
@@ -119,9 +116,6 @@ export default function Onboarding() {
   const [pluginUpdateReports, setPluginUpdateReports] = useState<
     StartkitItemReport[]
   >([]);
-  const [agentSdkReports, setAgentSdkReports] = useState<StartkitItemReport[]>(
-    [],
-  );
   const [tunnelReports, setTunnelReports] = useState<StartkitItemReport[]>([]);
 
   useOnboardingInitialLoad({
@@ -286,12 +280,10 @@ export default function Onboarding() {
     checkedAgentLocalSignaturesRef.current.clear();
     checkedAgentUpdateSignaturesRef.current.clear();
     checkedPluginSignaturesRef.current.clear();
-    checkedAgentSdkSignaturesRef.current.clear();
     checkedTunnelSignaturesRef.current.clear();
     checkedInstallScanSignaturesRef.current.clear();
     setAgentInstallReports([]);
     setPluginUpdateReports([]);
-    setAgentSdkReports([]);
     setTunnelReports([]);
     startkit.reset();
   }, [downloadSource, loaded, startkit.reset, toolchainMode]);
@@ -319,53 +311,6 @@ export default function Onboarding() {
     startkit.running,
     startkit.scanning,
     startkit.scan,
-  ]);
-
-  useEffect(() => {
-    if (!loaded || activeStep !== "install" || startkit.running || startkit.scanning) return;
-    const agentIds = Array.from(enabledAgents).sort();
-    const pendingAgentIds = agentIds.filter((agentId) => {
-      const signature = itemCheckSignature(agentId, "agent-sdk", toolchainMode);
-      return !checkedAgentSdkSignaturesRef.current.has(signature);
-    });
-    if (pendingAgentIds.length === 0) return;
-    for (const agentId of pendingAgentIds) {
-      checkedAgentSdkSignaturesRef.current.add(
-        itemCheckSignature(agentId, "agent-sdk", toolchainMode),
-      );
-    }
-
-    for (const agentId of pendingAgentIds) {
-      setAgentSdkReports((previous) =>
-        mergeReportsById(previous, [
-          agentSdkCheckingReport(agentId, agents),
-        ]),
-      );
-
-      void invoke<StartkitItemReport[]>("scan_agent_sdk_status", {
-        choices: {
-          ...agentStatusChoices,
-          agents: [agentId],
-        },
-      })
-        .then((reports) => {
-          setAgentSdkReports((previous) =>
-            mergeReportsById(previous, reports),
-          );
-        })
-        .catch((error) => {
-          console.error(`failed to scan ${agentId} agent SDK status`, error);
-        });
-    }
-  }, [
-    activeStep,
-    agentStatusChoices,
-    agents,
-    enabledAgents,
-    loaded,
-    startkit.running,
-    startkit.scanning,
-    toolchainMode,
   ]);
 
   useEffect(() => {
@@ -657,10 +602,6 @@ export default function Onboarding() {
         const agentId = agentIdFromReport(report);
         return agentId ? selectedAgents.has(agentId) : false;
       }),
-      ...agentSdkReports.filter((report) => {
-        const agentId = agentIdFromSdkReport(report);
-        return agentId ? selectedAgents.has(agentId) : false;
-      }),
       ...pluginUpdateReports.filter((report) => {
         const pluginId = pluginIdFromReport(report);
         return pluginId ? selectedChannels.has(pluginId) : false;
@@ -671,7 +612,6 @@ export default function Onboarding() {
     ]);
   }, [
     agentInstallReports,
-    agentSdkReports,
     choices.agents,
     choices.channels,
     choices.tunnel,

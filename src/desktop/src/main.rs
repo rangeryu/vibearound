@@ -234,7 +234,6 @@ fn main() {
             onboarding::scan_agent_install_status,
             onboarding::check_agent_updates,
             onboarding::check_plugin_updates,
-            onboarding::scan_agent_sdk_status,
             onboarding::scan_tunnel_status,
             onboarding::list_tunnels,
             onboarding::list_plugin_registry,
