@@ -2,16 +2,21 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Bot,
+  Download,
+  ExternalLink,
   Globe,
   History,
+  Loader2,
   MessageSquare,
   Network,
+  Puzzle,
   RotateCw,
   Search,
   SlidersHorizontal,
@@ -23,6 +28,11 @@ import { useI18n } from "@va/i18n";
 import { StepChannels } from "../Onboarding/components/StepChannels";
 import { StepTunnel } from "../Onboarding/components/StepTunnel";
 import { useChannelAuth } from "../Onboarding/hooks/useChannelAuth";
+import {
+  localPluginReport,
+  mergeReportsById,
+  pluginCheckingReport,
+} from "../Onboarding/lib/checkReports";
 import type { TunnelProvider } from "../Onboarding/constants";
 import type {
   AgentSummary,
@@ -31,9 +41,11 @@ import type {
   DiscoveredChannelPlugin,
   PluginRegistryEntry,
   Settings as AppSettings,
+  StartkitItemReport,
   TunnelSummary,
 } from "../Onboarding/types";
 import { apiFetch } from "../lib/api";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -181,11 +193,17 @@ export function SettingsDialog({
   const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(
     () => new Set(),
   );
+  const [pluginUpdateReports, setPluginUpdateReports] = useState<
+    StartkitItemReport[]
+  >([]);
+  const [checkingPluginUpdates, setCheckingPluginUpdates] = useState(false);
+  const [pluginUpdatesChecked, setPluginUpdatesChecked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [saving, setSaving] = useState<SaveState>("idle");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [settingsTab, setSettingsTab] = useState("general");
+  const pluginUpdatesAutoCheckedRef = useRef(false);
   const apiBridgeRetryForm = useMemo<ApiBridgeRetryFormState>(
     () => ({
       retry429Enabled,
@@ -359,6 +377,9 @@ export function SettingsDialog({
   const load = useCallback(async () => {
     setLoading(true);
     setSettingsLoaded(false);
+    setPluginUpdateReports([]);
+    setPluginUpdatesChecked(false);
+    pluginUpdatesAutoCheckedRef.current = false;
     setNotice(null);
     try {
       const [loadedSettings, agentDefs, registry, discovered, tunnelDefs] =
@@ -374,6 +395,9 @@ export function SettingsDialog({
       setAgents(orderedAgents);
       setPluginRegistry(registry);
       setDiscoveredPlugins(discovered);
+      setPluginUpdateReports(
+        registry.map((entry) => localPluginReport(entry, discovered)),
+      );
       setTunnels(tunnelDefs);
       hydrateAgents(loadedSettings, orderedAgents);
       hydrateChannels(loadedSettings, registry, discovered);
@@ -475,6 +499,50 @@ export function SettingsDialog({
     [],
   );
 
+  const checkPluginUpdates = useCallback(
+    async (
+      pluginIds?: string[],
+      discoveredForReports: DiscoveredChannelPlugin[] = discoveredPlugins,
+      clearNotice = true,
+    ) => {
+      const ids = pluginIds ?? pluginRegistry.map((plugin) => plugin.id);
+      const registryIds = new Set(pluginRegistry.map((plugin) => plugin.id));
+      const checkableIds = ids.filter((id) => registryIds.has(id));
+      if (checkableIds.length === 0) return;
+
+      setCheckingPluginUpdates(true);
+      setPluginUpdatesChecked(true);
+      if (clearNotice) setNotice(null);
+      setPluginUpdateReports((previous) =>
+        mergeReportsById(
+          previous,
+          checkableIds.map((id) =>
+            pluginCheckingReport(id, pluginRegistry, discoveredForReports),
+          ),
+        ),
+      );
+      try {
+        const reports = await invoke<StartkitItemReport[]>(
+          "check_plugin_updates",
+          {
+            request: { pluginIds: checkableIds },
+          },
+        );
+        setPluginUpdateReports((previous) =>
+          mergeReportsById(previous, reports),
+        );
+      } catch (error) {
+        setNotice({
+          variant: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        setCheckingPluginUpdates(false);
+      }
+    },
+    [discoveredPlugins, pluginRegistry],
+  );
+
   const installPlugin = useCallback(
     async (pluginId: string, githubUrl: string) => {
       setInstallingPlugins((prev) => new Set(prev).add(pluginId));
@@ -485,6 +553,14 @@ export function SettingsDialog({
           "list_channel_plugins",
         );
         setDiscoveredPlugins(plugins);
+        const entry = pluginRegistry.find((plugin) => plugin.id === pluginId);
+        if (entry) {
+          setPluginUpdateReports((previous) =>
+            mergeReportsById(previous, [localPluginReport(entry, plugins)]),
+          );
+        }
+        setNotice({ variant: "success", message: "Plugin refreshed." });
+        void checkPluginUpdates([pluginId], plugins, false);
       } catch (error) {
         setNotice({
           variant: "error",
@@ -498,8 +574,22 @@ export function SettingsDialog({
         });
       }
     },
-    [],
+    [checkPluginUpdates, pluginRegistry],
   );
+
+  useEffect(() => {
+    if (
+      !open ||
+      settingsTab !== "plugins" ||
+      loading ||
+      pluginRegistry.length === 0 ||
+      pluginUpdatesAutoCheckedRef.current
+    ) {
+      return;
+    }
+    pluginUpdatesAutoCheckedRef.current = true;
+    void checkPluginUpdates();
+  }, [checkPluginUpdates, loading, open, pluginRegistry.length, settingsTab]);
 
   const { authStates, startAuth, cancelAuth } = useChannelAuth({
     active: open,
@@ -801,6 +891,13 @@ export function SettingsDialog({
                 {t("API Bridge")}
               </TabsTrigger>
               <TabsTrigger
+                value="plugins"
+                className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Puzzle className="h-3 w-3" />
+                {t("Plugins")}
+              </TabsTrigger>
+              <TabsTrigger
                 value="im"
                 className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
               >
@@ -929,6 +1026,31 @@ export function SettingsDialog({
                     </Button>
                   </div>
                 </>
+              )}
+            </TabsContent>
+
+            <TabsContent
+              value="plugins"
+              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+            >
+              {loading ? (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <LoadingBlock />
+                </div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <PluginsSettingsPanel
+                    pluginRegistry={pluginRegistry}
+                    discoveredPlugins={discoveredPlugins}
+                    updateReports={pluginUpdateReports}
+                    installingPlugins={installingPlugins}
+                    checkingUpdates={checkingPluginUpdates}
+                    updatesChecked={pluginUpdatesChecked}
+                    onInstallPlugin={installPlugin}
+                    onCheckUpdates={() => void checkPluginUpdates()}
+                    notice={<SettingsNotice notice={notice} />}
+                  />
+                </div>
               )}
             </TabsContent>
 
@@ -1154,6 +1276,306 @@ export function SettingsDialog({
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type PluginInventoryFilter = "all" | "updates" | "installed" | "available";
+
+type PluginInventoryItem = {
+  id: string;
+  kind: string;
+  name: string;
+  description: string;
+  githubUrl?: string;
+  installed: boolean;
+  source?: DiscoveredChannelPlugin["source"];
+  version?: string;
+  latestVersion?: string;
+  report?: StartkitItemReport;
+};
+
+function PluginsSettingsPanel({
+  pluginRegistry,
+  discoveredPlugins,
+  updateReports,
+  installingPlugins,
+  checkingUpdates,
+  updatesChecked,
+  onInstallPlugin,
+  onCheckUpdates,
+  notice,
+}: {
+  pluginRegistry: PluginRegistryEntry[];
+  discoveredPlugins: DiscoveredChannelPlugin[];
+  updateReports: StartkitItemReport[];
+  installingPlugins: Set<string>;
+  checkingUpdates: boolean;
+  updatesChecked: boolean;
+  onInstallPlugin: (pluginId: string, githubUrl: string) => void;
+  onCheckUpdates: () => void;
+  notice?: ReactNode;
+}) {
+  const { t } = useI18n();
+  const [filter, setFilter] = useState<PluginInventoryFilter>("all");
+
+  const items = useMemo(() => {
+    const discoveredById = new Map(
+      discoveredPlugins.map((plugin) => [plugin.id, plugin]),
+    );
+    const reportByPluginId = new Map(
+      updateReports
+        .map((report) => [pluginIdFromPluginReport(report), report] as const)
+        .filter((entry): entry is readonly [string, StartkitItemReport] =>
+          Boolean(entry[0]),
+        ),
+    );
+    const registryIds = new Set(pluginRegistry.map((plugin) => plugin.id));
+    const registryItems: PluginInventoryItem[] = pluginRegistry.map((entry) => {
+      const discovered = discoveredById.get(entry.id);
+      const report = reportByPluginId.get(entry.id);
+      return {
+        id: entry.id,
+        kind: entry.kind,
+        name: entry.name,
+        description: entry.description,
+        githubUrl: entry.github,
+        installed: Boolean(discovered),
+        source: discovered?.source,
+        version: discovered?.version ?? report?.version,
+        latestVersion: report?.latestVersion,
+        report,
+      };
+    });
+    const localOnlyItems: PluginInventoryItem[] = discoveredPlugins
+      .filter((plugin) => !registryIds.has(plugin.id))
+      .map((plugin) => ({
+        id: plugin.id,
+        kind: plugin.kind,
+        name: plugin.name,
+        description: `${plugin.kind} plugin`,
+        installed: true,
+        source: plugin.source,
+        version: plugin.version,
+      }));
+
+    return [...registryItems, ...localOnlyItems].sort((left, right) =>
+      left.name.localeCompare(right.name),
+    );
+  }, [discoveredPlugins, pluginRegistry, updateReports]);
+
+  const updateItems = items.filter((item) => item.report?.status === "outdated");
+  const installedItems = items.filter((item) => item.installed);
+  const availableItems = items.filter((item) => !item.installed);
+  const visibleItems =
+    filter === "updates"
+      ? updateItems
+      : filter === "installed"
+        ? installedItems
+        : filter === "available"
+          ? availableItems
+          : items;
+
+  const filterOptions: Array<{
+    value: PluginInventoryFilter;
+    label: string;
+    count: number;
+  }> = [
+    { value: "all", label: "All", count: items.length },
+    { value: "updates", label: "Needs update", count: updateItems.length },
+    { value: "installed", label: "Installed", count: installedItems.length },
+    { value: "available", label: "Not installed", count: availableItems.length },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold">
+            <Puzzle className="h-4 w-4 text-primary" />
+            {t("Plugins")}
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("Install registry plugins, refresh installed plugins, and check for updates.")}
+          </p>
+          {notice}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="text-xs"
+          disabled={checkingUpdates || pluginRegistry.length === 0}
+          onClick={onCheckUpdates}
+        >
+          {checkingUpdates ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RotateCw className="h-3 w-3" />
+          )}
+          {checkingUpdates ? t("Checking…") : t("Check updates")}
+        </Button>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-4">
+        {filterOptions.map((option) => {
+          const active = filter === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                active
+                  ? "border-primary/40 bg-primary/5 text-primary"
+                  : "border-border hover:border-border/80"
+              }`}
+              onClick={() => setFilter(option.value)}
+            >
+              <div className="text-lg font-semibold tabular-nums">
+                {option.count}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {t(option.label)}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {!updatesChecked && (
+        <StatusBanner variant="warning">
+          {t("Plugin update status has not been checked yet.")}
+        </StatusBanner>
+      )}
+
+      <div className="space-y-2">
+        {visibleItems.length === 0 ? (
+          <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">
+            {t("No plugins in this view.")}
+          </div>
+        ) : (
+          visibleItems.map((item) => (
+            <PluginInventoryCard
+              key={item.id}
+              item={item}
+              installing={installingPlugins.has(item.id)}
+              onInstallPlugin={onInstallPlugin}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PluginInventoryCard({
+  item,
+  installing,
+  onInstallPlugin,
+}: {
+  item: PluginInventoryItem;
+  installing: boolean;
+  onInstallPlugin: (pluginId: string, githubUrl: string) => void;
+}) {
+  const { t } = useI18n();
+  const status = pluginStatus(item);
+  const canInstall = Boolean(item.githubUrl);
+  const actionLabel =
+    item.report?.status === "outdated"
+      ? "Update"
+      : item.installed
+        ? "Refresh"
+        : "Install";
+
+  return (
+    <section className="rounded-md border border-border bg-card px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 gap-3">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/30 text-primary">
+            <Puzzle className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{item.name}</span>
+              <Badge variant="outline" className="rounded-md text-[10px]">
+                {item.kind}
+              </Badge>
+              {item.source && (
+                <Badge variant="secondary" className="rounded-md text-[10px]">
+                  {t(item.source === "project" ? "Project" : "User")}
+                </Badge>
+              )}
+              <Badge
+                variant="outline"
+                className={`rounded-md text-[10px] ${status.className}`}
+              >
+                {t(status.label)}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t(item.description)}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              <span className="font-mono">{item.id}</span>
+              {item.version && (
+                <span>
+                  {t("Installed")} {item.version}
+                </span>
+              )}
+              {item.latestVersion && item.latestVersion !== item.version && (
+                <span>
+                  {t("Latest")} {item.latestVersion}
+                </span>
+              )}
+              {item.report?.message && (
+                <span className="text-muted-foreground/80">
+                  {t(item.report.message)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {item.githubUrl && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              asChild
+            >
+              <a
+                href={item.githubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={t("View on GitHub")}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant={item.report?.status === "outdated" ? "default" : "outline"}
+            size="sm"
+            className="min-w-20 text-xs"
+            disabled={installing || !canInstall}
+            onClick={() => {
+              if (item.githubUrl) onInstallPlugin(item.id, item.githubUrl);
+            }}
+          >
+            {installing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : item.report?.status === "outdated" ? (
+              <RotateCw className="h-3 w-3" />
+            ) : (
+              <Download className="h-3 w-3" />
+            )}
+            {installing ? t("Installing…") : t(actionLabel)}
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -2078,6 +2500,57 @@ function parseIntegerSetting(value: string, fallback: number, min: number): numb
   const parsed = Number.parseInt(value.trim(), 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, parsed);
+}
+
+function pluginIdFromPluginReport(report: StartkitItemReport): string | null {
+  const match = /^channels\.plugins\.(.+)$/.exec(report.id);
+  return match?.[1] ?? null;
+}
+
+function pluginStatus(item: PluginInventoryItem): {
+  label: string;
+  className: string;
+} {
+  switch (item.report?.status) {
+    case "running":
+      return {
+        label: "Checking",
+        className: "border-sky-500/30 bg-sky-500/10 text-sky-700",
+      };
+    case "outdated":
+      return {
+        label: "Needs update",
+        className: "border-amber-500/30 bg-amber-500/10 text-amber-700",
+      };
+    case "missing":
+      return {
+        label: "Not installed",
+        className: "border-muted-foreground/20 bg-muted/40 text-muted-foreground",
+      };
+    case "error":
+    case "broken":
+      return {
+        label: "Needs attention",
+        className: "border-destructive/30 bg-destructive/10 text-destructive",
+      };
+    case "ok":
+      return {
+        label: item.installed ? "Up to date" : "Not installed",
+        className: item.installed
+          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+          : "border-muted-foreground/20 bg-muted/40 text-muted-foreground",
+      };
+    default:
+      return item.installed
+        ? {
+            label: "Installed",
+            className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
+          }
+        : {
+            label: "Not installed",
+            className: "border-muted-foreground/20 bg-muted/40 text-muted-foreground",
+          };
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
