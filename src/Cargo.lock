@@ -5737,6 +5737,7 @@ dependencies = [
 [[package]]
 name = "va-ai-api-bridge"
 version = "0.1.6"
+source = "git+https://github.com/jazzenchen/va-ai-api-bridge?rev=8bad207b6459505ccb2fd3794b5e18fad03cc8cc#8bad207b6459505ccb2fd3794b5e18fad03cc8cc"
 dependencies = [
  "base64 0.22.1",
  "serde",
