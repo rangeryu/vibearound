@@ -70,7 +70,7 @@ pub(super) fn apply_profile_config(profile: &ProfileDef) -> anyhow::Result<()> {
         .unwrap_or_else(|| route.client_api_type.clone());
     ensure_claude_bridge_agent_model(profile, &route, &target_api_type)
         .with_context(|| format!("prepare Claude Desktop bridge model for '{}'", profile.id))?;
-    let scope = format!("claude-{}", route.client_api_type);
+    let scope = format!("claude-desktop-{}", route.client_api_type);
     let base_url = bridge_base_url(&profile.id, &scope, &target_api_type);
     apply_profile_config_at(&claude_3p_user_data_dir(), profile, &base_url)
 }
@@ -105,7 +105,7 @@ fn ensure_claude_bridge_agent_model(
     let merged_connections = connections::merged_profile_connections(&agent_prefs);
     let mut preference = merged_connections
         .get(&profile.id)
-        .and_then(|items| items.get("claude"))
+        .and_then(|items| items.get("claude-desktop"))
         .cloned()
         .unwrap_or_default();
     if !upsert_claude_bridge_agent_model_preference(
@@ -116,7 +116,7 @@ fn ensure_claude_bridge_agent_model(
     ) {
         return Ok(());
     }
-    agent_state::write_profile_connection_preference(&profile.id, "claude", preference)
+    agent_state::write_profile_connection_preference(&profile.id, "claude-desktop", preference)
 }
 
 fn claude_bridge_model_routes(
@@ -687,7 +687,7 @@ mod tests {
         apply_profile_config_at(
             &root,
             &profile(),
-            "http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic",
+            "http://127.0.0.1:12358/va/local-api/minimax-test/claude-desktop-anthropic/anthropic",
         )
         .expect("apply Claude Desktop profile");
 
@@ -707,7 +707,7 @@ mod tests {
             managed
                 .get("inferenceGatewayBaseUrl")
                 .and_then(Value::as_str),
-            Some("http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic")
+            Some("http://127.0.0.1:12358/va/local-api/minimax-test/claude-desktop-anthropic/anthropic")
         );
         assert_eq!(
             managed
@@ -749,7 +749,7 @@ mod tests {
         apply_profile_config_at(
             &root,
             &profile(),
-            "http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic",
+            "http://127.0.0.1:12358/va/local-api/minimax-test/claude-desktop-anthropic/anthropic",
         )
         .expect("apply Claude Desktop profile");
 

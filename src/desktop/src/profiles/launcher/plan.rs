@@ -811,7 +811,7 @@ mod tests {
             applied
                 .get("inferenceGatewayBaseUrl")
                 .and_then(serde_json::Value::as_str),
-            Some("http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic")
+            Some("http://127.0.0.1:12358/va/local-api/minimax-test/claude-desktop-anthropic/anthropic")
         );
         if cfg!(target_os = "macos") {
             assert_eq!(plan.macos_app_probe.as_deref(), Some("Claude"));

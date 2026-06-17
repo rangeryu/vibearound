@@ -635,7 +635,9 @@ pub fn launcher_set_profile_connection(
 
 fn validate_connection_agent_id(agent_id: String) -> Result<String, String> {
     match agent_id.as_str() {
-        "claude" | "codex" | "gemini" | "opencode" | "pi" => Ok(agent_id),
+        "claude" | "claude-desktop" | "codex" | "codex-desktop" | "gemini" | "opencode" | "pi" => {
+            Ok(agent_id)
+        }
         other => Err(format!("unsupported connection target: '{other}'")),
     }
 }
@@ -731,7 +733,15 @@ mod tests {
 
     #[test]
     fn accepts_supported_profile_connection_targets() {
-        for agent_id in ["claude", "codex", "gemini", "opencode", "pi"] {
+        for agent_id in [
+            "claude",
+            "claude-desktop",
+            "codex",
+            "codex-desktop",
+            "gemini",
+            "opencode",
+            "pi",
+        ] {
             assert_eq!(
                 validate_connection_agent_id(agent_id.to_string()).unwrap(),
                 agent_id
