@@ -74,6 +74,17 @@ Built-in provider presets include DeepSeek, Alibaba DashScope, Moonshot / Kimi, 
 - Bridge OpenAI Responses, OpenAI Chat Completions, Anthropic Messages, and Gemini Generate Content shapes.
 - Run the same AI agent with different API profiles across sessions.
 
+## Host-side Web Search
+
+Give agents web search even when the selected model provider does not expose native server-side search.
+
+VibeAround can replace provider-native `web_search` with a local search runtime, then feed normalized results back into the model through the bridge. Search sources are configured in Settings and run through a git-installed `va-search-tool` plugin.
+
+- Use Exa, Tavily, Grok / xAI, and Brave Search as host-side sources.
+- Test search settings before saving from the Web Search settings page.
+- Inspect search requests and source-separated results in the Bridge recorder.
+- Keep API keys in local settings while the AI provider only receives normalized search results.
+
 ## Unified Workspace
 
 One workspace for every AI agent.

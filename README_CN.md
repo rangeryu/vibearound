@@ -74,6 +74,17 @@ Agent 侧 API 形态                  VibeAround API Bridge                  Pro
 - 在 OpenAI Responses、OpenAI Chat Completions、Anthropic Messages 和 Gemini Generate Content 等 API 形态之间自由转换。
 - 支持同一个 AI Agent 在多个 session 里同时运行不同 API 配置。
 
+## Host-side Web Search
+
+即使当前模型 provider 不提供原生服务端搜索，VibeAround 也可以为 Agent 补上 Web Search 能力。
+
+VibeAround 可以把 provider 原生的 `web_search` 替换成本机搜索运行时，再通过 bridge 把标准化后的搜索结果交回给模型。搜索源在 Settings 中配置，并通过 git 安装的 `va-search-tool` 插件运行。
+
+- 支持 Exa、Tavily、Grok / xAI 和 Brave Search 作为 host-side 搜索源。
+- 可以在 Web Search 设置页保存前直接测试当前搜索配置。
+- Bridge recorder 中可以查看搜索请求，并按 source 区分搜索结果。
+- API key 保存在本地设置中，AI provider 只会收到标准化后的搜索结果。
+
 ## Unified Workspace
 
 统一的 AI Agent 工作空间。
