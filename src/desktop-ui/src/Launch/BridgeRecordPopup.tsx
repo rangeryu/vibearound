@@ -520,7 +520,7 @@ function PayloadActions({
     "flex size-6 items-center justify-center rounded-[5px] text-muted-foreground transition-colors hover:bg-background hover:text-foreground";
   return (
     <span
-      className="inline-flex h-8 items-center gap-0.5 rounded-md border border-border bg-muted/40 p-1"
+      className="inline-flex h-8 items-center gap-0.5"
       role="group"
       aria-label={t("Payload actions")}
     >
@@ -593,10 +593,9 @@ function payloadPhasesForRecord(record: BridgeRecordEntry) {
 
 function searchPayloadForRecord(record: BridgeRecordEntry): RecordedPayload | undefined {
   if (record.searchPayloads.length === 0) return undefined;
-  const json = record.searchPayloads.map((payload, index) => ({
-    index: index + 1,
-    payload: payload.json ?? payload.text,
-  }));
+  const json = record.searchPayloads.map((payload, index) =>
+    normalizeSearchTracePayload(payload, index + 1),
+  );
   const text = JSON.stringify(json, null, 2);
   return {
     byteLength: new TextEncoder().encode(text).length,
@@ -604,6 +603,120 @@ function searchPayloadForRecord(record: BridgeRecordEntry): RecordedPayload | un
     text,
     json,
   };
+}
+
+function normalizeSearchTracePayload(payload: RecordedPayload, index: number) {
+  const raw = payload.json ?? parseJson(payload.text) ?? payload.text;
+  const trace = asRecord(raw);
+  if (!trace) return { index, payload: raw };
+
+  const request = trace.request;
+  const response = asRecord(trace.response);
+  const normalized: Record<string, unknown> = { index };
+  copyIfPresent(normalized, trace, "round");
+  copyIfPresent(normalized, trace, "toolCallId");
+  if (request !== undefined) normalized.request = request;
+
+  if (response) {
+    normalized.response = {
+      provider: response.provider,
+      query: response.query,
+      sources: searchSourcesFromResponse(response),
+    };
+  } else if (trace.error !== undefined) {
+    normalized.error = trace.error;
+  } else {
+    normalized.payload = raw;
+  }
+
+  return normalized;
+}
+
+function searchSourcesFromResponse(response: Record<string, unknown>) {
+  const providerNames = splitSearchSources(response.provider);
+  const citations = stringArray(response.citations);
+  const results = Array.isArray(response.results)
+    ? response.results.filter(isRecord)
+    : [];
+  const sources = new Map<string, Record<string, unknown>[]>();
+
+  for (const name of providerNames) sources.set(name, []);
+  for (const result of results) {
+    const source =
+      stringField(result.source) ?? stringField(result.provider) ?? "unknown";
+    sources.set(source, [...(sources.get(source) ?? []), result]);
+  }
+
+  if (sources.size === 0) {
+    const fallback = stringField(response.provider) ?? "unknown";
+    sources.set(fallback, []);
+  }
+
+  return Array.from(sources.entries()).map(([source, sourceResults]) => {
+    const sourceUrls = new Set(
+      sourceResults
+        .map((result) => stringField(result.url))
+        .filter((url): url is string => !!url),
+    );
+    const sourceCitations = citations.filter((url) => sourceUrls.has(url));
+    return {
+      source,
+      resultCount: sourceResults.length,
+      citations: sourceCitations.length > 0 ? sourceCitations : undefined,
+      results: sourceResults,
+    };
+  });
+}
+
+function splitSearchSources(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  }
+  if (typeof value !== "string") return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function copyIfPresent(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+  key: string,
+) {
+  if (source[key] !== undefined) target[key] = source[key];
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!asRecord(value);
+}
+
+function stringField(value: unknown): string | undefined {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
 }
 
 function payloadForTab(
