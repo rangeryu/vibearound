@@ -240,6 +240,7 @@ fn main() {
             onboarding::list_managed_plugins,
             onboarding::refresh_managed_plugins,
             onboarding::install_managed_plugin,
+            onboarding::test_web_search,
             startkit::startkit_manifest,
             startkit::startkit_plan,
             startkit::startkit_scan,

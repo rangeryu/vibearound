@@ -76,6 +76,7 @@ type SaveState =
   | "idle"
   | "agents"
   | "api-bridge"
+  | "web-search"
   | "proxy"
   | "im"
   | "sessions"
@@ -123,6 +124,23 @@ type ManagedPluginSummary = {
   github?: string;
   message?: string;
   actions: string[];
+};
+
+type TestSearchResult = {
+  title: string;
+  url: string;
+  snippet: string;
+  content: string;
+  score?: number;
+  publishedDate?: string;
+  source: string;
+};
+
+type TestSearchResponse = {
+  provider: string;
+  query: string;
+  results: TestSearchResult[];
+  citations: string[];
 };
 
 const DEFAULT_SEARCH_MAX_RESULTS = "5";
@@ -205,6 +223,10 @@ export function SettingsDialog({
   const [searchSources, setSearchSources] = useState<
     Record<SearchSourceId, SearchSourceForm>
   >(() => defaultSearchSourceForms());
+  const [testSearchQuery, setTestSearchQuery] = useState("");
+  const [testSearchResult, setTestSearchResult] =
+    useState<TestSearchResponse | null>(null);
+  const [testingSearch, setTestingSearch] = useState(false);
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
@@ -588,6 +610,39 @@ export function SettingsDialog({
     [],
   );
 
+  const testWebSearch = useCallback(async () => {
+    const query = testSearchQuery.trim();
+    if (!query) {
+      setNotice({ variant: "warning", message: "Search query is required." });
+      return;
+    }
+    setTestingSearch(true);
+    setNotice(null);
+    setTestSearchResult(null);
+    try {
+      const response = await invoke<TestSearchResponse>("test_web_search", {
+        request: {
+          query,
+          maxResults: normalizedSearchMaxResults(searchMaxResults),
+          searchContextSize,
+          sources: searchSources,
+        },
+      });
+      setTestSearchResult(response);
+      setNotice({
+        variant: "success",
+        message: "Test search completed.",
+      });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setTestingSearch(false);
+    }
+  }, [searchContextSize, searchMaxResults, searchSources, testSearchQuery]);
+
   const installPlugin = useCallback(
     async (pluginId: string, _githubUrl: string) => {
       setInstallingPlugins((prev) => new Set(prev).add(pluginId));
@@ -716,16 +771,9 @@ export function SettingsDialog({
     setSaving("api-bridge");
     setNotice(null);
     try {
-      let nextSettings = buildApiBridgeSettings({
+      const nextSettings = buildApiBridgeSettings({
         settings,
         retry429Form: apiBridgeRetryForm,
-        replaceProviderWebSearch,
-      });
-      nextSettings = buildSearchToolSettings({
-        settings: nextSettings,
-        maxResults: searchMaxResults,
-        searchContextSize,
-        sources: searchSources,
       });
       await invoke("save_settings", { settings: nextSettings });
       setSettings(nextSettings);
@@ -744,6 +792,35 @@ export function SettingsDialog({
     settings,
     apiBridgeRetryForm,
     apiBridgeRetryFormKey,
+    onServicesRestarted,
+  ]);
+
+  const applyWebSearchSettings = useCallback(async () => {
+    setSaving("web-search");
+    setNotice(null);
+    try {
+      const nextSettings = buildWebSearchSettings({
+        settings,
+        replaceProviderWebSearch,
+        maxResults: searchMaxResults,
+        searchContextSize,
+        sources: searchSources,
+      });
+      await invoke("save_settings", { settings: nextSettings });
+      setSettings(nextSettings);
+      await invoke("restart_services");
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "Web search settings applied." });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving("idle");
+    }
+  }, [
+    settings,
     replaceProviderWebSearch,
     searchContextSize,
     searchMaxResults,
@@ -922,6 +999,13 @@ export function SettingsDialog({
                 {t("API Bridge")}
               </TabsTrigger>
               <TabsTrigger
+                value="web-search"
+                className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Search className="h-3 w-3" />
+                {t("Web Search")}
+              </TabsTrigger>
+              <TabsTrigger
                 value="plugins"
                 className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
               >
@@ -1077,7 +1161,7 @@ export function SettingsDialog({
                     checkingUpdates={checkingPluginUpdates}
                     updatesChecked={pluginUpdatesChecked}
                     onInstallPlugin={installManagedPlugin}
-                    onConfigureSearch={() => changeSettingsTab("api-bridge")}
+                    onConfigureSearch={() => changeSettingsTab("web-search")}
                     onCheckUpdates={() => void refreshPluginInventory()}
                     notice={<SettingsNotice notice={notice} />}
                   />
@@ -1185,18 +1269,6 @@ export function SettingsDialog({
                         disabled={!canSubmit}
                         notice={<SettingsNotice notice={notice} />}
                       />
-                      <SearchToolSettingsPanel
-                        replaceProviderWebSearch={replaceProviderWebSearch}
-                        maxResults={searchMaxResults}
-                        searchContextSize={searchContextSize}
-                        sources={searchSources}
-                        onReplaceProviderWebSearchChange={
-                          setReplaceProviderWebSearch
-                        }
-                        onMaxResultsChange={setSearchMaxResults}
-                        onSearchContextSizeChange={setSearchContextSize}
-                        onSourceChange={updateSearchSource}
-                      />
                     </div>
                   </div>
                   <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
@@ -1207,6 +1279,52 @@ export function SettingsDialog({
                       onClick={() => void applyApiBridgeSettings()}
                     >
                       {saving === "api-bridge"
+                        ? t("Restarting services…")
+                        : t("Apply & Restart Services")}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent
+              value="web-search"
+              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+            >
+              {loading ? (
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                  <LoadingBlock />
+                </div>
+              ) : (
+                <>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
+                    <SearchToolSettingsPanel
+                      replaceProviderWebSearch={replaceProviderWebSearch}
+                      maxResults={searchMaxResults}
+                      searchContextSize={searchContextSize}
+                      sources={searchSources}
+                      testQuery={testSearchQuery}
+                      testResult={testSearchResult}
+                      testing={testingSearch}
+                      onReplaceProviderWebSearchChange={
+                        setReplaceProviderWebSearch
+                      }
+                      onMaxResultsChange={setSearchMaxResults}
+                      onSearchContextSizeChange={setSearchContextSize}
+                      onSourceChange={updateSearchSource}
+                      onTestQueryChange={setTestSearchQuery}
+                      onTestSearch={() => void testWebSearch()}
+                      notice={<SettingsNotice notice={notice} />}
+                    />
+                  </div>
+                  <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!canSubmit}
+                      onClick={() => void applyWebSearchSettings()}
+                    >
+                      {saving === "web-search"
                         ? t("Restarting services…")
                         : t("Apply & Restart Services")}
                     </Button>
@@ -1898,21 +2016,36 @@ function SearchToolSettingsPanel({
   maxResults,
   searchContextSize,
   sources,
+  testQuery,
+  testResult,
+  testing,
   onReplaceProviderWebSearchChange,
   onMaxResultsChange,
   onSearchContextSizeChange,
   onSourceChange,
+  onTestQueryChange,
+  onTestSearch,
+  notice,
 }: {
   replaceProviderWebSearch: boolean;
   maxResults: string;
   searchContextSize: SearchContextSize;
   sources: Record<SearchSourceId, SearchSourceForm>;
+  testQuery: string;
+  testResult: TestSearchResponse | null;
+  testing: boolean;
   onReplaceProviderWebSearchChange: (value: boolean) => void;
   onMaxResultsChange: (value: string) => void;
   onSearchContextSizeChange: (value: SearchContextSize) => void;
   onSourceChange: (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => void;
+  onTestQueryChange: (value: string) => void;
+  onTestSearch: () => void;
+  notice?: ReactNode;
 }) {
   const { t } = useI18n();
+  const enabledSourceCount = SEARCH_SOURCE_DEFS.filter(
+    (source) => sources[source.id]?.enabled,
+  ).length;
   return (
     <div className="space-y-5">
       <div>
@@ -1923,6 +2056,7 @@ function SearchToolSettingsPanel({
         <p className="mt-1 text-xs text-muted-foreground">
           {t("Host-side web search is available when at least one search source is enabled.")}
         </p>
+        {notice}
       </div>
       <div className="rounded-md border border-border">
         <SettingsActionRow
@@ -2021,6 +2155,86 @@ function SearchToolSettingsPanel({
           );
         })}
       </div>
+      <div className="rounded-md border border-border px-4 py-4">
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <label className="block">
+            <span className="text-xs text-muted-foreground">
+              {t("Test query")}
+            </span>
+            <Input
+              type="text"
+              value={testQuery}
+              placeholder={t("Search the web")}
+              onChange={(event) => onTestQueryChange(event.currentTarget.value)}
+              className="mt-1"
+            />
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-xs"
+            disabled={testing || enabledSourceCount === 0 || !testQuery.trim()}
+            onClick={onTestSearch}
+          >
+            {testing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Search className="h-3 w-3" />
+            )}
+            {testing ? t("Searching…") : t("Test search")}
+          </Button>
+        </div>
+        {enabledSourceCount === 0 && (
+          <div className="mt-2 text-xs text-muted-foreground">
+            {t("Enable at least one source before testing search.")}
+          </div>
+        )}
+        {testResult && (
+          <div className="mt-4 rounded-md border border-border bg-muted/15 px-3 py-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-mono text-foreground/80">
+                {testResult.provider}
+              </span>
+              <span>
+                {t("{{count}} results", {
+                  count: testResult.results.length,
+                })}
+              </span>
+              <span>
+                {t("{{count}} citations", {
+                  count: testResult.citations.length,
+                })}
+              </span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {testResult.results.slice(0, 5).map((result, index) => (
+                <div
+                  key={`${result.source}:${result.url}:${index}`}
+                  className="min-w-0 rounded-md border border-border/70 bg-background px-3 py-2"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                      {result.source}
+                    </span>
+                    <span className="min-w-0 truncate text-xs font-medium">
+                      {result.title || result.url}
+                    </span>
+                  </div>
+                  <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                    {result.url}
+                  </div>
+                  {result.snippet && (
+                    <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      {result.snippet}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2055,10 +2269,10 @@ function ApiBridgeRetrySettingsPanel({
       <div>
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <RotateCw className="h-4 w-4 text-primary" />
-          {t("API bridge retry")}
+          {t("API Bridge")}
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          {t("Automatically retry upstream requests that return 429.")}
+          {t("Configure bridge-wide request behavior for provider API calls.")}
         </p>
         {notice}
       </div>
@@ -2273,11 +2487,9 @@ function buildProxySettings({
 function buildApiBridgeSettings({
   settings,
   retry429Form,
-  replaceProviderWebSearch,
 }: {
   settings: AppSettings;
   retry429Form: ApiBridgeRetryFormState;
-  replaceProviderWebSearch: boolean;
 }): AppSettings {
   const result: AppSettings = { ...settings };
   const apiBridge = isRecord(settings.api_bridge)
@@ -2298,6 +2510,32 @@ function buildApiBridgeSettings({
   );
 
   apiBridge.retry_429 = retry429;
+  result.api_bridge = apiBridge as AppSettings["api_bridge"];
+  return result;
+}
+
+function buildWebSearchSettings({
+  settings,
+  replaceProviderWebSearch,
+  maxResults,
+  searchContextSize,
+  sources,
+}: {
+  settings: AppSettings;
+  replaceProviderWebSearch: boolean;
+  maxResults: string;
+  searchContextSize: SearchContextSize;
+  sources: Record<SearchSourceId, SearchSourceForm>;
+}): AppSettings {
+  const result = buildSearchToolSettings({
+    settings,
+    maxResults,
+    searchContextSize,
+    sources,
+  });
+  const apiBridge = isRecord(result.api_bridge)
+    ? { ...result.api_bridge }
+    : {};
   apiBridge.replace_provider_web_search = replaceProviderWebSearch;
   delete apiBridge.replaceProviderWebSearch;
   result.api_bridge = apiBridge as AppSettings["api_bridge"];

@@ -6,6 +6,7 @@ mod agent_integrations;
 pub(crate) mod plugin_install;
 mod plugin_manager;
 mod plugin_session;
+mod search_settings;
 
 pub use plugin_install::{
     __cmd__check_plugin_status,
@@ -24,6 +25,9 @@ pub use plugin_manager::{
     refresh_managed_plugins,
 };
 pub use plugin_session::PluginSession;
+pub use search_settings::{
+    __cmd__test_web_search, __tauri_command_name_test_web_search, test_web_search,
+};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
