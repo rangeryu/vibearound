@@ -1,9 +1,11 @@
 //! Workspace-thread prompt handling for channel inputs.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use agent_client_protocol::schema as acp;
 
+use crate::agent::launch::{normalize_launch_profile_id, DIRECT_PROFILE_ID};
 use crate::agent::AgentClientHandler;
 use crate::channels::bridge_handler::ChannelBridgeHandler;
 use crate::channels::plugin_host::PluginHost;
@@ -11,6 +13,7 @@ use crate::channels::subagent_handler::{SubagentBridgeHandler, SubagentReportTra
 use crate::channels::types::{
     ChannelOutput, ChannelSessionAgent, ChannelSessionInfo, ChannelSessionStart,
 };
+use crate::profiles::{self, connections};
 use crate::routing::RouteKey;
 use crate::workspace::context_transfer;
 use crate::workspace::manager::{PendingThreadSelection, ThreadChoice, WorkspaceSwitch};
@@ -149,127 +152,317 @@ async fn handle_command(
             )
             .await;
         }
-        ThreadCommand::SwitchWorkspace(token) => {
-            match workspace_threads
-                .switch_workspace(route, &token)
-                .await
-                .map_err(internal_error)?
-            {
-                WorkspaceSwitch::Started(runtime) => {
-                    start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true)
-                        .await?;
-                    send_system_text(
-                        plugin_host,
-                        route,
-                        &format!(
-                            "Entered workspace and started thread {}.",
-                            runtime.state().await.thread_id
-                        ),
-                    )
-                    .await;
-                }
-                WorkspaceSwitch::NeedsSelection { workspace, threads } => {
-                    send_system_text(
-                        plugin_host,
-                        route,
-                        &format_thread_choices(&workspace.name, &threads),
-                    )
-                    .await;
-                }
-            }
-        }
-        ThreadCommand::SwitchHost { agent, profile } => {
-            let target =
-                resolve_host_binding(&agent, profile.as_deref()).map_err(invalid_params)?;
+        ThreadCommand::Status => {
             let runtime = workspace_threads
                 .resolve_route_runtime(route)
                 .await
                 .map_err(internal_error)?;
-            let before = runtime.state().await;
-            let package = if let Some(session_id) = before.session_id.as_deref() {
-                match context_transfer::capture(
+            send_system_text(plugin_host, route, &format_status(&runtime.state().await)).await;
+        }
+        ThreadCommand::Resource { kind, action } => match (kind, action) {
+            (ResourceKind::Workspace, ResourceAction::List) => {
+                let runtime = workspace_threads
+                    .resolve_route_runtime(route)
+                    .await
+                    .map_err(internal_error)?;
+                let current = runtime.state().await.workspace_id;
+                let workspaces = workspace_threads
+                    .list_workspaces()
+                    .await
+                    .map_err(internal_error)?;
+                send_system_text(
+                    plugin_host,
                     route,
-                    &before.workspace,
-                    &before.workspace_id,
-                    &before.thread_id,
-                    &before.host_binding,
-                    session_id,
-                    &target,
+                    &format_workspace_list(&workspaces, current.as_str()),
                 )
-                .await
-                {
-                    Ok(package) => Some(package),
-                    Err(error) => {
-                        send_system_text(
-                            plugin_host,
-                            route,
-                            &format!(
-                                "Context transfer failed; switching host without replay: {:#}",
-                                error
-                            ),
-                        )
-                        .await;
-                        None
-                    }
-                }
-            } else {
-                None
-            };
-
-            runtime
-                .switch_host(target.clone(), package.is_some())
-                .await?;
-            start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
-            if let Some(package) = package {
-                match context_transfer::bootstrap_prompt(&package) {
-                    Ok(blocks) => {
-                        let state = runtime.state().await;
-                        let handler = bridge_handler(workspace_threads, plugin_host, &state);
-                        if let Err(error) = runtime.prompt(route, blocks, handler).await {
-                            send_system_text(
-                                plugin_host,
-                                route,
-                                &format!(
-                                    "Context transfer bootstrap failed after switching host: {}",
-                                    error
-                                ),
-                            )
-                            .await;
-                        }
-                    }
-                    Err(error) => {
-                        send_system_text(
-                            plugin_host,
-                            route,
-                            &format!(
-                                "Context transfer bootstrap could not be prepared after switching host: {:#}",
-                                error
-                            ),
-                        )
-                        .await;
-                    }
-                }
+                .await;
             }
-            send_system_text(
+            (ResourceKind::Workspace, ResourceAction::Switch(id)) => {
+                switch_workspace(
+                    workspace_threads,
+                    plugin_host,
+                    route,
+                    &id,
+                    WorkspaceSwitchMode::IdOnly,
+                )
+                .await?;
+            }
+            (ResourceKind::Agent, ResourceAction::List) => {
+                let runtime = workspace_threads
+                    .resolve_route_runtime(route)
+                    .await
+                    .map_err(internal_error)?;
+                let current = runtime.state().await.host_binding.agent_id;
+                send_system_text(plugin_host, route, &format_agent_list(&current)).await;
+            }
+            (ResourceKind::Agent, ResourceAction::Switch(id)) => {
+                switch_host(workspace_threads, plugin_host, route, &id, None).await?;
+            }
+            (ResourceKind::Profile, ResourceAction::List) => {
+                let runtime = workspace_threads
+                    .resolve_route_runtime(route)
+                    .await
+                    .map_err(internal_error)?;
+                let state = runtime.state().await;
+                send_system_text(plugin_host, route, &format_profile_list(&state)).await;
+            }
+            (ResourceKind::Profile, ResourceAction::Switch(id)) => {
+                let runtime = workspace_threads
+                    .resolve_route_runtime(route)
+                    .await
+                    .map_err(internal_error)?;
+                let agent = runtime.state().await.host_binding.agent_id;
+                validate_profile_for_agent(&id, &agent).map_err(invalid_params)?;
+                switch_host(workspace_threads, plugin_host, route, &agent, Some(id)).await?;
+            }
+            (ResourceKind::Session, ResourceAction::List) => {
+                let runtime = workspace_threads
+                    .resolve_route_runtime(route)
+                    .await
+                    .map_err(internal_error)?;
+                let state = runtime.state().await;
+                let sessions = list_sessions_for_state(&state).await;
+                send_system_text(plugin_host, route, &format_session_list(&state, &sessions)).await;
+            }
+            (ResourceKind::Session, ResourceAction::Switch(id)) => {
+                switch_session(workspace_threads, plugin_host, route, &id).await?;
+            }
+        },
+        ThreadCommand::SwitchWorkspace(token) => {
+            switch_workspace(
+                workspace_threads,
                 plugin_host,
                 route,
-                &format!("Switched host to {}.", target.agent_id),
+                &token,
+                WorkspaceSwitchMode::Legacy,
             )
-            .await;
+            .await?;
+        }
+        ThreadCommand::SwitchHost { agent, profile } => {
+            switch_host(workspace_threads, plugin_host, route, &agent, profile).await?;
+        }
+        ThreadCommand::AgentPassThrough(command) => {
+            return send_agent_command(workspace_threads, plugin_host, route, &command).await;
         }
         ThreadCommand::Help => {
-            send_system_text(
-                plugin_host,
-                route,
-                "Commands: /switch <agent> [profile], /switch workspace <id|path>, /switch host <agent> [profile], /pair <code>, /pickup <code>, /new, /close. You can also prefix commands with /va or /vibearound. Reply with a listed number or thread id after switching workspace.",
-            )
-            .await;
+            send_system_text(plugin_host, route, command_help_text()).await;
         }
         ThreadCommand::Unknown(command) => {
             send_system_text(plugin_host, route, &format!("Unknown command: {}", command)).await;
         }
     }
     Ok(acp::PromptResponse::new(acp::StopReason::EndTurn))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkspaceSwitchMode {
+    IdOnly,
+    Legacy,
+}
+
+async fn switch_workspace(
+    workspace_threads: &Arc<WorkspaceThreadManager>,
+    plugin_host: &Arc<PluginHost>,
+    route: &RouteKey,
+    token: &str,
+    mode: WorkspaceSwitchMode,
+) -> acp::Result<()> {
+    let switch = match mode {
+        WorkspaceSwitchMode::IdOnly => workspace_threads.switch_workspace_id(route, token).await,
+        WorkspaceSwitchMode::Legacy => workspace_threads.switch_workspace(route, token).await,
+    }
+    .map_err(internal_error)?;
+
+    match switch {
+        WorkspaceSwitch::Started(runtime) => {
+            start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
+            send_system_text(
+                plugin_host,
+                route,
+                &format!(
+                    "Entered workspace and started thread {}.",
+                    runtime.state().await.thread_id
+                ),
+            )
+            .await;
+        }
+        WorkspaceSwitch::NeedsSelection { workspace, threads } => {
+            send_system_text(
+                plugin_host,
+                route,
+                &format_thread_choices(&workspace.name, &threads),
+            )
+            .await;
+        }
+    }
+    Ok(())
+}
+
+async fn switch_host(
+    workspace_threads: &Arc<WorkspaceThreadManager>,
+    plugin_host: &Arc<PluginHost>,
+    route: &RouteKey,
+    agent: &str,
+    profile: Option<String>,
+) -> acp::Result<()> {
+    let target = resolve_host_binding(agent, profile.as_deref()).map_err(invalid_params)?;
+    let runtime = workspace_threads
+        .resolve_route_runtime(route)
+        .await
+        .map_err(internal_error)?;
+    let before = runtime.state().await;
+    let package = if let Some(session_id) = before.session_id.as_deref() {
+        match context_transfer::capture(
+            route,
+            &before.workspace,
+            &before.workspace_id,
+            &before.thread_id,
+            &before.host_binding,
+            session_id,
+            &target,
+        )
+        .await
+        {
+            Ok(package) => Some(package),
+            Err(error) => {
+                send_system_text(
+                    plugin_host,
+                    route,
+                    &format!(
+                        "Context transfer failed; switching host without replay: {:#}",
+                        error
+                    ),
+                )
+                .await;
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    runtime
+        .switch_host(target.clone(), package.is_some())
+        .await?;
+    start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
+    if let Some(package) = package {
+        match context_transfer::bootstrap_prompt(&package) {
+            Ok(blocks) => {
+                let state = runtime.state().await;
+                let handler = bridge_handler(workspace_threads, plugin_host, &state);
+                if let Err(error) = runtime.prompt(route, blocks, handler).await {
+                    send_system_text(
+                        plugin_host,
+                        route,
+                        &format!(
+                            "Context transfer bootstrap failed after switching host: {}",
+                            error
+                        ),
+                    )
+                    .await;
+                }
+            }
+            Err(error) => {
+                send_system_text(
+                    plugin_host,
+                    route,
+                    &format!(
+                        "Context transfer bootstrap could not be prepared after switching host: {:#}",
+                        error
+                    ),
+                )
+                .await;
+            }
+        }
+    }
+    send_system_text(
+        plugin_host,
+        route,
+        &format!("Switched host to {}.", target.agent_id),
+    )
+    .await;
+    Ok(())
+}
+
+async fn send_agent_command(
+    workspace_threads: &Arc<WorkspaceThreadManager>,
+    plugin_host: &Arc<PluginHost>,
+    route: &RouteKey,
+    command: &str,
+) -> acp::Result<acp::PromptResponse> {
+    let runtime = workspace_threads
+        .resolve_route_runtime(route)
+        .await
+        .map_err(internal_error)?;
+    start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, false).await?;
+    let state = runtime.state().await;
+    let handler = bridge_handler(workspace_threads, plugin_host, &state);
+    runtime
+        .prompt(
+            route,
+            vec![acp::ContentBlock::Text(acp::TextContent::new(
+                command.to_string(),
+            ))],
+            handler,
+        )
+        .await
+}
+
+async fn switch_session(
+    workspace_threads: &Arc<WorkspaceThreadManager>,
+    plugin_host: &Arc<PluginHost>,
+    route: &RouteKey,
+    id: &str,
+) -> acp::Result<()> {
+    let runtime = workspace_threads
+        .resolve_route_runtime(route)
+        .await
+        .map_err(internal_error)?;
+    let state = runtime.state().await;
+    let sessions = list_sessions_for_state(&state).await;
+    let matches: Vec<_> = sessions
+        .into_iter()
+        .filter(|session| {
+            session.session_id == id || crate::launch_sessions::short_id(&session.session_id) == id
+        })
+        .collect();
+    let session = match matches.as_slice() {
+        [] => {
+            return Err(invalid_params(format!(
+                "session '{}' not found for current agent/workspace",
+                id
+            )))
+        }
+        [session] => session.clone(),
+        _ => {
+            return Err(invalid_params(format!(
+                "session '{}' is ambiguous; use the full session id",
+                id
+            )))
+        }
+    };
+    let resumed = workspace_threads
+        .attach_external_session(
+            route,
+            session.agent_id.clone(),
+            state.host_binding.profile_id.clone(),
+            session.session_id.clone(),
+            PathBuf::from(&session.workspace),
+        )
+        .await
+        .map_err(internal_error)?;
+    start_runtime_and_notify(workspace_threads, &resumed, plugin_host, route, true).await?;
+    send_system_text(
+        plugin_host,
+        route,
+        &format!(
+            "Resumed session {} in thread {}.",
+            session.session_id,
+            resumed.state().await.thread_id
+        ),
+    )
+    .await;
+    Ok(())
 }
 
 pub async fn start_runtime_and_notify(
@@ -452,23 +645,43 @@ enum ThreadCommand {
     Close,
     Pair(String),
     Pickup(String),
+    Status,
+    Resource {
+        kind: ResourceKind,
+        action: ResourceAction,
+    },
     SwitchWorkspace(String),
     SwitchHost {
         agent: String,
         profile: Option<String>,
     },
+    AgentPassThrough(String),
     Help,
     Unknown(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResourceKind {
+    Workspace,
+    Agent,
+    Profile,
+    Session,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ResourceAction {
+    List,
+    Switch(String),
+}
+
 fn parse_thread_command(text: &str) -> Option<ThreadCommand> {
     let trimmed = text.trim();
-    if !trimmed.starts_with('/') {
-        return None;
-    }
     let normalized = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
     let normalized = canonical_thread_command(&normalized);
     let normalized = normalized.as_str();
+    if !normalized.starts_with('/') {
+        return None;
+    }
     if normalized == "/new" {
         return Some(ThreadCommand::New);
     }
@@ -487,8 +700,14 @@ fn parse_thread_command(text: &str) -> Option<ThreadCommand> {
             return Some(ThreadCommand::Pickup(code.to_string()));
         }
     }
+    if normalized == "/status" {
+        return Some(ThreadCommand::Status);
+    }
     if normalized == "/help" || normalized == "/commands" {
         return Some(ThreadCommand::Help);
+    }
+    if let Some(command) = parse_resource_command(normalized) {
+        return Some(command);
     }
     if let Some(token) = normalized.strip_prefix("/switch workspace ") {
         let token = token.trim();
@@ -510,6 +729,73 @@ fn parse_thread_command(text: &str) -> Option<ThreadCommand> {
         }
     }
     Some(ThreadCommand::Unknown(normalized.to_string()))
+}
+
+fn parse_resource_command(normalized: &str) -> Option<ThreadCommand> {
+    for (prefix, kind) in [
+        ("/workspace", ResourceKind::Workspace),
+        ("/profile", ResourceKind::Profile),
+        ("/session", ResourceKind::Session),
+    ] {
+        if normalized == prefix {
+            return Some(ThreadCommand::Resource {
+                kind,
+                action: ResourceAction::List,
+            });
+        }
+        if let Some(rest) = normalized.strip_prefix(&format!("{prefix} ")) {
+            return parse_resource_action(kind, rest.trim())
+                .or_else(|| Some(ThreadCommand::Unknown(normalized.to_string())));
+        }
+    }
+
+    if normalized == "/agent" {
+        return Some(ThreadCommand::Resource {
+            kind: ResourceKind::Agent,
+            action: ResourceAction::List,
+        });
+    }
+    if let Some(rest) = normalized.strip_prefix("/agent ") {
+        let rest = rest.trim();
+        if rest == "--list" {
+            return Some(ThreadCommand::Resource {
+                kind: ResourceKind::Agent,
+                action: ResourceAction::List,
+            });
+        }
+        if let Some(id) = parse_switch_value(rest) {
+            return Some(ThreadCommand::Resource {
+                kind: ResourceKind::Agent,
+                action: ResourceAction::Switch(id),
+            });
+        }
+        if rest == "--help" || rest == "help" {
+            return Some(ThreadCommand::AgentPassThrough("/help".to_string()));
+        }
+        if !rest.is_empty() {
+            return Some(ThreadCommand::AgentPassThrough(agent_command_text(rest)));
+        }
+    }
+
+    None
+}
+
+fn parse_resource_action(kind: ResourceKind, rest: &str) -> Option<ThreadCommand> {
+    if rest == "--list" {
+        return Some(ThreadCommand::Resource {
+            kind,
+            action: ResourceAction::List,
+        });
+    }
+    parse_switch_value(rest).map(|id| ThreadCommand::Resource {
+        kind,
+        action: ResourceAction::Switch(id),
+    })
+}
+
+fn parse_switch_value(rest: &str) -> Option<String> {
+    let value = rest.strip_prefix("--switch ")?.trim();
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 fn parse_switch_host(rest: &str) -> Option<ThreadCommand> {
@@ -536,7 +822,7 @@ fn parse_switch_host(rest: &str) -> Option<ThreadCommand> {
 }
 
 fn canonical_thread_command(normalized: &str) -> String {
-    for prefix in ["/va", "/vibearound"] {
+    for prefix in ["/va", "/vibearound", "va", "vibearound"] {
         if normalized == prefix {
             return "/help".to_string();
         }
@@ -552,8 +838,17 @@ fn canonical_thread_command(normalized: &str) -> String {
     normalized.to_string()
 }
 
-fn commands_enabled_for_route(route: &RouteKey) -> bool {
-    route.channel_kind != "web"
+fn agent_command_text(rest: &str) -> String {
+    let trimmed = rest.trim();
+    if trimmed.starts_with('/') {
+        trimmed.to_string()
+    } else {
+        format!("/{trimmed}")
+    }
+}
+
+fn commands_enabled_for_route(_route: &RouteKey) -> bool {
+    true
 }
 
 fn first_text(content_blocks: &[acp::ContentBlock]) -> Option<String> {
@@ -561,6 +856,186 @@ fn first_text(content_blocks: &[acp::ContentBlock]) -> Option<String> {
         acp::ContentBlock::Text(text) => Some(text.text.clone()),
         _ => None,
     })
+}
+
+fn command_help_text() -> &'static str {
+    "Commands:
+/status
+/workspace [--list]
+/workspace --switch <workspace_id>
+/agent [--list]
+/agent --switch <agent_id>
+/agent <agent-command>
+/profile [--list]
+/profile --switch <profile_id>
+/session [--list]
+/session --switch <session_id>
+/pair <code>
+/pickup <code>
+/new
+/close
+
+Bare /workspace, /agent, /profile, and /session default to --list. Prefix with /va, /vibearound, va, or vibearound when a channel cannot send slash commands. Legacy /switch commands still work."
+}
+
+fn format_status(state: &ThreadRuntimeState) -> String {
+    format!(
+        "Status:\nWorkspace: {} · {}\nThread: {}\nAgent: {}\nProfile: {}\nSession: {}",
+        state.workspace_id,
+        state.workspace.to_string_lossy(),
+        state.thread_id,
+        state.host_binding.agent_id,
+        state
+            .host_binding
+            .profile_id
+            .as_deref()
+            .unwrap_or(DIRECT_PROFILE_ID),
+        state.session_id.as_deref().unwrap_or("(not started)")
+    )
+}
+
+fn format_workspace_list(
+    workspaces: &[crate::workspace::WorkspaceRecord],
+    current_id: &str,
+) -> String {
+    let mut lines = vec!["Workspaces:".to_string()];
+    if workspaces.is_empty() {
+        lines.push("(none)".to_string());
+        return lines.join("\n");
+    }
+    for workspace in workspaces {
+        lines.push(format!(
+            "{} {} · {} · {}",
+            current_marker(workspace.id.as_str() == current_id),
+            workspace.id,
+            workspace.name,
+            workspace.cwd.to_string_lossy()
+        ));
+    }
+    lines.push("Switch with /workspace --switch <workspace_id>.".to_string());
+    lines.join("\n")
+}
+
+fn format_agent_list(current_id: &str) -> String {
+    let cfg = crate::config::ensure_loaded();
+    let agent_ids = if cfg.enabled_agents.is_empty() {
+        crate::resources::agent_ids()
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect()
+    } else {
+        cfg.enabled_agents.clone()
+    };
+    let mut lines = vec!["Agents:".to_string()];
+    for id in agent_ids {
+        let label = crate::resources::agent_by_id(&id)
+            .map(|agent| agent.display_name.as_str())
+            .unwrap_or(id.as_str());
+        lines.push(format!(
+            "{} {} · {}",
+            current_marker(id == current_id),
+            id,
+            label
+        ));
+    }
+    lines.push("Switch with /agent --switch <agent_id>.".to_string());
+    lines.join("\n")
+}
+
+fn format_profile_list(state: &ThreadRuntimeState) -> String {
+    let current = state
+        .host_binding
+        .profile_id
+        .as_deref()
+        .unwrap_or(DIRECT_PROFILE_ID);
+    let agent = state.host_binding.agent_id.as_str();
+    let mut lines = vec![format!("Profiles for {}:", agent)];
+    lines.push(format!(
+        "{} {} · Launch without VibeAround profile",
+        current_marker(current == DIRECT_PROFILE_ID),
+        DIRECT_PROFILE_ID
+    ));
+    for profile in profiles::ordered_profiles() {
+        let compatible = connections::profile_can_launch_agent(&profile, agent);
+        let suffix = if compatible { "" } else { " · incompatible" };
+        lines.push(format!(
+            "{} {} · {} · {}{}",
+            current_marker(profile.id == current),
+            profile.id,
+            profile.label,
+            profile.provider,
+            suffix
+        ));
+    }
+    lines.push("Switch with /profile --switch <profile_id>.".to_string());
+    lines.join("\n")
+}
+
+async fn list_sessions_for_state(
+    state: &ThreadRuntimeState,
+) -> Vec<crate::launch_sessions::LaunchSession> {
+    crate::launch_sessions::list_for_agent_workspace_with_archived_async(
+        &state.host_binding.agent_id,
+        &state.workspace,
+        25,
+        false,
+    )
+    .await
+}
+
+fn format_session_list(
+    state: &ThreadRuntimeState,
+    sessions: &[crate::launch_sessions::LaunchSession],
+) -> String {
+    let mut lines = vec![format!(
+        "Sessions for {} in {}:",
+        state.host_binding.agent_id,
+        state.workspace.to_string_lossy()
+    )];
+    if sessions.is_empty() {
+        lines.push("(none)".to_string());
+        return lines.join("\n");
+    }
+    let current = state.session_id.as_deref();
+    for session in sessions {
+        let short_id = crate::launch_sessions::short_id(&session.session_id);
+        lines.push(format!(
+            "{} {} · {} · updated {}",
+            current_marker(current == Some(session.session_id.as_str())),
+            short_id,
+            session.title,
+            session.updated_at
+        ));
+    }
+    lines.push("Switch with /session --switch <session_id>.".to_string());
+    lines.join("\n")
+}
+
+fn validate_profile_for_agent(profile_id: &str, agent_id: &str) -> Result<(), String> {
+    let profile_id = normalize_launch_profile_id(Some(profile_id));
+    if profile_id == DIRECT_PROFILE_ID {
+        return Ok(());
+    }
+    let Some(profile) =
+        profiles::schema::load(&profile_id).map(profiles::normalize_legacy_profile_and_persist)
+    else {
+        return Err(format!("Profile '{}' was not found.", profile_id));
+    };
+    if !connections::profile_can_launch_agent(&profile, agent_id) {
+        return Err(format!(
+            "Profile '{}' cannot launch agent '{}'.",
+            profile_id, agent_id
+        ));
+    }
+    Ok(())
+}
+
+fn current_marker(current: bool) -> &'static str {
+    if current {
+        "*"
+    } else {
+        "-"
+    }
 }
 
 fn format_thread_choices(workspace_name: &str, threads: &[ThreadChoice]) -> String {
@@ -616,8 +1091,70 @@ mod tests {
             Some(ThreadCommand::Pair("049778".to_string()))
         );
         assert_eq!(
+            parse_thread_command("va pair 049778"),
+            Some(ThreadCommand::Pair("049778".to_string()))
+        );
+        assert_eq!(
             parse_thread_command("\n/pickup   B8LX  "),
             Some(ThreadCommand::Pickup("B8LX".to_string()))
+        );
+        assert_eq!(parse_thread_command("/status"), Some(ThreadCommand::Status));
+        assert_eq!(
+            parse_thread_command("/workspace"),
+            Some(ThreadCommand::Resource {
+                kind: ResourceKind::Workspace,
+                action: ResourceAction::List
+            })
+        );
+        assert_eq!(
+            parse_thread_command("vibearound workspace"),
+            Some(ThreadCommand::Resource {
+                kind: ResourceKind::Workspace,
+                action: ResourceAction::List
+            })
+        );
+        assert_eq!(
+            parse_thread_command("/workspace --switch ws_a"),
+            Some(ThreadCommand::Resource {
+                kind: ResourceKind::Workspace,
+                action: ResourceAction::Switch("ws_a".to_string())
+            })
+        );
+        assert_eq!(
+            parse_thread_command("/agent"),
+            Some(ThreadCommand::Resource {
+                kind: ResourceKind::Agent,
+                action: ResourceAction::List
+            })
+        );
+        assert_eq!(
+            parse_thread_command("/agent --switch codex"),
+            Some(ThreadCommand::Resource {
+                kind: ResourceKind::Agent,
+                action: ResourceAction::Switch("codex".to_string())
+            })
+        );
+        assert_eq!(
+            parse_thread_command("/agent status"),
+            Some(ThreadCommand::AgentPassThrough("/status".to_string()))
+        );
+        assert_eq!(
+            parse_thread_command("va agent /status"),
+            Some(ThreadCommand::AgentPassThrough("/status".to_string()))
+        );
+        assert_eq!(
+            parse_thread_command("/profile --switch deepseek"),
+            Some(ThreadCommand::Resource {
+                kind: ResourceKind::Profile,
+                action: ResourceAction::Switch("deepseek".to_string())
+            })
+        );
+        assert_eq!(
+            parse_thread_command("/session --switch 6f94"),
+            Some(ThreadCommand::Resource {
+                kind: ResourceKind::Session,
+                action: ResourceAction::Switch("6f94".to_string())
+            })
         );
         assert_eq!(
             parse_thread_command("/vibearound switch workspace general"),
@@ -665,8 +1202,8 @@ mod tests {
     }
 
     #[test]
-    fn slash_commands_are_not_enabled_for_web_chat() {
-        assert!(!commands_enabled_for_route(&RouteKey::new("web", "chat-a")));
+    fn slash_commands_are_enabled_for_web_chat() {
+        assert!(commands_enabled_for_route(&RouteKey::new("web", "chat-a")));
         assert!(commands_enabled_for_route(&RouteKey::new(
             "slack", "chat-a"
         )));

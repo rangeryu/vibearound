@@ -98,17 +98,20 @@ pub struct ContentCapabilities {
     pub image_input: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub file_input: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub web_search: bool,
 }
 
 impl ContentCapabilities {
     pub fn is_empty(&self) -> bool {
-        !self.image_input && !self.file_input
+        !self.image_input && !self.file_input && !self.web_search
     }
 
     pub fn merge(&self, override_caps: &ContentCapabilities) -> ContentCapabilities {
         ContentCapabilities {
             image_input: self.image_input || override_caps.image_input,
             file_input: self.file_input || override_caps.file_input,
+            web_search: self.web_search || override_caps.web_search,
         }
     }
 }
@@ -570,6 +573,17 @@ mod tests {
     }
 
     #[test]
+    fn deepseek_anthropic_supports_web_search() {
+        let provider = get("deepseek").expect("deepseek must exist");
+        let anthropic = find_endpoint(provider, "anthropic", None)
+            .expect("deepseek anthropic endpoint must exist");
+        assert!(anthropic.capabilities.content.web_search);
+        let chat = find_endpoint(provider, "openai-chat", None)
+            .expect("deepseek chat endpoint must exist");
+        assert!(!chat.capabilities.content.web_search);
+    }
+
+    #[test]
     fn dashscope_exposes_protocol_specific_plan_endpoints() {
         let provider = get("dashscope").expect("dashscope must exist");
         let endpoints: Vec<_> = provider
@@ -794,6 +808,10 @@ mod tests {
             assert_eq!(endpoint.default_base_url, "https://api.x.ai/v1");
             assert!(!endpoint.append_v1_path);
             assert!(endpoint.capabilities.reasoning_effort);
+            assert_eq!(
+                endpoint.capabilities.content.web_search,
+                api_type == "openai-responses"
+            );
             let grok = model(endpoint, "grok-latest");
             assert_eq!(grok.id, "grok-4.3");
             assert_eq!(grok.context_window, Some(1_000_000));
@@ -1053,6 +1071,7 @@ mod tests {
             .map(|e| e.api_type.as_str())
             .collect();
         assert_eq!(api_types, vec!["openai-responses"]);
+        assert!(provider.endpoints[0].capabilities.content.web_search);
     }
 
     #[test]
@@ -1063,6 +1082,10 @@ mod tests {
             .iter()
             .find(|e| e.api_type == "gemini")
             .expect("gemini endpoint must exist");
+        assert!(endpoint.capabilities.content.web_search);
+        let chat_endpoint = find_endpoint(provider, "openai-chat", Some("gemini-api"))
+            .expect("gemini openai-compatible endpoint must exist");
+        assert!(!chat_endpoint.capabilities.content.web_search);
         let auth = endpoint
             .auth_modes
             .iter()

@@ -912,6 +912,19 @@ function ModelSettingDialog({
                           })
                         }
                       />
+                      <CapabilityCheckbox
+                        label={t("Web search")}
+                        checked={!!model.capabilities?.web_search}
+                        onCheckedChange={(checked) =>
+                          updateModel(index, {
+                            capabilities: updateCapability(
+                              model.capabilities,
+                              "web_search",
+                              checked === true,
+                            ),
+                          })
+                        }
+                      />
                     </div>
                   )}
                 </div>
@@ -1035,17 +1048,18 @@ function CapabilityCheckbox({
 
 function updateCapability(
   current: ProfileBridgeModelPreference["capabilities"],
-  key: "image_input" | "file_input",
+  key: "image_input" | "file_input" | "web_search",
   value: boolean,
 ): ProfileBridgeModelPreference["capabilities"] {
   const next = {
     ...(current ?? {}),
     [key]: value,
   };
-  if (!next.image_input && !next.file_input) return undefined;
+  if (!next.image_input && !next.file_input && !next.web_search) return undefined;
   return {
     ...(next.image_input ? { image_input: true } : {}),
     ...(next.file_input ? { file_input: true } : {}),
+    ...(next.web_search ? { web_search: true } : {}),
   };
 }
 
@@ -1093,6 +1107,7 @@ function capabilityLabels(
   const labels = [];
   if (capabilities?.image_input) labels.push(t("images"));
   if (capabilities?.file_input) labels.push(t("files"));
+  if (capabilities?.web_search) labels.push(t("web search"));
   return labels;
 }
 

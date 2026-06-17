@@ -20,7 +20,8 @@
       "capabilities": {
         "content": {
           "image_input": true,
-          "file_input": true
+          "file_input": true,
+          "web_search": true
         }
       },
       "auth_modes": [
@@ -66,7 +67,8 @@
       "capabilities": {
         "content": {
           "image_input": true,
-          "file_input": true
+          "file_input": true,
+          "web_search": true
         }
       },
       "auth_modes": [

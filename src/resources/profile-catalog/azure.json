@@ -9,7 +9,10 @@
       "default_base_url": "",
       "models": [],
       "capabilities": {
-        "reasoning_effort": true
+        "reasoning_effort": true,
+        "content": {
+          "web_search": true
+        }
       },
       "auth_modes": [
         {

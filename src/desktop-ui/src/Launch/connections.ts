@@ -274,10 +274,13 @@ function cleanModelId(value: string | null | undefined): string | null {
 function cleanCapabilities(
   capabilities: ProfileBridgeModelPreference["capabilities"],
 ): ProfileBridgeModelPreference["capabilities"] {
-  if (!capabilities?.image_input && !capabilities?.file_input) return undefined;
+  if (!capabilities?.image_input && !capabilities?.file_input && !capabilities?.web_search) {
+    return undefined;
+  }
   return {
     ...(capabilities.image_input ? { image_input: true } : {}),
     ...(capabilities.file_input ? { file_input: true } : {}),
+    ...(capabilities.web_search ? { web_search: true } : {}),
   };
 }
 

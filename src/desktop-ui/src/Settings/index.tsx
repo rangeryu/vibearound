@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Network,
   RotateCw,
+  Search,
   SlidersHorizontal,
   Trash2,
   WandSparkles,
@@ -36,6 +37,13 @@ import { apiFetch } from "../lib/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { BrandIcon } from "@/components/brand-icon";
 import {
@@ -78,6 +86,20 @@ type ApiBridgeRetryFormState = {
   retry429DelaySeconds: string;
 };
 
+type SearchSourceId = "exa" | "tavily" | "grok";
+
+type SearchSourceForm = {
+  enabled: boolean;
+  apiKey: string;
+};
+
+type SearchContextSize = "low" | "medium" | "high";
+
+const DEFAULT_SEARCH_MAX_RESULTS = "5";
+const DEFAULT_SEARCH_CONTEXT_SIZE: SearchContextSize = "medium";
+const SEARCH_MAX_RESULTS_MIN = 1;
+const SEARCH_MAX_RESULTS_MAX = 20;
+
 const AGENT_DISPLAY_ORDER = [
   "claude",
   "codex",
@@ -87,6 +109,21 @@ const AGENT_DISPLAY_ORDER = [
   "cursor",
   "kiro",
   "qwen-code",
+];
+
+const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string }> = [
+  { id: "exa", label: "Exa" },
+  { id: "tavily", label: "Tavily" },
+  { id: "grok", label: "Grok" },
+];
+
+const SEARCH_CONTEXT_SIZE_OPTIONS: Array<{
+  value: SearchContextSize;
+  label: string;
+}> = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
 ];
 
 export function SettingsDialog({
@@ -127,6 +164,16 @@ export function SettingsDialog({
   const [retry429MaxRetries, setRetry429MaxRetries] = useState("10");
   const [retry429Unlimited, setRetry429Unlimited] = useState(false);
   const [retry429DelaySeconds, setRetry429DelaySeconds] = useState("10");
+  const [replaceProviderWebSearch, setReplaceProviderWebSearch] =
+    useState(false);
+  const [searchMaxResults, setSearchMaxResults] = useState(
+    DEFAULT_SEARCH_MAX_RESULTS,
+  );
+  const [searchContextSize, setSearchContextSize] =
+    useState<SearchContextSize>(DEFAULT_SEARCH_CONTEXT_SIZE);
+  const [searchSources, setSearchSources] = useState<
+    Record<SearchSourceId, SearchSourceForm>
+  >(() => defaultSearchSourceForms());
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
@@ -236,6 +283,8 @@ export function SettingsDialog({
       : {};
     const maxRetries = retry429.max_retries;
     const delaySeconds = retry429.delay_seconds;
+    const replaceWebSearch =
+      apiBridge.replace_provider_web_search ?? apiBridge.replaceProviderWebSearch;
 
     const nextForm = {
       retry429Enabled:
@@ -255,6 +304,35 @@ export function SettingsDialog({
     setRetry429Unlimited(nextForm.retry429Unlimited);
     setRetry429MaxRetries(nextForm.retry429MaxRetries);
     setRetry429DelaySeconds(nextForm.retry429DelaySeconds);
+    setReplaceProviderWebSearch(
+      typeof replaceWebSearch === "boolean" ? replaceWebSearch : false,
+    );
+  }, []);
+
+  const hydrateSearchTool = useCallback((loadedSettings: AppSettings) => {
+    const searchTool = isRecord(loadedSettings.search_tool)
+      ? loadedSettings.search_tool
+      : {};
+    const sources = isRecord(searchTool.sources) ? searchTool.sources : {};
+    setSearchMaxResults(
+      searchMaxResultsInput(searchTool.max_results ?? searchTool.maxResults),
+    );
+    setSearchContextSize(
+      searchContextSizeValue(
+        searchTool.search_context_size ?? searchTool.searchContextSize,
+      ),
+    );
+    setSearchSources(() => {
+      const next = defaultSearchSourceForms();
+      for (const def of SEARCH_SOURCE_DEFS) {
+        const source = isRecord(sources[def.id]) ? sources[def.id] : {};
+        next[def.id] = {
+          enabled: typeof source.enabled === "boolean" ? source.enabled : false,
+          apiKey: typeof source.api_key === "string" ? source.api_key : "",
+        };
+      }
+      return next;
+    });
   }, []);
 
   const hydrateIntegrations = useCallback((loadedSettings: AppSettings) => {
@@ -302,6 +380,7 @@ export function SettingsDialog({
       hydrateTunnel(loadedSettings);
       hydrateProxy(loadedSettings);
       hydrateApiBridge(loadedSettings);
+      hydrateSearchTool(loadedSettings);
       hydrateIntegrations(loadedSettings);
       hydrateImAgent(loadedSettings);
       setSettingsLoaded(true);
@@ -320,6 +399,7 @@ export function SettingsDialog({
     hydrateIntegrations,
     hydrateImAgent,
     hydrateProxy,
+    hydrateSearchTool,
     hydrateTunnel,
   ]);
 
@@ -381,6 +461,19 @@ export function SettingsDialog({
       return next;
     });
   }, []);
+
+  const updateSearchSource = useCallback(
+    (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => {
+      setSearchSources((previous) => ({
+        ...previous,
+        [sourceId]: {
+          ...previous[sourceId],
+          ...patch,
+        },
+      }));
+    },
+    [],
+  );
 
   const installPlugin = useCallback(
     async (pluginId: string, githubUrl: string) => {
@@ -502,14 +595,20 @@ export function SettingsDialog({
     setSaving("api-bridge");
     setNotice(null);
     try {
-      const nextSettings = buildApiBridgeSettings({
+      let nextSettings = buildApiBridgeSettings({
         settings,
         retry429Form: apiBridgeRetryForm,
+        replaceProviderWebSearch,
+      });
+      nextSettings = buildSearchToolSettings({
+        settings: nextSettings,
+        maxResults: searchMaxResults,
+        searchContextSize,
+        sources: searchSources,
       });
       await invoke("save_settings", { settings: nextSettings });
       setSettings(nextSettings);
-      const response = await apiFetch("/api/settings/reload", { method: "POST" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await invoke("restart_services");
       onServicesRestarted?.();
       setNotice({ variant: "success", message: "API bridge settings applied." });
     } catch (error) {
@@ -524,6 +623,10 @@ export function SettingsDialog({
     settings,
     apiBridgeRetryForm,
     apiBridgeRetryFormKey,
+    replaceProviderWebSearch,
+    searchContextSize,
+    searchMaxResults,
+    searchSources,
     onServicesRestarted,
   ]);
 
@@ -916,18 +1019,32 @@ export function SettingsDialog({
               ) : (
                 <>
                   <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
-                    <ApiBridgeRetrySettingsPanel
-                      retry429Enabled={retry429Enabled}
-                      retry429MaxRetries={retry429MaxRetries}
-                      retry429Unlimited={retry429Unlimited}
-                      retry429DelaySeconds={retry429DelaySeconds}
-                      onRetry429EnabledChange={setRetry429Enabled}
-                      onRetry429MaxRetriesChange={setRetry429MaxRetries}
-                      onRetry429UnlimitedChange={setRetry429Unlimited}
-                      onRetry429DelaySecondsChange={setRetry429DelaySeconds}
-                      disabled={!canSubmit}
-                      notice={<SettingsNotice notice={notice} />}
-                    />
+                    <div className="space-y-6">
+                      <ApiBridgeRetrySettingsPanel
+                        retry429Enabled={retry429Enabled}
+                        retry429MaxRetries={retry429MaxRetries}
+                        retry429Unlimited={retry429Unlimited}
+                        retry429DelaySeconds={retry429DelaySeconds}
+                        onRetry429EnabledChange={setRetry429Enabled}
+                        onRetry429MaxRetriesChange={setRetry429MaxRetries}
+                        onRetry429UnlimitedChange={setRetry429Unlimited}
+                        onRetry429DelaySecondsChange={setRetry429DelaySeconds}
+                        disabled={!canSubmit}
+                        notice={<SettingsNotice notice={notice} />}
+                      />
+                      <SearchToolSettingsPanel
+                        replaceProviderWebSearch={replaceProviderWebSearch}
+                        maxResults={searchMaxResults}
+                        searchContextSize={searchContextSize}
+                        sources={searchSources}
+                        onReplaceProviderWebSearchChange={
+                          setReplaceProviderWebSearch
+                        }
+                        onMaxResultsChange={setSearchMaxResults}
+                        onSearchContextSizeChange={setSearchContextSize}
+                        onSourceChange={updateSearchSource}
+                      />
+                    </div>
                   </div>
                   <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
                     <Button
@@ -937,8 +1054,8 @@ export function SettingsDialog({
                       onClick={() => void applyApiBridgeSettings()}
                     >
                       {saving === "api-bridge"
-                        ? t("Applying…")
-                        : t("Apply API Bridge Settings")}
+                        ? t("Restarting services…")
+                        : t("Apply & Restart Services")}
                     </Button>
                   </div>
                 </>
@@ -1273,6 +1390,138 @@ function ProxySettingsPanel({
   );
 }
 
+function SearchToolSettingsPanel({
+  replaceProviderWebSearch,
+  maxResults,
+  searchContextSize,
+  sources,
+  onReplaceProviderWebSearchChange,
+  onMaxResultsChange,
+  onSearchContextSizeChange,
+  onSourceChange,
+}: {
+  replaceProviderWebSearch: boolean;
+  maxResults: string;
+  searchContextSize: SearchContextSize;
+  sources: Record<SearchSourceId, SearchSourceForm>;
+  onReplaceProviderWebSearchChange: (value: boolean) => void;
+  onMaxResultsChange: (value: string) => void;
+  onSearchContextSizeChange: (value: SearchContextSize) => void;
+  onSourceChange: (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <Search className="h-4 w-4 text-primary" />
+          {t("Web search")}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("Host-side web search is available when at least one search source is enabled.")}
+        </p>
+      </div>
+      <div className="rounded-md border border-border">
+        <SettingsActionRow
+          label={t("Replace provider web search")}
+          description={t("Use VibeAround host search even when the upstream model supports provider-native web_search.")}
+          action={
+            <Switch
+              checked={replaceProviderWebSearch}
+              onCheckedChange={onReplaceProviderWebSearchChange}
+              aria-label={t("Replace provider web search")}
+              size="sm"
+            />
+          }
+        />
+      </div>
+      <div className="rounded-md border border-border px-4 py-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-xs text-muted-foreground">
+              {t("Max results per source")}
+            </span>
+            <Input
+              type="number"
+              min={SEARCH_MAX_RESULTS_MIN}
+              max={SEARCH_MAX_RESULTS_MAX}
+              step={1}
+              value={maxResults}
+              onChange={(event) =>
+                onMaxResultsChange(event.currentTarget.value)
+              }
+              className="mt-1"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">
+              {t("Search context size")}
+            </span>
+            <Select
+              value={searchContextSize}
+              onValueChange={(value) =>
+                onSearchContextSizeChange(value as SearchContextSize)
+              }
+            >
+              <SelectTrigger className="mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SEARCH_CONTEXT_SIZE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {t(option.label)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+      </div>
+      <div className="rounded-md border border-border">
+        {SEARCH_SOURCE_DEFS.map((source) => {
+          const form = sources[source.id];
+          return (
+            <div
+              key={source.id}
+              className="space-y-3 border-b border-border px-4 py-4 last:border-b-0"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{source.label}</div>
+                </div>
+                <Switch
+                  checked={form.enabled}
+                  onCheckedChange={(value) =>
+                    onSourceChange(source.id, { enabled: value })
+                  }
+                  aria-label={t("Enable source")}
+                  size="sm"
+                />
+              </div>
+              <label className="block">
+                <span className="text-xs text-muted-foreground">
+                  {t("API key")}
+                </span>
+                <Input
+                  type="password"
+                  value={form.apiKey}
+                  placeholder={t("Paste API key")}
+                  onChange={(event) =>
+                    onSourceChange(source.id, {
+                      apiKey: event.currentTarget.value,
+                    })
+                  }
+                  className="mt-1"
+                />
+              </label>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ApiBridgeRetrySettingsPanel({
   retry429Enabled,
   retry429MaxRetries,
@@ -1521,9 +1770,11 @@ function buildProxySettings({
 function buildApiBridgeSettings({
   settings,
   retry429Form,
+  replaceProviderWebSearch,
 }: {
   settings: AppSettings;
   retry429Form: ApiBridgeRetryFormState;
+  replaceProviderWebSearch: boolean;
 }): AppSettings {
   const result: AppSettings = { ...settings };
   const apiBridge = isRecord(settings.api_bridge)
@@ -1544,7 +1795,60 @@ function buildApiBridgeSettings({
   );
 
   apiBridge.retry_429 = retry429;
+  apiBridge.replace_provider_web_search = replaceProviderWebSearch;
+  delete apiBridge.replaceProviderWebSearch;
   result.api_bridge = apiBridge as AppSettings["api_bridge"];
+  return result;
+}
+
+function buildSearchToolSettings({
+  settings,
+  maxResults,
+  searchContextSize,
+  sources,
+}: {
+  settings: AppSettings;
+  maxResults: string;
+  searchContextSize: SearchContextSize;
+  sources: Record<SearchSourceId, SearchSourceForm>;
+}): AppSettings {
+  const result: AppSettings = { ...settings };
+  const existingSearchTool = isRecord(settings.search_tool)
+    ? settings.search_tool
+    : {};
+  const existingSources = isRecord(existingSearchTool.sources)
+    ? existingSearchTool.sources
+    : {};
+  const nextSearchTool: Record<string, unknown> = {
+    ...existingSearchTool,
+    max_results: normalizedSearchMaxResults(maxResults),
+    search_context_size: searchContextSize,
+  };
+  delete nextSearchTool.enabled;
+  const nextSources: Record<string, unknown> = {};
+
+  for (const [name, source] of Object.entries(existingSources)) {
+    nextSources[name] = isRecord(source) ? { ...source } : source;
+  }
+
+  for (const def of SEARCH_SOURCE_DEFS) {
+    const source = sources[def.id];
+    const existingSource = nextSources[def.id];
+    const payload: Record<string, unknown> = isRecord(existingSource)
+      ? { ...existingSource }
+      : {};
+    payload.enabled = source.enabled;
+    const apiKey = source.apiKey.trim();
+    if (apiKey) {
+      payload.api_key = apiKey;
+    } else {
+      delete payload.api_key;
+    }
+    nextSources[def.id] = payload;
+  }
+
+  nextSearchTool.sources = nextSources;
+  result.search_tool = nextSearchTool as AppSettings["search_tool"];
   return result;
 }
 
@@ -1689,6 +1993,49 @@ function defaultChannelVerbose(): ChannelVerboseConfig {
     show_thinking: false,
     show_tool_use: false,
   };
+}
+
+function defaultSearchSourceForms(): Record<SearchSourceId, SearchSourceForm> {
+  return {
+    exa: defaultSearchSourceForm(),
+    tavily: defaultSearchSourceForm(),
+    grok: defaultSearchSourceForm(),
+  };
+}
+
+function defaultSearchSourceForm(): SearchSourceForm {
+  return {
+    enabled: false,
+    apiKey: "",
+  };
+}
+
+function searchMaxResultsInput(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(clampSearchMaxResults(value));
+  }
+  return DEFAULT_SEARCH_MAX_RESULTS;
+}
+
+function normalizedSearchMaxResults(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return Number(DEFAULT_SEARCH_MAX_RESULTS);
+  }
+  return clampSearchMaxResults(parsed);
+}
+
+function clampSearchMaxResults(value: number): number {
+  return Math.min(
+    SEARCH_MAX_RESULTS_MAX,
+    Math.max(SEARCH_MAX_RESULTS_MIN, Math.floor(value)),
+  );
+}
+
+function searchContextSizeValue(value: unknown): SearchContextSize {
+  return value === "low" || value === "medium" || value === "high"
+    ? value
+    : DEFAULT_SEARCH_CONTEXT_SIZE;
 }
 
 function parseChannelVerbose(value: unknown): ChannelVerboseConfig {

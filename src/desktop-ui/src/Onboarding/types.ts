@@ -43,11 +43,29 @@ export interface Settings {
     no_proxy?: string;
   };
   api_bridge?: {
+    replace_provider_web_search?: boolean;
+    replaceProviderWebSearch?: boolean;
     retry_429?: {
       enabled?: boolean;
       max_retries?: number | null;
       delay_seconds?: number;
     };
+  };
+  search_tool?: {
+    stdio_path?: string;
+    max_results?: number;
+    maxResults?: number;
+    search_context_size?: string;
+    searchContextSize?: string;
+    sources?: Record<
+      string,
+      {
+        enabled?: boolean;
+        api_key?: string;
+        api_key_env?: string;
+        base_url?: string;
+      }
+    >;
   };
   startkit?: {
     source?: string;
