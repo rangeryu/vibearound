@@ -66,7 +66,15 @@ pub(super) fn bridge_model_mapping(
 }
 
 fn agent_id_from_scope(scope: &str, client_api_type: &str) -> Option<&'static str> {
-    for agent_id in ["claude", "codex", "gemini", "opencode", "pi"] {
+    for agent_id in [
+        "claude",
+        "claude-desktop",
+        "codex",
+        "codex-desktop",
+        "gemini",
+        "opencode",
+        "pi",
+    ] {
         let prefix = format!("{agent_id}-");
         if scope.strip_prefix(&prefix) == Some(client_api_type) {
             return Some(agent_id);
@@ -216,5 +224,17 @@ mod tests {
 
         assert_eq!(mapping.upstream_model, "deepseek-v4-pro");
         assert_eq!(mapping.agent_model, "opus-4.7[1m]");
+    }
+
+    #[test]
+    fn agent_id_from_scope_accepts_desktop_agents() {
+        assert_eq!(
+            agent_id_from_scope("codex-desktop-openai-responses", "openai-responses"),
+            Some("codex-desktop")
+        );
+        assert_eq!(
+            agent_id_from_scope("claude-desktop-anthropic", "anthropic"),
+            Some("claude-desktop")
+        );
     }
 }

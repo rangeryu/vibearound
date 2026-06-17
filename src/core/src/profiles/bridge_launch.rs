@@ -27,12 +27,7 @@ pub(super) fn render_bridge_launch(
         fake_model_id,
         bridge_models,
     )?;
-    let scope_agent_id = if launch_target == "claude-desktop" {
-        "claude"
-    } else {
-        launch_target
-    };
-    settings.scope = format!("{scope_agent_id}-{client_api_type}");
+    settings.scope = format!("{launch_target}-{client_api_type}");
     match launch_target {
         "claude" | "claude-desktop" => {
             Ok(render_claude_bridge_profile(profile, launch_id, settings))
@@ -919,6 +914,39 @@ mod tests {
     }
 
     #[test]
+    fn codex_desktop_bridge_launch_uses_desktop_scope() {
+        let mut profile = gemini_profile();
+        profile.api_types = vec!["gemini".to_string()];
+        profile.overrides.clear();
+        profile.overrides.insert(
+            "gemini".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: None,
+                base_url: None,
+                model: Some("gemini-3.1-pro".to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                capabilities: None,
+            },
+        );
+
+        let rendered = render_bridge_launch(
+            &profile,
+            "codex-desktop",
+            "launch-test",
+            "openai-responses",
+            "gemini",
+            None,
+            None,
+            &[],
+        )
+        .expect("codex desktop native gemini bridge launch renders");
+
+        assert!(rendered.command_args.iter().any(|arg| {
+            arg == "model_providers.gemini.base_url='http://127.0.0.1:12358/va/local-api/gemini-test/codex-desktop-openai-responses/gemini/v1'"
+        }));
+    }
+
+    #[test]
     fn oauth_bridge_launch_uses_local_dummy_key() {
         let mut profile = gemini_profile();
         profile.auth_mode = AuthMode::GoogleOauth;
@@ -996,7 +1024,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_desktop_bridge_launch_reuses_claude_scope() {
+    fn claude_desktop_bridge_launch_uses_desktop_scope() {
         let profile = dashscope_profile();
         let rendered = render_bridge_launch(
             &profile,
@@ -1016,7 +1044,7 @@ mod tests {
                 .iter()
                 .find(|(key, _)| key == "ANTHROPIC_BASE_URL")
                 .map(|(_, value)| value.as_str()),
-            Some("http://127.0.0.1:12358/va/local-api/dashscope-test/claude-anthropic/openai-chat")
+            Some("http://127.0.0.1:12358/va/local-api/dashscope-test/claude-desktop-anthropic/openai-chat")
         );
     }
 

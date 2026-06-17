@@ -559,11 +559,7 @@ fn launch_target_defs() -> &'static [(&'static str, &'static str)] {
 }
 
 fn connection_agent_id(agent_id: &str) -> &str {
-    match agent_id {
-        "claude-desktop" => "claude",
-        "codex-desktop" => "codex",
-        other => other,
-    }
+    agent_id
 }
 
 #[cfg(test)]
