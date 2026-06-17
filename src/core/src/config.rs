@@ -293,7 +293,7 @@ impl SearchToolConfig {
     }
 
     pub fn enabled_source_names(&self) -> Vec<String> {
-        let mut names = ["exa", "tavily", "grok"]
+        let mut names = ["exa", "tavily", "grok", "brave"]
             .into_iter()
             .filter(|name| self.sources.get(*name).is_some_and(|source| source.enabled))
             .map(ToString::to_string)
@@ -302,7 +302,7 @@ impl SearchToolConfig {
             self.sources
                 .iter()
                 .filter(|(name, source)| {
-                    source.enabled && !matches!(name.as_str(), "exa" | "tavily" | "grok")
+                    source.enabled && !matches!(name.as_str(), "exa" | "tavily" | "grok" | "brave")
                 })
                 .map(|(name, _)| name.clone()),
         );

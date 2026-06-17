@@ -20,6 +20,7 @@ use crate::process::StdioPipes;
 
 const SEARCH_TOOL_ENV: &str = "VA_SEARCH_TOOL_STDIO";
 const SEARCH_TOOL_LABEL: &str = "va-search-tool";
+const SEARCH_TOOL_PLUGIN_ID: &str = "va-search-tool";
 const SEARCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SEARCH_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -97,7 +98,7 @@ impl SearchToolRuntime {
             return Ok(None);
         }
 
-        let Some(executable) = search_tool_executable(config) else {
+        let Some(launch) = search_tool_launch(config) else {
             tracing::warn!(
                 "va-search-tool executable not found; host web search requests will fail"
             );
@@ -119,7 +120,7 @@ impl SearchToolRuntime {
             Box::new(bridge) as Box<dyn ProcessBridge>
         });
 
-        let mut spec = SpawnSpec::new(executable.to_string_lossy().to_string()).arg("stdio");
+        let mut spec = SpawnSpec::new(launch.program).args(launch.args);
         for (key, value) in search_tool_env(config) {
             spec = spec.env(key, value);
         }
@@ -217,6 +218,7 @@ impl SearchToolBridge {
                     let id = format!("search_{next_id}");
                     next_id = next_id.wrapping_add(1);
                     let payload = SearchToolRpcRequest {
+                        jsonrpc: "2.0",
                         id: id.clone(),
                         method: "web_search".to_string(),
                         params: command.request,
@@ -261,6 +263,7 @@ impl SearchToolBridge {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SearchToolRpcRequest {
+    jsonrpc: &'static str,
     id: String,
     method: String,
     params: WebSearchRequest,
@@ -316,17 +319,25 @@ fn fail_pending(
     }
 }
 
-fn search_tool_executable(config: &SearchToolConfig) -> Option<PathBuf> {
-    configured_search_tool_executable(config)
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SearchToolLaunch {
+    program: String,
+    args: Vec<String>,
+}
+
+fn search_tool_launch(config: &SearchToolConfig) -> Option<SearchToolLaunch> {
+    configured_search_tool_path(config)
         .or_else(|| {
             env::var_os(SEARCH_TOOL_ENV)
                 .map(PathBuf::from)
                 .filter(|path| path.exists())
         })
-        .or_else(dev_search_tool_executable)
+        .map(launch_from_path)
+        .or_else(installed_search_tool_launch)
+        .or_else(dev_search_tool_launch)
 }
 
-fn configured_search_tool_executable(config: &SearchToolConfig) -> Option<PathBuf> {
+fn configured_search_tool_path(config: &SearchToolConfig) -> Option<PathBuf> {
     let path = config.stdio_path.as_ref()?;
     if path.exists() {
         Some(path.clone())
@@ -398,18 +409,61 @@ fn well_known_api_key_env(source: &str) -> Option<&'static str> {
         "exa" => Some("EXA_API_KEY"),
         "tavily" => Some("TAVILY_API_KEY"),
         "grok" | "xai" => Some("XAI_API_KEY"),
+        "brave" => Some("BRAVE_API_KEY"),
         _ => None,
     }
 }
 
-fn dev_search_tool_executable() -> Option<PathBuf> {
+fn installed_search_tool_launch() -> Option<SearchToolLaunch> {
+    let plugin = crate::plugins::find(SEARCH_TOOL_PLUGIN_ID)?;
+    if plugin.manifest.kind != "search" {
+        tracing::warn!(
+            plugin_id = SEARCH_TOOL_PLUGIN_ID,
+            kind = %plugin.manifest.kind,
+            "search tool plugin has unexpected kind"
+        );
+        return None;
+    }
+    let entry = plugin.entry_path();
+    if !entry.exists() {
+        tracing::warn!(
+            path = ?entry,
+            "installed va-search-tool plugin entry does not exist"
+        );
+        return None;
+    }
+    Some(launch_from_path(entry))
+}
+
+fn dev_search_tool_launch() -> Option<SearchToolLaunch> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    [
-        manifest_dir.join("../../../va-search-tool/target/debug/va-search-tool"),
-        manifest_dir.join("../../../va-search-tool/target/release/va-search-tool"),
-    ]
-    .into_iter()
-    .find(|path| path.exists())
+    let script = manifest_dir.join("../../../va-search-tool/dist/main.js");
+    script.exists().then(|| launch_node_script(script))
+}
+
+fn launch_from_path(path: PathBuf) -> SearchToolLaunch {
+    if is_node_script(&path) {
+        launch_node_script(path)
+    } else {
+        SearchToolLaunch {
+            program: path.to_string_lossy().to_string(),
+            args: vec!["stdio".to_string()],
+        }
+    }
+}
+
+fn launch_node_script(path: PathBuf) -> SearchToolLaunch {
+    SearchToolLaunch {
+        program: "node".to_string(),
+        args: vec![path.to_string_lossy().to_string(), "stdio".to_string()],
+    }
+}
+
+fn is_node_script(path: &std::path::Path) -> bool {
+    matches!(
+        path.extension().and_then(|value| value.to_str()),
+        Some("js" | "mjs" | "cjs")
+    )
 }
 
 #[cfg(test)]
@@ -427,6 +481,15 @@ mod tests {
             max_results: Some(7),
             search_context_size: Some("high".to_string()),
             sources: BTreeMap::from([
+                (
+                    "brave".to_string(),
+                    SearchSourceConfig {
+                        enabled: true,
+                        api_key: Some("brave-key".to_string()),
+                        api_key_env: None,
+                        base_url: None,
+                    },
+                ),
                 (
                     "exa".to_string(),
                     SearchSourceConfig {
@@ -454,7 +517,7 @@ mod tests {
 
         assert_eq!(
             env.get("VA_SEARCH_SOURCES").map(String::as_str),
-            Some("exa")
+            Some("exa,brave")
         );
         assert_eq!(
             env.get("VA_SEARCH_MAX_RESULTS").map(String::as_str),
@@ -479,5 +542,27 @@ mod tests {
         );
         assert!(!env.contains_key("VA_SEARCH_TAVILY_API_KEY"));
         assert!(!env.contains_key("TAVILY_API_KEY"));
+        assert_eq!(
+            env.get("VA_SEARCH_BRAVE_API_KEY").map(String::as_str),
+            Some("brave-key")
+        );
+        assert_eq!(
+            env.get("BRAVE_API_KEY").map(String::as_str),
+            Some("brave-key")
+        );
+    }
+
+    #[test]
+    fn node_search_tool_scripts_spawn_through_node() {
+        let launch = launch_from_path(PathBuf::from("/tmp/va-search-tool/dist/main.js"));
+
+        assert_eq!(launch.program, "node");
+        assert_eq!(
+            launch.args,
+            vec![
+                "/tmp/va-search-tool/dist/main.js".to_string(),
+                "stdio".to_string()
+            ]
+        );
     }
 }

@@ -102,7 +102,7 @@ pub async fn install_plugin(
 
 /// Internal implementation — uses anyhow for ergonomic error chaining.
 /// Also callable from the onboarding install orchestrator in mod.rs.
-pub(super) async fn run_install_inner(
+pub(crate) async fn run_install_inner(
     request: InstallPluginRequest,
 ) -> anyhow::Result<InstallPluginResponse> {
     run_install_inner_with_progress(request, |_| {}, || false).await
@@ -275,14 +275,22 @@ where
         }
     }
 
-    if plugin_kind == "channel" {
-        // Channel builds must produce dist/main.js; its absence usually means tsc had silent errors.
-        let main_script = target_dir.join("dist").join("main.js");
-        if !main_script.exists() {
-            bail!("channel plugin install did not produce dist/main.js");
+    if requires_built_entry(plugin_kind) {
+        let entry =
+            plugin_entry_path(&target_dir).unwrap_or_else(|| target_dir.join("dist/main.js"));
+        if !entry.exists() {
+            bail!(
+                "{} plugin install did not produce {}",
+                plugin_kind,
+                entry.strip_prefix(&target_dir).unwrap_or(&entry).display()
+            );
         }
-        logs.push("Verified: dist/main.js exists".into());
-        on_log("Verified: dist/main.js exists".into());
+        let message = format!(
+            "Verified: {} exists",
+            entry.strip_prefix(&target_dir).unwrap_or(&entry).display()
+        );
+        logs.push(message.clone());
+        on_log(message);
     }
 
     let actual_id = match discover_installed_plugin(&request.plugin_id, plugin_kind) {
@@ -347,7 +355,11 @@ pub fn check_plugin_status(plugin_id: String) -> String {
     if !target_dir.join("plugin.json").exists() {
         return "not_installed".to_string();
     }
-    if plugin_kind == "channel" && !target_dir.join("dist").join("main.js").exists() {
+    if requires_built_entry(plugin_kind)
+        && !plugin_entry_path(&target_dir)
+            .unwrap_or_else(|| target_dir.join("dist/main.js"))
+            .exists()
+    {
         return "installed_not_built".to_string();
     }
     "installed_not_discoverable".to_string()
@@ -434,7 +446,10 @@ fn installed_tree_complete(target_dir: &std::path::Path, plugin_kind: &str) -> b
     if !target_dir.join("plugin.json").exists() {
         return false;
     }
-    plugin_kind != "channel" || target_dir.join("dist").join("main.js").exists()
+    !requires_built_entry(plugin_kind)
+        || plugin_entry_path(target_dir)
+            .unwrap_or_else(|| target_dir.join("dist/main.js"))
+            .exists()
 }
 
 fn discover_installed_plugin(
@@ -445,6 +460,21 @@ fn discover_installed_plugin(
         "channel" => plugins::channel::find(plugin_id),
         _ => plugins::find(plugin_id),
     }
+}
+
+fn requires_built_entry(plugin_kind: &str) -> bool {
+    matches!(plugin_kind, "channel" | "search")
+}
+
+fn plugin_entry_path(target_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let raw = std::fs::read_to_string(target_dir.join("plugin.json")).ok()?;
+    let manifest = serde_json::from_str::<serde_json::Value>(&raw).ok()?;
+    manifest
+        .get("entry")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| target_dir.join(entry))
 }
 
 fn plugin_manifest_id(target_dir: &std::path::Path) -> Option<String> {

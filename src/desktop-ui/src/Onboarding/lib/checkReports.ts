@@ -50,11 +50,6 @@ export function agentIdFromReport(report: StartkitItemReport): string | null {
   return match?.[1] ?? null;
 }
 
-export function agentIdFromSdkReport(report: StartkitItemReport): string | null {
-  const match = /^agents\.(.+)\.sdk$/.exec(report.id);
-  return match?.[1] ?? null;
-}
-
 export function pluginIdFromReport(report: StartkitItemReport): string | null {
   const match = /^channels\.plugins\.(.+)$/.exec(report.id);
   return match?.[1] ?? null;
@@ -112,24 +107,6 @@ export function agentCheckingReport(
     category: "agents",
     status: "running",
     message,
-    actions: [],
-    secret: false,
-  };
-}
-
-export function agentSdkCheckingReport(
-  agentId: string,
-  agents: AgentSummary[],
-): StartkitItemReport {
-  const agent = agents.find((item) => item.id === agentId);
-  return {
-    id: `agents.${agentId}.sdk`,
-    label: `${agent?.display_name ?? agentId} ACP adapter`,
-    group: "agents",
-    category: "agent_sdk",
-    status: "running",
-    severity: "blocker",
-    message: "Checking",
     actions: [],
     secret: false,
   };

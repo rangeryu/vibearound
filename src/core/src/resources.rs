@@ -401,7 +401,10 @@ mod tests {
         assert!(telegram.is_kind("channel"));
         assert_eq!(telegram.install_dir_name(), "va-plugin-channel-telegram");
 
-        assert!(PLUGINS.iter().all(|plugin| plugin.is_kind("channel")));
+        assert!(PLUGINS
+            .iter()
+            .all(|plugin| plugin.is_kind("channel") || plugin.is_kind("search")));
+        assert!(plugin_by_id("va-search-tool").is_some_and(|plugin| plugin.is_kind("search")));
         assert!(
             plugin_by_id("deepseek").is_none(),
             "DeepSeek is a built-in profile catalog entry, not an installable plugin"

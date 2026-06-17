@@ -175,18 +175,6 @@ macos = "scripts/macos/detect-program.sh"
 windows = "scripts/windows/detect-program.ps1"
 
 [[items]]
-id = "agents.adapters"
-label = "Agent ACP adapters"
-group = "agents"
-category = "agent_sdk"
-description = "ACP adapters for selected coding agents."
-platforms = ["macos", "windows"]
-include_if = ["agent:npm_adapter"]
-depends_on = ["essentials.node"]
-severity = "blocker"
-kind = "builtin_agent_adapters"
-
-[[items]]
 id = "tunnels.localtunnel.package"
 label = "localtunnel"
 group = "remote"

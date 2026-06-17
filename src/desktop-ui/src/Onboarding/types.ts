@@ -7,7 +7,12 @@ export interface AgentSummary {
   display_name: string;
   description: string;
   install_type?: "npm" | "script" | "path";
+  pty_command?: string;
   direct_only?: boolean;
+  acp_program?: string;
+  acp_args?: string[];
+  acp_npm_package?: string | null;
+  acp_bin_name?: string | null;
 }
 
 export interface TunnelSummary {
@@ -179,6 +184,7 @@ export interface StepTunnelProps {
   onCfToken: (value: string) => void;
   cfHostname: string;
   onCfHostname: (value: string) => void;
+  showProviderSelect?: boolean;
   notice?: ReactNode;
 }
 
