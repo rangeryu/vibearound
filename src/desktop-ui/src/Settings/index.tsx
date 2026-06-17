@@ -1275,6 +1275,7 @@ export function SettingsDialog({
                       onCfToken={setCfToken}
                       cfHostname={cfHostname}
                       onCfHostname={setCfHostname}
+                      showProviderSelect
                       notice={<SettingsNotice notice={notice} />}
                     />
                   </div>

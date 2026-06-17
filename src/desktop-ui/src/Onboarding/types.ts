@@ -184,6 +184,7 @@ export interface StepTunnelProps {
   onCfToken: (value: string) => void;
   cfHostname: string;
   onCfHostname: (value: string) => void;
+  showProviderSelect?: boolean;
   notice?: ReactNode;
 }
 
