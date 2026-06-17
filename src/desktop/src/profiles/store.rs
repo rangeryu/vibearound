@@ -27,7 +27,7 @@ pub struct ProfileDraft {
 }
 
 impl ProfileDraft {
-    fn into_profile(self, id: String) -> schema::ProfileDef {
+    pub(super) fn into_profile(self, id: String) -> schema::ProfileDef {
         schema::ProfileDef {
             id,
             label: self.label,

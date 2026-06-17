@@ -5,6 +5,47 @@ export const zhCNDesktopPages: Record<string, string> = {
     "没有活跃预览。让你的 Coding Agent 运行 preview 或 md_preview。",
   "API Bridge": "API 转接",
   "Apply API Bridge Settings": "应用 API 转接设置",
+  "Apply & Restart Services": "应用并重启服务",
+  "Restarting services…": "正在重启服务…",
+  "Web Search": "Web 搜索",
+  "Web search": "Web 搜索",
+  "Host-side web search is available when at least one search source is enabled.":
+    "至少启用一个搜索源后，主机侧 Web 搜索即可使用。",
+  "Replace provider web search": "替换服务商 Web 搜索",
+  "Use VibeAround host search even when the upstream model supports provider-native web_search.":
+    "即使上游模型支持服务商原生 web_search，也使用 VibeAround 主机侧搜索。",
+  "Max results per source": "每个搜索源的最大结果数",
+  "Search context size": "搜索上下文大小",
+  "Applied to each enabled source, not the combined total.":
+    "作用于每个已启用的搜索源，不是合计总数。",
+  "Controls provider depth and how much result content is returned.":
+    "控制服务商搜索深度，以及返回多少结果正文内容。",
+  "Total results sent to the model can be enabled sources multiplied by this value.":
+    "发送给模型的总结果数最多为已启用搜索源数量乘以此值。",
+  "With {{count}} enabled source(s), up to {{total}} search results can be sent to the model.":
+    "当前启用 {{count}} 个搜索源，最多会向模型发送 {{total}} 条搜索结果。",
+  "Enable source": "启用搜索源",
+  "Paste API key": "粘贴 API key",
+  "API key is required.": "必须填写 API key。",
+  "Search source test completed.": "搜索源测试完成。",
+  "View result": "查看结果",
+  "{{source}} test result": "{{source}} 测试结果",
+  "{{count}} results": "{{count}} 条结果",
+  "{{count}} citations": "{{count}} 条引用",
+  "No test result yet.": "还没有测试结果。",
+  "No results returned.": "没有返回结果。",
+  "Open result": "打开结果",
+  Plugins: "插件",
+  "Manage installed and installable plugins from one inventory.":
+    "在一个列表中管理已安装和可安装的插件。",
+  "Install status": "安装状态",
+  Category: "类别",
+  Latest: "最新",
+  "Refresh status": "刷新状态",
+  "Plugin status has not been refreshed yet.": "插件状态还没有刷新。",
+  "No plugins in this view.": "当前视图没有插件。",
+  "Configure bridge-wide request behavior for provider API calls.":
+    "配置 API 转接中所有服务商请求的通用行为。",
   Local: "本地",
   "Tunnel · owner": "隧道 · owner",
   "Tunnel · share": "隧道 · 分享",

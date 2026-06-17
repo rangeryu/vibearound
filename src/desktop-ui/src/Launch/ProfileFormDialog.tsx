@@ -8,6 +8,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@va/i18n";
+import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CUSTOM_PROVIDER } from "./ProfileFormDialog.constants";
+import { testProfileConnection } from "./api";
 import { FormBody } from "./ProfileFormBody";
 import { ProviderGrid } from "./ProfileProviderGrid";
 import {
@@ -48,6 +50,11 @@ import type {
 import { isProviderApiKind } from "./types";
 
 type Step = "pick-provider" | "fill-form";
+type ProfileTestStatus =
+  | { state: "idle" }
+  | { state: "testing" }
+  | { state: "success"; message: string }
+  | { state: "error"; message: string };
 
 export type ProfileFormSubmit =
   | { type: "create"; draft: ProfileDraft }
@@ -110,6 +117,9 @@ export function ProfileFormDialog({
   const [revealKeys, setRevealKeys] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [testStatus, setTestStatus] = useState<ProfileTestStatus>({
+    state: "idle",
+  });
 
   useEffect(() => {
     if (!provider || editing) return;
@@ -159,23 +169,65 @@ export function ProfileFormDialog({
     setStep("fill-form");
   }
 
-  async function handleSave() {
-    setError(null);
-    if (!provider) return;
-    if (!label.trim()) {
-      setError(t("Label is required"));
-      return;
+  useEffect(() => {
+    setTestStatus({ state: "idle" });
+  }, [
+    authMode,
+    credentials,
+    overrides,
+    provider?.id,
+    providerSettings,
+    selectedApiTypes,
+    useSettingsProxy,
+  ]);
+
+  function buildDraftForProvider(
+    selectedProvider: CatalogEntry,
+    formLabel: string,
+  ): ProfileDraft {
+    const fieldDefs = collectFields(selectedProvider, selectedApiTypes, authMode, overrides);
+    const credentialFieldNames = new Set(fieldDefs.map((field) => field.name));
+    const selectedCredentials = Object.fromEntries(
+      Object.entries(credentials).filter(([name]) =>
+        credentialFieldNames.has(name),
+      ),
+    );
+
+    return {
+      label: formLabel,
+      provider: selectedProvider.id,
+      auth_mode: authMode,
+      api_types: selectedApiTypes,
+      credentials: stripEmpty(selectedCredentials),
+      overrides: pruneOverrides(overrides, selectedApiTypes, selectedProvider),
+      use_settings_proxy: useSettingsProxy,
+      provider_settings: pruneProviderSettings(selectedProvider.id, providerSettings),
+    };
+  }
+
+  function validateProfileDraft({
+    requireLabel,
+    requireApiKeyAuth,
+  }: {
+    requireLabel: boolean;
+    requireApiKeyAuth?: boolean;
+  }): { draft: ProfileDraft } | { error: string } {
+    if (!provider) return { error: t("Pick a provider") };
+    const formLabel = label.trim();
+    if (requireLabel && !formLabel) {
+      return { error: t("Label is required") };
     }
     if (selectedApiTypes.length === 0) {
-      setError(t("Pick at least one API type"));
-      return;
+      return { error: t("Pick at least one API type") };
+    }
+    if (requireApiKeyAuth && authMode !== "api_key") {
+      return { error: t("Connection test currently supports API key profiles.") };
     }
 
     const fieldDefs = collectFields(provider, selectedApiTypes, authMode, overrides);
     for (const f of fieldDefs) {
       if (f.required && !credentials[f.name]?.trim()) {
-        setError(t("{{field}} is required", { field: t(f.label) }));
-        return;
+        return { error: t("{{field}} is required", { field: t(f.label) }) };
       }
     }
 
@@ -184,45 +236,66 @@ export function ProfileFormDialog({
       if (!ep) continue;
       const ov = overrides[apiType];
       if (requiresProfileModel(provider, ep) && !ov?.model?.trim()) {
-        setError(t("Model is required for {{apiType}}", { apiType }));
-        return;
+        return { error: t("Model is required for {{apiType}}", { apiType }) };
       }
       if (ep.default_base_url) continue;
       if (!ov?.base_url?.trim()) {
-        setError(t("Base URL is required for {{apiType}}", { apiType }));
-        return;
+        return { error: t("Base URL is required for {{apiType}}", { apiType }) };
       }
     }
 
-    const credentialFieldNames = new Set(fieldDefs.map((field) => field.name));
-    const selectedCredentials = Object.fromEntries(
-      Object.entries(credentials).filter(([name]) =>
-        credentialFieldNames.has(name),
-      ),
-    );
+    return { draft: buildDraftForProvider(provider, formLabel || provider.label) };
+  }
 
-    const draft: ProfileDraft = {
-      label: label.trim(),
-      provider: provider.id,
-      auth_mode: authMode,
-      api_types: selectedApiTypes,
-      credentials: stripEmpty(selectedCredentials),
-      overrides: pruneOverrides(overrides, selectedApiTypes, provider),
-      use_settings_proxy: useSettingsProxy,
-      provider_settings: pruneProviderSettings(provider.id, providerSettings),
-    };
+  async function handleSave() {
+    setError(null);
+    const result = validateProfileDraft({ requireLabel: true });
+    if ("error" in result) {
+      setError(result.error);
+      return;
+    }
 
     setSaving(true);
     try {
       await onSave(
         initial
-          ? { type: "update", profile: { id: initial.id, ...draft } }
-          : { type: "create", draft },
+          ? { type: "update", profile: { id: initial.id, ...result.draft } }
+          : { type: "create", draft: result.draft },
       );
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSaving(false);
+    }
+  }
+
+  async function handleTestConnection() {
+    setError(null);
+    const result = validateProfileDraft({
+      requireLabel: false,
+      requireApiKeyAuth: true,
+    });
+    if ("error" in result) {
+      setTestStatus({ state: "error", message: result.error });
+      return;
+    }
+
+    setTestStatus({ state: "testing" });
+    try {
+      const response = await testProfileConnection(result.draft);
+      const count = response.testedApiTypes.length;
+      setTestStatus({
+        state: "success",
+        message:
+          count > 1
+            ? t("Test passed for {{count}} API kinds", { count })
+            : t("Test passed"),
+      });
+    } catch (e) {
+      setTestStatus({
+        state: "error",
+        message: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -287,7 +360,7 @@ export function ProfileFormDialog({
         )}
 
         <DialogFooter className="shrink-0 border-t border-border px-6 py-4 sm:justify-between">
-          <div>
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             {step === "fill-form" && !editing && (
               <Button
                 type="button"
@@ -297,6 +370,38 @@ export function ProfileFormDialog({
               >
                 {t("Change provider")}
               </Button>
+            )}
+            {step === "fill-form" && (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handleTestConnection()}
+                  disabled={testStatus.state === "testing" || saving}
+                >
+                  {testStatus.state === "testing" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  {testStatus.state === "testing" ? t("Testing…") : t("Test")}
+                </Button>
+                {testStatus.state === "success" && (
+                  <span className="flex min-w-0 items-center gap-1 text-xs text-primary">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{testStatus.message}</span>
+                  </span>
+                )}
+                {testStatus.state === "error" && (
+                  <span className="flex min-w-0 items-center gap-1 text-xs text-destructive">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {t("Test failed")}: {testStatus.message}
+                    </span>
+                  </span>
+                )}
+              </>
             )}
           </div>
           <div className="flex items-center gap-2">

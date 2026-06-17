@@ -260,6 +260,7 @@ fn main() {
             profiles::profiles_catalog,
             profiles::profiles_google_oauth_status,
             profiles::profiles_google_oauth_login,
+            profiles::profiles_test_connection,
             profiles::launcher_list_sessions,
             profiles::launcher_list_workspaces,
             profiles::launcher_get_preferences,
