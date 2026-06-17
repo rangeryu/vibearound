@@ -65,10 +65,7 @@ pub async fn install_managed_plugin(
     match request.category {
         ManagedPluginCategory::Im => install_im_plugin(&request.id).await,
         ManagedPluginCategory::Acp => install_acp_plugin(&request.id).await,
-        ManagedPluginCategory::Search => Err(
-            "Search sources do not need installation; configure their API keys in API Bridge settings."
-                .to_string(),
-        ),
+        ManagedPluginCategory::Search => install_search_plugin(&request.id).await,
     }
 }
 
@@ -76,6 +73,7 @@ async fn build_managed_plugins(include_latest: bool) -> Vec<ManagedPluginSummary
     let mut items = Vec::new();
     items.extend(im_plugins(include_latest).await);
     items.extend(acp_plugins());
+    items.extend(search_plugins(include_latest).await);
     items.sort_by(|left, right| {
         left.category
             .label()
@@ -114,6 +112,19 @@ async fn install_acp_plugin(agent_id: &str) -> Result<ManagedPluginSummary, Stri
     Ok(acp_plugin(agent_def))
 }
 
+async fn install_search_plugin(plugin_id: &str) -> Result<ManagedPluginSummary, String> {
+    let plugin = resources::plugin_by_id(plugin_id)
+        .filter(|plugin| plugin.is_kind("search"))
+        .ok_or_else(|| format!("unknown search plugin '{plugin_id}'"))?;
+    run_install_inner(InstallPluginRequest {
+        plugin_id: plugin.id.clone(),
+        github_url: plugin.github.clone(),
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(search_plugin_from_registry(plugin, false).await)
+}
+
 async fn im_plugins(include_latest: bool) -> Vec<ManagedPluginSummary> {
     let registry = resources::PLUGINS
         .iter()
@@ -145,6 +156,48 @@ async fn im_plugins(include_latest: bool) -> Vec<ManagedPluginSummary> {
             path: Some(discovered.entry.clone()),
             github: None,
             message: Some("Plugin is installed".to_string()),
+            actions: Vec::new(),
+        });
+    }
+
+    items
+}
+
+async fn search_plugins(include_latest: bool) -> Vec<ManagedPluginSummary> {
+    let registry = resources::PLUGINS
+        .iter()
+        .filter(|plugin| plugin.is_kind("search"));
+    let mut seen = HashSet::new();
+    let mut items = Vec::new();
+
+    for plugin in registry {
+        seen.insert(plugin.id.clone());
+        items.push(search_plugin_from_registry(plugin, include_latest).await);
+    }
+
+    for discovered in plugins::discover_plugins()
+        .into_values()
+        .filter(|plugin| plugin.manifest.kind == "search")
+    {
+        if seen.contains(&discovered.manifest.id) {
+            continue;
+        }
+        let summary = plugins::DiscoveredPluginSummary::from(&discovered);
+        items.push(ManagedPluginSummary {
+            category: ManagedPluginCategory::Search,
+            id: summary.id,
+            kind: "Search runtime".to_string(),
+            name: summary.name,
+            description: "Host-side web search runtime".to_string(),
+            status: ManagedPluginStatus::Ok,
+            installed: true,
+            installable: false,
+            version: Some(summary.version),
+            latest_version: None,
+            source: Some(summary.source),
+            path: Some(discovered.entry_path().to_string_lossy().to_string()),
+            github: None,
+            message: Some("Search runtime is installed".to_string()),
             actions: Vec::new(),
         });
     }
@@ -204,6 +257,63 @@ async fn im_plugin_from_registry(
             "Plugin is installed".to_string()
         } else {
             "Plugin is not installed".to_string()
+        }),
+        actions: vec![action.to_string()],
+    }
+}
+
+async fn search_plugin_from_registry(
+    plugin: &resources::PluginDef,
+    include_latest: bool,
+) -> ManagedPluginSummary {
+    let discovered = plugins::find(&plugin.id);
+    let version = discovered.as_ref().map(|plugin| plugin.installed_version());
+    let latest = if include_latest {
+        super::github_plugin_version(&plugin.github)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let installed = discovered.is_some();
+    let outdated = installed
+        && matches!((&latest, &version), (Some(latest), Some(version)) if latest != version);
+    let status = if outdated {
+        ManagedPluginStatus::Outdated
+    } else if installed {
+        ManagedPluginStatus::Ok
+    } else {
+        ManagedPluginStatus::Missing
+    };
+    let action = if status == ManagedPluginStatus::Outdated {
+        "update"
+    } else if installed {
+        "refresh"
+    } else {
+        "install"
+    };
+
+    ManagedPluginSummary {
+        category: ManagedPluginCategory::Search,
+        id: plugin.id.clone(),
+        kind: "Search runtime".to_string(),
+        name: plugin.name.clone(),
+        description: plugin.description.clone(),
+        status,
+        installed,
+        installable: true,
+        version,
+        latest_version: latest,
+        source: discovered.as_ref().map(|plugin| plugin.source.clone()),
+        path: discovered
+            .as_ref()
+            .map(|plugin| plugin.entry_path().to_string_lossy().to_string()),
+        github: Some(plugin.github.clone()),
+        message: Some(if installed {
+            "Search runtime is installed".to_string()
+        } else {
+            "Search runtime is not installed".to_string()
         }),
         actions: vec![action.to_string()],
     }

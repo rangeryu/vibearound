@@ -20,6 +20,7 @@ use crate::process::StdioPipes;
 
 const SEARCH_TOOL_ENV: &str = "VA_SEARCH_TOOL_STDIO";
 const SEARCH_TOOL_LABEL: &str = "va-search-tool";
+const SEARCH_TOOL_PLUGIN_ID: &str = "va-search-tool";
 const SEARCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SEARCH_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -332,6 +333,7 @@ fn search_tool_launch(config: &SearchToolConfig) -> Option<SearchToolLaunch> {
                 .filter(|path| path.exists())
         })
         .map(launch_from_path)
+        .or_else(installed_search_tool_launch)
         .or_else(dev_search_tool_launch)
 }
 
@@ -410,6 +412,27 @@ fn well_known_api_key_env(source: &str) -> Option<&'static str> {
         "brave" => Some("BRAVE_API_KEY"),
         _ => None,
     }
+}
+
+fn installed_search_tool_launch() -> Option<SearchToolLaunch> {
+    let plugin = crate::plugins::find(SEARCH_TOOL_PLUGIN_ID)?;
+    if plugin.manifest.kind != "search" {
+        tracing::warn!(
+            plugin_id = SEARCH_TOOL_PLUGIN_ID,
+            kind = %plugin.manifest.kind,
+            "search tool plugin has unexpected kind"
+        );
+        return None;
+    }
+    let entry = plugin.entry_path();
+    if !entry.exists() {
+        tracing::warn!(
+            path = ?entry,
+            "installed va-search-tool plugin entry does not exist"
+        );
+        return None;
+    }
+    Some(launch_from_path(entry))
 }
 
 fn dev_search_tool_launch() -> Option<SearchToolLaunch> {

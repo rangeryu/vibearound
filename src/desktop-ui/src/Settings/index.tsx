@@ -1539,13 +1539,12 @@ function PluginInventoryCard({
   const categoryLabel = pluginCategoryLabel(item.category);
   const showKindBadge = item.kind !== categoryLabel;
   const ActionIcon =
-    item.category === "search"
-      ? SlidersHorizontal
-      : item.status === "outdated"
+    item.status === "outdated"
         ? RotateCw
-        : Download;
-  const canRunAction =
-    item.category === "search" ? true : Boolean(item.installable);
+        : item.installed
+          ? RotateCw
+          : Download;
+  const canRunAction = Boolean(item.installable);
   const actionLabel = pluginActionLabel(item);
   const Icon =
     item.category === "acp"
@@ -1627,19 +1626,25 @@ function PluginInventoryCard({
               </a>
             </Button>
           )}
+          {item.category === "search" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={onConfigureSearch}
+            >
+              <SlidersHorizontal className="h-3 w-3" />
+              {t("Configure")}
+            </Button>
+          )}
           <Button
             type="button"
             variant={item.status === "outdated" ? "default" : "outline"}
             size="sm"
             className="min-w-20 text-xs"
             disabled={installing || !canRunAction}
-            onClick={() => {
-              if (item.category === "search") {
-                onConfigureSearch();
-              } else {
-                onInstallPlugin(item.category, item.id);
-              }
-            }}
+            onClick={() => onInstallPlugin(item.category, item.id)}
           >
             {installing ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -2614,7 +2619,6 @@ function pluginCategoryLabel(
 }
 
 function pluginActionLabel(item: PluginInventoryItem): string {
-  if (item.category === "search") return "Configure";
   if (item.status === "outdated") return "Update";
   return item.installed ? "Refresh" : "Install";
 }
