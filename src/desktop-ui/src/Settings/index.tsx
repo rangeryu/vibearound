@@ -8,7 +8,9 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  AlertCircle,
   Bot,
+  CheckCircle2,
   Download,
   ExternalLink,
   Globe,
@@ -1190,7 +1192,6 @@ export function SettingsDialog({
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
                   <PluginsSettingsPanel
                     plugins={managedPlugins}
-                    enabledAgents={enabledAgents}
                     installingPlugins={installingManagedPlugins}
                     checkingUpdates={checkingPluginUpdates}
                     updatesChecked={pluginUpdatesChecked}
@@ -1489,7 +1490,6 @@ type PluginInventoryItem = ManagedPluginSummary;
 
 function PluginsSettingsPanel({
   plugins,
-  enabledAgents,
   installingPlugins,
   checkingUpdates,
   updatesChecked,
@@ -1499,7 +1499,6 @@ function PluginsSettingsPanel({
   notice,
 }: {
   plugins: ManagedPluginSummary[];
-  enabledAgents: Set<string>;
   installingPlugins: Set<string>;
   checkingUpdates: boolean;
   updatesChecked: boolean;
@@ -1514,13 +1513,7 @@ function PluginsSettingsPanel({
   const [categoryFilter, setCategoryFilter] =
     useState<PluginCategoryFilter>("all");
 
-  const items = useMemo(
-    () =>
-      plugins.filter(
-        (plugin) => plugin.category !== "acp" || enabledAgents.has(plugin.id),
-      ),
-    [enabledAgents, plugins],
-  );
+  const items = plugins;
 
   const updateItems = items.filter((item) => item.status === "outdated");
   const installedItems = items.filter((item) => item.installed);
@@ -2254,11 +2247,21 @@ function SearchToolSettingsPanel({
               </label>
               {error && (
                 <div className="rounded-md border border-destructive/25 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">
-                  {t(error)}
+                  <div className="flex items-center gap-1 font-medium">
+                    <AlertCircle className="h-3 w-3" />
+                    {t("Test failed")}
+                  </div>
+                  <div className="mt-0.5 break-words text-[11px]">
+                    {error === "API key is required." ? t(error) : error}
+                  </div>
                 </div>
               )}
               {result && (
                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                  <span className="inline-flex items-center gap-1 font-medium text-primary">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {t("Test passed")}
+                  </span>
                   <span className="font-mono text-foreground/70">
                     {result.query}
                   </span>

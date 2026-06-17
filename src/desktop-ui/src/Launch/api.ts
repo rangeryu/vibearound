@@ -84,6 +84,18 @@ export function googleOAuthLogin(): Promise<GoogleOAuthStatus> {
   return invoke<GoogleOAuthStatus>("profiles_google_oauth_login");
 }
 
+export interface ProfileConnectionTestResult {
+  testedApiTypes: string[];
+}
+
+export function testProfileConnection(
+  draft: ProfileDraft,
+): Promise<ProfileConnectionTestResult> {
+  return invoke<ProfileConnectionTestResult>("profiles_test_connection", {
+    draft,
+  });
+}
+
 export interface AgentSummary {
   id: string;
   display_name: string;
