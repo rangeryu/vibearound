@@ -180,7 +180,7 @@ export function SettingsDialog({
   onOpenChange,
   onServicesRestarted,
 }: SettingsDialogProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({});
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [pluginRegistry, setPluginRegistry] = useState<PluginRegistryEntry[]>([]);
@@ -223,10 +223,16 @@ export function SettingsDialog({
   const [searchSources, setSearchSources] = useState<
     Record<SearchSourceId, SearchSourceForm>
   >(() => defaultSearchSourceForms());
-  const [testSearchQuery, setTestSearchQuery] = useState("");
-  const [testSearchResult, setTestSearchResult] =
-    useState<TestSearchResponse | null>(null);
-  const [testingSearch, setTestingSearch] = useState(false);
+  const [testingSearchSource, setTestingSearchSource] =
+    useState<SearchSourceId | null>(null);
+  const [testSearchResultsBySource, setTestSearchResultsBySource] = useState<
+    Partial<Record<SearchSourceId, TestSearchResponse>>
+  >({});
+  const [testSearchErrorsBySource, setTestSearchErrorsBySource] = useState<
+    Partial<Record<SearchSourceId, string>>
+  >({});
+  const [testSearchPopupSource, setTestSearchPopupSource] =
+    useState<SearchSourceId | null>(null);
   const [ngrokToken, setNgrokToken] = useState("");
   const [ngrokDomain, setNgrokDomain] = useState("");
   const [cfToken, setCfToken] = useState("");
@@ -545,6 +551,15 @@ export function SettingsDialog({
           ...patch,
         },
       }));
+      setTestSearchResultsBySource((previous) =>
+        withoutSearchSourceKey(previous, sourceId),
+      );
+      setTestSearchErrorsBySource((previous) =>
+        withoutSearchSourceKey(previous, sourceId),
+      );
+      setTestSearchPopupSource((previous) =>
+        previous === sourceId ? null : previous,
+      );
     },
     [],
   );
@@ -610,38 +625,56 @@ export function SettingsDialog({
     [],
   );
 
-  const testWebSearch = useCallback(async () => {
-    const query = testSearchQuery.trim();
-    if (!query) {
-      setNotice({ variant: "warning", message: "Search query is required." });
+  const testWebSearchSource = useCallback(async (sourceId: SearchSourceId) => {
+    const source = searchSources[sourceId];
+    if (!source?.apiKey.trim()) {
+      setTestSearchErrorsBySource((previous) => ({
+        ...previous,
+        [sourceId]: "API key is required.",
+      }));
       return;
     }
-    setTestingSearch(true);
+    const query = searchTestQueryForLocale(locale);
+    setTestingSearchSource(sourceId);
     setNotice(null);
-    setTestSearchResult(null);
+    setTestSearchErrorsBySource((previous) =>
+      withoutSearchSourceKey(previous, sourceId),
+    );
+    setTestSearchResultsBySource((previous) =>
+      withoutSearchSourceKey(previous, sourceId),
+    );
     try {
       const response = await invoke<TestSearchResponse>("test_web_search", {
         request: {
           query,
           maxResults: normalizedSearchMaxResults(searchMaxResults),
           searchContextSize,
-          sources: searchSources,
+          sources: {
+            [sourceId]: {
+              enabled: true,
+              apiKey: source.apiKey.trim(),
+            },
+          },
         },
       });
-      setTestSearchResult(response);
+      setTestSearchResultsBySource((previous) => ({
+        ...previous,
+        [sourceId]: response,
+      }));
       setNotice({
         variant: "success",
-        message: "Test search completed.",
+        message: "Search source test completed.",
       });
     } catch (error) {
-      setNotice({
-        variant: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      setTestSearchErrorsBySource((previous) => ({
+        ...previous,
+        [sourceId]: message,
+      }));
     } finally {
-      setTestingSearch(false);
+      setTestingSearchSource(null);
     }
-  }, [searchContextSize, searchMaxResults, searchSources, testSearchQuery]);
+  }, [locale, searchContextSize, searchMaxResults, searchSources]);
 
   const installPlugin = useCallback(
     async (pluginId: string, _githubUrl: string) => {
@@ -964,6 +997,7 @@ export function SettingsDialog({
   );
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!flex h-[680px] min-h-[520px] w-[min(860px,calc(100vw-32px))] max-h-[calc(100vh-64px)] max-w-[calc(100vw-32px)] overflow-hidden p-0 sm:max-w-[min(860px,calc(100vw-32px))]">
         <Tabs
@@ -1303,17 +1337,19 @@ export function SettingsDialog({
                       maxResults={searchMaxResults}
                       searchContextSize={searchContextSize}
                       sources={searchSources}
-                      testQuery={testSearchQuery}
-                      testResult={testSearchResult}
-                      testing={testingSearch}
+                      testResults={testSearchResultsBySource}
+                      testErrors={testSearchErrorsBySource}
+                      testingSource={testingSearchSource}
                       onReplaceProviderWebSearchChange={
                         setReplaceProviderWebSearch
                       }
                       onMaxResultsChange={setSearchMaxResults}
                       onSearchContextSizeChange={setSearchContextSize}
                       onSourceChange={updateSearchSource}
-                      onTestQueryChange={setTestSearchQuery}
-                      onTestSearch={() => void testWebSearch()}
+                      onTestSource={(sourceId) =>
+                        void testWebSearchSource(sourceId)
+                      }
+                      onOpenTestResult={setTestSearchPopupSource}
                       notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
@@ -1426,6 +1462,19 @@ export function SettingsDialog({
         </Tabs>
       </DialogContent>
     </Dialog>
+    <SearchSourceTestResultDialog
+      open={testSearchPopupSource !== null}
+      sourceId={testSearchPopupSource}
+      result={
+        testSearchPopupSource
+          ? testSearchResultsBySource[testSearchPopupSource] ?? null
+          : null
+      }
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setTestSearchPopupSource(null);
+      }}
+    />
+    </>
   );
 }
 
@@ -2016,36 +2065,40 @@ function SearchToolSettingsPanel({
   maxResults,
   searchContextSize,
   sources,
-  testQuery,
-  testResult,
-  testing,
+  testResults,
+  testErrors,
+  testingSource,
   onReplaceProviderWebSearchChange,
   onMaxResultsChange,
   onSearchContextSizeChange,
   onSourceChange,
-  onTestQueryChange,
-  onTestSearch,
+  onTestSource,
+  onOpenTestResult,
   notice,
 }: {
   replaceProviderWebSearch: boolean;
   maxResults: string;
   searchContextSize: SearchContextSize;
   sources: Record<SearchSourceId, SearchSourceForm>;
-  testQuery: string;
-  testResult: TestSearchResponse | null;
-  testing: boolean;
+  testResults: Partial<Record<SearchSourceId, TestSearchResponse>>;
+  testErrors: Partial<Record<SearchSourceId, string>>;
+  testingSource: SearchSourceId | null;
   onReplaceProviderWebSearchChange: (value: boolean) => void;
   onMaxResultsChange: (value: string) => void;
   onSearchContextSizeChange: (value: SearchContextSize) => void;
   onSourceChange: (sourceId: SearchSourceId, patch: Partial<SearchSourceForm>) => void;
-  onTestQueryChange: (value: string) => void;
-  onTestSearch: () => void;
+  onTestSource: (sourceId: SearchSourceId) => void;
+  onOpenTestResult: (sourceId: SearchSourceId) => void;
   notice?: ReactNode;
 }) {
   const { t } = useI18n();
   const enabledSourceCount = SEARCH_SOURCE_DEFS.filter(
     (source) => sources[source.id]?.enabled,
   ).length;
+  const parsedMaxResults = Number.parseInt(maxResults, 10);
+  const totalResultLimit = Number.isFinite(parsedMaxResults)
+    ? enabledSourceCount * clampSearchMaxResults(parsedMaxResults)
+    : null;
   return (
     <div className="space-y-5">
       <div>
@@ -2089,6 +2142,9 @@ function SearchToolSettingsPanel({
               }
               className="mt-1"
             />
+            <span className="mt-1 block text-[11px] text-muted-foreground/70">
+              {t("Applied to each enabled source, not the combined total.")}
+            </span>
           </label>
           <label className="block">
             <span className="text-xs text-muted-foreground">
@@ -2111,12 +2167,28 @@ function SearchToolSettingsPanel({
                 ))}
               </SelectContent>
             </Select>
+            <span className="mt-1 block text-[11px] text-muted-foreground/70">
+              {t("Controls provider depth and how much result content is returned.")}
+            </span>
           </label>
         </div>
+        <p className="mt-3 text-[11px] text-muted-foreground/70">
+          {totalResultLimit === null
+            ? t("Total results sent to the model can be enabled sources multiplied by this value.")
+            : t("With {{count}} enabled source(s), up to {{total}} search results can be sent to the model.", {
+                count: enabledSourceCount,
+                total: totalResultLimit,
+              })}
+        </p>
       </div>
       <div className="rounded-md border border-border">
         {SEARCH_SOURCE_DEFS.map((source) => {
           const form = sources[source.id];
+          const result = testResults[source.id];
+          const error = testErrors[source.id];
+          const isTesting = testingSource === source.id;
+          const canTest =
+            !testingSource && Boolean(form.apiKey.trim());
           return (
             <div
               key={source.id}
@@ -2126,14 +2198,43 @@ function SearchToolSettingsPanel({
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{source.label}</div>
                 </div>
-                <Switch
-                  checked={form.enabled}
-                  onCheckedChange={(value) =>
-                    onSourceChange(source.id, { enabled: value })
-                  }
-                  aria-label={t("Enable source")}
-                  size="sm"
-                />
+                <div className="flex shrink-0 items-center gap-2">
+                  {result && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => onOpenTestResult(source.id)}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      {t("View result")}
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={!canTest}
+                    onClick={() => onTestSource(source.id)}
+                  >
+                    {isTesting ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Search className="h-3 w-3" />
+                    )}
+                    {isTesting ? t("Testing…") : t("Test")}
+                  </Button>
+                  <Switch
+                    checked={form.enabled}
+                    onCheckedChange={(value) =>
+                      onSourceChange(source.id, { enabled: value })
+                    }
+                    aria-label={t("Enable source")}
+                    size="sm"
+                  />
+                </div>
               </div>
               <label className="block">
                 <span className="text-xs text-muted-foreground">
@@ -2151,91 +2252,142 @@ function SearchToolSettingsPanel({
                   className="mt-1"
                 />
               </label>
+              {error && (
+                <div className="rounded-md border border-destructive/25 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">
+                  {t(error)}
+                </div>
+              )}
+              {result && (
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                  <span className="font-mono text-foreground/70">
+                    {result.query}
+                  </span>
+                  <span>
+                    {t("{{count}} results", {
+                      count: result.results.length,
+                    })}
+                  </span>
+                  <span>
+                    {t("{{count}} citations", {
+                      count: result.citations.length,
+                    })}
+                  </span>
+                </div>
+              )}
             </div>
           );
         })}
       </div>
-      <div className="rounded-md border border-border px-4 py-4">
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-          <label className="block">
-            <span className="text-xs text-muted-foreground">
-              {t("Test query")}
-            </span>
-            <Input
-              type="text"
-              value={testQuery}
-              placeholder={t("Search the web")}
-              onChange={(event) => onTestQueryChange(event.currentTarget.value)}
-              className="mt-1"
-            />
-          </label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-xs"
-            disabled={testing || enabledSourceCount === 0 || !testQuery.trim()}
-            onClick={onTestSearch}
-          >
-            {testing ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Search className="h-3 w-3" />
-            )}
-            {testing ? t("Searching…") : t("Test search")}
-          </Button>
-        </div>
-        {enabledSourceCount === 0 && (
-          <div className="mt-2 text-xs text-muted-foreground">
-            {t("Enable at least one source before testing search.")}
-          </div>
-        )}
-        {testResult && (
-          <div className="mt-4 rounded-md border border-border bg-muted/15 px-3 py-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+    </div>
+  );
+}
+
+function SearchSourceTestResultDialog({
+  open,
+  sourceId,
+  result,
+  onOpenChange,
+}: {
+  open: boolean;
+  sourceId: SearchSourceId | null;
+  result: TestSearchResponse | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const sourceLabel = sourceId ? searchSourceLabel(sourceId) : t("Search");
+  const results = result?.results ?? [];
+  const citations = result?.citations ?? [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="!flex h-[min(720px,calc(100vh-64px))] min-h-[420px] w-[min(760px,calc(100vw-48px))] max-w-[calc(100vw-48px)] flex-col overflow-hidden p-0 sm:max-w-[min(760px,calc(100vw-48px))]">
+        <DialogHeader className="border-b border-border px-5 py-4">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Search className="h-4 w-4 text-primary" />
+            {t("{{source}} test result", { source: sourceLabel })}
+          </DialogTitle>
+          {result && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-muted-foreground">
               <span className="font-mono text-foreground/80">
-                {testResult.provider}
+                {result.provider}
+              </span>
+              <span className="font-mono">{result.query}</span>
+              <span>
+                {t("{{count}} results", { count: results.length })}
               </span>
               <span>
-                {t("{{count}} results", {
-                  count: testResult.results.length,
-                })}
-              </span>
-              <span>
-                {t("{{count}} citations", {
-                  count: testResult.citations.length,
-                })}
+                {t("{{count}} citations", { count: citations.length })}
               </span>
             </div>
-            <div className="mt-3 space-y-2">
-              {testResult.results.slice(0, 5).map((result, index) => (
+          )}
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 [scrollbar-gutter:stable]">
+          {!result ? (
+            <div className="rounded-md border border-border bg-muted/15 px-3 py-6 text-center text-sm text-muted-foreground">
+              {t("No test result yet.")}
+            </div>
+          ) : results.length === 0 ? (
+            <div className="rounded-md border border-border bg-muted/15 px-3 py-6 text-center text-sm text-muted-foreground">
+              {t("No results returned.")}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {results.map((item, index) => (
                 <div
-                  key={`${result.source}:${result.url}:${index}`}
-                  className="min-w-0 rounded-md border border-border/70 bg-background px-3 py-2"
+                  key={`${item.source}:${item.url}:${index}`}
+                  className="rounded-md border border-border bg-background px-3 py-3"
                 >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                      {result.source}
-                    </span>
-                    <span className="min-w-0 truncate text-xs font-medium">
-                      {result.title || result.url}
-                    </span>
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <Badge variant="secondary" className="h-5 rounded-md px-1.5 font-mono text-[10px]">
+                          {item.source}
+                        </Badge>
+                        {typeof item.score === "number" && (
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {item.score.toFixed(3)}
+                          </span>
+                        )}
+                        {item.publishedDate && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {item.publishedDate}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 break-words text-sm font-medium leading-5">
+                        {item.title || item.url}
+                      </div>
+                    </div>
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label={t("Open result")}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
                   </div>
-                  <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-                    {result.url}
+                  <div className="mt-2 break-all font-mono text-[11px] leading-5 text-muted-foreground">
+                    {item.url}
                   </div>
-                  {result.snippet && (
-                    <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                      {result.snippet}
+                  {item.snippet && (
+                    <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {item.snippet}
+                    </div>
+                  )}
+                  {item.content && (
+                    <div className="mt-2 max-h-40 overflow-y-auto rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-xs leading-5 text-muted-foreground [scrollbar-gutter:stable]">
+                      {item.content}
                     </div>
                   )}
                 </div>
               ))}
             </div>
-          </div>
-        )}
-      </div>
-    </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2750,6 +2902,28 @@ function defaultSearchSourceForm(): SearchSourceForm {
     enabled: false,
     apiKey: "",
   };
+}
+
+function searchSourceLabel(sourceId: SearchSourceId): string {
+  return (
+    SEARCH_SOURCE_DEFS.find((source) => source.id === sourceId)?.label ??
+    sourceId
+  );
+}
+
+function searchTestQueryForLocale(locale: string): string {
+  return locale.toLowerCase().startsWith("zh")
+    ? "今天有什么新闻"
+    : "today's news";
+}
+
+function withoutSearchSourceKey<T>(
+  values: Partial<Record<SearchSourceId, T>>,
+  sourceId: SearchSourceId,
+): Partial<Record<SearchSourceId, T>> {
+  const next = { ...values };
+  delete next[sourceId];
+  return next;
 }
 
 function searchMaxResultsInput(value: unknown): string {
