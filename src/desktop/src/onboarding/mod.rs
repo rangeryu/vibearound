@@ -4,6 +4,7 @@
 
 mod agent_integrations;
 pub(crate) mod plugin_install;
+mod plugin_manager;
 mod plugin_session;
 
 pub use plugin_install::{
@@ -15,6 +16,12 @@ pub use plugin_install::{
     __tauri_command_name_install_plugin,
     check_plugin_status,
     install_plugin,
+};
+pub use plugin_manager::{
+    __cmd__install_managed_plugin, __cmd__list_managed_plugins, __cmd__refresh_managed_plugins,
+    __tauri_command_name_install_managed_plugin, __tauri_command_name_list_managed_plugins,
+    __tauri_command_name_refresh_managed_plugins, install_managed_plugin, list_managed_plugins,
+    refresh_managed_plugins,
 };
 pub use plugin_session::PluginSession;
 
@@ -63,12 +70,6 @@ pub struct AgentUpdateCheckRequest {
 #[serde(rename_all = "camelCase")]
 pub struct PluginUpdateCheckRequest {
     pub plugin_ids: Vec<String>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentAcpPluginInstallRequest {
-    pub agent_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -288,22 +289,6 @@ pub async fn scan_agent_sdk_status(
         .filter_map(|agent_id| common::resources::agent_by_id(agent_id))
         .map(|agent| agent_sdk_report(&agent))
         .collect())
-}
-
-#[tauri::command]
-pub async fn install_agent_acp_plugin(
-    request: AgentAcpPluginInstallRequest,
-) -> Result<StartkitItemReport, String> {
-    let agent = common::resources::agent_by_id(&request.agent_id)
-        .ok_or_else(|| format!("unknown agent '{}'", request.agent_id))?;
-    let Some(npm_pkg) = agent.acp.npm_package.as_deref() else {
-        return Ok(agent_sdk_report(&agent));
-    };
-
-    common::agent::auto_install_npm_agent(npm_pkg)
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(agent_sdk_report(&agent))
 }
 
 #[tauri::command]
@@ -718,7 +703,7 @@ async fn npm_latest_version(package: &str, source: &str) -> anyhow::Result<Optio
         .map(str::to_string))
 }
 
-async fn github_plugin_version(github_url: &str) -> anyhow::Result<Option<String>> {
+pub(super) async fn github_plugin_version(github_url: &str) -> anyhow::Result<Option<String>> {
     let Some(package_url) = github_raw_file_url(github_url, "package.json") else {
         return Ok(None);
     };

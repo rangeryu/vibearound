@@ -102,7 +102,7 @@ pub async fn install_plugin(
 
 /// Internal implementation — uses anyhow for ergonomic error chaining.
 /// Also callable from the onboarding install orchestrator in mod.rs.
-pub(super) async fn run_install_inner(
+pub(crate) async fn run_install_inner(
     request: InstallPluginRequest,
 ) -> anyhow::Result<InstallPluginResponse> {
     run_install_inner_with_progress(request, |_| {}, || false).await
