@@ -1,3 +1,11 @@
+import {
+  Check,
+  Cloud,
+  Globe2,
+  Laptop,
+  Link2,
+  RadioTower,
+} from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { Input } from "@/components/ui/input";
@@ -27,40 +35,57 @@ export function StepTunnel({
 
   return (
     <div className="space-y-4">
-      {notice}
       {showProviderSelect ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {orderedTunnels(tunnels).map((tunnel) => {
-            const selected = tunnel.id === provider;
-            return (
-              <button
-                key={tunnel.id}
-                type="button"
-                className={cn(
-                  "min-h-20 rounded-md border px-3 py-3 text-left transition-colors",
-                  selected
-                    ? "border-primary/50 bg-primary/10 text-primary"
-                    : "border-border bg-background hover:border-primary/30",
-                )}
-                onClick={() => onProvider(tunnel.id)}
-              >
-                <span className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">
+        <>
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-semibold">
+              <Globe2 className="h-4 w-4 text-primary" />
+              {t("Tunnel")}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("Choose how VibeAround exposes this computer for remote access.")}
+            </p>
+            {notice}
+          </div>
+          <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(140px,1fr))]">
+            {orderedTunnels(tunnels).map((tunnel) => {
+              const selected = tunnel.id === provider;
+              const Icon = tunnelIcon(tunnel.id);
+              return (
+                <button
+                  key={tunnel.id}
+                  type="button"
+                  aria-pressed={selected}
+                  title={tunnelSettingsDescription(tunnel.id, t)}
+                  className={cn(
+                    "flex h-10 min-w-0 items-center gap-2 rounded-md border px-2.5 text-left transition-colors",
+                    selected
+                      ? "border-primary/45 bg-primary/10 text-primary"
+                      : "border-border bg-background text-foreground hover:border-primary/30 hover:bg-muted/20",
+                  )}
+                  onClick={() => onProvider(tunnel.id)}
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/30">
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium">
                     {tunnel.display_name}
                   </span>
-                  {tunnel.id === "cloudflare" && (
-                    <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
-                      {t("Recommended")}
+                  {selected && (
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] bg-primary text-primary-foreground">
+                      <Check className="h-3 w-3" />
                     </span>
                   )}
-                </span>
-                <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                  {tunnelSettingsDescription(tunnel.id, t)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                </button>
+              );
+            })}
+          </div>
+          {provider === "cloudflare" && (
+            <div className="text-[11px] text-primary">
+              {t("Cloudflare Tunnel is recommended for stable remote access.")}
+            </div>
+          )}
+        </>
       ) : (
         selectedTunnel && (
           <div className="flex gap-2">
@@ -139,6 +164,21 @@ export function StepTunnel({
       )}
     </div>
   );
+}
+
+function tunnelIcon(id: string) {
+  switch (id) {
+    case "none":
+      return Laptop;
+    case "cloudflare":
+      return Cloud;
+    case "localtunnel":
+      return Link2;
+    case "ngrok":
+      return RadioTower;
+    default:
+      return Globe2;
+  }
 }
 
 function orderedTunnels(tunnels: StepTunnelProps["tunnels"]) {
