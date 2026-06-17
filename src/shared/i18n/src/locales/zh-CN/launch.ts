@@ -132,6 +132,9 @@ export const zhCNLaunch: Record<string, string> = {
   "{{field}} is required": "必须填写 {{field}}",
   "Model is required for {{apiType}}": "{{apiType}} 必须填写模型",
   "Base URL is required for {{apiType}}": "{{apiType}} 必须填写 Base URL",
+  "Connection test currently supports API key profiles.":
+    "当前连接测试只支持 API key 配置。",
+  "Test passed for {{count}} API kinds": "{{count}} 种 API 类型测试通过",
   Profile: "配置",
   Label: "名称",
   "Visible name for this profile.": "这个配置的显示名称。",

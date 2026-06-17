@@ -66,13 +66,25 @@ pub(super) fn bridge_model_mapping(
 }
 
 fn agent_id_from_scope(scope: &str, client_api_type: &str) -> Option<&'static str> {
-    for agent_id in ["claude", "codex", "gemini", "opencode", "pi"] {
-        let prefix = format!("{agent_id}-");
+    for (scope_agent_id, preference_agent_id) in route_scope_agent_ids() {
+        let prefix = format!("{scope_agent_id}-");
         if scope.strip_prefix(&prefix) == Some(client_api_type) {
-            return Some(agent_id);
+            return Some(preference_agent_id);
         }
     }
     None
+}
+
+fn route_scope_agent_ids() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("claude-desktop", "claude"),
+        ("codex-desktop", "codex"),
+        ("claude", "claude"),
+        ("codex", "codex"),
+        ("gemini", "gemini"),
+        ("opencode", "opencode"),
+        ("pi", "pi"),
+    ]
 }
 
 fn canonical_model(profile: &ProfileDef, target_api_type: &str, model: &str) -> Option<String> {
@@ -86,13 +98,17 @@ fn canonical_model(profile: &ProfileDef, target_api_type: &str, model: &str) -> 
 }
 
 fn agent_model_matches(configured: &str, requested: &str) -> bool {
-    configured == requested
+    model_id_matches(configured, requested)
         || catalog::strip_bracket_suffix(configured)
-            .map(|base| base == requested)
+            .map(|base| model_id_matches(base, requested))
             .unwrap_or(false)
         || catalog::strip_bracket_suffix(requested)
-            .map(|base| base == configured)
+            .map(|base| model_id_matches(base, configured))
             .unwrap_or(false)
+}
+
+fn model_id_matches(left: &str, right: &str) -> bool {
+    left == right || left.eq_ignore_ascii_case(right)
 }
 
 fn clean_model_id(value: Option<&str>) -> Option<String> {
@@ -216,5 +232,50 @@ mod tests {
 
         assert_eq!(mapping.upstream_model, "deepseek-v4-pro");
         assert_eq!(mapping.agent_model, "opus-4.7[1m]");
+    }
+
+    #[test]
+    fn bridge_mapping_matches_codex_case_folded_alias() {
+        let profile = ProfileDef {
+            id: "deepseek-test".to_string(),
+            label: "DeepSeek Test".to_string(),
+            provider: "deepseek".to_string(),
+            auth_mode: AuthMode::ApiKey,
+            api_types: vec!["openai-chat".to_string()],
+            credentials: BTreeMap::new(),
+            overrides: BTreeMap::new(),
+            use_settings_proxy: false,
+            provider_settings: Default::default(),
+        };
+        let bridge = agent_state::ProfileBridgePreference {
+            enabled: true,
+            target_api_type: Some("openai-chat".to_string()),
+            upstream_model: Some("deepseek-v4-pro".to_string()),
+            fake_model_id: Some("GPT-5.5".to_string()),
+            models: vec![agent_state::ProfileBridgeModelPreference {
+                upstream_model: Some("deepseek-v4-pro".to_string()),
+                fake_model_id: Some("GPT-5.5".to_string()),
+                capabilities: Default::default(),
+            }],
+            headers: BTreeMap::new(),
+        };
+
+        let mapping = bridge_model_mapping(&profile, Some(&bridge), "openai-chat", Some("gpt-5.5"))
+            .expect("mapping should resolve");
+
+        assert_eq!(mapping.upstream_model, "deepseek-v4-pro");
+        assert_eq!(mapping.agent_model, "GPT-5.5");
+    }
+
+    #[test]
+    fn bridge_scope_parser_maps_desktop_agents_to_shared_preferences() {
+        assert_eq!(
+            agent_id_from_scope("codex-desktop-openai-responses", "openai-responses"),
+            Some("codex")
+        );
+        assert_eq!(
+            agent_id_from_scope("claude-desktop-anthropic", "anthropic"),
+            Some("claude")
+        );
     }
 }
