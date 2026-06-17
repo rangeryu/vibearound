@@ -2213,7 +2213,7 @@ function SearchToolSettingsPanel({
                   )}
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                     className="h-7 px-2 text-xs"
                     disabled={!canTest}
