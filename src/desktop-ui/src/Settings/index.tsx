@@ -512,8 +512,11 @@ export function SettingsDialog({
   );
 
   const pluginAcpAgents = useMemo(
-    () => agents.filter(isAgentAcpPlugin),
-    [agents],
+    () =>
+      agents.filter(
+        (agent) => enabledAgents.has(agent.id) && isAgentAcpPlugin(agent),
+      ),
+    [agents, enabledAgents],
   );
   const pluginScanChoices = useMemo<StartkitChoices>(
     () => ({
@@ -1740,6 +1743,8 @@ function PluginInventoryCard({
 }) {
   const { t } = useI18n();
   const status = pluginStatus(item);
+  const categoryLabel = pluginCategoryLabel(item.category);
+  const showKindBadge = item.kind !== categoryLabel;
   const ActionIcon =
     item.category === "search"
       ? SlidersHorizontal
@@ -1771,11 +1776,13 @@ function PluginInventoryCard({
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium">{item.name}</span>
               <Badge variant="outline" className="rounded-md text-[10px]">
-                {t(pluginCategoryLabel(item.category))}
+                {t(categoryLabel)}
               </Badge>
-              <Badge variant="outline" className="rounded-md text-[10px]">
-                {item.kind}
-              </Badge>
+              {showKindBadge && (
+                <Badge variant="outline" className="rounded-md text-[10px]">
+                  {item.kind}
+                </Badge>
+              )}
               {item.source && (
                 <Badge variant="secondary" className="rounded-md text-[10px]">
                   {t(item.source === "project" ? "Project" : "User")}
