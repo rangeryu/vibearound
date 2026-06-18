@@ -56,8 +56,8 @@ const PROVIDER_TARGETS = [
     profile: "matrix-minimax",
     label: "Matrix MiniMax",
     targets: [
-      { api: "anthropic", model: "MiniMax-M2.7", endpointId: "global" },
-      { api: "openai-chat", model: "MiniMax-M2.7", endpointId: "global" },
+      { api: "anthropic", model: "MiniMax-M2.7", endpointId: "api-global" },
+      { api: "openai-chat", model: "MiniMax-M2.7", endpointId: "api-global" },
     ],
   },
   {
@@ -284,8 +284,8 @@ async function main() {
   let server = null;
 
   try {
-    await writeMatrixHome(home, workspace, upstream.url);
     await writeFakeAgents(home);
+    await writeMatrixHome(home, workspace, upstream.url);
 
     server = startVibeAroundServer(home);
     const token = await waitForAuthToken(home);
@@ -852,6 +852,7 @@ async function writeMatrixHome(home, workspace, upstreamUrl) {
     },
   });
   await writeJson(path.join(dataDir, "agents.json"), {
+    agents: fakeAgentPreferences(home),
     profileConnections: Object.fromEntries(
       PROVIDER_TARGETS.map((providerDef) => [providerDef.profile, launchPreferences(providerDef)]),
     ),
@@ -880,6 +881,37 @@ async function writeMatrixHome(home, workspace, upstreamUrl) {
 
   for (const item of profiles) {
     await writeJson(path.join(profilesDir, `${item.id}.json`), item);
+  }
+}
+
+function fakeAgentPreferences(home) {
+  const bin = path.join(home, ".vibearound", "plugins", "node_modules", ".bin");
+  return Object.fromEntries(
+    ["codex", "claude", "pi", "gemini", "opencode"].map((agent) => [
+      agent,
+      {
+        executable: {
+          path: path.join(bin, agentBinName(agent)),
+          version: "matrix-fake 0.0.1",
+          source: "manual_path",
+          sourceLabel: "Matrix fake ACP agent",
+          rank: 0,
+        },
+      },
+    ]),
+  );
+}
+
+function agentBinName(agent) {
+  switch (agent) {
+    case "codex":
+      return "codex-acp";
+    case "claude":
+      return "claude-agent-acp";
+    case "pi":
+      return "pi-acp";
+    default:
+      return agent;
   }
 }
 
