@@ -74,12 +74,14 @@ Catalog implications:
 | API / Pay as you go | CN | Anthropic Messages | `https://api.minimaxi.com/anthropic` | Pending first-party MiniMax CN docs | Candidate CN mirror; do not finalize without official documentation. |
 | Token Plan | Global | OpenAI Chat / Responses | `https://api.minimax.io/v1` | Token Plan docs and tool setup center on `MiniMax-M3` | Same base URL; product distinction is the Token Plan key and entitlement. |
 | Token Plan | Global | Anthropic Messages | `https://api.minimax.io/anthropic` | `MiniMax-M3` first | Claude Code / agent tool configuration. |
+| Token Plan | CN | OpenAI Chat | `https://api.minimaxi.com/v1` | Same current LLM family where CN Token Plan has access | Token Plan Subscription Key; same base URL as CN API but different credential/entitlement. |
+| Token Plan | CN | Anthropic Messages | `https://api.minimaxi.com/anthropic` | Same current LLM family where CN Token Plan has access | Token Plan Subscription Key; same base URL as CN API but different credential/entitlement. |
 
 Catalog implications:
 
-- Display endpoint groups explicitly as `API / Token Plan Global` and `API / Token Plan CN`; avoid ambiguous labels such as `Global`, `CN`, or "default source".
+- Display endpoint groups explicitly as `API Global`, `API CN`, `Token Plan Global`, and `Token Plan CN`; avoid ambiguous labels such as `Global`, `CN`, or "default source".
+- Keep API and Token Plan as separate endpoint groups even when base URLs match, because pay-as-you-go API Keys and Token Plan Subscription Keys are different credentials.
 - Keep `MiniMax-M3` first-class and first in each endpoint group's model list.
-- Keep API and Token Plan naming visible even when their base URLs match.
 - Add/keep model discovery for both OpenAI and Anthropic interfaces.
 
 ## Volcengine / ModelArk
@@ -105,6 +107,7 @@ Catalog implications:
 | Product/plan/API | Region | Interface protocol | Base URL | Models | Capabilities |
 |---|---|---|---|---|---|
 | API / Pay as you go | CN Beijing | OpenAI Chat | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Qwen commercial/open models plus enabled third-party models such as DeepSeek, Kimi, GLM, MiniMax, MiMo where available | Chat, streaming, function calling/tools, structured output, thinking according to model. |
+| API / Pay as you go | CN Beijing | OpenAI Responses | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Tool-capable Qwen subset: `qwen3.7-max`, `qwen3.7-plus`, `qwen3.6-plus`, `qwen3.6-flash` | Responses-compatible API for built-in tools on supported Qwen models. |
 | API / Pay as you go | CN Beijing | Anthropic Messages | `https://dashscope.aliyuncs.com/apps/anthropic` | Same account-entitled model set where exposed via Anthropic-compatible apps | Claude-compatible endpoint; tested Anthropic model discovery route is 404. |
 | API / Pay as you go | US | OpenAI Chat | `https://dashscope-us.aliyuncs.com/compatible-mode/v1` | Region-entitled DashScope models | OpenAI-compatible endpoint. |
 | API / Pay as you go | Singapore | OpenAI Chat | `https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` | Region/workspace-entitled DashScope models | Official docs recommend workspace domain for international regions. |
@@ -121,6 +124,7 @@ Catalog implications:
 Catalog implications:
 
 - Current catalog keeps explicit Bailian Coding Plan and Token Plan entries instead of overloading pay-as-you-go.
+- Keep pay-as-you-go API, Coding Plan, and Token Plan as separate endpoint groups even when model families overlap.
 - Replace or de-emphasize legacy `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` in favor of official workspace regional domains.
 - Keep DashScope model lists curated to the newest common/flagship models; do not enumerate the full marketplace.
 - Use model discovery for OpenAI-compatible endpoints; do not use `apps/anthropic/v1/models` unless official docs or authenticated testing proves support.
@@ -262,6 +266,7 @@ This section maps each product/plan/API row to the official document that actual
 | API / Pay as you go | Anthropic Messages | `https://api.minimax.io/anthropic` | `MiniMax-M3` | 1M | Adapter | Verify | Verify | Y | Y | Adapter | Officially recommended for thinking/interleaved thinking. |
 | API / Pay as you go | OpenAI Chat / Anthropic | `https://api.minimax.io/v1`, `https://api.minimax.io/anthropic` | `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`, `MiniMax-M2.5`, `MiniMax-M2.5-highspeed` | 204.8K | N/Adapter | Verify | Verify | Y | Y | Verify | Docs describe M2.x as text/tool-call content block models; do not mark image just because M3 has it. |
 | Token Plan | OpenAI/Anthropic | `https://api.minimax.io/v1`, `https://api.minimax.io/anthropic` | `MiniMax-M3` | 1M | Y/Adapter | Verify | Tool | Y | Y | Verify | Token Plan can add plan-level MCP/tools such as web search; this is plan capability, not just model capability. |
+| Token Plan CN | OpenAI/Anthropic | `https://api.minimaxi.com/v1`, `https://api.minimaxi.com/anthropic` | `MiniMax-M3` | 1M | Y/Adapter | Verify | Tool | Y | Y | Verify | Same endpoint hosts as CN API, separate Subscription Key credential. |
 
 ### Volcengine / ModelArk
 
@@ -278,6 +283,7 @@ This section maps each product/plan/API row to the official document that actual
 | Product/plan/API | Interface | Base URL | Model(s) | Context | Image | File/doc | Web search | Thinking/reasoning | Tools/function | Structured output | Notes |
 |---|---|---|---|---:|---|---|---|---|---|---|---|
 | API / Pay as you go | OpenAI Chat | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Qwen, DeepSeek, Kimi, GLM, MiniMax, MiMo models enabled in account | Model-specific | Model-specific | Model-specific | Tool/model-specific | Model-specific | Y/Model-specific | Y/Model-specific | DashScope is a marketplace/adapter. Capabilities must be read per endpoint/model from discovery/docs, not inferred from original provider. |
+| API / Pay as you go | OpenAI Responses | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen3.7-max`, `qwen3.7-plus`, `qwen3.6-plus`, `qwen3.6-flash` | Model-specific | Model-specific | Tool/model-specific | Tool | Model-specific | Y | Y/Verify | Built-in tools on supported Qwen models through Responses API. |
 | API / Pay as you go | Anthropic Messages | `https://dashscope.aliyuncs.com/apps/anthropic` | Same account-entitled set where exposed | Model-specific | Adapter | Adapter | Tool/model-specific | Adapter | Adapter | Adapter | Anthropic apps route may not match OpenAI compatible capabilities. |
 | Coding Plan | OpenAI Chat | `https://coding.dashscope.aliyuncs.com/v1`, `https://coding-intl.dashscope.aliyuncs.com/v1` | Curated: `qwen3.7-plus`, `qwen3.6-plus`, `kimi-k2.5`, `glm-5`, `MiniMax-M2.5` | Up to 1M/256K/model-specific | Y for Qwen plus and Kimi; N/unknown for GLM/MiniMax | N | N | Model-specific | Y | Verify | Curated newest common/flagship set, not full DashScope catalog. |
 | Coding Plan | Anthropic Messages | `https://coding.dashscope.aliyuncs.com/apps/anthropic`, `https://coding-intl.dashscope.aliyuncs.com/apps/anthropic` | Same curated Coding Plan model set | Model-specific | Adapter | N | N | Adapter | Adapter | Adapter | Same plan, different protocol. |

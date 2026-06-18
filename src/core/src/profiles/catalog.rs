@@ -657,7 +657,12 @@ mod tests {
             .collect();
         assert_eq!(
             endpoints,
-            vec!["coding-plan", "coding-plan-cn", "token-plan-cn"]
+            vec![
+                "api-cn-beijing",
+                "coding-plan",
+                "coding-plan-cn",
+                "token-plan-cn"
+            ]
         );
         let response_endpoints: Vec<_> = provider
             .endpoints
@@ -667,7 +672,7 @@ mod tests {
             .collect();
         assert_eq!(
             response_endpoints,
-            vec!["token-plan-cn"],
+            vec!["api-cn-beijing", "token-plan-cn"],
             "Token Plan Responses is a distinct protocol surface"
         );
         let anthropic_endpoints: Vec<_> = provider
@@ -678,7 +683,12 @@ mod tests {
             .collect();
         assert_eq!(
             anthropic_endpoints,
-            vec!["coding-plan", "coding-plan-cn", "token-plan-cn"]
+            vec![
+                "api-cn-beijing",
+                "coding-plan",
+                "coding-plan-cn",
+                "token-plan-cn"
+            ]
         );
 
         for &endpoint_id in &endpoints {
@@ -714,6 +724,16 @@ mod tests {
         }
 
         assert!(find_endpoint(provider, "openai-chat", Some("token-plan")).is_none());
+        let api = find_endpoint(provider, "openai-chat", Some("api-cn-beijing"))
+            .expect("pay-as-you-go api endpoint");
+        assert_eq!(api.label.as_deref(), Some("API CN Beijing"));
+        assert_eq!(
+            api.default_base_url,
+            "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        );
+        assert!(find_model(api, "qwen3.7-max").is_some());
+        assert!(find_model(api, "deepseek-v4-pro").is_some());
+
         let token = find_endpoint(provider, "openai-chat", Some("token-plan-cn"))
             .expect("token plan endpoint");
         assert_eq!(token.label.as_deref(), Some("Token Plan CN"));
@@ -761,6 +781,14 @@ mod tests {
         );
         assert!(anthropic.auth_header);
 
+        let api_anthropic = find_endpoint(provider, "anthropic", Some("api-cn-beijing"))
+            .expect("pay-as-you-go anthropic endpoint");
+        assert_eq!(
+            api_anthropic.default_base_url,
+            "https://dashscope.aliyuncs.com/apps/anthropic"
+        );
+        assert!(api_anthropic.auth_header);
+
         let token_anthropic = find_endpoint(provider, "anthropic", Some("token-plan-cn"))
             .expect("token plan anthropic endpoint");
         assert_eq!(
@@ -781,6 +809,10 @@ mod tests {
         assert!(find_model(responses, "qwen3.7-max").is_some());
         assert!(find_model(responses, "qwen3.7-plus").is_some());
         assert!(find_model(responses, "deepseek-v4-pro").is_none());
+        let api_responses = find_endpoint(provider, "openai-responses", Some("api-cn-beijing"))
+            .expect("pay-as-you-go responses endpoint");
+        assert!(find_model(api_responses, "qwen3.7-max").is_some());
+        assert!(find_model(api_responses, "deepseek-v4-pro").is_none());
     }
 
     #[test]
@@ -815,15 +847,38 @@ mod tests {
     #[test]
     fn minimax_anthropic_endpoint_uses_auth_header() {
         let provider = get("minimax").expect("minimax must exist");
-        let global = find_endpoint(provider, "anthropic", Some("global")).expect("global endpoint");
-        let cn = find_endpoint(provider, "anthropic", Some("cn")).expect("cn endpoint");
-        assert_eq!(global.label.as_deref(), Some("API / Token Plan Global"));
-        assert_eq!(cn.label.as_deref(), Some("API / Token Plan CN"));
-        assert_eq!(global.default_base_url, "https://api.minimax.io/anthropic");
-        assert_eq!(cn.default_base_url, "https://api.minimaxi.com/anthropic");
-        assert!(global.auth_header);
-        assert!(cn.auth_header);
-        let auth = global
+        let api_global =
+            find_endpoint(provider, "anthropic", Some("api-global")).expect("api global endpoint");
+        let api_cn = find_endpoint(provider, "anthropic", Some("api-cn")).expect("api cn endpoint");
+        let token_global = find_endpoint(provider, "anthropic", Some("token-plan-global"))
+            .expect("token plan global endpoint");
+        let token_cn = find_endpoint(provider, "anthropic", Some("token-plan-cn"))
+            .expect("token plan cn endpoint");
+        assert_eq!(api_global.label.as_deref(), Some("API Global"));
+        assert_eq!(api_cn.label.as_deref(), Some("API CN"));
+        assert_eq!(token_global.label.as_deref(), Some("Token Plan Global"));
+        assert_eq!(token_cn.label.as_deref(), Some("Token Plan CN"));
+        assert_eq!(
+            api_global.default_base_url,
+            "https://api.minimax.io/anthropic"
+        );
+        assert_eq!(
+            api_cn.default_base_url,
+            "https://api.minimaxi.com/anthropic"
+        );
+        assert_eq!(
+            token_global.default_base_url,
+            "https://api.minimax.io/anthropic"
+        );
+        assert_eq!(
+            token_cn.default_base_url,
+            "https://api.minimaxi.com/anthropic"
+        );
+        assert!(api_global.auth_header);
+        assert!(api_cn.auth_header);
+        assert!(token_global.auth_header);
+        assert!(token_cn.auth_header);
+        let auth = api_global
             .auth_modes
             .iter()
             .find(|auth| auth.mode == "api_key")
@@ -834,8 +889,12 @@ mod tests {
             Some("{{api_key}}")
         );
         assert!(render.env.get("ANTHROPIC_API_KEY").is_none());
+        assert_eq!(
+            token_global.auth_modes[0].fields[0].label.as_str(),
+            "MiniMax Subscription Key"
+        );
 
-        for endpoint in [global, cn] {
+        for endpoint in [api_global, api_cn, token_global, token_cn] {
             let m3 = model(endpoint, "MiniMax-M3");
             assert_eq!(m3.context_window, Some(1_000_000));
             assert!(m3.capabilities.image_input);
@@ -847,13 +906,15 @@ mod tests {
             );
         }
 
-        for endpoint_id in ["global", "cn"] {
+        for endpoint_id in ["api-global", "api-cn", "token-plan-global", "token-plan-cn"] {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
                 .unwrap_or_else(|| panic!("minimax chat endpoint {endpoint_id}"));
-            let expected_label = if endpoint_id == "global" {
-                "API / Token Plan Global"
-            } else {
-                "API / Token Plan CN"
+            let expected_label = match endpoint_id {
+                "api-global" => "API Global",
+                "api-cn" => "API CN",
+                "token-plan-global" => "Token Plan Global",
+                "token-plan-cn" => "Token Plan CN",
+                _ => unreachable!(),
             };
             assert_eq!(endpoint.label.as_deref(), Some(expected_label));
             let m3 = model(endpoint, "MiniMax-M3");
@@ -867,14 +928,21 @@ mod tests {
             );
         }
 
-        let responses = find_endpoint(provider, "openai-responses", Some("global"))
-            .expect("minimax responses endpoint");
+        let responses = find_endpoint(provider, "openai-responses", Some("api-global"))
+            .expect("minimax api responses endpoint");
         assert_eq!(responses.default_base_url, "https://api.minimax.io/v1");
         assert!(!responses.append_v1_path);
         assert!(responses.capabilities.reasoning_effort);
         assert_eq!(
             model(responses, "MiniMax-M3").context_window,
             Some(1_000_000)
+        );
+        let token_responses =
+            find_endpoint(provider, "openai-responses", Some("token-plan-global"))
+                .expect("minimax token plan responses endpoint");
+        assert_eq!(
+            token_responses.auth_modes[0].fields[0].label.as_str(),
+            "MiniMax Subscription Key"
         );
     }
 

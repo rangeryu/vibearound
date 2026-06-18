@@ -32,11 +32,14 @@ Verification result:
 
 Catalog endpoints:
 
+- API CN Beijing, OpenAI-compatible Chat / Responses / Anthropic-compatible.
 - Coding Plan CN and international, OpenAI-compatible and Anthropic-compatible.
 - Token Plan CN Beijing, OpenAI-compatible Chat, OpenAI-compatible Responses, and Anthropic-compatible.
 
 Official evidence:
 
+- Alibaba Model Studio OpenAI compatibility docs document pay-as-you-go API base URL `https://dashscope.aliyuncs.com/compatible-mode/v1` for Beijing and supported Qwen / third-party model families.
+- Alibaba Model Studio Claude Code docs document pay-as-you-go Anthropic base URL `https://dashscope.aliyuncs.com/apps/anthropic`.
 - Alibaba Model Studio "Claude Code" page documents Coding Plan Anthropic base URLs `https://coding.dashscope.aliyuncs.com/apps/anthropic` and `https://coding-intl.dashscope.aliyuncs.com/apps/anthropic`, and Token Plan Anthropic base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`.
 - Alibaba Model Studio "More tools" / tool integration pages document Coding Plan OpenAI-compatible base URLs `https://coding.dashscope.aliyuncs.com/v1` and `https://coding-intl.dashscope.aliyuncs.com/v1`.
 - Alibaba Model Studio Token Plan quickstart documents `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`.
@@ -45,6 +48,7 @@ Official evidence:
 
 Verification result:
 
+- Keep pay-as-you-go API, Coding Plan, and Token Plan as separate endpoint groups.
 - Keep Coding Plan as a separate plan from Token Plan and pay-as-you-go DashScope.
 - Keep Token Plan CN Beijing endpoint; do not use legacy generic `dashscope-intl.aliyuncs.com`.
 - Keep Coding Plan and Token Plan model lists curated to the newest broad-use coding/flagship choices rather than enumerating every DashScope model.
@@ -122,8 +126,10 @@ Verification result:
 
 Catalog endpoints:
 
-- API / Token Plan Global base URLs `https://api.minimax.io/v1` and `https://api.minimax.io/anthropic`.
-- API / Token Plan CN base URLs `https://api.minimaxi.com/v1` and `https://api.minimaxi.com/anthropic`.
+- API Global base URLs `https://api.minimax.io/v1` and `https://api.minimax.io/anthropic`.
+- API CN base URLs `https://api.minimaxi.com/v1` and `https://api.minimaxi.com/anthropic`.
+- Token Plan Global base URLs `https://api.minimax.io/v1` and `https://api.minimax.io/anthropic`.
+- Token Plan CN base URLs `https://api.minimaxi.com/v1` and `https://api.minimaxi.com/anthropic`.
 
 Official evidence:
 
@@ -133,7 +139,8 @@ Official evidence:
 
 Verification result:
 
-- Label endpoint groups explicitly as `API / Token Plan Global` and `API / Token Plan CN`; do not display bare `Global` or `CN`.
+- Keep API and Token Plan as separate endpoint groups even when their base URLs match, because pay-as-you-go API Keys and Token Plan Subscription Keys are different credentials.
+- Label endpoint groups explicitly as `API Global`, `API CN`, `Token Plan Global`, and `Token Plan CN`; do not display bare `Global` or `CN`.
 - Keep `MiniMax-M3` first within each endpoint group.
 - Keep M2.7 and M2.5 family as compatibility/model options with 204.8K context.
 - Mark image input only on `MiniMax-M3`; do not mark file input or web search in the catalog.

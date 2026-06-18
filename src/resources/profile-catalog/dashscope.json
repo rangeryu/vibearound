@@ -5,6 +5,80 @@
   "homepage": "https://help.aliyun.com/zh/model-studio/more-tools",
   "endpoints": [
     {
+      "id": "api-cn-beijing",
+      "label": "API CN Beijing",
+      "api_type": "anthropic",
+      "default_base_url": "https://dashscope.aliyuncs.com/apps/anthropic",
+      "headers": {
+        "User-Agent": "claude-code/0.1.0"
+      },
+      "auth_header": true,
+      "models": [
+        {
+          "id": "qwen3.7-max",
+          "label": "qwen3.7-max"
+        },
+        {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "qwen3.6-flash",
+          "label": "qwen3.6-flash",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "deepseek-v4-pro",
+          "context_window": 1000000
+        },
+        {
+          "id": "kimi-k2.6",
+          "label": "kimi-k2.6",
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "glm-5.2",
+          "label": "glm-5.2"
+        },
+        {
+          "id": "MiniMax-M2.5",
+          "label": "MiniMax-M2.5"
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use Alibaba Cloud API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "Alibaba Cloud API key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "ANTHROPIC_AUTH_TOKEN": "{{api_key}}",
+              "ANTHROPIC_BASE_URL": "{{base_url}}",
+              "ANTHROPIC_MODEL": "{{model}}"
+            },
+            "settings_files": []
+          }
+        }
+      ]
+    },
+    {
       "id": "coding-plan",
       "label": "Coding Plan International",
       "api_type": "anthropic",
@@ -132,6 +206,335 @@
               "ANTHROPIC_MODEL": "{{model}}"
             },
             "settings_files": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "token-plan-cn",
+      "label": "Token Plan CN",
+      "api_type": "anthropic",
+      "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic",
+      "headers": {
+        "User-Agent": "claude-code/0.1.0"
+      },
+      "auth_header": true,
+      "models": [
+        {
+          "id": "qwen3.7-max",
+          "label": "qwen3.7-max"
+        },
+        {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "qwen3.6-plus",
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "qwen3.6-flash",
+          "label": "qwen3.6-flash",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "deepseek-v4-pro",
+          "context_window": 1000000
+        },
+        {
+          "id": "kimi-k2.6",
+          "label": "kimi-k2.6",
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "glm-5.2",
+          "label": "glm-5.2"
+        },
+        {
+          "id": "MiniMax-M2.5",
+          "label": "MiniMax-M2.5"
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "DashScope Token Plan key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "ANTHROPIC_AUTH_TOKEN": "{{api_key}}",
+              "ANTHROPIC_BASE_URL": "{{base_url}}",
+              "ANTHROPIC_MODEL": "{{model}}"
+            },
+            "settings_files": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "api-cn-beijing",
+      "label": "API CN Beijing",
+      "api_type": "openai-responses",
+      "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "headers": {
+        "User-Agent": "codex-cli/0.80.0 (external, cli)",
+        "X-DashScope-AuthType": "openai",
+        "X-DashScope-CacheControl": "enable",
+        "X-DashScope-UserAgent": "codex-cli/0.80.0 (external, cli)"
+      },
+      "capabilities": {
+        "reasoning_effort": true,
+        "content": {
+          "web_search": true
+        }
+      },
+      "models": [
+        {
+          "id": "qwen3.7-max",
+          "label": "qwen3.7-max",
+          "capabilities": {
+            "web_search": true
+          }
+        },
+        {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "capabilities": {
+            "image_input": true,
+            "web_search": true
+          }
+        },
+        {
+          "id": "qwen3.6-plus",
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true,
+            "web_search": true
+          }
+        },
+        {
+          "id": "qwen3.6-flash",
+          "label": "qwen3.6-flash",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true,
+            "web_search": true
+          }
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use Alibaba Cloud API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "Alibaba Cloud API key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": [
+              {
+                "rel_path": "config.toml",
+                "template": "model = \"{{model}}\"\nmodel_provider = \"dashscope\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.dashscope]\nname = \"Alibaba DashScope API CN Beijing\"\nbase_url = \"{{base_url}}\"\nwire_api = \"responses\"\nrequires_openai_auth = true\n"
+              },
+              {
+                "rel_path": "auth.json",
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "token-plan-cn",
+      "label": "Token Plan CN",
+      "api_type": "openai-responses",
+      "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "headers": {
+        "User-Agent": "codex-cli/0.80.0 (external, cli)",
+        "X-DashScope-AuthType": "openai",
+        "X-DashScope-CacheControl": "enable",
+        "X-DashScope-UserAgent": "codex-cli/0.80.0 (external, cli)"
+      },
+      "capabilities": {
+        "reasoning_effort": true,
+        "content": {
+          "web_search": true
+        }
+      },
+      "models": [
+        {
+          "id": "qwen3.7-max",
+          "label": "qwen3.7-max",
+          "capabilities": {
+            "web_search": true
+          }
+        },
+        {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "capabilities": {
+            "image_input": true,
+            "web_search": true
+          }
+        },
+        {
+          "id": "qwen3.6-plus",
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true,
+            "web_search": true
+          }
+        },
+        {
+          "id": "qwen3.6-flash",
+          "label": "qwen3.6-flash",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true,
+            "web_search": true
+          }
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "DashScope Token Plan key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": [
+              {
+                "rel_path": "config.toml",
+                "template": "model = \"{{model}}\"\nmodel_provider = \"dashscope\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.dashscope]\nname = \"Alibaba DashScope Token Plan\"\nbase_url = \"{{base_url}}\"\nwire_api = \"responses\"\nrequires_openai_auth = true\n"
+              },
+              {
+                "rel_path": "auth.json",
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "api-cn-beijing",
+      "label": "API CN Beijing",
+      "api_type": "openai-chat",
+      "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "headers": {
+        "User-Agent": "codex-cli/0.80.0 (external, cli)",
+        "X-DashScope-AuthType": "openai",
+        "X-DashScope-CacheControl": "enable",
+        "X-DashScope-UserAgent": "codex-cli/0.80.0 (external, cli)"
+      },
+      "models": [
+        {
+          "id": "qwen3.7-max",
+          "label": "qwen3.7-max"
+        },
+        {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "qwen3.6-flash",
+          "label": "qwen3.6-flash",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "deepseek-v4-pro",
+          "context_window": 1000000
+        },
+        {
+          "id": "kimi-k2.6",
+          "label": "kimi-k2.6",
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "glm-5.2",
+          "label": "glm-5.2"
+        },
+        {
+          "id": "MiniMax-M2.5",
+          "label": "MiniMax-M2.5"
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use Alibaba Cloud API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "Alibaba Cloud API key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": [
+              {
+                "rel_path": "config.toml",
+                "template": "model = \"{{model}}\"\nmodel_provider = \"dashscope\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.dashscope]\nname = \"Alibaba DashScope API CN Beijing\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nrequires_openai_auth = true\n"
+              },
+              {
+                "rel_path": "auth.json",
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
+              }
+            ]
           }
         }
       ]
@@ -373,170 +776,6 @@
                 "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
               }
             ]
-          }
-        }
-      ]
-    },
-    {
-      "id": "token-plan-cn",
-      "label": "Token Plan CN",
-      "api_type": "openai-responses",
-      "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-      "headers": {
-        "User-Agent": "codex-cli/0.80.0 (external, cli)",
-        "X-DashScope-AuthType": "openai",
-        "X-DashScope-CacheControl": "enable",
-        "X-DashScope-UserAgent": "codex-cli/0.80.0 (external, cli)"
-      },
-      "capabilities": {
-        "reasoning_effort": true,
-        "content": {
-          "web_search": true
-        }
-      },
-      "models": [
-        {
-          "id": "qwen3.7-max",
-          "label": "qwen3.7-max",
-          "capabilities": {
-            "web_search": true
-          }
-        },
-        {
-          "id": "qwen3.7-plus",
-          "label": "qwen3.7-plus",
-          "capabilities": {
-            "image_input": true,
-            "web_search": true
-          }
-        },
-        {
-          "id": "qwen3.6-plus",
-          "label": "qwen3.6-plus",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true,
-            "web_search": true
-          }
-        },
-        {
-          "id": "qwen3.6-flash",
-          "label": "qwen3.6-flash",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true,
-            "web_search": true
-          }
-        }
-      ],
-      "auth_modes": [
-        {
-          "mode": "api_key",
-          "label": "Use API key",
-          "fields": [
-            {
-              "name": "api_key",
-              "label": "DashScope Token Plan key",
-              "secret": true,
-              "required": true
-            }
-          ],
-          "render": {
-            "env": {
-              "OPENAI_API_KEY": "{{api_key}}"
-            },
-            "settings_files": [
-              {
-                "rel_path": "config.toml",
-                "template": "model = \"{{model}}\"\nmodel_provider = \"dashscope\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.dashscope]\nname = \"Alibaba DashScope Token Plan\"\nbase_url = \"{{base_url}}\"\nwire_api = \"responses\"\nrequires_openai_auth = true\n"
-              },
-              {
-                "rel_path": "auth.json",
-                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
-              }
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "id": "token-plan-cn",
-      "label": "Token Plan CN",
-      "api_type": "anthropic",
-      "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic",
-      "headers": {
-        "User-Agent": "claude-code/0.1.0"
-      },
-      "auth_header": true,
-      "models": [
-        {
-          "id": "qwen3.7-max",
-          "label": "qwen3.7-max"
-        },
-        {
-          "id": "qwen3.7-plus",
-          "label": "qwen3.7-plus",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3.6-plus",
-          "label": "qwen3.6-plus",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3.6-flash",
-          "label": "qwen3.6-flash",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "deepseek-v4-pro",
-          "label": "deepseek-v4-pro",
-          "context_window": 1000000
-        },
-        {
-          "id": "kimi-k2.6",
-          "label": "kimi-k2.6",
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-5.2",
-          "label": "glm-5.2"
-        },
-        {
-          "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5"
-        }
-      ],
-      "auth_modes": [
-        {
-          "mode": "api_key",
-          "label": "Use API key",
-          "fields": [
-            {
-              "name": "api_key",
-              "label": "DashScope Token Plan key",
-              "secret": true,
-              "required": true
-            }
-          ],
-          "render": {
-            "env": {
-              "ANTHROPIC_AUTH_TOKEN": "{{api_key}}",
-              "ANTHROPIC_BASE_URL": "{{base_url}}",
-              "ANTHROPIC_MODEL": "{{model}}"
-            },
-            "settings_files": []
           }
         }
       ]
