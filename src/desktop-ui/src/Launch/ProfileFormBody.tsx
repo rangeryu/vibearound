@@ -776,10 +776,13 @@ function ModelCatalogDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="!flex max-h-[calc(100vh-64px)] w-[min(820px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(820px,calc(100vw-32px))]">
         <DialogHeader className="shrink-0 border-b border-border px-5 py-3 pr-12">
-          <DialogTitle className="flex min-w-0 items-center gap-2 text-base">
+          <DialogTitle className="flex min-w-0 flex-wrap items-center gap-2 text-base">
             <span className="truncate">{provider.label}</span>
             <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
               {apiTypeShort(apiType)}
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              · {t(apiTypeLabel(apiType))}
             </span>
           </DialogTitle>
           <DialogDescription className="sr-only">
