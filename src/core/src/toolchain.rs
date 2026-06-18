@@ -19,7 +19,7 @@ const DEFAULT_NODE_INDEX_URL: &str = "https://nodejs.org/dist/index.json";
 const DEFAULT_NODE_DIST_BASE: &str = "https://nodejs.org/dist";
 const NODE_MANIFEST_NAME: &str = "current.json";
 const GIT_MANIFEST_NAME: &str = "current.json";
-const GIT_FOR_WINDOWS_RELEASE_API: &str =
+const GIT_FOR_WINDOWS_STABLE_RELEASE_API: &str =
     "https://api.github.com/repos/git-for-windows/git/releases/latest";
 
 #[derive(Debug, Clone)]
@@ -104,6 +104,10 @@ struct NodeIndexEntry {
 #[derive(Debug, Deserialize)]
 struct GitHubRelease {
     tag_name: String,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    prerelease: bool,
     #[serde(default)]
     assets: Vec<GitHubReleaseAsset>,
 }
@@ -273,7 +277,7 @@ where
         bail!("Managed Portable Git is only enabled on Windows for now");
     }
 
-    let release = latest_git_for_windows_release().await?;
+    let release = latest_stable_git_for_windows_release().await?;
     let current = managed_git_status().await;
     if current.ready
         && current
@@ -382,9 +386,14 @@ async fn verify_node_archive(release: &NodeRelease, bytes: &[u8]) -> anyhow::Res
     Ok(())
 }
 
-async fn latest_git_for_windows_release() -> anyhow::Result<GitHubRelease> {
-    let bytes = archive::download_bytes(GIT_FOR_WINDOWS_RELEASE_API).await?;
-    serde_json::from_slice(&bytes).context("parsing Git for Windows release")
+async fn latest_stable_git_for_windows_release() -> anyhow::Result<GitHubRelease> {
+    let bytes = archive::download_bytes(GIT_FOR_WINDOWS_STABLE_RELEASE_API).await?;
+    let release: GitHubRelease =
+        serde_json::from_slice(&bytes).context("parsing Git for Windows release")?;
+    if release.draft || release.prerelease {
+        bail!("Git for Windows release {} is not stable", release.tag_name);
+    }
+    Ok(release)
 }
 
 fn select_portable_git_asset(release: &GitHubRelease) -> Option<&GitHubReleaseAsset> {
@@ -693,6 +702,8 @@ mod tests {
     fn selects_portable_git_asset_for_x64() {
         let release = GitHubRelease {
             tag_name: "v2.50.0.windows.1".to_string(),
+            draft: false,
+            prerelease: false,
             assets: vec![GitHubReleaseAsset {
                 name: "PortableGit-2.50.0-64-bit.7z.exe".to_string(),
                 browser_download_url: "https://example.test/git.exe".to_string(),
