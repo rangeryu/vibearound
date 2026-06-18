@@ -167,8 +167,7 @@ export function FormBody({
       (!usesEndpointGroups && endpointOptions.length > 1) ||
       shouldShowBaseUrl(provider, ep, ov) ||
       requiresProfileModel(provider, ep) ||
-      canOverrideInputSupport(provider, ep) ||
-      ep.models.length > 0
+      canOverrideInputSupport(provider, ep)
     );
   });
 
@@ -389,8 +388,6 @@ export function FormBody({
                 if (!ep) return null;
                 const ov = overrides[apiType] ?? {};
                 const endpointOptions = endpointsForApiType(provider, apiType);
-                const selectedModel =
-                  ov.model?.trim() || ep.models[0]?.id || "";
                 return (
                   <div
                     key={apiType}
@@ -405,18 +402,6 @@ export function FormBody({
                           · {t(apiTypeLabel(apiType))}
                         </span>
                       </div>
-                      {ep.models.length > 0 && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 shrink-0 px-2 text-xs"
-                          onClick={() => openModelsDialog(apiType, ep, selectedModel)}
-                        >
-                          <ListChecks className="h-3.5 w-3.5" />
-                          {t("Models")}
-                        </Button>
-                      )}
                     </div>
                     {!usesEndpointGroups && endpointOptions.length > 1 && (
                       <FieldRow label={t("Endpoint type")}>
@@ -600,6 +585,17 @@ export function FormBody({
             editable={apiKindsEditable}
             selectedApiTypes={effectiveSelectedApiTypes}
             setSelectedApiTypes={applySelectedApiTypes}
+            onOpenModels={
+              provider.id === "custom"
+                ? undefined
+                : (endpoint) => {
+                    const selectedModel =
+                      overrides[endpoint.api_type]?.model?.trim() ||
+                      endpoint.models[0]?.id ||
+                      "";
+                    openModelsDialog(endpoint.api_type, endpoint, selectedModel);
+                  }
+            }
           />
 
           <ProxyField
@@ -1125,11 +1121,13 @@ function ApiKindsField({
   editable,
   selectedApiTypes,
   setSelectedApiTypes,
+  onOpenModels,
 }: {
   endpoints: CatalogEntry["endpoints"];
   editable: boolean;
   selectedApiTypes: string[];
   setSelectedApiTypes: (v: string[]) => void;
+  onOpenModels?: (endpoint: CatalogEntry["endpoints"][number]) => void;
 }) {
   const { t } = useI18n();
 
@@ -1141,11 +1139,12 @@ function ApiKindsField({
       <div className="flex flex-wrap gap-1.5">
         {endpoints.map((ep) => {
           const checked = selectedApiTypes.includes(ep.api_type);
+          const showModels = checked && ep.models.length > 0 && !!onOpenModels;
           if (editable) {
             return (
               <label
                 key={ep.api_type}
-                className={`h-8 flex items-center gap-2 px-2.5 border rounded-md cursor-pointer text-xs ${
+                className={`min-h-8 flex items-center gap-2 px-2.5 py-1 border rounded-md cursor-pointer text-xs ${
                   checked
                     ? "border-primary bg-primary/10"
                     : "border-border hover:bg-accent/30"
@@ -1169,18 +1168,44 @@ function ApiKindsField({
                 <span className="text-muted-foreground/70">
                   · {t(apiTypeLabel(ep.api_type))}
                 </span>
+                {showModels && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onOpenModels(ep);
+                    }}
+                    className="ml-1 inline-flex h-6 items-center gap-1 rounded border border-primary/30 bg-background/70 px-1.5 text-[11px] text-primary hover:bg-background"
+                  >
+                    <ListChecks className="h-3 w-3" />
+                    {t("Models")}
+                  </button>
+                )}
               </label>
             );
           }
           return (
             <div
               key={ep.api_type}
-              className="h-8 flex items-center gap-2 px-2.5 border border-primary bg-primary/10 rounded-md text-xs"
+              className="min-h-8 flex items-center gap-2 px-2.5 py-1 border border-primary bg-primary/10 rounded-md text-xs"
             >
               <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
               <span className="text-muted-foreground/70">
                 · {t(apiTypeLabel(ep.api_type))}
               </span>
+              {showModels && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="ml-1 h-6 px-1.5 text-[11px]"
+                  onClick={() => onOpenModels(ep)}
+                >
+                  <ListChecks className="h-3 w-3" />
+                  {t("Models")}
+                </Button>
+              )}
             </div>
           );
         })}
