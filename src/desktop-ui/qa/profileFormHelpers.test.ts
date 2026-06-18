@@ -96,7 +96,10 @@ const mimoProvider: CatalogEntry = {
       api_type: "openai-chat",
       default_base_url: "https://token-plan-cn.xiaomimimo.com/v1",
       append_v1_path: false,
-      models: [{ id: "mimo-v2.5-pro", label: "MiMo V2.5 Pro" }],
+      models: [
+        { id: "mimo-v2.5-pro", label: "MiMo V2.5 Pro" },
+        { id: "mimo-v2.5", label: "MiMo V2.5" },
+      ],
       auth_modes: [],
     },
   ],
@@ -142,12 +145,48 @@ test("mimo token plan uses catalog default model without profile override", () =
   expect(requiresProfileModel(mimoProvider, endpoint)).toBe(false);
   expect(
     overrideForEndpoint(endpoint, {
-      model: "mimo-v2.5",
+      model: "mimo-v2.5-pro",
     }),
   ).toEqual({
     endpoint_id: "token-plan-cn",
     base_url: "https://token-plan-cn.xiaomimimo.com/v1",
   });
+  expect(
+    pruneOverrides(
+      {
+        "openai-chat": {
+          endpoint_id: "token-plan-cn",
+          model: "mimo-v2.5-pro",
+        },
+      },
+      ["openai-chat"],
+      mimoProvider,
+    ),
+  ).toEqual({
+    "openai-chat": {
+      endpoint_id: "token-plan-cn",
+    },
+  });
+});
+
+test("catalog-backed default model override is saved only when it changes", () => {
+  expect(
+    pruneOverrides(
+      {
+        "openai-chat": {
+          endpoint_id: "token-plan-cn",
+          model: "mimo-v2.5-pro",
+        },
+      },
+      ["openai-chat"],
+      mimoProvider,
+    ),
+  ).toEqual({
+    "openai-chat": {
+      endpoint_id: "token-plan-cn",
+    },
+  });
+
   expect(
     pruneOverrides(
       {
@@ -162,6 +201,7 @@ test("mimo token plan uses catalog default model without profile override", () =
   ).toEqual({
     "openai-chat": {
       endpoint_id: "token-plan-cn",
+      model: "mimo-v2.5",
     },
   });
 });

@@ -5,14 +5,12 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
-  FileText,
   FlaskConical,
   Globe,
-  Image as ImageIcon,
   ListChecks,
   Loader2,
   LogIn,
-  Search,
+  Star,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
@@ -393,10 +391,6 @@ export function FormBody({
                 const endpointOptions = endpointsForApiType(provider, apiType);
                 const selectedModel =
                   ov.model?.trim() || ep.models[0]?.id || "";
-                const selectedModelOption = findModelOption(
-                  ep.models,
-                  selectedModel,
-                );
                 return (
                   <div
                     key={apiType}
@@ -424,14 +418,6 @@ export function FormBody({
                         </Button>
                       )}
                     </div>
-                    {selectedModel && !requiresProfileModel(provider, ep) && (
-                      <ModelMetadataRow
-                        label={t("Default model")}
-                        model={selectedModel}
-                        option={selectedModelOption}
-                        endpoint={ep}
-                      />
-                    )}
                     {!usesEndpointGroups && endpointOptions.length > 1 && (
                       <FieldRow label={t("Endpoint type")}>
                         <Select
@@ -534,14 +520,6 @@ export function FormBody({
                           placeholder={t("model id (e.g. gpt-4o, claude-sonnet-4-6)")}
                           className={MONO_INPUT_CLASS}
                         />
-                        {selectedModel && (
-                          <ModelMetadataRow
-                            label={t("Selected model")}
-                            model={selectedModel}
-                            option={selectedModelOption}
-                            endpoint={ep}
-                          />
-                        )}
                       </FieldRow>
                     )}
                     {canOverrideInputSupport(provider, ep) && (
@@ -645,6 +623,25 @@ export function FormBody({
                 modelStatusKey(modelsDialogApiType, modelsDialogEndpoint, model)
               }
               testingDisabled={!!testingDisabled}
+              onDefaultModelChange={(model) => {
+                const key = modelDialogKey(modelsDialogApiType, modelsDialogEndpoint);
+                const nextOverride: ApiTypeOverrides = {
+                  ...(overrides[modelsDialogApiType] ?? {}),
+                };
+                if (model === modelsDialogEndpoint.models[0]?.id) {
+                  delete nextOverride.model;
+                } else {
+                  nextOverride.model = model;
+                }
+                setOverrides({
+                  ...overrides,
+                  [modelsDialogApiType]: nextOverride,
+                });
+                setSelectedTestModels((current) => ({
+                  ...current,
+                  [key]: current[key]?.length ? current[key] : [model],
+                }));
+              }}
               onCheckedModelsChange={(models) =>
                 setSelectedTestModels({
                   ...selectedTestModels,
@@ -712,65 +709,6 @@ function EndpointGroupField({
   );
 }
 
-function ModelMetadataRow({
-  label,
-  model,
-  option,
-  endpoint,
-}: {
-  label: string;
-  model: string;
-  option: ModelDef | null;
-  endpoint: CatalogEntry["endpoints"][number];
-}) {
-  const { t } = useI18n();
-  const capabilities = mergedModelCapabilities(endpoint, option);
-  return (
-    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-      <span className="font-medium text-foreground">{label}</span>
-      <span className="max-w-full truncate rounded bg-muted px-1.5 py-0.5 font-mono">
-        {model}
-      </span>
-      <span className="rounded bg-muted px-1.5 py-0.5">
-        {option?.context_window
-          ? t("{{count}} context", { count: formatContextWindow(option.context_window) })
-          : option
-            ? t("Context unknown")
-            : t("Custom model metadata")}
-      </span>
-      {capabilities.image_input && (
-        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
-          <ImageIcon className="h-3 w-3" />
-          {t("images")}
-        </span>
-      )}
-      {capabilities.file_input && (
-        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
-          <FileText className="h-3 w-3" />
-          {t("files")}
-        </span>
-      )}
-      {capabilities.web_search && (
-        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
-          <Search className="h-3 w-3" />
-          {t("web search")}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function findModelOption(models: ModelDef[], model: string): ModelDef | null {
-  const modelId = model.trim();
-  if (!modelId) return null;
-  return (
-    models.find(
-      (option) =>
-        option.id === modelId || (option.aliases ?? []).some((alias) => alias === modelId),
-    ) ?? null
-  );
-}
-
 function mergedModelCapabilities(
   endpoint: CatalogEntry["endpoints"][number],
   option: ModelDef | null,
@@ -803,6 +741,7 @@ function ModelCatalogDialog({
   statuses,
   statusKeyFor,
   testingDisabled,
+  onDefaultModelChange,
   onCheckedModelsChange,
   onTestSelected,
   onClose,
@@ -815,11 +754,16 @@ function ModelCatalogDialog({
   statuses: Record<string, ModelTestStatus>;
   statusKeyFor: (model: string) => string;
   testingDisabled: boolean;
+  onDefaultModelChange: (model: string) => void;
   onCheckedModelsChange: (models: string[]) => void;
   onTestSelected: () => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const allModelIds = endpoint.models.map((model) => model.id);
+  const allChecked =
+    allModelIds.length > 0 &&
+    allModelIds.every((model) => checkedModels.includes(model));
   const anyTesting = checkedModels.some(
     (model) => statuses[statusKeyFor(model)]?.state === "testing",
   );
@@ -849,8 +793,17 @@ function ModelCatalogDialog({
 
         <div className="min-h-0 flex-1 overflow-auto px-5 py-3 [scrollbar-gutter:stable]">
           <div className="overflow-hidden rounded-md border border-border/70">
-            <div className="grid grid-cols-[32px_minmax(180px,1fr)_76px_132px_minmax(84px,120px)] items-center gap-2 border-b border-border/70 bg-muted/50 px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
-              <span />
+            <div className="grid grid-cols-[44px_44px_minmax(180px,1fr)_76px_minmax(150px,1fr)_minmax(84px,120px)] items-center gap-2 border-b border-border/70 bg-muted/50 px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
+              <span>{t("Default")}</span>
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={(event) =>
+                  onCheckedModelsChange(event.target.checked ? allModelIds : [])
+                }
+                className="h-3.5 w-3.5 accent-primary"
+                aria-label={t("Select all")}
+              />
               <span>{t("Model")}</span>
               <span>{t("Context")}</span>
               <span>{t("Capabilities")}</span>
@@ -861,54 +814,53 @@ function ModelCatalogDialog({
               const status = statuses[statusKeyFor(model.id)] ?? { state: "idle" };
               const capabilities = mergedModelCapabilities(endpoint, model);
               return (
-                <label
+                <div
                   key={model.id}
-                  className={`grid min-h-10 cursor-pointer grid-cols-[32px_minmax(180px,1fr)_76px_132px_minmax(84px,120px)] items-center gap-2 border-b border-border/50 px-2 py-1.5 text-xs last:border-b-0 ${
+                  className={`grid min-h-10 grid-cols-[44px_44px_minmax(180px,1fr)_76px_minmax(150px,1fr)_minmax(84px,120px)] items-center gap-2 border-b border-border/50 px-2 py-1.5 text-xs last:border-b-0 ${
                     checked ? "bg-primary/5" : "hover:bg-accent/30"
                   }`}
                 >
+                  <button
+                    type="button"
+                    onClick={() => onDefaultModelChange(model.id)}
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${
+                      selectedModel === model.id
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border/60 text-muted-foreground/50 hover:text-foreground"
+                    }`}
+                    title={t("Set default model")}
+                    aria-label={t("Set default model")}
+                  >
+                    <Star
+                      className="h-3.5 w-3.5"
+                      fill={selectedModel === model.id ? "currentColor" : "none"}
+                    />
+                  </button>
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={(event) => setChecked(model.id, event.target.checked)}
                     className="h-3.5 w-3.5 accent-primary"
+                    aria-label={t("Select model for testing")}
                   />
-                  <span className="min-w-0">
-                    <span className="block truncate font-mono text-[12px]">
-                      {model.id}
-                    </span>
-                    {model.label && model.label !== model.id && (
-                      <span className="block truncate text-[10px] text-muted-foreground">
-                        {model.label}
-                      </span>
-                    )}
-                    {selectedModel === model.id && (
-                      <span className="mt-0.5 inline-flex rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        {t("default")}
-                      </span>
-                    )}
+                  <span
+                    className={`min-w-0 truncate ${
+                      model.label ? "text-[12px]" : "font-mono text-[12px]"
+                    }`}
+                    title={model.id}
+                  >
+                    {model.label || model.id}
                   </span>
                   <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                     {model.context_window
                       ? formatContextWindow(model.context_window)
                       : "?"}
                   </span>
-                  <span className="flex flex-wrap gap-1">
-                    <CapabilityIcon enabled={capabilities.image_input} label={t("images")}>
-                      <ImageIcon className="h-3 w-3" />
-                    </CapabilityIcon>
-                    <CapabilityIcon enabled={capabilities.file_input} label={t("files")}>
-                      <FileText className="h-3 w-3" />
-                    </CapabilityIcon>
-                    <CapabilityIcon
-                      enabled={capabilities.web_search}
-                      label={t("web search")}
-                    >
-                      <Search className="h-3 w-3" />
-                    </CapabilityIcon>
+                  <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                    {capabilityText(capabilities, t)}
                   </span>
                   <ModelTestStatusBadge status={status} />
-                </label>
+                </div>
               );
             })}
           </div>
@@ -942,27 +894,16 @@ function ModelCatalogDialog({
   );
 }
 
-function CapabilityIcon({
-  enabled,
-  label,
-  children,
-}: {
-  enabled: boolean;
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <span
-      className={`inline-flex h-6 w-6 items-center justify-center rounded border ${
-        enabled
-          ? "border-primary/30 bg-primary/10 text-primary"
-          : "border-border/60 bg-muted/40 text-muted-foreground/35"
-      }`}
-      title={label}
-    >
-      {children}
-    </span>
-  );
+function capabilityText(
+  capabilities: ReturnType<typeof mergedModelCapabilities>,
+  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
+) {
+  const items = [
+    capabilities.image_input ? t("images") : null,
+    capabilities.file_input ? t("files") : null,
+    capabilities.web_search ? t("web search") : null,
+  ].filter((item): item is string => !!item);
+  return items.length > 0 ? items.join(", ") : "-";
 }
 
 function ModelTestStatusBadge({ status }: { status: ModelTestStatus }) {
