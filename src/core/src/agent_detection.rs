@@ -216,7 +216,12 @@ pub async fn manual_candidate_with_version(
 }
 
 pub fn selected_candidate_for_mode(agent_id: &str, toolchain_mode: &str) -> Option<AgentCandidate> {
-    configured_candidate(agent_id).or_else(|| startkit_candidate_for_mode(agent_id, toolchain_mode))
+    crate::agent_availability::resolve_cached_agent_availability(
+        agent_id,
+        toolchain_mode,
+        crate::agent_availability::AgentCandidatePreference::ToolchainMode,
+    )
+    .selected
 }
 
 pub fn selected_candidate(agent_id: &str) -> Option<AgentCandidate> {

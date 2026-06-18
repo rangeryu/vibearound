@@ -88,6 +88,29 @@ pub async fn resolve_agent_availability(
     })
 }
 
+pub fn resolve_cached_agent_availability(
+    agent_id: &str,
+    toolchain_mode: &str,
+    candidate_preference: AgentCandidatePreference,
+) -> AgentAvailability {
+    let detection = cached_detection(agent_id).unwrap_or_else(empty_detection);
+    let configured = agent_detection::configured_candidate(agent_id);
+    let selected = select_agent_candidate(
+        agent_id,
+        configured.clone(),
+        &detection,
+        toolchain_mode,
+        candidate_preference,
+    );
+
+    AgentAvailability {
+        detection,
+        configured,
+        selected,
+        scanned: false,
+    }
+}
+
 pub fn select_agent_candidate(
     agent_id: &str,
     configured: Option<AgentCandidate>,
