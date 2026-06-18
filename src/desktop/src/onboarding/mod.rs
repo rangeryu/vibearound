@@ -297,16 +297,20 @@ async fn agent_install_report(agent: common::resources::AgentDef) -> StartkitIte
     let agent_id = agent.id.clone();
     let report_id = format!("agents.{}.cli", agent.id);
 
-    let candidate = if let Some(candidate) =
-        agent_detection::configured_candidate_with_version(&agent_id).await
-    {
-        Some(candidate)
-    } else {
-        agent_detection::scan_agent_and_persist(&agent_id)
-            .await
-            .ok()
-            .and_then(|detection| detection.system_selected_candidate())
-    };
+    let config = common::config::ensure_loaded();
+    let candidate = common::agent_availability::resolve_agent_availability(
+        &agent_id,
+        common::agent_availability::AgentAvailabilityRequest {
+            scan_policy: common::agent_availability::AgentScanPolicy::Refresh,
+            toolchain_mode: config.toolchain_mode.as_str(),
+            candidate_preference:
+                common::agent_availability::AgentCandidatePreference::SystemToolchain,
+            include_configured_version: true,
+        },
+    )
+    .await
+    .ok()
+    .and_then(|availability| availability.selected);
 
     if let Some(candidate) = candidate {
         return StartkitItemReport {
@@ -359,25 +363,19 @@ async fn agent_update_report(
     choices: StartkitChoices,
 ) -> Option<StartkitItemReport> {
     let agent = common::resources::agent_by_id(&agent_id)?;
-    let candidate = if let Some(candidate) =
-        agent_detection::configured_candidate_with_version(&agent_id).await
-    {
-        candidate
-    } else {
-        agent_detection::scan_agent_and_persist(&agent_id)
-            .await
-            .ok()
-            .and_then(|detection| {
-                agent_detection::preferred_startkit_candidate(
-                    &agent_id,
-                    &detection,
-                    &choices.toolchain_mode,
-                )
-            })
-            .or_else(|| {
-                agent_detection::startkit_candidate_for_mode(&agent_id, &choices.toolchain_mode)
-            })?
-    };
+    let candidate = common::agent_availability::resolve_agent_availability(
+        &agent_id,
+        common::agent_availability::AgentAvailabilityRequest {
+            scan_policy: common::agent_availability::AgentScanPolicy::Refresh,
+            toolchain_mode: &choices.toolchain_mode,
+            candidate_preference:
+                common::agent_availability::AgentCandidatePreference::ToolchainMode,
+            include_configured_version: true,
+        },
+    )
+    .await
+    .ok()?
+    .selected?;
     let source = candidate.source.clone();
     let local_version = candidate.version.as_deref().and_then(extract_semver);
     let mut report = StartkitItemReport {

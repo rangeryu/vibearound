@@ -105,22 +105,19 @@ pub(in crate::startkit) async fn scan_agent_cli_item(
     agent_id: &str,
     choices: &StartkitChoices,
 ) -> StartkitItemReport {
-    let selected = if let Some(candidate) =
-        agent_detection::configured_candidate_with_version(agent_id).await
-    {
-        Some(candidate)
-    } else {
-        agent_detection::scan_agent_and_persist(agent_id)
-            .await
-            .ok()
-            .and_then(|detection| {
-                agent_detection::preferred_startkit_candidate(
-                    agent_id,
-                    &detection,
-                    &choices.toolchain_mode,
-                )
-            })
-    };
+    let selected = common::agent_availability::resolve_agent_availability(
+        agent_id,
+        common::agent_availability::AgentAvailabilityRequest {
+            scan_policy: common::agent_availability::AgentScanPolicy::Refresh,
+            toolchain_mode: &choices.toolchain_mode,
+            candidate_preference:
+                common::agent_availability::AgentCandidatePreference::ToolchainMode,
+            include_configured_version: true,
+        },
+    )
+    .await
+    .ok()
+    .and_then(|availability| availability.selected);
 
     match selected {
         Some(candidate) => StartkitItemReport {
