@@ -383,8 +383,9 @@ pub async fn auto_install_agent_cmd_with_output(
 ) -> anyhow::Result<InstallOutput> {
     tracing::info!("[agent] running install for {}: {}", agent, install_cmd);
 
-    let output = crate::process::env::command("sh")
-        .args(["-c", install_cmd])
+    let (program, args) = install_command_invocation(install_cmd);
+    let output = crate::process::env::command(program)
+        .args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .output()
@@ -400,6 +401,23 @@ pub async fn auto_install_agent_cmd_with_output(
 
     tracing::info!("[agent] installed {}", agent);
     Ok(InstallOutput { stdout, stderr })
+}
+
+fn install_command_invocation(install_cmd: &str) -> (&'static str, Vec<String>) {
+    if cfg!(windows) {
+        (
+            "powershell.exe",
+            vec![
+                "-NoProfile".to_string(),
+                "-ExecutionPolicy".to_string(),
+                "Bypass".to_string(),
+                "-Command".to_string(),
+                install_cmd.to_string(),
+            ],
+        )
+    } else {
+        ("sh", vec!["-lc".to_string(), install_cmd.to_string()])
+    }
 }
 
 /// Check if a program is available in PATH.
@@ -446,7 +464,7 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
             }
         }
         // Native binary agents with install command (Cursor, Kiro)
-        else if let Some(install_cmd) = &agent_def.acp.install_cmd {
+        else if let Some(install_cmd) = native_agent_install_command(agent_id, agent_def) {
             let detected =
                 if let Some(candidate) = crate::agent_detection::selected_candidate(agent_id) {
                     Some(candidate)
@@ -459,11 +477,16 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
             if detected.is_some() || is_program_available(&agent_def.acp.program) {
                 continue;
             }
-            if let Err(e) = auto_install_agent_cmd(install_cmd, agent_id).await {
+            if let Err(e) = auto_install_agent_cmd(&install_cmd, agent_id).await {
                 tracing::info!("[agent] install {} error: {}", agent_id, e);
             }
         }
     }
+}
+
+fn native_agent_install_command(agent_id: &str, agent_def: &resources::AgentDef) -> Option<String> {
+    crate::agent_detection::source_command_template(agent_id, "native", "install")
+        .or_else(|| agent_def.acp.install_cmd.clone())
 }
 
 fn has_enabled_channels(settings: &serde_json::Value) -> bool {
@@ -477,8 +500,10 @@ fn has_enabled_channels(settings: &serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        npm_global_install_target, npm_package_bin_name, npm_package_spec, NpmPackageSpec,
+        install_command_invocation, native_agent_install_command, npm_global_install_target,
+        npm_package_bin_name, npm_package_spec, NpmPackageSpec,
     };
+    use crate::resources;
 
     #[test]
     fn parses_scoped_npm_package_specs() {
@@ -517,5 +542,30 @@ mod tests {
             npm_global_install_target("@openai/codex@1.2.3"),
             "@openai/codex@1.2.3"
         );
+    }
+
+    #[test]
+    fn native_install_invocation_uses_platform_shell() {
+        let (program, args) = install_command_invocation("echo hello");
+        if cfg!(windows) {
+            assert_eq!(program, "powershell.exe");
+            assert!(args.contains(&"-Command".to_string()));
+            assert_eq!(args.last().map(String::as_str), Some("echo hello"));
+        } else {
+            assert_eq!(program, "sh");
+            assert_eq!(args, vec!["-lc".to_string(), "echo hello".to_string()]);
+        }
+    }
+
+    #[test]
+    fn native_agent_install_command_prefers_source_catalog() {
+        let cursor = resources::agent_by_id("cursor").expect("cursor agent");
+        let command = native_agent_install_command("cursor", cursor).expect("install command");
+        if cfg!(windows) {
+            assert!(command.contains("install.ps1"));
+            assert!(!command.contains("| bash"));
+        } else {
+            assert!(command.contains("cursor.com/install"));
+        }
     }
 }
