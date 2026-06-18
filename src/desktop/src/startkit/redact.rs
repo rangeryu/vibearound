@@ -1,4 +1,4 @@
-pub(super) fn redact(value: &str, keys: &[String]) -> String {
+pub(in crate::startkit) fn redact(value: &str, keys: &[String]) -> String {
     let mut out = value.to_string();
     for key in keys {
         let key = key.trim();
