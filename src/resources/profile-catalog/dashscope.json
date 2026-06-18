@@ -15,6 +15,14 @@
       "auth_header": true,
       "models": [
         {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
           "context_window": 1000000,
@@ -32,53 +40,11 @@
         },
         {
           "id": "glm-5",
-          "label": "glm-5",
-          "capabilities": {
-            "image_input": true
-          }
+          "label": "glm-5"
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-4.7",
-          "label": "glm-4.7",
-          "capabilities": {
-            "image_input": true
-          }
+          "label": "MiniMax-M2.5"
         }
       ],
       "auth_modes": [
@@ -115,6 +81,14 @@
       "auth_header": true,
       "models": [
         {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
           "context_window": 1000000,
@@ -132,53 +106,11 @@
         },
         {
           "id": "glm-5",
-          "label": "glm-5",
-          "capabilities": {
-            "image_input": true
-          }
+          "label": "glm-5"
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-4.7",
-          "label": "glm-4.7",
-          "capabilities": {
-            "image_input": true
-          }
+          "label": "MiniMax-M2.5"
         }
       ],
       "auth_modes": [
@@ -217,6 +149,14 @@
       },
       "models": [
         {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
           "context_window": 1000000,
@@ -234,53 +174,11 @@
         },
         {
           "id": "glm-5",
-          "label": "glm-5",
-          "capabilities": {
-            "image_input": true
-          }
+          "label": "glm-5"
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-4.7",
-          "label": "glm-4.7",
-          "capabilities": {
-            "image_input": true
-          }
+          "label": "MiniMax-M2.5"
         }
       ],
       "auth_modes": [
@@ -326,6 +224,14 @@
       },
       "models": [
         {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
           "context_window": 1000000,
@@ -343,214 +249,11 @@
         },
         {
           "id": "glm-5",
-          "label": "glm-5",
-          "capabilities": {
-            "image_input": true
-          }
+          "label": "glm-5"
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-4.7",
-          "label": "glm-4.7",
-          "capabilities": {
-            "image_input": true
-          }
-        }
-      ],
-      "auth_modes": [
-        {
-          "mode": "api_key",
-          "label": "Use API key",
-          "fields": [
-            {
-              "name": "api_key",
-              "label": "DashScope API key",
-              "secret": true,
-              "required": true
-            }
-          ],
-          "render": {
-            "env": {
-              "OPENAI_API_KEY": "{{api_key}}"
-            },
-            "settings_files": [
-              {
-                "rel_path": "config.toml",
-                "template": "model = \"{{model}}\"\nmodel_provider = \"dashscope\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.dashscope]\nname = \"Alibaba DashScope\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nrequires_openai_auth = true\n"
-              },
-              {
-                "rel_path": "auth.json",
-                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
-              }
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "id": "token-plan",
-      "label": "Token Plan",
-      "api_type": "openai-chat",
-      "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-      "headers": {
-        "User-Agent": "codex-cli/0.80.0 (external, cli)",
-        "X-DashScope-AuthType": "openai",
-        "X-DashScope-CacheControl": "enable",
-        "X-DashScope-UserAgent": "codex-cli/0.80.0 (external, cli)"
-      },
-      "models": [
-        {
-          "id": "qwen3.6-max-preview",
-          "label": "qwen3.6-max-preview",
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3.6-plus",
-          "label": "qwen3.6-plus",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3.6-flash",
-          "label": "qwen3.6-flash",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "deepseek-v4-pro",
-          "label": "deepseek-v4-pro",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "deepseek-v4-flash",
-          "label": "deepseek-v4-flash",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-5.1",
-          "label": "glm-5.1",
-          "context_window": 198000
-        },
-        {
-          "id": "kimi-k2.6",
-          "label": "kimi-k2.6",
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-5",
-          "label": "glm-5",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-4.7",
-          "label": "glm-4.7",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "kimi-k2.5",
-          "label": "kimi-k2.5",
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "deepseek-v3.2",
-          "label": "deepseek-v3.2",
-          "capabilities": {
-            "image_input": true
-          }
+          "label": "MiniMax-M2.5"
         }
       ],
       "auth_modes": [
@@ -596,9 +299,12 @@
       },
       "models": [
         {
-          "id": "qwen3.6-max-preview",
-          "label": "qwen3.6-max-preview",
-          "context_window": 256000,
+          "id": "qwen3.7-max",
+          "label": "qwen3.7-max"
+        },
+        {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
           "capabilities": {
             "image_input": true
           }
@@ -622,23 +328,7 @@
         {
           "id": "deepseek-v4-pro",
           "label": "deepseek-v4-pro",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "deepseek-v4-flash",
-          "label": "deepseek-v4-flash",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-5.1",
-          "label": "glm-5.1",
-          "context_window": 198000
+          "context_window": 1000000
         },
         {
           "id": "kimi-k2.6",
@@ -649,69 +339,12 @@
           }
         },
         {
-          "id": "qwen3.5-plus",
-          "label": "qwen3.5-plus",
-          "context_window": 1000000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-max-2026-01-23",
-          "label": "qwen3-max-2026-01-23",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-next",
-          "label": "qwen3-coder-next",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "qwen3-coder-plus",
-          "label": "qwen3-coder-plus",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-5",
-          "label": "glm-5",
-          "capabilities": {
-            "image_input": true
-          }
+          "id": "glm-5.2",
+          "label": "glm-5.2"
         },
         {
           "id": "MiniMax-M2.5",
-          "label": "MiniMax-M2.5",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-4.7",
-          "label": "glm-4.7",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "kimi-k2.5",
-          "label": "kimi-k2.5",
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "deepseek-v3.2",
-          "label": "deepseek-v3.2",
-          "capabilities": {
-            "image_input": true
-          }
+          "label": "MiniMax-M2.5"
         }
       ],
       "auth_modes": [
@@ -734,6 +367,88 @@
               {
                 "rel_path": "config.toml",
                 "template": "model = \"{{model}}\"\nmodel_provider = \"dashscope\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.dashscope]\nname = \"Alibaba DashScope\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nrequires_openai_auth = true\n"
+              },
+              {
+                "rel_path": "auth.json",
+                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "token-plan-cn",
+      "label": "Token Plan CN",
+      "api_type": "openai-responses",
+      "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "headers": {
+        "User-Agent": "codex-cli/0.80.0 (external, cli)",
+        "X-DashScope-AuthType": "openai",
+        "X-DashScope-CacheControl": "enable",
+        "X-DashScope-UserAgent": "codex-cli/0.80.0 (external, cli)"
+      },
+      "capabilities": {
+        "reasoning_effort": true,
+        "content": {
+          "web_search": true
+        }
+      },
+      "models": [
+        {
+          "id": "qwen3.7-max",
+          "label": "qwen3.7-max",
+          "capabilities": {
+            "web_search": true
+          }
+        },
+        {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus",
+          "capabilities": {
+            "image_input": true,
+            "web_search": true
+          }
+        },
+        {
+          "id": "qwen3.6-plus",
+          "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true,
+            "web_search": true
+          }
+        },
+        {
+          "id": "qwen3.6-flash",
+          "label": "qwen3.6-flash",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true,
+            "web_search": true
+          }
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "DashScope Token Plan key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "OPENAI_API_KEY": "{{api_key}}"
+            },
+            "settings_files": [
+              {
+                "rel_path": "config.toml",
+                "template": "model = \"{{model}}\"\nmodel_provider = \"dashscope\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.dashscope]\nname = \"Alibaba DashScope Token Plan\"\nbase_url = \"{{base_url}}\"\nwire_api = \"responses\"\nrequires_openai_auth = true\n"
               },
               {
                 "rel_path": "auth.json",
@@ -760,17 +475,47 @@
         },
         {
           "id": "qwen3.7-plus",
-          "label": "qwen3.7-plus"
-        },
-        {
-          "id": "qwen3.6-flash",
-          "label": "qwen3.6-flash",
-          "context_window": 1000000
+          "label": "qwen3.7-plus",
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "qwen3.6-plus",
           "label": "qwen3.6-plus",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "qwen3.6-flash",
+          "label": "qwen3.6-flash",
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "deepseek-v4-pro",
           "context_window": 1000000
+        },
+        {
+          "id": "kimi-k2.6",
+          "label": "kimi-k2.6",
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
+        },
+        {
+          "id": "glm-5.2",
+          "label": "glm-5.2"
+        },
+        {
+          "id": "MiniMax-M2.5",
+          "label": "MiniMax-M2.5"
         }
       ],
       "auth_modes": [

@@ -33,18 +33,22 @@ Verification result:
 Catalog endpoints:
 
 - Coding Plan CN and international, OpenAI-compatible and Anthropic-compatible.
-- Token Plan CN Beijing, OpenAI-compatible and Anthropic-compatible.
+- Token Plan CN Beijing, OpenAI-compatible Chat, OpenAI-compatible Responses, and Anthropic-compatible.
 
 Official evidence:
 
 - Alibaba Model Studio "Claude Code" page documents Coding Plan Anthropic base URLs `https://coding.dashscope.aliyuncs.com/apps/anthropic` and `https://coding-intl.dashscope.aliyuncs.com/apps/anthropic`, and Token Plan Anthropic base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`.
 - Alibaba Model Studio "More tools" / tool integration pages document Coding Plan OpenAI-compatible base URLs `https://coding.dashscope.aliyuncs.com/v1` and `https://coding-intl.dashscope.aliyuncs.com/v1`.
 - Alibaba Model Studio Token Plan quickstart documents `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`.
+- Alibaba Model Studio Token Plan overview lists supported Token Plan models including current Qwen, DeepSeek, Kimi, GLM, and MiniMax families.
+- Alibaba Model Studio Token Plan tool docs document built-in tool support through Responses API for `qwen3.7-max`, `qwen3.7-plus`, `qwen3.6-plus`, and `qwen3.6-flash`.
 
 Verification result:
 
 - Keep Coding Plan as a separate plan from Token Plan and pay-as-you-go DashScope.
 - Keep Token Plan CN Beijing endpoint; do not use legacy generic `dashscope-intl.aliyuncs.com`.
+- Keep Coding Plan and Token Plan model lists curated to the newest broad-use coding/flagship choices rather than enumerating every DashScope model.
+- Keep Token Plan Chat and Anthropic model lists aligned for the selected base text models; keep Token Plan Responses as a separate Qwen built-in-tool subset.
 - Do not configure Anthropic model discovery under `apps/anthropic/v1/models`; tested/known route is not supported.
 - Model lists remain curated plan defaults. Capability flags are conservative; no file input is marked.
 
@@ -93,19 +97,23 @@ Verification result:
 
 Catalog endpoints:
 
-- Moonshot OpenAI-compatible API.
-- Moonshot Anthropic-compatible API.
+- Moonshot Global OpenAI-compatible API and Anthropic-compatible API.
+- Moonshot CN OpenAI-compatible API and Anthropic-compatible API.
 - Kimi Coding OpenAI-compatible API.
 - Kimi Coding Anthropic-compatible API.
 
 Official evidence:
 
-- Kimi / Moonshot API docs list the service address, Kimi K2.7 Code quickstart, K2.6/K2.7 model family, context, thinking, and multimodal behavior.
+- Kimi global docs list `https://api.moonshot.ai/v1` for OpenAI-compatible calls and `https://api.moonshot.ai/anthropic` for Anthropic-compatible agent support.
+- Moonshot CN docs list `https://api.moonshot.cn/v1` and `https://api.moonshot.cn/anthropic` for the China service.
+- Kimi / Moonshot API docs list the current model family: `kimi-k2.7-code`, `kimi-k2.7-code-highspeed`, `kimi-k2.6`, `kimi-k2.5`, `moonshot-v1-*k`, and `moonshot-v1-*k-vision-preview`.
 - Kimi Code docs document `https://api.kimi.com/coding/v1`, `https://api.kimi.com/coding/`, and model `kimi-for-coding`.
 
 Verification result:
 
+- Model Kimi/Moonshot as endpoint groups plus API kind, not as a four-way `global/cn x plan/api` matrix. The endpoint groups are Moonshot Global, Moonshot CN, and Kimi Coding.
 - Keep K2.7 Code before older K2/K2.6 entries for Moonshot API defaults.
+- Remove deprecated K2 preview/turbo aliases from the curated Moonshot list.
 - Keep only `kimi-for-coding` for Kimi Coding. Removed unconfirmed legacy aliases `kimi-code` and `k2p5`.
 - Keep image input only where the official model/product docs justify it. Do not mark file input or web search.
 - Do not configure Moonshot Anthropic model discovery; the Anthropic discovery route is not supported.

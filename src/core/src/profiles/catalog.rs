@@ -515,6 +515,30 @@ mod tests {
             .collect();
         assert!(api_types.contains(&"anthropic"));
         assert!(api_types.contains(&"openai-chat"));
+        for (endpoint_id, openai_base, anthropic_base) in [
+            (
+                "moonshot-global",
+                "https://api.moonshot.ai/v1",
+                "https://api.moonshot.ai/anthropic",
+            ),
+            (
+                "moonshot-cn",
+                "https://api.moonshot.cn/v1",
+                "https://api.moonshot.cn/anthropic",
+            ),
+            (
+                "kimi-coding",
+                "https://api.kimi.com/coding/v1",
+                "https://api.kimi.com/coding/",
+            ),
+        ] {
+            let openai = find_endpoint(provider, "openai-chat", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("moonshot openai endpoint {endpoint_id}"));
+            let anthropic = find_endpoint(provider, "anthropic", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("moonshot anthropic endpoint {endpoint_id}"));
+            assert_eq!(openai.default_base_url, openai_base);
+            assert_eq!(anthropic.default_base_url, anthropic_base);
+        }
         let kimi_coding =
             find_endpoint(provider, "anthropic", Some("kimi-coding")).expect("kimi coding");
         assert_eq!(kimi_coding.default_base_url, "https://api.kimi.com/coding/");
@@ -526,19 +550,20 @@ mod tests {
         assert!(kimi_code.capabilities.image_input);
         assert!(!kimi_code.capabilities.file_input);
 
-        let anthropic =
-            find_endpoint(provider, "anthropic", None).expect("moonshot anthropic endpoint");
+        let anthropic = find_endpoint(provider, "anthropic", Some("moonshot-global"))
+            .expect("moonshot anthropic endpoint");
         assert_eq!(
             model(anthropic, "kimi-k2.7-code").context_window,
             Some(256_000)
         );
+        assert!(find_model(anthropic, "kimi-k2-0905-preview").is_none());
         assert!(model(anthropic, "kimi-k2.7-code").capabilities.image_input);
         let kimi_k26 = model(anthropic, "kimi-k2.6");
         assert!(kimi_k26.capabilities.image_input);
         assert!(!kimi_k26.capabilities.file_input);
 
-        let openai_chat =
-            find_endpoint(provider, "openai-chat", None).expect("moonshot chat endpoint");
+        let openai_chat = find_endpoint(provider, "openai-chat", Some("moonshot-global"))
+            .expect("moonshot chat endpoint");
         assert_eq!(
             model(openai_chat, "kimi-k2.7-code").context_window,
             Some(256_000)
@@ -569,36 +594,40 @@ mod tests {
     }
 
     #[test]
-    fn moonshot_catalog_tracks_kimi_k26() {
+    fn moonshot_catalog_tracks_current_models() {
         let provider = get("moonshot").expect("moonshot must exist");
-        let anthropic =
-            find_endpoint(provider, "anthropic", None).expect("moonshot anthropic endpoint");
-        for id in ["kimi-k2.6", "kimi-k2-0905-preview", "kimi-k2-turbo-preview"] {
-            assert_eq!(model(anthropic, id).context_window, Some(256_000));
+        for endpoint_id in ["moonshot-global", "moonshot-cn"] {
+            for api_type in ["openai-chat", "anthropic"] {
+                let endpoint = find_endpoint(provider, api_type, Some(endpoint_id))
+                    .unwrap_or_else(|| panic!("moonshot {api_type} endpoint {endpoint_id}"));
+                for id in [
+                    "kimi-k2.7-code",
+                    "kimi-k2.7-code-highspeed",
+                    "kimi-k2.6",
+                    "kimi-k2.5",
+                ] {
+                    assert_eq!(model(endpoint, id).context_window, Some(256_000));
+                    assert!(model(endpoint, id).capabilities.image_input);
+                    assert!(!model(endpoint, id).capabilities.file_input);
+                }
+                assert_eq!(model(endpoint, "moonshot-v1-8k").context_window, Some(8192));
+                assert_eq!(
+                    model(endpoint, "moonshot-v1-32k").context_window,
+                    Some(32_768)
+                );
+                assert_eq!(
+                    model(endpoint, "moonshot-v1-128k").context_window,
+                    Some(131_072)
+                );
+                assert!(
+                    model(endpoint, "moonshot-v1-32k-vision-preview")
+                        .capabilities
+                        .image_input
+                );
+                assert!(find_model(endpoint, "kimi-k2-0905-preview").is_none());
+                assert!(find_model(endpoint, "kimi-k2-turbo-preview").is_none());
+            }
         }
-
-        let openai_chat =
-            find_endpoint(provider, "openai-chat", None).expect("moonshot chat endpoint");
-        assert_eq!(
-            model(openai_chat, "kimi-k2.6").label.as_deref(),
-            Some("Kimi K2.6")
-        );
-        assert_eq!(
-            model(openai_chat, "kimi-k2.6").context_window,
-            Some(256_000)
-        );
-        assert_eq!(
-            model(openai_chat, "kimi-k2-0905-preview").context_window,
-            Some(256_000)
-        );
-        assert_eq!(
-            model(openai_chat, "moonshot-v1-32k").context_window,
-            Some(32_768)
-        );
-        assert_eq!(
-            model(openai_chat, "moonshot-v1-128k").context_window,
-            Some(131_072)
-        );
     }
 
     #[test]
@@ -623,12 +652,18 @@ mod tests {
             .collect();
         assert_eq!(
             endpoints,
-            vec![
-                "coding-plan",
-                "coding-plan-cn",
-                "token-plan",
-                "token-plan-cn"
-            ]
+            vec!["coding-plan", "coding-plan-cn", "token-plan-cn"]
+        );
+        let response_endpoints: Vec<_> = provider
+            .endpoints
+            .iter()
+            .filter(|e| e.api_type == "openai-responses")
+            .map(endpoint_id)
+            .collect();
+        assert_eq!(
+            response_endpoints,
+            vec!["token-plan-cn"],
+            "Token Plan Responses is a distinct protocol surface"
         );
         let anthropic_endpoints: Vec<_> = provider
             .endpoints
@@ -673,7 +708,8 @@ mod tests {
             assert!(endpoint.auth_header);
         }
 
-        let token = find_endpoint(provider, "openai-chat", Some("token-plan"))
+        assert!(find_endpoint(provider, "openai-chat", Some("token-plan")).is_none());
+        let token = find_endpoint(provider, "openai-chat", Some("token-plan-cn"))
             .expect("token plan endpoint");
         assert_eq!(
             token.default_base_url,
@@ -725,33 +761,45 @@ mod tests {
             "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"
         );
         assert!(token_anthropic.auth_header);
-        assert!(find_model(token_anthropic, "qwen3.7-max").is_some());
+        assert_eq!(token.models.len(), token_anthropic.models.len());
+        for model in &token.models {
+            assert!(
+                find_model(token_anthropic, &model.id).is_some(),
+                "Token Plan Anthropic should expose the same base text model {}",
+                model.id
+            );
+        }
+        let responses = find_endpoint(provider, "openai-responses", Some("token-plan-cn"))
+            .expect("token plan responses endpoint");
+        assert!(find_model(responses, "qwen3.7-max").is_some());
+        assert!(find_model(responses, "qwen3.7-plus").is_some());
+        assert!(find_model(responses, "deepseek-v4-pro").is_none());
     }
 
     #[test]
     fn dashscope_token_plan_tracks_current_chinese_models() {
         let provider = get("dashscope").expect("dashscope must exist");
-        for endpoint_id in ["token-plan", "token-plan-cn"] {
+        for endpoint_id in ["token-plan-cn"] {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
                 .unwrap_or_else(|| panic!("dashscope endpoint {endpoint_id}"));
             for (id, context_window) in [
-                ("qwen3.6-max-preview", 256_000),
                 ("qwen3.6-plus", 1_000_000),
                 ("qwen3.6-flash", 1_000_000),
                 ("deepseek-v4-pro", 1_000_000),
-                ("deepseek-v4-flash", 1_000_000),
-                ("glm-5.1", 198_000),
                 ("kimi-k2.6", 256_000),
             ] {
                 assert_eq!(model(endpoint, id).context_window, Some(context_window));
             }
+            assert!(find_model(endpoint, "qwen3.7-max").is_some());
+            assert!(find_model(endpoint, "qwen3.7-plus").is_some());
+            assert!(find_model(endpoint, "glm-5.2").is_some());
             assert!(model(endpoint, "qwen3.6-plus").capabilities.image_input);
             assert!(model(endpoint, "qwen3.6-flash").capabilities.image_input);
-            assert!(model(endpoint, "deepseek-v4-pro").capabilities.image_input);
-            assert!(model(endpoint, "MiniMax-M2.5").capabilities.image_input);
-            assert!(model(endpoint, "glm-5").capabilities.image_input);
             assert!(model(endpoint, "kimi-k2.6").capabilities.image_input);
-            assert!(!model(endpoint, "glm-5.1").capabilities.image_input);
+            assert!(!model(endpoint, "qwen3.7-max").capabilities.image_input);
+            assert!(!model(endpoint, "deepseek-v4-pro").capabilities.image_input);
+            assert!(!model(endpoint, "MiniMax-M2.5").capabilities.image_input);
+            assert!(!model(endpoint, "glm-5.2").capabilities.image_input);
             assert!(!model(endpoint, "qwen3.6-plus").capabilities.file_input);
             assert!(!model(endpoint, "kimi-k2.6").capabilities.file_input);
         }
