@@ -6,7 +6,6 @@ import {
   Monitor,
   Pencil,
   Rocket,
-  Settings2,
   Terminal,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
@@ -61,7 +60,6 @@ import {
   type WorkspaceOption,
 } from "./api";
 import { AgentLaunchSettingsDialog } from "./AgentLaunchSettingsDialog";
-import { agentLaunchArgCount } from "./agentLaunchArgs";
 import { buildProfileCopyDraft } from "./profileClone";
 import {
   agentLabel,
@@ -874,7 +872,6 @@ export function AgentLaunchBuilder({
   const selectedAgentPreference = viewPrefs.agentPreferences[agentId];
   const currentAgentExecutable =
     agentExecutable?.agentId === agentId ? agentExecutable : null;
-  const terminalArgCount = agentLaunchArgCount(selectedAgentPreference);
   const showLaunchControls = !selectedAgentIsDirectOnly;
   const desktopAppEntryForAgent = (targetAgentId: string) =>
     desktopAppEntries?.apps[targetAgentId]?.entry;
@@ -930,28 +927,6 @@ export function AgentLaunchBuilder({
                   <AgentSummaryHeader
                     agentId={agentId}
                     agentLabelText={selectedAgent.display_name}
-                    action={
-                      showLaunchControls ? (
-                        <div className="flex items-center gap-1.5 pt-1">
-                          {terminalArgCount > 0 && (
-                            <span className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                              {t("{{count}} args", { count: terminalArgCount })}
-                            </span>
-                          )}
-                          <TooltipButton
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            disabled={busy}
-                            aria-label={t("Agent settings")}
-                            title={t("Agent settings")}
-                            onClick={() => setSettingsAgent(selectedAgent)}
-                          >
-                            <Settings2 className="h-4 w-4" />
-                          </TooltipButton>
-                        </div>
-                      ) : undefined
-                    }
                   >
                     <>
                       <SelectorPopup
