@@ -978,6 +978,10 @@ mod tests {
                 model(endpoint, "mimo-v2.5-pro").context_window,
                 Some(1_000_000)
             );
+            assert!(
+                !model(endpoint, "mimo-v2.5-pro").capabilities.image_input,
+                "MiMo image understanding docs list mimo-v2.5 and mimo-v2-omni, not mimo-v2.5-pro"
+            );
             assert_eq!(model(endpoint, "mimo-v2.5").context_window, Some(1_000_000));
             assert!(model(endpoint, "mimo-v2.5").capabilities.image_input);
             assert!(!model(endpoint, "mimo-v2.5").capabilities.file_input);

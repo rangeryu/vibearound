@@ -911,7 +911,7 @@ function capabilityText(
     capabilities.file_input ? t("files") : null,
     capabilities.web_search ? t("web search") : null,
   ].filter((item): item is string => !!item);
-  return items.length > 0 ? items.join(", ") : "-";
+  return items.length > 0 ? items.join(", ") : t("text");
 }
 
 function ModelTestStatusBadge({ status }: { status: ModelTestStatus }) {
