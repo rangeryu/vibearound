@@ -5,6 +5,7 @@
 //! platform scripts with a stable environment, and normalize all output into
 //! structured item reports for the onboarding UI.
 
+mod agent;
 mod channels;
 mod managed;
 mod plan;
@@ -23,7 +24,9 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::task::JoinSet;
 
-use crate::agent_detection;
+#[cfg(test)]
+use agent::agent_cli_npm_install_package;
+use agent::{agent_id_from_cli_item, execute_agent_cli_item, scan_agent_cli_item};
 use channels::run_channel_plugins_item;
 use managed::{
     execute_managed_toolchain_item, item_uses_managed_dependency_dir, run_managed_npm_package_item,
@@ -904,91 +907,6 @@ async fn run_startkit_install<R: Runtime>(
     .to_string())
 }
 
-async fn execute_agent_cli_item(
-    item: &StartkitItem,
-    agent_id: &str,
-    choices: &StartkitChoices,
-    cancelled: Option<&Arc<AtomicBool>>,
-    progress: Option<&(dyn Fn(&StartkitItem, StartkitItemStatus, Option<String>) + Sync)>,
-) -> anyhow::Result<StartkitItemReport> {
-    let before = scan_agent_cli_item(item, agent_id, choices).await;
-    if !before.status.needs_install() {
-        return Ok(before);
-    }
-
-    let Some(package) = agent_cli_npm_install_package(agent_id) else {
-        return Ok(StartkitItemReport {
-            status: StartkitItemStatus::Blocked,
-            message: Some("No automatic install action is available".to_string()),
-            ..base_report(item)
-        });
-    };
-
-    if let Some(progress) = progress {
-        progress(
-            item,
-            StartkitItemStatus::Running,
-            Some(format!("Installing {}", item.label)),
-        );
-    }
-
-    let log_progress = |line| {
-        if let Some(progress) = progress {
-            progress(item, StartkitItemStatus::Running, Some(line));
-        }
-    };
-    let is_cancelled = || {
-        cancelled
-            .map(|flag| flag.load(Ordering::Relaxed))
-            .unwrap_or(false)
-    };
-
-    let result = if is_managed_mode(choices) {
-        let install_dir = common::process::env::acp_agents_dir();
-        common::agent::auto_install_npm_package_in_dir_with_progress_and_cancel(
-            &package,
-            &install_dir,
-            log_progress,
-            is_cancelled,
-        )
-        .await
-    } else {
-        common::agent::auto_install_npm_global_package_with_progress_and_cancel(
-            &package,
-            log_progress,
-            is_cancelled,
-        )
-        .await
-    };
-
-    if let Err(error) = result {
-        return Ok(StartkitItemReport {
-            status: StartkitItemStatus::Error,
-            message: Some(error.to_string()),
-            ..base_report(item)
-        });
-    }
-
-    let after = scan_agent_cli_item(item, agent_id, choices).await;
-    if matches!(after.status, StartkitItemStatus::Ok) {
-        Ok(after)
-    } else {
-        Ok(StartkitItemReport {
-            status: StartkitItemStatus::Error,
-            message: Some(format!(
-                "{} install finished, but the CLI is still unavailable{}",
-                item.label,
-                after
-                    .message
-                    .as_deref()
-                    .map(|message| format!(": {message}"))
-                    .unwrap_or_default()
-            )),
-            ..base_report(item)
-        })
-    }
-}
-
 fn install_phase_message(item: &StartkitItem) -> String {
     match item.id.as_str() {
         "essentials.node" => "Downloading Node.js".to_string(),
@@ -1121,88 +1039,6 @@ async fn scan_item(
     }
 }
 
-fn agent_cli_npm_install_package(agent_id: &str) -> Option<String> {
-    if !agent_detection::agent_uses_npm_install(agent_id) {
-        return None;
-    }
-    agent_detection::source_package(agent_id, "npm_global")
-}
-
-async fn scan_agent_cli_item(
-    item: &StartkitItem,
-    agent_id: &str,
-    choices: &StartkitChoices,
-) -> StartkitItemReport {
-    let selected = if let Some(candidate) =
-        agent_detection::configured_candidate_with_version(agent_id).await
-    {
-        Some(candidate)
-    } else {
-        agent_detection::scan_agent_and_persist(agent_id)
-            .await
-            .ok()
-            .and_then(|detection| {
-                agent_detection::preferred_startkit_candidate(
-                    agent_id,
-                    &detection,
-                    &choices.toolchain_mode,
-                )
-            })
-    };
-
-    match selected {
-        Some(candidate) => StartkitItemReport {
-            status: StartkitItemStatus::Ok,
-            version: candidate.version,
-            path: Some(candidate.path),
-            message: Some(format!(
-                "{} selected from {}",
-                item.label, candidate.source_label
-            )),
-            actions: Vec::new(),
-            ..base_report(item)
-        },
-        None => {
-            if agent_cli_npm_install_package(agent_id).is_some() {
-                let target = if is_managed_mode(choices) {
-                    "in VibeAround managed"
-                } else {
-                    "with npm"
-                };
-                return StartkitItemReport {
-                    status: StartkitItemStatus::Missing,
-                    message: Some(format!("{} will be installed {target}", item.label)),
-                    actions: vec!["install".to_string()],
-                    ..base_report(item)
-                };
-            }
-
-            apply_agent_manual_guidance(
-                StartkitItemReport {
-                    status: StartkitItemStatus::Blocked,
-                    message: Some(agent_missing_message(item, &choices.toolchain_mode)),
-                    actions: Vec::new(),
-                    ..base_report(item)
-                },
-                agent_id,
-            )
-        }
-    }
-}
-
-fn agent_missing_message(item: &StartkitItem, toolchain_mode: &str) -> String {
-    if toolchain_mode == "managed" {
-        return format!(
-            "{} does not have a VibeAround managed installer.",
-            item.label
-        );
-    }
-    format!(
-        "{} was not found in the system toolchain. Install it on this computer, then scan again.",
-        item.label
-    )
-}
-
 fn apply_manual_guidance(
     mut report: StartkitItemReport,
     item: &StartkitItem,
@@ -1227,16 +1063,6 @@ fn apply_manual_guidance(
     report.actions = vec!["manual".to_string()];
     report.manual_command = guidance.command;
     report.manual_url = guidance.url;
-    report
-}
-
-fn apply_agent_manual_guidance(
-    mut report: StartkitItemReport,
-    agent_id: &str,
-) -> StartkitItemReport {
-    report.actions = vec!["manual".to_string()];
-    report.manual_command = agent_detection::source_command_template(agent_id, "native", "install");
-    report.manual_url = manual_agent_url(agent_id).map(str::to_string);
     report
 }
 
@@ -1296,20 +1122,6 @@ fn manual_guidance_for_item(
         }
         _ => None,
     }
-}
-
-fn manual_agent_url(agent_id: &str) -> Option<&'static str> {
-    match agent_id {
-        "cursor" => Some("https://cursor.com/cli"),
-        "kiro" => Some("https://kiro.dev/docs/cli/installation/"),
-        _ => None,
-    }
-}
-
-fn agent_id_from_cli_item(item_id: &str) -> Option<&str> {
-    item_id
-        .strip_prefix("agents.")
-        .and_then(|value| value.strip_suffix(".cli"))
 }
 
 fn scan_config_item(item: &StartkitItem, settings: &Value) -> StartkitItemReport {
