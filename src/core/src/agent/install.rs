@@ -272,9 +272,10 @@ async fn npm_command_streaming<F>(
 where
     F: FnMut(String),
 {
-    let mut child = crate::process::env::npm_process(args, cwd).await?.spawn()?;
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
+    let mut command = crate::process::env::npm_process(args, cwd).await?;
+    let mut child = crate::process::spawn_tree_killable(&mut command)?;
+    let stdout = child.take_stdout();
+    let stderr = child.take_stderr();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(&'static str, String)>();
 
     if let Some(stdout) = stdout {
@@ -304,7 +305,7 @@ where
         tokio::select! {
             _ = cancel_tick.tick() => {
                 if is_cancelled() {
-                    let _ = child.start_kill();
+                    let _ = child.terminate_tree().await;
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Interrupted,
                         "install cancelled",

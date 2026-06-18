@@ -1786,14 +1786,13 @@ async fn run_command_with_cancel(
     max_duration: Duration,
     cancelled: Option<&Arc<AtomicBool>>,
 ) -> anyhow::Result<std::process::Output> {
-    let mut child = command.spawn().context("spawning startkit script")?;
+    let mut child =
+        common::process::spawn_tree_killable(&mut command).context("spawning startkit script")?;
     let mut stdout = child
-        .stdout
-        .take()
+        .take_stdout()
         .ok_or_else(|| anyhow!("startkit script stdout was not captured"))?;
     let mut stderr = child
-        .stderr
-        .take()
+        .take_stderr()
         .ok_or_else(|| anyhow!("startkit script stderr was not captured"))?;
 
     let stdout_task = tokio::spawn(async move {
@@ -1811,11 +1810,11 @@ async fn run_command_with_cancel(
             .map(|flag| flag.load(Ordering::Relaxed))
             .unwrap_or(false)
         {
-            let _ = child.kill().await;
+            let _ = child.terminate_tree().await;
             bail!("cancelled");
         }
         if started.elapsed() >= max_duration {
-            let _ = child.kill().await;
+            let _ = child.terminate_tree().await;
             bail!("startkit script timed out");
         }
         if let Some(status) = child.try_wait().context("polling startkit script")? {

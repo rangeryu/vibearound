@@ -526,9 +526,9 @@ where
     F: FnMut(String),
     C: Fn() -> bool,
 {
-    let mut child = command.spawn()?;
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
+    let mut child = common::process::spawn_tree_killable(&mut command)?;
+    let stdout = child.take_stdout();
+    let stderr = child.take_stderr();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(&'static str, String)>();
 
     if let Some(stdout) = stdout {
@@ -558,7 +558,7 @@ where
         tokio::select! {
             _ = cancel_tick.tick() => {
                 if is_cancelled() {
-                    let _ = child.start_kill();
+                    let _ = child.terminate_tree().await;
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Interrupted,
                         "install cancelled",
