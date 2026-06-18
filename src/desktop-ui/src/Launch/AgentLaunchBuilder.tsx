@@ -6,6 +6,7 @@ import {
   Monitor,
   Pencil,
   Rocket,
+  Settings2,
   Terminal,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
@@ -927,6 +928,21 @@ export function AgentLaunchBuilder({
                   <AgentSummaryHeader
                     agentId={agentId}
                     agentLabelText={selectedAgent.display_name}
+                    titleAction={
+                      showLaunchControls ? (
+                        <TooltipButton
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={busy}
+                          aria-label={t("Agent settings")}
+                          title={t("Agent settings")}
+                          onClick={() => setSettingsAgent(selectedAgent)}
+                        >
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </TooltipButton>
+                      ) : undefined
+                    }
                   >
                     <>
                       <SelectorPopup

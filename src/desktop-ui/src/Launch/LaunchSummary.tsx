@@ -202,11 +202,13 @@ export function LaunchSummaryPill({
 export function AgentSummaryHeader({
   agentId,
   agentLabelText,
+  titleAction,
   action,
   children,
 }: {
   agentId: string;
   agentLabelText: string;
+  titleAction?: ReactNode;
   action?: ReactNode;
   children?: ReactNode;
 }) {
@@ -223,8 +225,11 @@ export function AgentSummaryHeader({
           />
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-[17px] font-semibold leading-tight">
-            {agentLabelText}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 truncate text-[17px] font-semibold leading-tight">
+              {agentLabelText}
+            </span>
+            {titleAction && <span className="shrink-0">{titleAction}</span>}
           </span>
           {children}
         </span>
