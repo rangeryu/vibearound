@@ -819,10 +819,10 @@ function ModelCatalogDialog({
                   <button
                     type="button"
                     onClick={() => onDefaultModelChange(model.id)}
-                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md ${
                       selectedModel === model.id
-                        ? "border-primary/40 bg-primary/10 text-primary"
-                        : "border-border/60 text-muted-foreground/50 hover:text-foreground"
+                        ? "text-primary"
+                        : "text-muted-foreground/50 hover:bg-accent/40 hover:text-foreground"
                     }`}
                     title={t("Set default model")}
                     aria-label={t("Set default model")}
