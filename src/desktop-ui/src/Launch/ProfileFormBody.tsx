@@ -1177,9 +1177,6 @@ function ApiKindsField({
                   className="h-3.5 w-3.5 accent-primary"
                 />
                 <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
-                <span className="text-muted-foreground/70">
-                  · {t(apiTypeLabel(ep.api_type))}
-                </span>
                 {showModels && (
                   <button
                     type="button"
@@ -1203,9 +1200,6 @@ function ApiKindsField({
               className="min-h-8 flex items-center gap-2 px-2.5 py-1 border border-primary bg-primary/10 rounded-md text-xs"
             >
               <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
-              <span className="text-muted-foreground/70">
-                · {t(apiTypeLabel(ep.api_type))}
-              </span>
               {showModels && (
                 <Button
                   type="button"
