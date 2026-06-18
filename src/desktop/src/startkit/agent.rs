@@ -108,7 +108,7 @@ pub(in crate::startkit) async fn scan_agent_cli_item(
     let selected = common::agent_availability::resolve_agent_availability(
         agent_id,
         common::agent_availability::AgentAvailabilityRequest {
-            scan_policy: common::agent_availability::AgentScanPolicy::Refresh,
+            scan_policy: common::agent_availability::AgentScanPolicy::RefreshIfUnconfigured,
             toolchain_mode: &choices.toolchain_mode,
             candidate_preference:
                 common::agent_availability::AgentCandidatePreference::ToolchainMode,

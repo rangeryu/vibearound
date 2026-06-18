@@ -4,9 +4,14 @@ use crate::agent_detection::{self, AgentCandidate, AgentDetection};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum AgentScanPolicy {
+    /// Use the persisted detection file only.
     CacheOnly,
+    /// Always perform a fresh scan before selecting a candidate.
     Refresh,
+    /// Use configured/cache first, then scan only when no candidate is selected.
     RefreshIfMissing,
+    /// Trust an explicitly configured executable; otherwise perform a fresh scan.
+    RefreshIfUnconfigured,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -58,7 +63,12 @@ pub async fn resolve_agent_availability(
         request.candidate_preference,
     );
 
-    if request.scan_policy == AgentScanPolicy::RefreshIfMissing && selected.is_none() {
+    let should_refresh_after_cache = match request.scan_policy {
+        AgentScanPolicy::RefreshIfMissing => selected.is_none(),
+        AgentScanPolicy::RefreshIfUnconfigured => configured.is_none(),
+        AgentScanPolicy::CacheOnly | AgentScanPolicy::Refresh => false,
+    };
+    if should_refresh_after_cache {
         scanned = true;
         detection = agent_detection::scan_agent_and_persist(agent_id).await?;
         selected = select_agent_candidate(

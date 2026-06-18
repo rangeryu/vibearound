@@ -301,7 +301,7 @@ async fn agent_install_report(agent: common::resources::AgentDef) -> StartkitIte
     let candidate = common::agent_availability::resolve_agent_availability(
         &agent_id,
         common::agent_availability::AgentAvailabilityRequest {
-            scan_policy: common::agent_availability::AgentScanPolicy::Refresh,
+            scan_policy: common::agent_availability::AgentScanPolicy::RefreshIfUnconfigured,
             toolchain_mode: config.toolchain_mode.as_str(),
             candidate_preference:
                 common::agent_availability::AgentCandidatePreference::SystemToolchain,
@@ -366,7 +366,7 @@ async fn agent_update_report(
     let candidate = common::agent_availability::resolve_agent_availability(
         &agent_id,
         common::agent_availability::AgentAvailabilityRequest {
-            scan_policy: common::agent_availability::AgentScanPolicy::Refresh,
+            scan_policy: common::agent_availability::AgentScanPolicy::RefreshIfUnconfigured,
             toolchain_mode: &choices.toolchain_mode,
             candidate_preference:
                 common::agent_availability::AgentCandidatePreference::ToolchainMode,
