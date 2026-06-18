@@ -515,6 +515,35 @@ mod tests {
             .collect();
         assert!(api_types.contains(&"anthropic"));
         assert!(api_types.contains(&"openai-chat"));
+        for (endpoint_id, endpoint_label, openai_base, anthropic_base) in [
+            (
+                "moonshot-global",
+                "Moonshot API Global",
+                "https://api.moonshot.ai/v1",
+                "https://api.moonshot.ai/anthropic",
+            ),
+            (
+                "moonshot-cn",
+                "Moonshot API CN",
+                "https://api.moonshot.cn/v1",
+                "https://api.moonshot.cn/anthropic",
+            ),
+            (
+                "kimi-coding",
+                "Kimi Coding API",
+                "https://api.kimi.com/coding/v1",
+                "https://api.kimi.com/coding/",
+            ),
+        ] {
+            let openai = find_endpoint(provider, "openai-chat", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("moonshot openai endpoint {endpoint_id}"));
+            let anthropic = find_endpoint(provider, "anthropic", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("moonshot anthropic endpoint {endpoint_id}"));
+            assert_eq!(openai.label.as_deref(), Some(endpoint_label));
+            assert_eq!(anthropic.label.as_deref(), Some(endpoint_label));
+            assert_eq!(openai.default_base_url, openai_base);
+            assert_eq!(anthropic.default_base_url, anthropic_base);
+        }
         let kimi_coding =
             find_endpoint(provider, "anthropic", Some("kimi-coding")).expect("kimi coding");
         assert_eq!(kimi_coding.default_base_url, "https://api.kimi.com/coding/");
@@ -526,50 +555,84 @@ mod tests {
         assert!(kimi_code.capabilities.image_input);
         assert!(!kimi_code.capabilities.file_input);
 
-        let anthropic =
-            find_endpoint(provider, "anthropic", None).expect("moonshot anthropic endpoint");
+        let anthropic = find_endpoint(provider, "anthropic", Some("moonshot-global"))
+            .expect("moonshot anthropic endpoint");
+        assert_eq!(
+            model(anthropic, "kimi-k2.7-code").context_window,
+            Some(256_000)
+        );
+        assert!(find_model(anthropic, "kimi-k2-0905-preview").is_none());
+        assert!(model(anthropic, "kimi-k2.7-code").capabilities.image_input);
         let kimi_k26 = model(anthropic, "kimi-k2.6");
         assert!(kimi_k26.capabilities.image_input);
         assert!(!kimi_k26.capabilities.file_input);
 
-        let openai_chat =
-            find_endpoint(provider, "openai-chat", None).expect("moonshot chat endpoint");
+        let openai_chat = find_endpoint(provider, "openai-chat", Some("moonshot-global"))
+            .expect("moonshot chat endpoint");
+        assert_eq!(
+            model(openai_chat, "kimi-k2.7-code").context_window,
+            Some(256_000)
+        );
+        assert!(
+            model(openai_chat, "kimi-k2.7-code")
+                .capabilities
+                .image_input
+        );
         let kimi_k26 = model(openai_chat, "kimi-k2.6");
         assert!(kimi_k26.capabilities.image_input);
         assert!(!kimi_k26.capabilities.file_input);
+
+        let kimi_coding_chat =
+            find_endpoint(provider, "openai-chat", Some("kimi-coding")).expect("kimi coding chat");
+        assert_eq!(
+            kimi_coding_chat.default_base_url,
+            "https://api.kimi.com/coding/v1"
+        );
+        assert!(!kimi_coding_chat.append_v1_path);
+        assert!(
+            model(kimi_coding_chat, "kimi-for-coding")
+                .capabilities
+                .image_input
+        );
+        assert!(find_model(kimi_coding_chat, "kimi-code").is_none());
+        assert!(find_model(kimi_coding_chat, "k2p5").is_none());
     }
 
     #[test]
-    fn moonshot_catalog_tracks_kimi_k26() {
+    fn moonshot_catalog_tracks_current_models() {
         let provider = get("moonshot").expect("moonshot must exist");
-        let anthropic =
-            find_endpoint(provider, "anthropic", None).expect("moonshot anthropic endpoint");
-        for id in ["kimi-k2.6", "kimi-k2-0905-preview", "kimi-k2-turbo-preview"] {
-            assert_eq!(model(anthropic, id).context_window, Some(256_000));
+        for endpoint_id in ["moonshot-global", "moonshot-cn"] {
+            for api_type in ["openai-chat", "anthropic"] {
+                let endpoint = find_endpoint(provider, api_type, Some(endpoint_id))
+                    .unwrap_or_else(|| panic!("moonshot {api_type} endpoint {endpoint_id}"));
+                for id in [
+                    "kimi-k2.7-code",
+                    "kimi-k2.7-code-highspeed",
+                    "kimi-k2.6",
+                    "kimi-k2.5",
+                ] {
+                    assert_eq!(model(endpoint, id).context_window, Some(256_000));
+                    assert!(model(endpoint, id).capabilities.image_input);
+                    assert!(!model(endpoint, id).capabilities.file_input);
+                }
+                assert_eq!(model(endpoint, "moonshot-v1-8k").context_window, Some(8192));
+                assert_eq!(
+                    model(endpoint, "moonshot-v1-32k").context_window,
+                    Some(32_768)
+                );
+                assert_eq!(
+                    model(endpoint, "moonshot-v1-128k").context_window,
+                    Some(131_072)
+                );
+                assert!(
+                    model(endpoint, "moonshot-v1-32k-vision-preview")
+                        .capabilities
+                        .image_input
+                );
+                assert!(find_model(endpoint, "kimi-k2-0905-preview").is_none());
+                assert!(find_model(endpoint, "kimi-k2-turbo-preview").is_none());
+            }
         }
-
-        let openai_chat =
-            find_endpoint(provider, "openai-chat", None).expect("moonshot chat endpoint");
-        assert_eq!(
-            model(openai_chat, "kimi-k2.6").label.as_deref(),
-            Some("Kimi K2.6")
-        );
-        assert_eq!(
-            model(openai_chat, "kimi-k2.6").context_window,
-            Some(256_000)
-        );
-        assert_eq!(
-            model(openai_chat, "kimi-k2-0905-preview").context_window,
-            Some(256_000)
-        );
-        assert_eq!(
-            model(openai_chat, "moonshot-v1-32k").context_window,
-            Some(32_768)
-        );
-        assert_eq!(
-            model(openai_chat, "moonshot-v1-128k").context_window,
-            Some(131_072)
-        );
     }
 
     #[test]
@@ -595,11 +658,22 @@ mod tests {
         assert_eq!(
             endpoints,
             vec![
+                "api-cn-beijing",
                 "coding-plan",
                 "coding-plan-cn",
-                "token-plan",
                 "token-plan-cn"
             ]
+        );
+        let response_endpoints: Vec<_> = provider
+            .endpoints
+            .iter()
+            .filter(|e| e.api_type == "openai-responses")
+            .map(endpoint_id)
+            .collect();
+        assert_eq!(
+            response_endpoints,
+            vec!["api-cn-beijing", "token-plan-cn"],
+            "Token Plan Responses is a distinct protocol surface"
         );
         let anthropic_endpoints: Vec<_> = provider
             .endpoints
@@ -607,7 +681,15 @@ mod tests {
             .filter(|e| e.api_type == "anthropic")
             .map(endpoint_id)
             .collect();
-        assert_eq!(anthropic_endpoints, vec!["coding-plan", "coding-plan-cn"]);
+        assert_eq!(
+            anthropic_endpoints,
+            vec![
+                "api-cn-beijing",
+                "coding-plan",
+                "coding-plan-cn",
+                "token-plan-cn"
+            ]
+        );
 
         for &endpoint_id in &endpoints {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
@@ -641,15 +723,28 @@ mod tests {
             assert!(endpoint.auth_header);
         }
 
-        let token = find_endpoint(provider, "openai-chat", Some("token-plan"))
+        assert!(find_endpoint(provider, "openai-chat", Some("token-plan")).is_none());
+        let api = find_endpoint(provider, "openai-chat", Some("api-cn-beijing"))
+            .expect("pay-as-you-go api endpoint");
+        assert_eq!(api.label.as_deref(), Some("API CN Beijing"));
+        assert_eq!(
+            api.default_base_url,
+            "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        );
+        assert!(find_model(api, "qwen3.7-max").is_some());
+        assert!(find_model(api, "deepseek-v4-pro").is_some());
+
+        let token = find_endpoint(provider, "openai-chat", Some("token-plan-cn"))
             .expect("token plan endpoint");
+        assert_eq!(token.label.as_deref(), Some("Token Plan CN"));
         assert_eq!(
             token.default_base_url,
-            "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+            "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
         );
 
         let coding = find_endpoint(provider, "openai-chat", Some("coding-plan"))
             .expect("coding plan endpoint");
+        assert_eq!(coding.label.as_deref(), Some("Coding Plan International"));
         assert_eq!(
             coding.default_base_url,
             "https://coding-intl.dashscope.aliyuncs.com/v1"
@@ -685,32 +780,65 @@ mod tests {
             "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"
         );
         assert!(anthropic.auth_header);
+
+        let api_anthropic = find_endpoint(provider, "anthropic", Some("api-cn-beijing"))
+            .expect("pay-as-you-go anthropic endpoint");
+        assert_eq!(
+            api_anthropic.default_base_url,
+            "https://dashscope.aliyuncs.com/apps/anthropic"
+        );
+        assert!(api_anthropic.auth_header);
+
+        let token_anthropic = find_endpoint(provider, "anthropic", Some("token-plan-cn"))
+            .expect("token plan anthropic endpoint");
+        assert_eq!(
+            token_anthropic.default_base_url,
+            "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"
+        );
+        assert!(token_anthropic.auth_header);
+        assert_eq!(token.models.len(), token_anthropic.models.len());
+        for model in &token.models {
+            assert!(
+                find_model(token_anthropic, &model.id).is_some(),
+                "Token Plan Anthropic should expose the same base text model {}",
+                model.id
+            );
+        }
+        let responses = find_endpoint(provider, "openai-responses", Some("token-plan-cn"))
+            .expect("token plan responses endpoint");
+        assert!(find_model(responses, "qwen3.7-max").is_some());
+        assert!(find_model(responses, "qwen3.7-plus").is_some());
+        assert!(find_model(responses, "deepseek-v4-pro").is_none());
+        let api_responses = find_endpoint(provider, "openai-responses", Some("api-cn-beijing"))
+            .expect("pay-as-you-go responses endpoint");
+        assert!(find_model(api_responses, "qwen3.7-max").is_some());
+        assert!(find_model(api_responses, "deepseek-v4-pro").is_none());
     }
 
     #[test]
     fn dashscope_token_plan_tracks_current_chinese_models() {
         let provider = get("dashscope").expect("dashscope must exist");
-        for endpoint_id in ["token-plan", "token-plan-cn"] {
+        for endpoint_id in ["token-plan-cn"] {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
                 .unwrap_or_else(|| panic!("dashscope endpoint {endpoint_id}"));
             for (id, context_window) in [
-                ("qwen3.6-max-preview", 256_000),
                 ("qwen3.6-plus", 1_000_000),
                 ("qwen3.6-flash", 1_000_000),
                 ("deepseek-v4-pro", 1_000_000),
-                ("deepseek-v4-flash", 1_000_000),
-                ("glm-5.1", 198_000),
                 ("kimi-k2.6", 256_000),
             ] {
                 assert_eq!(model(endpoint, id).context_window, Some(context_window));
             }
+            assert!(find_model(endpoint, "qwen3.7-max").is_some());
+            assert!(find_model(endpoint, "qwen3.7-plus").is_some());
+            assert!(find_model(endpoint, "glm-5.2").is_some());
             assert!(model(endpoint, "qwen3.6-plus").capabilities.image_input);
             assert!(model(endpoint, "qwen3.6-flash").capabilities.image_input);
-            assert!(model(endpoint, "deepseek-v4-pro").capabilities.image_input);
-            assert!(model(endpoint, "MiniMax-M2.5").capabilities.image_input);
-            assert!(model(endpoint, "glm-5").capabilities.image_input);
             assert!(model(endpoint, "kimi-k2.6").capabilities.image_input);
-            assert!(!model(endpoint, "glm-5.1").capabilities.image_input);
+            assert!(!model(endpoint, "qwen3.7-max").capabilities.image_input);
+            assert!(!model(endpoint, "deepseek-v4-pro").capabilities.image_input);
+            assert!(!model(endpoint, "MiniMax-M2.5").capabilities.image_input);
+            assert!(!model(endpoint, "glm-5.2").capabilities.image_input);
             assert!(!model(endpoint, "qwen3.6-plus").capabilities.file_input);
             assert!(!model(endpoint, "kimi-k2.6").capabilities.file_input);
         }
@@ -719,13 +847,38 @@ mod tests {
     #[test]
     fn minimax_anthropic_endpoint_uses_auth_header() {
         let provider = get("minimax").expect("minimax must exist");
-        let global = find_endpoint(provider, "anthropic", Some("global")).expect("global endpoint");
-        let cn = find_endpoint(provider, "anthropic", Some("cn")).expect("cn endpoint");
-        assert_eq!(global.default_base_url, "https://api.minimax.io/anthropic");
-        assert_eq!(cn.default_base_url, "https://api.minimaxi.com/anthropic");
-        assert!(global.auth_header);
-        assert!(cn.auth_header);
-        let auth = global
+        let api_global =
+            find_endpoint(provider, "anthropic", Some("api-global")).expect("api global endpoint");
+        let api_cn = find_endpoint(provider, "anthropic", Some("api-cn")).expect("api cn endpoint");
+        let token_global = find_endpoint(provider, "anthropic", Some("token-plan-global"))
+            .expect("token plan global endpoint");
+        let token_cn = find_endpoint(provider, "anthropic", Some("token-plan-cn"))
+            .expect("token plan cn endpoint");
+        assert_eq!(api_global.label.as_deref(), Some("API Global"));
+        assert_eq!(api_cn.label.as_deref(), Some("API CN"));
+        assert_eq!(token_global.label.as_deref(), Some("Token Plan Global"));
+        assert_eq!(token_cn.label.as_deref(), Some("Token Plan CN"));
+        assert_eq!(
+            api_global.default_base_url,
+            "https://api.minimax.io/anthropic"
+        );
+        assert_eq!(
+            api_cn.default_base_url,
+            "https://api.minimaxi.com/anthropic"
+        );
+        assert_eq!(
+            token_global.default_base_url,
+            "https://api.minimax.io/anthropic"
+        );
+        assert_eq!(
+            token_cn.default_base_url,
+            "https://api.minimaxi.com/anthropic"
+        );
+        assert!(api_global.auth_header);
+        assert!(api_cn.auth_header);
+        assert!(token_global.auth_header);
+        assert!(token_cn.auth_header);
+        let auth = api_global
             .auth_modes
             .iter()
             .find(|auth| auth.mode == "api_key")
@@ -736,24 +889,61 @@ mod tests {
             Some("{{api_key}}")
         );
         assert!(render.env.get("ANTHROPIC_API_KEY").is_none());
+        assert_eq!(
+            token_global.auth_modes[0].fields[0].label.as_str(),
+            "MiniMax Subscription Key"
+        );
 
-        for endpoint in [global, cn] {
+        for endpoint in [api_global, api_cn, token_global, token_cn] {
             let m3 = model(endpoint, "MiniMax-M3");
             assert_eq!(m3.context_window, Some(1_000_000));
             assert!(m3.capabilities.image_input);
             assert!(!m3.capabilities.file_input);
             assert!(!model(endpoint, "MiniMax-M2.7").capabilities.image_input);
+            assert_eq!(
+                model(endpoint, "MiniMax-M2.5-highspeed").context_window,
+                Some(204_800)
+            );
         }
 
-        for endpoint_id in ["global", "cn"] {
+        for endpoint_id in ["api-global", "api-cn", "token-plan-global", "token-plan-cn"] {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
                 .unwrap_or_else(|| panic!("minimax chat endpoint {endpoint_id}"));
+            let expected_label = match endpoint_id {
+                "api-global" => "API Global",
+                "api-cn" => "API CN",
+                "token-plan-global" => "Token Plan Global",
+                "token-plan-cn" => "Token Plan CN",
+                _ => unreachable!(),
+            };
+            assert_eq!(endpoint.label.as_deref(), Some(expected_label));
             let m3 = model(endpoint, "MiniMax-M3");
             assert_eq!(m3.context_window, Some(1_000_000));
             assert!(m3.capabilities.image_input);
             assert!(!m3.capabilities.file_input);
             assert!(!model(endpoint, "MiniMax-M2.7").capabilities.image_input);
+            assert_eq!(
+                model(endpoint, "MiniMax-M2.5").context_window,
+                Some(204_800)
+            );
         }
+
+        let responses = find_endpoint(provider, "openai-responses", Some("api-global"))
+            .expect("minimax api responses endpoint");
+        assert_eq!(responses.default_base_url, "https://api.minimax.io/v1");
+        assert!(!responses.append_v1_path);
+        assert!(responses.capabilities.reasoning_effort);
+        assert_eq!(
+            model(responses, "MiniMax-M3").context_window,
+            Some(1_000_000)
+        );
+        let token_responses =
+            find_endpoint(provider, "openai-responses", Some("token-plan-global"))
+                .expect("minimax token plan responses endpoint");
+        assert_eq!(
+            token_responses.auth_modes[0].fields[0].label.as_str(),
+            "MiniMax Subscription Key"
+        );
     }
 
     #[test]
@@ -764,26 +954,37 @@ mod tests {
 
         assert!(!payg.append_v1_path);
         assert_eq!(payg.default_base_url, "https://api.xiaomimimo.com/v1");
-        for (endpoint_id, base_url) in [
-            ("token-plan-cn", "https://token-plan-cn.xiaomimimo.com/v1"),
-            ("token-plan-sgp", "https://token-plan-sgp.xiaomimimo.com/v1"),
-            ("token-plan-ams", "https://token-plan-ams.xiaomimimo.com/v1"),
-        ] {
+        assert!(payg.capabilities.content.web_search);
+        for (endpoint_id, base_url) in
+            [("token-plan-cn", "https://token-plan-cn.xiaomimimo.com/v1")]
+        {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
                 .unwrap_or_else(|| panic!("mimo token-plan endpoint {endpoint_id}"));
             assert_eq!(endpoint.default_base_url, base_url);
             assert!(!endpoint.append_v1_path);
         }
+        assert!(find_endpoint(provider, "openai-chat", Some("token-plan-sgp")).is_none());
+        assert!(find_endpoint(provider, "openai-chat", Some("token-plan-ams")).is_none());
         assert_eq!(
             model(payg, "mimo-v2.5-pro").label.as_deref(),
             Some("MiMo V2.5 Pro")
         );
-        for endpoint in &provider.endpoints {
+        for endpoint in provider
+            .endpoints
+            .iter()
+            .filter(|endpoint| endpoint.api_type == "openai-chat")
+        {
             assert_eq!(
                 model(endpoint, "mimo-v2.5-pro").context_window,
                 Some(1_000_000)
             );
+            assert!(
+                !model(endpoint, "mimo-v2.5-pro").capabilities.image_input,
+                "MiMo image understanding docs list mimo-v2.5 and mimo-v2-omni, not mimo-v2.5-pro"
+            );
             assert_eq!(model(endpoint, "mimo-v2.5").context_window, Some(1_000_000));
+            assert!(model(endpoint, "mimo-v2.5").capabilities.image_input);
+            assert!(!model(endpoint, "mimo-v2.5").capabilities.file_input);
             assert_eq!(
                 model(endpoint, "mimo-v2-pro").context_window,
                 Some(1_000_000)
@@ -792,10 +993,36 @@ mod tests {
                 model(endpoint, "mimo-v2-omni").context_window,
                 Some(256_000)
             );
+            assert!(model(endpoint, "mimo-v2-omni").capabilities.image_input);
+            assert!(!model(endpoint, "mimo-v2-omni").capabilities.file_input);
             assert_eq!(
                 model(endpoint, "mimo-v2-flash").context_window,
                 Some(256_000)
             );
+        }
+
+        for (endpoint_id, base_url) in [
+            ("pay-as-you-go", "https://api.xiaomimimo.com/anthropic"),
+            (
+                "token-plan-cn",
+                "https://token-plan-cn.xiaomimimo.com/anthropic",
+            ),
+        ] {
+            let endpoint = find_endpoint(provider, "anthropic", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("mimo anthropic endpoint {endpoint_id}"));
+            assert_eq!(endpoint.default_base_url, base_url);
+            assert!(endpoint.auth_header);
+            assert_eq!(
+                model(endpoint, "mimo-v2.5-pro").context_window,
+                Some(1_000_000)
+            );
+            assert!(!model(endpoint, "mimo-v2.5-pro").capabilities.image_input);
+            assert!(model(endpoint, "mimo-v2.5").capabilities.image_input);
+            assert!(!model(endpoint, "mimo-v2.5").capabilities.file_input);
+            assert!(!model(endpoint, "mimo-v2-pro").capabilities.image_input);
+            assert!(model(endpoint, "mimo-v2-omni").capabilities.image_input);
+            assert!(!model(endpoint, "mimo-v2-omni").capabilities.file_input);
+            assert!(!model(endpoint, "mimo-v2-flash").capabilities.image_input);
         }
     }
 
@@ -852,6 +1079,7 @@ mod tests {
 
         let ark_anthropic =
             find_endpoint(provider, "anthropic", Some("ark-api")).expect("ark anthropic");
+        assert_eq!(ark_anthropic.label.as_deref(), Some("Ark API CN Beijing"));
         assert_eq!(
             ark_anthropic.default_base_url,
             "https://ark.cn-beijing.volces.com/api/compatible"
@@ -859,8 +1087,8 @@ mod tests {
         assert!(ark_anthropic.append_v1_path);
         assert!(ark_anthropic.auth_header);
         assert_eq!(
-            model(ark_anthropic, "doubao-seed-code").id,
-            "doubao-seed-code-preview-251028"
+            model(ark_anthropic, "doubao-seed-2-0-code").id,
+            "doubao-seed-2-0-code-preview-260215"
         );
         assert!(
             model(ark_anthropic, "doubao-seed-2-0-pro")
@@ -877,10 +1105,13 @@ mod tests {
                 .capabilities
                 .image_input
         );
+        assert!(find_model(ark_anthropic, "doubao-seed-1-8").is_none());
+        assert!(find_model(ark_anthropic, "glm-4-7").is_none());
 
         for api_type in ["openai-responses", "openai-chat"] {
             let endpoint =
                 find_endpoint(provider, api_type, Some("ark-api")).expect("ark endpoint");
+            assert_eq!(endpoint.label.as_deref(), Some("Ark API CN Beijing"));
             assert_eq!(
                 endpoint.default_base_url,
                 "https://ark.cn-beijing.volces.com/api/v3"
@@ -888,11 +1119,11 @@ mod tests {
             assert!(!endpoint.append_v1_path);
             assert!(endpoint.capabilities.reasoning_effort);
 
-            let code = model(endpoint, "doubao-seed-code");
-            assert_eq!(code.id, "doubao-seed-code-preview-251028");
+            let code = model(endpoint, "doubao-seed-2-0-code");
+            assert_eq!(code.id, "doubao-seed-2-0-code-preview-260215");
             assert_eq!(code.context_window, Some(256_000));
             assert!(code.capabilities.image_input);
-            assert!(!code.capabilities.file_input);
+            assert!(code.capabilities.file_input);
 
             let seed2_pro = model(endpoint, "doubao-seed-2-0-pro");
             assert!(seed2_pro.capabilities.image_input);
@@ -908,6 +1139,10 @@ mod tests {
         let coding_anthropic =
             find_endpoint(provider, "anthropic", Some("coding-plan")).expect("coding anthropic");
         assert_eq!(
+            coding_anthropic.label.as_deref(),
+            Some("Coding Plan CN Beijing")
+        );
+        assert_eq!(
             coding_anthropic.default_base_url,
             "https://ark.cn-beijing.volces.com/api/coding"
         );
@@ -915,7 +1150,11 @@ mod tests {
         assert!(coding_anthropic.auth_header);
         assert!(find_model(coding_anthropic, "ark-code-latest").is_some());
         assert!(find_model(coding_anthropic, "doubao-seed-2.0-code").is_some());
-        assert!(find_model(coding_anthropic, "minimax-latest").is_some());
+        assert!(find_model(coding_anthropic, "minimax-m3").is_some());
+        assert!(find_model(coding_anthropic, "glm-5.2").is_some());
+        assert!(find_model(coding_anthropic, "deepseek-v4-pro").is_some());
+        assert!(find_model(coding_anthropic, "kimi-k2.6").is_some());
+        assert!(find_model(coding_anthropic, "minimax-latest").is_none());
         assert!(find_model(coding_anthropic, "doubao-seed-code-preview-251028").is_none());
         assert!(
             model(coding_anthropic, "ark-code-latest")
@@ -927,7 +1166,7 @@ mod tests {
                 .capabilities
                 .file_input
         );
-        assert!(!model(coding_anthropic, "glm-5.1").capabilities.image_input);
+        assert!(!model(coding_anthropic, "glm-5.2").capabilities.image_input);
         assert!(
             !model(coding_anthropic, "deepseek-v4-pro")
                 .capabilities
@@ -936,12 +1175,15 @@ mod tests {
 
         let coding_chat =
             find_endpoint(provider, "openai-chat", Some("coding-plan")).expect("coding chat");
+        assert_eq!(coding_chat.label.as_deref(), Some("Coding Plan CN Beijing"));
         assert_eq!(
             coding_chat.default_base_url,
             "https://ark.cn-beijing.volces.com/api/coding/v3"
         );
         assert!(!coding_chat.append_v1_path);
         assert!(find_model(coding_chat, "kimi-k2.6").is_some());
+        assert!(find_model(coding_chat, "minimax-m3").is_some());
+        assert!(find_model(coding_chat, "glm-5.2").is_some());
         assert!(
             model(coding_chat, "ark-code-latest")
                 .capabilities
@@ -958,7 +1200,7 @@ mod tests {
                 .file_input
         );
         assert!(model(coding_chat, "kimi-k2.6").capabilities.file_input);
-        assert!(!model(coding_chat, "glm-5.1").capabilities.image_input);
+        assert!(!model(coding_chat, "glm-5.2").capabilities.image_input);
         assert!(
             !model(coding_chat, "deepseek-v4-pro")
                 .capabilities
@@ -968,44 +1210,52 @@ mod tests {
         let agent_anthropic =
             find_endpoint(provider, "anthropic", Some("agent-plan")).expect("agent anthropic");
         assert_eq!(
+            agent_anthropic.label.as_deref(),
+            Some("Agent Plan CN Beijing")
+        );
+        assert_eq!(
             agent_anthropic.default_base_url,
             "https://ark.cn-beijing.volces.com/api/plan"
         );
         assert!(agent_anthropic.append_v1_path);
         assert!(agent_anthropic.auth_header);
         assert!(find_model(agent_anthropic, "ark-code-latest").is_some());
-        assert!(find_model(agent_anthropic, "doubao-seed-2.0-mini").is_some());
+        assert!(find_model(agent_anthropic, "minimax-m3").is_some());
+        assert!(find_model(agent_anthropic, "glm-5.2").is_some());
+        assert!(find_model(agent_anthropic, "doubao-seed-2.0-mini").is_none());
         assert!(find_model(agent_anthropic, "doubao-seedance-2.0").is_none());
         assert!(
-            model(agent_anthropic, "doubao-seed-2.0-mini")
+            model(agent_anthropic, "doubao-seed-2.0-pro")
                 .capabilities
                 .image_input
         );
         assert!(
-            !model(agent_anthropic, "doubao-seed-2.0-mini")
+            !model(agent_anthropic, "doubao-seed-2.0-pro")
                 .capabilities
                 .file_input
         );
 
         let agent_chat =
             find_endpoint(provider, "openai-chat", Some("agent-plan")).expect("agent chat");
+        assert_eq!(agent_chat.label.as_deref(), Some("Agent Plan CN Beijing"));
         assert_eq!(
             agent_chat.default_base_url,
             "https://ark.cn-beijing.volces.com/api/plan/v3"
         );
         assert!(!agent_chat.append_v1_path);
-        assert!(find_model(agent_chat, "minimax-m2.7").is_some());
+        assert!(find_model(agent_chat, "minimax-m3").is_some());
+        assert!(find_model(agent_chat, "minimax-m2.7").is_none());
         assert!(
-            model(agent_chat, "doubao-seed-2.0-mini")
+            model(agent_chat, "doubao-seed-2.0-pro")
                 .capabilities
                 .image_input
         );
         assert!(
-            model(agent_chat, "doubao-seed-2.0-mini")
+            model(agent_chat, "doubao-seed-2.0-pro")
                 .capabilities
                 .file_input
         );
-        assert!(!model(agent_chat, "glm-5.1").capabilities.image_input);
+        assert!(!model(agent_chat, "glm-5.2").capabilities.image_input);
     }
 
     #[test]
@@ -1040,16 +1290,47 @@ mod tests {
     #[test]
     fn zai_catalog_tracks_context_windows() {
         let provider = get("zai").expect("zai must exist");
-        for api_type in ["anthropic", "openai-chat"] {
-            let endpoint = find_endpoint(provider, api_type, None)
-                .unwrap_or_else(|| panic!("zai {api_type} endpoint"));
-            assert_eq!(model(endpoint, "glm-5.1").context_window, Some(200_000));
-            assert_eq!(model(endpoint, "glm-5").context_window, Some(200_000));
-            assert_eq!(model(endpoint, "glm-4.7").context_window, Some(200_000));
-            assert_eq!(model(endpoint, "glm-4.5").context_window, Some(128_000));
-            assert!(!model(endpoint, "glm-5").capabilities.image_input);
-            assert!(!model(endpoint, "glm-4.7").capabilities.image_input);
-        }
+        let coding_anthropic = find_endpoint(provider, "anthropic", Some("coding-global"))
+            .expect("zai coding anthropic endpoint");
+        assert_eq!(
+            coding_anthropic.label.as_deref(),
+            Some("Coding Plan Global")
+        );
+        assert_eq!(
+            coding_anthropic.default_base_url,
+            "https://api.z.ai/api/anthropic"
+        );
+        assert_eq!(
+            model(coding_anthropic, "glm-5.2").context_window,
+            Some(1_000_000)
+        );
+        assert_eq!(
+            model(coding_anthropic, "glm-5-turbo").context_window,
+            Some(200_000)
+        );
+        assert!(find_model(coding_anthropic, "glm-5.1").is_none());
+
+        let coding_cn_anthropic = find_endpoint(provider, "anthropic", Some("coding-cn"))
+            .expect("zai coding cn anthropic endpoint");
+        assert_eq!(coding_cn_anthropic.label.as_deref(), Some("Coding Plan CN"));
+        assert_eq!(
+            coding_cn_anthropic.default_base_url,
+            "https://open.bigmodel.cn/api/anthropic"
+        );
+        assert!(find_endpoint(provider, "anthropic", Some("cn")).is_none());
+
+        let global_chat =
+            find_endpoint(provider, "openai-chat", Some("global")).expect("zai global chat");
+        assert_eq!(global_chat.label.as_deref(), Some("Global API"));
+        assert_eq!(
+            model(global_chat, "glm-5.2").context_window,
+            Some(1_000_000)
+        );
+        assert_eq!(model(global_chat, "glm-5.1").context_window, Some(200_000));
+        assert_eq!(model(global_chat, "glm-4.7").context_window, Some(200_000));
+        assert!(find_model(global_chat, "glm-5").is_none());
+        assert!(find_model(global_chat, "glm-4.5").is_none());
+        assert!(!model(global_chat, "glm-4.7").capabilities.image_input);
 
         for endpoint_id in ["global", "cn"] {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
@@ -1057,8 +1338,16 @@ mod tests {
             let vision = model(endpoint, "glm-5v-turbo");
             assert!(vision.capabilities.image_input);
             assert!(vision.capabilities.file_input);
-            assert!(model(endpoint, "glm-4.6v").capabilities.image_input);
-            assert!(model(endpoint, "glm-4.5v").capabilities.file_input);
+            assert!(find_model(endpoint, "glm-4.6v").is_none());
+            assert!(find_model(endpoint, "glm-4.5v").is_none());
+        }
+
+        for endpoint_id in ["coding-global", "coding-cn"] {
+            let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("zai coding endpoint {endpoint_id}"));
+            assert_eq!(model(endpoint, "glm-5.2").context_window, Some(1_000_000));
+            assert!(find_model(endpoint, "glm-5.1").is_none());
+            assert!(find_model(endpoint, "glm-4.5-air").is_some());
         }
     }
 

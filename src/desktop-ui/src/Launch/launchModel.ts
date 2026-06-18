@@ -306,8 +306,6 @@ export function isDesktopBridgeAgent(agentId: string): boolean {
 }
 
 export function connectionAgentId(agentId: string): ConnectionAgentId | null {
-  if (agentId === "claude-desktop") return "claude";
-  if (agentId === "codex-desktop") return "codex";
   return PROXY_AGENTS.has(agentId) ? (agentId as ConnectionAgentId) : null;
 }
 

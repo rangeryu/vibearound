@@ -8,8 +8,6 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@va/i18n";
-import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,12 +48,6 @@ import type {
 import { isProviderApiKind } from "./types";
 
 type Step = "pick-provider" | "fill-form";
-type ProfileTestStatus =
-  | { state: "idle" }
-  | { state: "testing" }
-  | { state: "success"; message: string }
-  | { state: "error"; message: string };
-
 export type ProfileFormSubmit =
   | { type: "create"; draft: ProfileDraft }
   | { type: "update"; profile: ProfileDef };
@@ -117,9 +109,6 @@ export function ProfileFormDialog({
   const [revealKeys, setRevealKeys] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [testStatus, setTestStatus] = useState<ProfileTestStatus>({
-    state: "idle",
-  });
 
   useEffect(() => {
     if (!provider || editing) return;
@@ -168,18 +157,6 @@ export function ProfileFormDialog({
     if (!label) setLabel(c.label);
     setStep("fill-form");
   }
-
-  useEffect(() => {
-    setTestStatus({ state: "idle" });
-  }, [
-    authMode,
-    credentials,
-    overrides,
-    provider?.id,
-    providerSettings,
-    selectedApiTypes,
-    useSettingsProxy,
-  ]);
 
   function buildDraftForProvider(
     selectedProvider: CatalogEntry,
@@ -269,33 +246,36 @@ export function ProfileFormDialog({
     }
   }
 
-  async function handleTestConnection() {
+  async function handleTestModel(apiType: string, model: string) {
     setError(null);
     const result = validateProfileDraft({
       requireLabel: false,
       requireApiKeyAuth: true,
     });
     if ("error" in result) {
-      setTestStatus({ state: "error", message: result.error });
-      return;
+      return { ok: false, message: result.error };
     }
 
-    setTestStatus({ state: "testing" });
+    const testDraft: ProfileDraft = {
+      ...result.draft,
+      api_types: [apiType],
+      overrides: {
+        ...result.draft.overrides,
+        [apiType]: {
+          ...(result.draft.overrides[apiType] ?? {}),
+          model,
+        },
+      },
+    };
+
     try {
-      const response = await testProfileConnection(result.draft);
-      const count = response.testedApiTypes.length;
-      setTestStatus({
-        state: "success",
-        message:
-          count > 1
-            ? t("Test passed for {{count}} API kinds", { count })
-            : t("Test passed"),
-      });
+      await testProfileConnection(testDraft);
+      return { ok: true, message: t("Test passed") };
     } catch (e) {
-      setTestStatus({
-        state: "error",
+      return {
+        ok: false,
         message: e instanceof Error ? e.message : String(e),
-      });
+      };
     }
   }
 
@@ -342,6 +322,8 @@ export function ProfileFormDialog({
               setProviderSettings={setProviderSettings}
               revealKeys={revealKeys}
               setRevealKeys={setRevealKeys}
+              testingDisabled={saving}
+              onTestModel={handleTestModel}
             />
           ) : null}
         </div>
@@ -370,38 +352,6 @@ export function ProfileFormDialog({
               >
                 {t("Change provider")}
               </Button>
-            )}
-            {step === "fill-form" && (
-              <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void handleTestConnection()}
-                  disabled={testStatus.state === "testing" || saving}
-                >
-                  {testStatus.state === "testing" ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  )}
-                  {testStatus.state === "testing" ? t("Testing…") : t("Test")}
-                </Button>
-                {testStatus.state === "success" && (
-                  <span className="flex min-w-0 items-center gap-1 text-xs text-primary">
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">{testStatus.message}</span>
-                  </span>
-                )}
-                {testStatus.state === "error" && (
-                  <span className="flex min-w-0 items-center gap-1 text-xs text-destructive">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">
-                      {t("Test failed")}: {testStatus.message}
-                    </span>
-                  </span>
-                )}
-              </>
             )}
           </div>
           <div className="flex items-center gap-2">

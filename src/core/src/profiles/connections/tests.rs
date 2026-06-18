@@ -199,11 +199,11 @@ fn codex_can_launch_gemini_profile_via_bridge() {
 }
 
 #[test]
-fn codex_desktop_reuses_codex_bridge_connection() {
+fn codex_desktop_uses_desktop_bridge_connection() {
     let profile = profile(&["gemini"]);
     let prefs = connections(
         &profile.id,
-        "codex",
+        "codex-desktop",
         agent_state::ProfileConnectionPreference {
             selected_api_type: Some("openai-responses".to_string()),
             bridge: [(
@@ -234,11 +234,38 @@ fn codex_desktop_reuses_codex_bridge_connection() {
 }
 
 #[test]
-fn claude_desktop_reuses_claude_bridge_connection() {
+fn codex_desktop_does_not_reuse_codex_bridge_connection() {
+    let profile = profile(&["gemini"]);
+    let prefs = connections(
+        &profile.id,
+        "codex",
+        agent_state::ProfileConnectionPreference {
+            selected_api_type: Some("openai-responses".to_string()),
+            bridge: [(
+                "openai-responses".to_string(),
+                agent_state::ProfileBridgePreference {
+                    enabled: true,
+                    target_api_type: Some("gemini".to_string()),
+                    upstream_model: Some("gemini-2.5-flash".to_string()),
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        },
+    );
+
+    assert!(
+        resolve_profile_agent_route_with_connections(&profile, "codex-desktop", &prefs).is_none()
+    );
+}
+
+#[test]
+fn claude_desktop_uses_desktop_bridge_connection() {
     let profile = profile(&["openai-responses"]);
     let prefs = connections(
         &profile.id,
-        "claude",
+        "claude-desktop",
         agent_state::ProfileConnectionPreference {
             selected_api_type: Some("anthropic".to_string()),
             bridge: [(
@@ -269,6 +296,33 @@ fn claude_desktop_reuses_claude_bridge_connection() {
             && target.api_type == "anthropic"
             && target.bridge_target_api_type.as_deref() == Some("openai-responses")
     }));
+}
+
+#[test]
+fn claude_desktop_does_not_reuse_claude_bridge_connection() {
+    let profile = profile(&["openai-responses"]);
+    let prefs = connections(
+        &profile.id,
+        "claude",
+        agent_state::ProfileConnectionPreference {
+            selected_api_type: Some("anthropic".to_string()),
+            bridge: [(
+                "anthropic".to_string(),
+                agent_state::ProfileBridgePreference {
+                    enabled: true,
+                    target_api_type: Some("openai-responses".to_string()),
+                    upstream_model: Some("gpt-5.1-codex".to_string()),
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        },
+    );
+
+    assert!(
+        resolve_profile_agent_route_with_connections(&profile, "claude-desktop", &prefs).is_none()
+    );
 }
 
 #[test]

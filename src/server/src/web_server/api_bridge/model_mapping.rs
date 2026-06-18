@@ -77,8 +77,8 @@ fn agent_id_from_scope(scope: &str, client_api_type: &str) -> Option<&'static st
 
 fn route_scope_agent_ids() -> &'static [(&'static str, &'static str)] {
     &[
-        ("claude-desktop", "claude"),
-        ("codex-desktop", "codex"),
+        ("claude-desktop", "claude-desktop"),
+        ("codex-desktop", "codex-desktop"),
         ("claude", "claude"),
         ("codex", "codex"),
         ("gemini", "gemini"),
@@ -268,14 +268,14 @@ mod tests {
     }
 
     #[test]
-    fn bridge_scope_parser_maps_desktop_agents_to_shared_preferences() {
+    fn bridge_scope_parser_keeps_desktop_preferences_separate() {
         assert_eq!(
             agent_id_from_scope("codex-desktop-openai-responses", "openai-responses"),
-            Some("codex")
+            Some("codex-desktop")
         );
         assert_eq!(
             agent_id_from_scope("claude-desktop-anthropic", "anthropic"),
-            Some("claude")
+            Some("claude-desktop")
         );
     }
 }

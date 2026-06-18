@@ -59,7 +59,7 @@ export function buildManualSetting(
   manualConfig: ManualBridgeConfig,
 ): ManualSetting {
   const model = manualConfig.model || "<model-id>";
-  if (agentId === "codex") {
+  if (agentId === "codex" || agentId === "codex-desktop") {
     const profileName = codexProfileName(profile.id, targetApiType);
     const providerName = profileName;
     return {
@@ -83,6 +83,26 @@ export function buildManualSetting(
         `wire_api = "responses"`,
         `requires_openai_auth = false`,
       ].join("\n"),
+    };
+  }
+
+  if (agentId === "claude-desktop") {
+    return {
+      agentId,
+      agentLabel,
+      copyKey: `${manualConfig.copyKey}:claude-desktop-3p`,
+      filePath: "Claude Desktop third-party inference profile",
+      snippet: JSON.stringify(
+        {
+          inferenceProvider: "gateway",
+          inferenceGatewayBaseUrl: manualConfig.baseUrl,
+          inferenceGatewayApiKey: PLACEHOLDER_API_KEY,
+          inferenceGatewayAuthScheme: "bearer",
+          modelDiscoveryEnabled: true,
+        },
+        null,
+        2,
+      ),
     };
   }
 
@@ -203,7 +223,8 @@ export function ManualSettingDialog({
   onClose: () => void;
 }) {
   const { t } = useI18n();
-  const isCodex = setting.agentId === "codex";
+  const isCodex = setting.agentId === "codex" || setting.agentId === "codex-desktop";
+  const isDesktop = setting.agentId === "claude-desktop" || setting.agentId === "codex-desktop";
   const isOpenCode = setting.agentId === "opencode";
   const isGemini = setting.agentId === "gemini";
   const isPi = setting.agentId === "pi";
@@ -220,6 +241,8 @@ export function ManualSettingDialog({
               ? t("Copy the matching parts into the Gemini CLI settings and env files yourself. VibeAround does not edit them automatically.")
               : isPi
                 ? t("Copy this extension into a local file and pass it to pi with --extension yourself. VibeAround does not edit Pi global config automatically.")
+              : isDesktop
+                ? t("VibeAround writes this desktop configuration during launch. Copy this only if you are configuring the desktop app by hand.")
               : t("Copy this snippet into the CLI config file yourself. VibeAround does not edit the file automatically.")}
           </DialogDescription>
         </DialogHeader>
@@ -232,11 +255,17 @@ export function ManualSettingDialog({
           <div className="rounded-md border border-border/70 p-3">
             <div className="text-[12px] font-medium">{t("How to modify")}</div>
             <ol className="mt-2 space-y-1.5 pl-4 text-[12px] leading-relaxed text-muted-foreground">
-              {isCodex ? (
+              {setting.agentId === "claude-desktop" ? (
+                <>
+                  <li>{t("Open Claude Desktop's third-party inference profile settings.")}</li>
+                  <li>{t("Use the local bridge base URL and any non-empty API key value.")}</li>
+                  <li>{t("Keep model discovery enabled so Claude Desktop can list the bridge models.")}</li>
+                </>
+              ) : isCodex ? (
                 <>
                   <li>{t("Open the Codex config file, then add this snippet or update the existing VibeAround top-level model settings.")}</li>
                   <li>{t("Codex 0.134.0 and newer reject the old top-level profile selector, so this snippet leaves that line commented as a migration hint.")}</li>
-                  <li>{t("The top-level model and provider lines make plain codex use this VibeAround bridge by default.")}</li>
+                  <li>{t("The top-level model and provider lines make Codex use this VibeAround bridge by default.")}</li>
                   <li>{t("If Codex keeps using account login instead of this bridge config, run codex logout first.")}</li>
                 </>
               ) : isOpenCode ? (
@@ -269,7 +298,9 @@ export function ManualSettingDialog({
 
           <ConfigSnippetBlock
             title={
-              isCodex
+              setting.agentId === "claude-desktop"
+                ? t("Claude Desktop profile snippet")
+                : isCodex
                 ? t("Codex config snippet")
                 : isOpenCode
                   ? t("OpenCode config snippet")
