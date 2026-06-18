@@ -794,13 +794,8 @@ function ModelCatalogDialog({
           <DialogDescription className="sr-only">
             {t("Provider model catalog and connection tests.")}
           </DialogDescription>
-          <div className="flex min-w-0 flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
-            <span className="rounded bg-muted px-1.5 py-0.5">
-              {t(endpointLabel(endpoint))}
-            </span>
-            <span className="min-w-0 truncate font-mono">
-              {baseUrl || t("Endpoint URL required")}
-            </span>
+          <div className="min-w-0 truncate pt-1 font-mono text-xs text-muted-foreground">
+            {baseUrl || t("Endpoint URL required")}
           </div>
         </DialogHeader>
 
