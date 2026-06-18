@@ -337,11 +337,7 @@ async fn latest_node_lts_release(source: &NodeSource) -> anyhow::Result<NodeRele
     let bytes = archive::download_bytes(&source.index_url).await?;
     let entries: Vec<NodeIndexEntry> =
         serde_json::from_slice(&bytes).context("parsing Node.js index")?;
-    let entry = entries
-        .into_iter()
-        .find(|entry| {
-            is_lts_value(&entry.lts) && entry.files.iter().any(|file| file == target.file_key)
-        })
+    let entry = latest_node_lts_entry(entries, target.file_key)
         .ok_or_else(|| anyhow!("no Node.js LTS archive found for {}", target.file_key))?;
     let archive_name = target.archive_name(&entry.version);
     let base = source.dist_base.trim_end_matches('/');
@@ -352,6 +348,13 @@ async fn latest_node_lts_release(source: &NodeSource) -> anyhow::Result<NodeRele
         archive_name,
         format: target.format,
     })
+}
+
+fn latest_node_lts_entry(entries: Vec<NodeIndexEntry>, file_key: &str) -> Option<NodeIndexEntry> {
+    entries
+        .into_iter()
+        .filter(|entry| is_lts_value(&entry.lts) && entry.files.iter().any(|file| file == file_key))
+        .max_by_key(|entry| parse_version_triplet(&entry.version).unwrap_or((0, 0, 0)))
 }
 
 async fn verify_node_archive(release: &NodeRelease, bytes: &[u8]) -> anyhow::Result<()> {
@@ -655,6 +658,35 @@ mod tests {
             target.archive_name("v24.11.1"),
             "node-v24.11.1-linux-x64.tar.xz"
         );
+    }
+
+    #[test]
+    fn latest_node_lts_entry_does_not_depend_on_index_order() {
+        let entries = vec![
+            NodeIndexEntry {
+                version: "v20.19.4".to_string(),
+                lts: serde_json::Value::String("Iron".to_string()),
+                files: vec!["linux-x64".to_string()],
+            },
+            NodeIndexEntry {
+                version: "v24.1.0".to_string(),
+                lts: serde_json::Value::Bool(false),
+                files: vec!["linux-x64".to_string()],
+            },
+            NodeIndexEntry {
+                version: "v22.18.0".to_string(),
+                lts: serde_json::Value::String("Jod".to_string()),
+                files: vec!["linux-x64".to_string()],
+            },
+            NodeIndexEntry {
+                version: "v22.19.0".to_string(),
+                lts: serde_json::Value::String("Jod".to_string()),
+                files: vec!["linux-arm64".to_string()],
+            },
+        ];
+
+        let selected = latest_node_lts_entry(entries, "linux-x64").expect("latest LTS entry");
+        assert_eq!(selected.version, "v22.18.0");
     }
 
     #[test]
