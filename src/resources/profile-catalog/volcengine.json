@@ -12,27 +12,11 @@
       "auth_header": true,
       "models": [
         {
-          "id": "doubao-seed-code-preview-251028",
-          "label": "Doubao Seed Code Preview",
-          "aliases": ["doubao-seed-code"],
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "doubao-seed-1-8-251228",
-          "label": "Doubao Seed 1.8",
-          "aliases": ["doubao-seed-1-8"],
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
           "id": "doubao-seed-2-0-code-preview-260215",
           "label": "Doubao Seed 2.0 Code Preview",
-          "aliases": ["doubao-seed-2-0-code"],
+          "aliases": [
+            "doubao-seed-2-0-code"
+          ],
           "context_window": 256000,
           "capabilities": {
             "image_input": true
@@ -41,7 +25,9 @@
         {
           "id": "doubao-seed-2-0-pro-260215",
           "label": "Doubao Seed 2.0 Pro",
-          "aliases": ["doubao-seed-2-0-pro"],
+          "aliases": [
+            "doubao-seed-2-0-pro"
+          ],
           "context_window": 256000,
           "capabilities": {
             "image_input": true
@@ -50,16 +36,9 @@
         {
           "id": "doubao-seed-2-0-lite-260428",
           "label": "Doubao Seed 2.0 Lite",
-          "aliases": ["doubao-seed-2-0-lite"],
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "doubao-seed-2-0-mini-260428",
-          "label": "Doubao Seed 2.0 Mini",
-          "aliases": ["doubao-seed-2-0-mini"],
+          "aliases": [
+            "doubao-seed-2-0-lite"
+          ],
           "context_window": 256000,
           "capabilities": {
             "image_input": true
@@ -68,26 +47,10 @@
         {
           "id": "deepseek-v4-pro-260425",
           "label": "DeepSeek V4 Pro",
-          "aliases": ["deepseek-v4-pro"],
+          "aliases": [
+            "deepseek-v4-pro"
+          ],
           "context_window": 1024000
-        },
-        {
-          "id": "deepseek-v4-flash-260425",
-          "label": "DeepSeek V4 Flash",
-          "aliases": ["deepseek-v4-flash"],
-          "context_window": 1024000
-        },
-        {
-          "id": "deepseek-v3-2-251201",
-          "label": "DeepSeek V3.2",
-          "aliases": ["deepseek-v3-2"],
-          "context_window": 1024000
-        },
-        {
-          "id": "glm-4-7-251222",
-          "label": "GLM 4.7",
-          "aliases": ["glm-4-7"],
-          "context_window": 200000
         }
       ],
       "auth_modes": [
@@ -142,41 +105,15 @@
           }
         },
         {
-          "id": "doubao-seed-2.0-lite",
-          "label": "Doubao Seed 2.0 Lite",
+          "id": "minimax-m3",
+          "label": "MiniMax M3",
           "capabilities": {
             "image_input": true
           }
         },
         {
-          "id": "doubao-seed-code",
-          "label": "Doubao Seed Code",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "minimax-latest",
-          "label": "MiniMax Latest",
-          "aliases": ["minimax-m2.7"],
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-5.1",
-          "label": "GLM 5.1"
-        },
-        {
-          "id": "deepseek-v3.2",
-          "label": "DeepSeek V3.2",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash"
+          "id": "glm-5.2",
+          "label": "GLM 5.2"
         },
         {
           "id": "deepseek-v4-pro",
@@ -242,40 +179,15 @@
           }
         },
         {
-          "id": "doubao-seed-2.0-lite",
-          "label": "Doubao Seed 2.0 Lite",
+          "id": "minimax-m3",
+          "label": "MiniMax M3",
           "capabilities": {
             "image_input": true
           }
         },
         {
-          "id": "doubao-seed-2.0-mini",
-          "label": "Doubao Seed 2.0 Mini",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "minimax-m2.7",
-          "label": "MiniMax M2.7",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "glm-5.1",
-          "label": "GLM 5.1"
-        },
-        {
-          "id": "deepseek-v3.2",
-          "label": "DeepSeek V3.2",
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash"
+          "id": "glm-5.2",
+          "label": "GLM 5.2"
         },
         {
           "id": "deepseek-v4-pro",
@@ -320,27 +232,11 @@
       "append_v1_path": false,
       "models": [
         {
-          "id": "doubao-seed-code-preview-251028",
-          "label": "Doubao Seed Code Preview",
-          "aliases": ["doubao-seed-code"],
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "doubao-seed-1-8-251228",
-          "label": "Doubao Seed 1.8",
-          "aliases": ["doubao-seed-1-8"],
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
           "id": "doubao-seed-2-0-code-preview-260215",
           "label": "Doubao Seed 2.0 Code Preview",
-          "aliases": ["doubao-seed-2-0-code"],
+          "aliases": [
+            "doubao-seed-2-0-code"
+          ],
           "context_window": 256000,
           "capabilities": {
             "image_input": true,
@@ -350,7 +246,9 @@
         {
           "id": "doubao-seed-2-0-pro-260215",
           "label": "Doubao Seed 2.0 Pro",
-          "aliases": ["doubao-seed-2-0-pro"],
+          "aliases": [
+            "doubao-seed-2-0-pro"
+          ],
           "context_window": 256000,
           "capabilities": {
             "image_input": true,
@@ -360,17 +258,9 @@
         {
           "id": "doubao-seed-2-0-lite-260428",
           "label": "Doubao Seed 2.0 Lite",
-          "aliases": ["doubao-seed-2-0-lite"],
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
-        },
-        {
-          "id": "doubao-seed-2-0-mini-260428",
-          "label": "Doubao Seed 2.0 Mini",
-          "aliases": ["doubao-seed-2-0-mini"],
+          "aliases": [
+            "doubao-seed-2-0-lite"
+          ],
           "context_window": 256000,
           "capabilities": {
             "image_input": true,
@@ -380,26 +270,10 @@
         {
           "id": "deepseek-v4-pro-260425",
           "label": "DeepSeek V4 Pro",
-          "aliases": ["deepseek-v4-pro"],
+          "aliases": [
+            "deepseek-v4-pro"
+          ],
           "context_window": 1024000
-        },
-        {
-          "id": "deepseek-v4-flash-260425",
-          "label": "DeepSeek V4 Flash",
-          "aliases": ["deepseek-v4-flash"],
-          "context_window": 1024000
-        },
-        {
-          "id": "deepseek-v3-2-251201",
-          "label": "DeepSeek V3.2",
-          "aliases": ["deepseek-v3-2"],
-          "context_window": 1024000
-        },
-        {
-          "id": "glm-4-7-251222",
-          "label": "GLM 4.7",
-          "aliases": ["glm-4-7"],
-          "context_window": 200000
         }
       ],
       "capabilities": {
@@ -443,27 +317,11 @@
       "append_v1_path": false,
       "models": [
         {
-          "id": "doubao-seed-code-preview-251028",
-          "label": "Doubao Seed Code Preview",
-          "aliases": ["doubao-seed-code"],
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
-          "id": "doubao-seed-1-8-251228",
-          "label": "Doubao Seed 1.8",
-          "aliases": ["doubao-seed-1-8"],
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true
-          }
-        },
-        {
           "id": "doubao-seed-2-0-code-preview-260215",
           "label": "Doubao Seed 2.0 Code Preview",
-          "aliases": ["doubao-seed-2-0-code"],
+          "aliases": [
+            "doubao-seed-2-0-code"
+          ],
           "context_window": 256000,
           "capabilities": {
             "image_input": true,
@@ -473,7 +331,9 @@
         {
           "id": "doubao-seed-2-0-pro-260215",
           "label": "Doubao Seed 2.0 Pro",
-          "aliases": ["doubao-seed-2-0-pro"],
+          "aliases": [
+            "doubao-seed-2-0-pro"
+          ],
           "context_window": 256000,
           "capabilities": {
             "image_input": true,
@@ -483,17 +343,9 @@
         {
           "id": "doubao-seed-2-0-lite-260428",
           "label": "Doubao Seed 2.0 Lite",
-          "aliases": ["doubao-seed-2-0-lite"],
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
-        },
-        {
-          "id": "doubao-seed-2-0-mini-260428",
-          "label": "Doubao Seed 2.0 Mini",
-          "aliases": ["doubao-seed-2-0-mini"],
+          "aliases": [
+            "doubao-seed-2-0-lite"
+          ],
           "context_window": 256000,
           "capabilities": {
             "image_input": true,
@@ -503,26 +355,10 @@
         {
           "id": "deepseek-v4-pro-260425",
           "label": "DeepSeek V4 Pro",
-          "aliases": ["deepseek-v4-pro"],
+          "aliases": [
+            "deepseek-v4-pro"
+          ],
           "context_window": 1024000
-        },
-        {
-          "id": "deepseek-v4-flash-260425",
-          "label": "DeepSeek V4 Flash",
-          "aliases": ["deepseek-v4-flash"],
-          "context_window": 1024000
-        },
-        {
-          "id": "deepseek-v3-2-251201",
-          "label": "DeepSeek V3.2",
-          "aliases": ["deepseek-v3-2"],
-          "context_window": 1024000
-        },
-        {
-          "id": "glm-4-7-251222",
-          "label": "GLM 4.7",
-          "aliases": ["glm-4-7"],
-          "context_window": 200000
         }
       ],
       "capabilities": {
@@ -590,45 +426,16 @@
           }
         },
         {
-          "id": "doubao-seed-2.0-lite",
-          "label": "Doubao Seed 2.0 Lite",
+          "id": "minimax-m3",
+          "label": "MiniMax M3",
           "capabilities": {
             "image_input": true,
             "file_input": true
           }
         },
         {
-          "id": "doubao-seed-code",
-          "label": "Doubao Seed Code",
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
-        },
-        {
-          "id": "minimax-latest",
-          "label": "MiniMax Latest",
-          "aliases": ["minimax-m2.7"],
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
-        },
-        {
-          "id": "glm-5.1",
-          "label": "GLM 5.1"
-        },
-        {
-          "id": "deepseek-v3.2",
-          "label": "DeepSeek V3.2",
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
-        },
-        {
-          "id": "deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash"
+          "id": "glm-5.2",
+          "label": "GLM 5.2"
         },
         {
           "id": "deepseek-v4-pro",
@@ -705,44 +512,16 @@
           }
         },
         {
-          "id": "doubao-seed-2.0-lite",
-          "label": "Doubao Seed 2.0 Lite",
+          "id": "minimax-m3",
+          "label": "MiniMax M3",
           "capabilities": {
             "image_input": true,
             "file_input": true
           }
         },
         {
-          "id": "doubao-seed-2.0-mini",
-          "label": "Doubao Seed 2.0 Mini",
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
-        },
-        {
-          "id": "minimax-m2.7",
-          "label": "MiniMax M2.7",
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
-        },
-        {
-          "id": "glm-5.1",
-          "label": "GLM 5.1"
-        },
-        {
-          "id": "deepseek-v3.2",
-          "label": "DeepSeek V3.2",
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
-        },
-        {
-          "id": "deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash"
+          "id": "glm-5.2",
+          "label": "GLM 5.2"
         },
         {
           "id": "deepseek-v4-pro",

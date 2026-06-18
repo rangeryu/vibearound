@@ -191,6 +191,7 @@ Verification result:
 
 - Keep Ark API, Coding Plan, and Agent Plan separate.
 - Keep model aliases separated by plan; do not mix plan aliases into Ark API rows.
+- Keep Volcengine model lists curated, not exhaustive. Ark API keeps the current Doubao Seed 2.0 mainline plus a small number of externally hosted flagship models; Coding/Agent Plan keeps current coding/general flagships such as Ark Code, Doubao Seed 2.0, MiniMax M3, GLM 5.2, DeepSeek V4 Pro, and Kimi K2.6.
 - Keep OpenAI Responses only for Ark API, where the catalog already exposes it.
 - Current file/image flags are plan- and protocol-specific. Anthropic-compatible endpoints remain more conservative than OpenAI-compatible endpoints.
 
@@ -216,23 +217,24 @@ Verification result:
 
 Catalog endpoints:
 
-- Global OpenAI-compatible API `https://api.z.ai/api/paas/v4`.
-- CN OpenAI-compatible API `https://open.bigmodel.cn/api/paas/v4`.
+- Global API OpenAI-compatible endpoint `https://api.z.ai/api/paas/v4`.
+- CN API OpenAI-compatible endpoint `https://open.bigmodel.cn/api/paas/v4`.
 - Global Coding Plan OpenAI-compatible API `https://api.z.ai/api/coding/paas/v4`.
 - CN Coding Plan OpenAI-compatible API `https://open.bigmodel.cn/api/coding/paas/v4`.
 - Global Coding Plan Anthropic-compatible API `https://api.z.ai/api/anthropic`.
-- CN Anthropic-compatible API `https://open.bigmodel.cn/api/anthropic`.
+- CN Coding Plan Anthropic-compatible API `https://open.bigmodel.cn/api/anthropic`.
 
 Official evidence:
 
-- Z.AI GLM-5.1 guide documents `https://api.z.ai/api/paas/v4`, GLM-5.1 context and tool capabilities.
+- Z.AI API reference and quickstart document `https://api.z.ai/api/paas/v4` and use `glm-5.2` in the current general API examples.
 - Z.AI Coding Plan docs document `https://api.z.ai/api/coding/paas/v4`, `https://api.z.ai/api/anthropic`, and allowed Coding Plan models.
-- BigModel CN Coding Plan docs document `https://open.bigmodel.cn/api/coding/paas/v4`.
-- BigModel Claude API compatibility docs document `https://open.bigmodel.cn/api/anthropic`.
+- BigModel CN general quickstart documents `https://open.bigmodel.cn/api/paas/v4` and `glm-5.2`.
+- BigModel CN Coding Plan docs document `https://open.bigmodel.cn/api/coding/paas/v4` and `https://open.bigmodel.cn/api/anthropic` as Coding Plan endpoints.
 
 Verification result:
 
 - Keep normal API and Coding Plan as separate products.
+- Do not expose `open.bigmodel.cn/api/anthropic` as a normal CN API endpoint; it belongs to CN Coding Plan.
 - Keep Coding Plan model set tightened to `glm-5.2`, `glm-5-turbo`, `glm-4.7`, and `glm-4.5-air`.
 - Keep `glm-5.2` at 1M context in Coding Plan entries.
 - Keep GLM V-model image/file flags only on normal API V-model IDs where catalog has explicit V variants.

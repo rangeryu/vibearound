@@ -85,18 +85,19 @@ Catalog implications:
 
 | Product/plan/API | Region | Interface protocol | Base URL | Models | Capabilities |
 |---|---|---|---|---|---|
-| API / Ark | CN Beijing | OpenAI Chat | `https://ark.cn-beijing.volces.com/api/v3` | Ark endpoint model IDs, including Doubao, DeepSeek, GLM, Kimi, MiniMax models exposed by Ark | Chat, streaming, tools and reasoning according to the deployed model. |
-| API / Ark | CN Beijing | OpenAI Responses | `https://ark.cn-beijing.volces.com/api/v3` | Same Ark endpoint model IDs | Responses-compatible calls where enabled. |
-| API / Ark | CN Beijing | Anthropic-compatible | `https://ark.cn-beijing.volces.com/api/compatible` | Same Ark-compatible model IDs where Anthropic-compatible API is exposed | Claude-compatible messages. |
-| Coding Plan | CN Beijing | OpenAI Chat | `https://ark.cn-beijing.volces.com/api/coding/v3` | Coding Plan model aliases; exact list must follow official Volcengine docs/model page | Coding-tool plan; default model should come from official Coding Plan docs, not reference projects. |
-| Coding Plan | CN Beijing | Anthropic-compatible | `https://ark.cn-beijing.volces.com/api/coding` | Same Coding Plan model family | Claude Code-style endpoint. |
-| Agent Plan | CN Beijing | OpenAI Chat | `https://ark.cn-beijing.volces.com/api/plan/v3` | Similar agent/coding model family, plan-specific aliases | Agent Plan endpoint. |
-| Agent Plan | CN Beijing | Anthropic-compatible | `https://ark.cn-beijing.volces.com/api/plan` | Similar agent/coding model family, plan-specific aliases | Claude-compatible Agent Plan endpoint. |
+| API / Ark | CN Beijing | OpenAI Chat | `https://ark.cn-beijing.volces.com/api/v3` | Curated flagship set: Doubao Seed 2.0 Code/Pro/Lite and DeepSeek V4 Pro | Chat, streaming, tools and reasoning according to the deployed model. |
+| API / Ark | CN Beijing | OpenAI Responses | `https://ark.cn-beijing.volces.com/api/v3` | Same curated Ark API set | Responses-compatible calls where enabled. |
+| API / Ark | CN Beijing | Anthropic-compatible | `https://ark.cn-beijing.volces.com/api/compatible` | Same curated Ark API set | Claude-compatible messages. |
+| Coding Plan | CN Beijing | OpenAI Chat | `https://ark.cn-beijing.volces.com/api/coding/v3` | Curated coding/flagship set: `ark-code-latest`, `doubao-seed-2.0-code`, `doubao-seed-2.0-pro`, `minimax-m3`, `glm-5.2`, `deepseek-v4-pro`, `kimi-k2.6` | Coding-tool plan; default model should come from official Coding Plan docs, not reference projects. |
+| Coding Plan | CN Beijing | Anthropic-compatible | `https://ark.cn-beijing.volces.com/api/coding` | Same curated Coding Plan set | Claude Code-style endpoint. |
+| Agent Plan | CN Beijing | OpenAI Chat | `https://ark.cn-beijing.volces.com/api/plan/v3` | Same curated coding/flagship set | Agent Plan endpoint. |
+| Agent Plan | CN Beijing | Anthropic-compatible | `https://ark.cn-beijing.volces.com/api/plan` | Same curated coding/flagship set | Claude-compatible Agent Plan endpoint. |
 
 Catalog implications:
 
 - Current local catalog already contains `api/coding/v3` and `api/plan/v3`; keep them as plan-level entries.
 - Separate Ark API, Coding Plan, and Agent Plan. Do not mix plan aliases into generic Ark API unless the official plan says they are available there.
+- Keep Volcengine model lists curated to current common/flagship models, including flagship third-party models where the plan exposes them; do not enumerate every hosted model alias.
 
 ## Alibaba Bailian / DashScope
 
@@ -127,17 +128,17 @@ Catalog implications:
 
 | Product/plan/API | Region | Interface protocol | Base URL | Models | Capabilities |
 |---|---|---|---|---|---|
-| API / Pay as you go | Global | OpenAI Chat | `https://api.z.ai/api/paas/v4` | `glm-5.1`, `glm-5`, `glm-5-turbo`, `glm-5v-turbo`, `glm-4.7`, `glm-4.7-flash`, `glm-4.7-flashx`, `glm-4.6`, `glm-4.6v`, `glm-4.5` family | GLM-5.1 docs list 200K context, 128K output, thinking, streaming, function calling, structured output, context caching, MCP/search support. |
-| API / Pay as you go | CN | OpenAI Chat | `https://open.bigmodel.cn/api/paas/v4` | Same GLM family where CN account has access | CN BigModel endpoint. |
-| API / Pay as you go | Global | Anthropic Messages | `https://api.z.ai/api/anthropic` | Pending first-party normal-API Anthropic docs | Candidate endpoint; do not finalize without official documentation. |
-| API / Pay as you go | CN | Anthropic Messages | `https://open.bigmodel.cn/api/anthropic` | Pending first-party normal-API Anthropic docs | Candidate endpoint; do not finalize without official documentation. |
+| API / Pay as you go | Global | OpenAI Chat | `https://api.z.ai/api/paas/v4` | Curated general API set: `glm-5.2`, `glm-5-turbo`, `glm-5v-turbo`, `glm-5.1`, `glm-4.7`, `glm-4.5-air` | Current general API endpoint. |
+| API / Pay as you go | CN | OpenAI Chat | `https://open.bigmodel.cn/api/paas/v4` | Same curated general API set where CN account has access | CN BigModel endpoint. |
 | Coding Plan | Global | OpenAI Chat | `https://api.z.ai/api/coding/paas/v4` | Official Coding Plan docs list `GLM-5.2`, `GLM-5-Turbo`, `GLM-4.7`, `GLM-4.5-Air` | Coding Plan endpoint. |
 | Coding Plan | CN | OpenAI Chat | `https://open.bigmodel.cn/api/coding/paas/v4` | Coding Plan docs currently name `GLM-5.2`, `GLM-5-Turbo`, `GLM-4.7`, `GLM-4.5-Air`; older GLM-5.x aliases may route forward | Coding Plan endpoint for CN. |
+| Coding Plan | Global | Anthropic Messages | `https://api.z.ai/api/anthropic` | Same curated Coding Plan model set | Claude-compatible Coding Plan endpoint. |
+| Coding Plan | CN | Anthropic Messages | `https://open.bigmodel.cn/api/anthropic` | Same curated Coding Plan model set | CN Claude-compatible Coding Plan endpoint. |
 
 Catalog implications:
 
-- Add CN Anthropic API if missing.
 - Treat Coding Plan as a separate product from normal API.
+- Do not expose `api/anthropic` as a normal pay-as-you-go API endpoint; keep it under Coding Plan.
 - Verify exact case-sensitive model IDs with authenticated model discovery before changing persisted IDs from lower-case aliases to display-case docs names.
 
 ## DeepSeek
@@ -265,11 +266,9 @@ This section maps each product/plan/API row to the official document that actual
 
 | Product/plan/API | Interface | Base URL | Model(s) | Context | Image | File/doc | Web search | Thinking/reasoning | Tools/function | Structured output | Notes |
 |---|---|---|---|---:|---|---|---|---|---|---|---|
-| API / Ark | OpenAI Chat/Responses | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seed-2-0-code-preview-*`, `doubao-seed-2-0-pro-*`, `doubao-seed-2-0-lite-*`, `doubao-seed-2-0-mini-*` | 256K | Current catalog: Y | Current catalog: Y on OpenAI endpoints | Verify | Verify | Y | Verify | Current catalog marks file input on OpenAI Chat/Responses entries but not on earlier Anthropic-compatible duplicate rows. |
+| API / Ark | OpenAI Chat/Responses | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seed-2-0-code-preview-*`, `doubao-seed-2-0-pro-*`, `doubao-seed-2-0-lite-*`, `deepseek-v4-pro-*` | 256K/1.024M | Y for Doubao | Y for Doubao on OpenAI endpoints | Verify | Verify | Y | Verify | Curated current Ark API defaults, not full hosted catalog. |
 | API / Ark | Anthropic-compatible | `https://ark.cn-beijing.volces.com/api/compatible` | Ark compatible model IDs | 256K/1M/200K by model | Adapter | Adapter | Verify | Adapter | Adapter | Adapter | Adapter endpoint should be separately verified; do not inherit OpenAI file/image flags. |
-| API / Ark | OpenAI Chat/Responses | `https://ark.cn-beijing.volces.com/api/v3` | `deepseek-v4-pro-*`, `deepseek-v4-flash-*`, `deepseek-v3-2-*` | 1.024M | N in current catalog | N in current catalog | Verify | Y/Verify | Y/Verify | Verify | Ark-hosted DeepSeek capabilities may differ from DeepSeek original API. |
-| API / Ark | OpenAI Chat/Responses | `https://ark.cn-beijing.volces.com/api/v3` | `glm-4-7-*` | 200K | N in current catalog | N in current catalog | Verify | Y/Verify | Y/Verify | Verify | Ark-hosted GLM is endpoint-scoped. |
-| Coding Plan | OpenAI Chat | `https://ark.cn-beijing.volces.com/api/coding/v3` | `ark-code-latest`, `doubao-seed-2.0-*`, `minimax-latest`, `deepseek-v3.2`, `kimi-k2.6` | Verify | Current catalog: Y | Current catalog: Y | Verify | Verify | Y | Verify | Coding Plan marks image/file for many aliases; those flags are plan-specific. |
+| Coding Plan | OpenAI Chat | `https://ark.cn-beijing.volces.com/api/coding/v3` | `ark-code-latest`, `doubao-seed-2.0-code`, `doubao-seed-2.0-pro`, `minimax-m3`, `glm-5.2`, `deepseek-v4-pro`, `kimi-k2.6` | Verify | Y on multimodal choices | Y on multimodal choices | Verify | Verify | Y | Verify | Curated plan defaults; third-party flagship models are retained where useful. |
 | Coding Plan | OpenAI Chat | `https://ark.cn-beijing.volces.com/api/coding/v3` | `glm-5.1`, `deepseek-v4-flash`, `deepseek-v4-pro` | Verify | N in current catalog | N in current catalog | Verify | Y/Verify | Y/Verify | Verify | Same plan, different model aliases have different current flags. |
 | Coding Plan / Agent Plan | Anthropic-compatible | `https://ark.cn-beijing.volces.com/api/coding`, `https://ark.cn-beijing.volces.com/api/plan` | Plan aliases | Verify | Adapter | Adapter | Verify | Adapter | Adapter | Adapter | Anthropic adapters should have separate capability records. |
 
@@ -289,10 +288,9 @@ This section maps each product/plan/API row to the official document that actual
 
 | Product/plan/API | Interface | Base URL | Model(s) | Context | Image | File/doc | Web search | Thinking/reasoning | Tools/function | Structured output | Notes |
 |---|---|---|---|---:|---|---|---|---|---|---|---|
-| API / Pay as you go | OpenAI Chat | `https://api.z.ai/api/paas/v4`, `https://open.bigmodel.cn/api/paas/v4` | `glm-5.1`, `glm-5`, `glm-5-turbo`, `glm-4.7`, `glm-4.6` | 200K | N in current catalog | N in current catalog | Tool/docs-supported | Y | Y | Y | GLM-5.1 docs list thinking, function calling, structured output, context caching, and search/MCP support. |
-| API / Pay as you go | OpenAI Chat | Same | `glm-5v-turbo`, `glm-4.6v`, `glm-4.5v` | 200K or model-specific | Current catalog: Y | Current catalog: Y | Tool/docs-supported | Y/Verify | Y | Y/Verify | Vision/file capability is V-model-specific. |
-| API / Pay as you go | Anthropic Messages | `https://api.z.ai/api/anthropic`, `https://open.bigmodel.cn/api/anthropic` | GLM family where exposed | Model-specific | Adapter | Adapter | Tool/docs-supported | Adapter | Adapter | Adapter | Anthropic endpoint exists but response shape/capabilities should be verified with key. |
-| Coding Plan | OpenAI Chat | `https://api.z.ai/api/coding/paas/v4`, `https://open.bigmodel.cn/api/coding/paas/v4` | `glm-5.1`, `glm-5`, `glm-5-turbo`, `glm-4.7` aliases; docs mention `GLM-5.2`, `GLM-5-Turbo`, `GLM-4.7`, `GLM-4.5-Air` | 200K/Verify | N in current catalog | N in current catalog | Tool/docs-supported | Y | Y | Y/Verify | Coding Plan model IDs and aliases need authenticated discovery before replacing IDs. |
+| API / Pay as you go | OpenAI Chat | `https://api.z.ai/api/paas/v4`, `https://open.bigmodel.cn/api/paas/v4` | `glm-5.2`, `glm-5-turbo`, `glm-5.1`, `glm-4.7`, `glm-4.5-air` | 1M/200K/model-specific | N | N | Tool/docs-supported | Y | Y | Y | Curated current general API set. |
+| API / Pay as you go | OpenAI Chat | Same | `glm-5v-turbo` | 200K | Y | Y | Tool/docs-supported | Y/Verify | Y | Y/Verify | Vision/file capability is V-model-specific. |
+| Coding Plan | OpenAI Chat / Anthropic Messages | `https://api.z.ai/api/coding/paas/v4`, `https://open.bigmodel.cn/api/coding/paas/v4`, `https://api.z.ai/api/anthropic`, `https://open.bigmodel.cn/api/anthropic` | `glm-5.2`, `glm-5-turbo`, `glm-4.7`, `glm-4.5-air` | 1M/200K/model-specific | N/Adapter | N/Adapter | Tool/docs-supported | Y/Adapter | Y/Adapter | Y/Verify | Coding Plan endpoint group, not normal API. |
 
 ### DeepSeek
 

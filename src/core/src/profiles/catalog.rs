@@ -999,8 +999,8 @@ mod tests {
         assert!(ark_anthropic.append_v1_path);
         assert!(ark_anthropic.auth_header);
         assert_eq!(
-            model(ark_anthropic, "doubao-seed-code").id,
-            "doubao-seed-code-preview-251028"
+            model(ark_anthropic, "doubao-seed-2-0-code").id,
+            "doubao-seed-2-0-code-preview-260215"
         );
         assert!(
             model(ark_anthropic, "doubao-seed-2-0-pro")
@@ -1017,6 +1017,8 @@ mod tests {
                 .capabilities
                 .image_input
         );
+        assert!(find_model(ark_anthropic, "doubao-seed-1-8").is_none());
+        assert!(find_model(ark_anthropic, "glm-4-7").is_none());
 
         for api_type in ["openai-responses", "openai-chat"] {
             let endpoint =
@@ -1028,11 +1030,11 @@ mod tests {
             assert!(!endpoint.append_v1_path);
             assert!(endpoint.capabilities.reasoning_effort);
 
-            let code = model(endpoint, "doubao-seed-code");
-            assert_eq!(code.id, "doubao-seed-code-preview-251028");
+            let code = model(endpoint, "doubao-seed-2-0-code");
+            assert_eq!(code.id, "doubao-seed-2-0-code-preview-260215");
             assert_eq!(code.context_window, Some(256_000));
             assert!(code.capabilities.image_input);
-            assert!(!code.capabilities.file_input);
+            assert!(code.capabilities.file_input);
 
             let seed2_pro = model(endpoint, "doubao-seed-2-0-pro");
             assert!(seed2_pro.capabilities.image_input);
@@ -1055,7 +1057,11 @@ mod tests {
         assert!(coding_anthropic.auth_header);
         assert!(find_model(coding_anthropic, "ark-code-latest").is_some());
         assert!(find_model(coding_anthropic, "doubao-seed-2.0-code").is_some());
-        assert!(find_model(coding_anthropic, "minimax-latest").is_some());
+        assert!(find_model(coding_anthropic, "minimax-m3").is_some());
+        assert!(find_model(coding_anthropic, "glm-5.2").is_some());
+        assert!(find_model(coding_anthropic, "deepseek-v4-pro").is_some());
+        assert!(find_model(coding_anthropic, "kimi-k2.6").is_some());
+        assert!(find_model(coding_anthropic, "minimax-latest").is_none());
         assert!(find_model(coding_anthropic, "doubao-seed-code-preview-251028").is_none());
         assert!(
             model(coding_anthropic, "ark-code-latest")
@@ -1067,7 +1073,7 @@ mod tests {
                 .capabilities
                 .file_input
         );
-        assert!(!model(coding_anthropic, "glm-5.1").capabilities.image_input);
+        assert!(!model(coding_anthropic, "glm-5.2").capabilities.image_input);
         assert!(
             !model(coding_anthropic, "deepseek-v4-pro")
                 .capabilities
@@ -1082,6 +1088,8 @@ mod tests {
         );
         assert!(!coding_chat.append_v1_path);
         assert!(find_model(coding_chat, "kimi-k2.6").is_some());
+        assert!(find_model(coding_chat, "minimax-m3").is_some());
+        assert!(find_model(coding_chat, "glm-5.2").is_some());
         assert!(
             model(coding_chat, "ark-code-latest")
                 .capabilities
@@ -1098,7 +1106,7 @@ mod tests {
                 .file_input
         );
         assert!(model(coding_chat, "kimi-k2.6").capabilities.file_input);
-        assert!(!model(coding_chat, "glm-5.1").capabilities.image_input);
+        assert!(!model(coding_chat, "glm-5.2").capabilities.image_input);
         assert!(
             !model(coding_chat, "deepseek-v4-pro")
                 .capabilities
@@ -1114,15 +1122,17 @@ mod tests {
         assert!(agent_anthropic.append_v1_path);
         assert!(agent_anthropic.auth_header);
         assert!(find_model(agent_anthropic, "ark-code-latest").is_some());
-        assert!(find_model(agent_anthropic, "doubao-seed-2.0-mini").is_some());
+        assert!(find_model(agent_anthropic, "minimax-m3").is_some());
+        assert!(find_model(agent_anthropic, "glm-5.2").is_some());
+        assert!(find_model(agent_anthropic, "doubao-seed-2.0-mini").is_none());
         assert!(find_model(agent_anthropic, "doubao-seedance-2.0").is_none());
         assert!(
-            model(agent_anthropic, "doubao-seed-2.0-mini")
+            model(agent_anthropic, "doubao-seed-2.0-pro")
                 .capabilities
                 .image_input
         );
         assert!(
-            !model(agent_anthropic, "doubao-seed-2.0-mini")
+            !model(agent_anthropic, "doubao-seed-2.0-pro")
                 .capabilities
                 .file_input
         );
@@ -1134,18 +1144,19 @@ mod tests {
             "https://ark.cn-beijing.volces.com/api/plan/v3"
         );
         assert!(!agent_chat.append_v1_path);
-        assert!(find_model(agent_chat, "minimax-m2.7").is_some());
+        assert!(find_model(agent_chat, "minimax-m3").is_some());
+        assert!(find_model(agent_chat, "minimax-m2.7").is_none());
         assert!(
-            model(agent_chat, "doubao-seed-2.0-mini")
+            model(agent_chat, "doubao-seed-2.0-pro")
                 .capabilities
                 .image_input
         );
         assert!(
-            model(agent_chat, "doubao-seed-2.0-mini")
+            model(agent_chat, "doubao-seed-2.0-pro")
                 .capabilities
                 .file_input
         );
-        assert!(!model(agent_chat, "glm-5.1").capabilities.image_input);
+        assert!(!model(agent_chat, "glm-5.2").capabilities.image_input);
     }
 
     #[test]
@@ -1196,13 +1207,24 @@ mod tests {
         );
         assert!(find_model(coding_anthropic, "glm-5.1").is_none());
 
+        let coding_cn_anthropic = find_endpoint(provider, "anthropic", Some("coding-cn"))
+            .expect("zai coding cn anthropic endpoint");
+        assert_eq!(
+            coding_cn_anthropic.default_base_url,
+            "https://open.bigmodel.cn/api/anthropic"
+        );
+        assert!(find_endpoint(provider, "anthropic", Some("cn")).is_none());
+
         let global_chat =
             find_endpoint(provider, "openai-chat", Some("global")).expect("zai global chat");
+        assert_eq!(
+            model(global_chat, "glm-5.2").context_window,
+            Some(1_000_000)
+        );
         assert_eq!(model(global_chat, "glm-5.1").context_window, Some(200_000));
-        assert_eq!(model(global_chat, "glm-5").context_window, Some(200_000));
         assert_eq!(model(global_chat, "glm-4.7").context_window, Some(200_000));
-        assert_eq!(model(global_chat, "glm-4.5").context_window, Some(128_000));
-        assert!(!model(global_chat, "glm-5").capabilities.image_input);
+        assert!(find_model(global_chat, "glm-5").is_none());
+        assert!(find_model(global_chat, "glm-4.5").is_none());
         assert!(!model(global_chat, "glm-4.7").capabilities.image_input);
 
         for endpoint_id in ["global", "cn"] {
@@ -1211,22 +1233,9 @@ mod tests {
             let vision = model(endpoint, "glm-5v-turbo");
             assert!(vision.capabilities.image_input);
             assert!(vision.capabilities.file_input);
-            assert!(model(endpoint, "glm-4.6v").capabilities.image_input);
-            assert!(model(endpoint, "glm-4.5v").capabilities.file_input);
+            assert!(find_model(endpoint, "glm-4.6v").is_none());
+            assert!(find_model(endpoint, "glm-4.5v").is_none());
         }
-
-        let cn_anthropic =
-            find_endpoint(provider, "anthropic", Some("cn")).expect("zai cn anthropic endpoint");
-        assert_eq!(
-            cn_anthropic.default_base_url,
-            "https://open.bigmodel.cn/api/anthropic"
-        );
-        assert_eq!(
-            model(cn_anthropic, "glm-5.2").context_window,
-            Some(1_000_000)
-        );
-        assert_eq!(model(cn_anthropic, "glm-5.1").context_window, Some(200_000));
-        assert!(find_model(cn_anthropic, "glm-4.6").is_none());
 
         for endpoint_id in ["coding-global", "coding-cn"] {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
