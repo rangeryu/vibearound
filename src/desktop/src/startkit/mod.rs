@@ -497,7 +497,7 @@ pub(crate) async fn scan_tunnel_reports(
             settings_key: None,
         }]),
         "localtunnel" => {
-            if choices.toolchain_mode == "managed" {
+            if is_managed_mode(choices) {
                 scan_startkit_item_reports(
                     settings,
                     choices,
@@ -636,6 +636,11 @@ async fn execute_item_with_cancel(
     let platform = current_platform();
     let paths = StartkitPaths::new(startkit_root());
     let item = find_item(&manifest, item_id)?;
+    if let Some(report) =
+        execute_managed_toolchain_item(&manifest, item, choices, cancelled, progress).await?
+    {
+        return Ok(report);
+    }
     if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
         return execute_agent_cli_item(item, agent_id, choices, cancelled, progress).await;
     }
@@ -710,7 +715,7 @@ async fn run_startkit_install<R: Runtime>(
         }
 
         let item = find_item(&manifest, item_id)?;
-        if effective_item_dependencies(item)
+        if effective_item_dependencies(item, &choices, platform)
             .iter()
             .any(|dependency| blocked_item_ids.contains(*dependency))
         {
@@ -833,7 +838,7 @@ async fn execute_agent_cli_item(
             .unwrap_or(false)
     };
 
-    let result = if choices.toolchain_mode == "managed" {
+    let result = if is_managed_mode(choices) {
         let install_dir = common::process::env::acp_agents_dir();
         common::agent::auto_install_npm_package_in_dir_with_progress_and_cancel(
             &package,
@@ -877,6 +882,70 @@ async fn execute_agent_cli_item(
             ..base_report(item)
         })
     }
+}
+
+async fn execute_managed_toolchain_item(
+    manifest: &Manifest,
+    item: &StartkitItem,
+    choices: &StartkitChoices,
+    cancelled: Option<&Arc<AtomicBool>>,
+    progress: Option<&(dyn Fn(&StartkitItem, StartkitItemStatus, Option<String>) + Sync)>,
+) -> anyhow::Result<Option<StartkitItemReport>> {
+    if !is_managed_mode(choices) {
+        return Ok(None);
+    }
+
+    let mut log_progress = |line: String| {
+        if let Some(progress) = progress {
+            progress(item, StartkitItemStatus::Running, Some(line));
+        }
+    };
+    let is_cancelled = || {
+        cancelled
+            .map(|flag| flag.load(Ordering::Relaxed))
+            .unwrap_or(false)
+    };
+
+    let report = match item.id.as_str() {
+        "essentials.node" => {
+            if let Some(progress) = progress {
+                progress(
+                    item,
+                    StartkitItemStatus::Running,
+                    Some("Installing VibeAround-managed Node.js".to_string()),
+                );
+            }
+            let source = node_source_for_choices(manifest, choices)?;
+            let status =
+                common::toolchain::ensure_node_lts(&source, &mut log_progress, is_cancelled)
+                    .await?;
+            report_from_managed_tool_status(item, status)
+        }
+        "essentials.git" if current_platform() == "windows" => {
+            if let Some(progress) = progress {
+                progress(
+                    item,
+                    StartkitItemStatus::Running,
+                    Some("Installing VibeAround-managed Portable Git".to_string()),
+                );
+            }
+            let status =
+                common::toolchain::ensure_windows_portable_git(&mut log_progress, is_cancelled)
+                    .await?;
+            report_from_managed_tool_status(item, status)
+        }
+        "essentials.git" => StartkitItemReport {
+            status: StartkitItemStatus::Skipped,
+            message: Some(
+                "Managed plugin installs do not require system Git on this platform".to_string(),
+            ),
+            actions: Vec::new(),
+            ..base_report(item)
+        },
+        _ => return Ok(None),
+    };
+
+    Ok(Some(report))
 }
 
 async fn run_channel_plugins_item<R: Runtime>(
@@ -1093,6 +1162,10 @@ async fn scan_item(
     choices: &StartkitChoices,
     platform: &str,
 ) -> StartkitItemReport {
+    if let Some(report) = scan_managed_toolchain_item(item, choices, platform).await {
+        return report;
+    }
+
     if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
         return scan_agent_cli_item(item, agent_id, choices).await;
     }
@@ -1163,6 +1236,68 @@ async fn scan_item(
     }
 }
 
+async fn scan_managed_toolchain_item(
+    item: &StartkitItem,
+    choices: &StartkitChoices,
+    platform: &str,
+) -> Option<StartkitItemReport> {
+    if !is_managed_mode(choices) {
+        return None;
+    }
+
+    let report = match item.id.as_str() {
+        "essentials.node" => report_from_managed_tool_status(
+            item,
+            common::toolchain::managed_node_status(item.min_version.as_deref()).await,
+        ),
+        "essentials.git" if platform == "windows" => {
+            report_from_managed_tool_status(item, common::toolchain::managed_git_status().await)
+        }
+        "essentials.git" => StartkitItemReport {
+            status: StartkitItemStatus::Skipped,
+            message: Some(
+                "Managed plugin installs do not require system Git on this platform".to_string(),
+            ),
+            actions: Vec::new(),
+            ..base_report(item)
+        },
+        _ => return None,
+    };
+
+    Some(report)
+}
+
+fn report_from_managed_tool_status(
+    item: &StartkitItem,
+    status: common::toolchain::ManagedToolStatus,
+) -> StartkitItemReport {
+    let report_status = if status.ready {
+        StartkitItemStatus::Ok
+    } else if status.installed {
+        StartkitItemStatus::Outdated
+    } else {
+        StartkitItemStatus::Missing
+    };
+    StartkitItemReport {
+        status: report_status.clone(),
+        version: status.version,
+        path: status.path.map(|path| path.to_string_lossy().to_string()),
+        message: status.message.or_else(|| {
+            Some(if report_status == StartkitItemStatus::Ok {
+                format!("{} is ready", item.label)
+            } else {
+                format!("{} will be installed by VibeAround", item.label)
+            })
+        }),
+        actions: if report_status == StartkitItemStatus::Ok {
+            Vec::new()
+        } else {
+            vec!["install".to_string()]
+        },
+        ..base_report(item)
+    }
+}
+
 fn scan_managed_npm_package_item(item: &StartkitItem) -> StartkitItemReport {
     let Some(package) = item.npm_package.as_deref() else {
         return StartkitItemReport {
@@ -1213,6 +1348,21 @@ fn managed_item_dependency_dir(item: &StartkitItem) -> anyhow::Result<PathBuf> {
     Ok(common::plugins::user_plugin_dependency_dir(dependency_id))
 }
 
+fn node_source_for_choices(
+    manifest: &Manifest,
+    choices: &StartkitChoices,
+) -> anyhow::Result<common::toolchain::NodeSource> {
+    let source = manifest
+        .sources
+        .get(&choices.source)
+        .or_else(|| manifest.sources.get("global"))
+        .ok_or_else(|| anyhow!("startkit source '{}' not found", choices.source))?;
+    Ok(common::toolchain::NodeSource {
+        index_url: source.node_index.clone(),
+        dist_base: source.node_dist.clone(),
+    })
+}
+
 fn agent_cli_npm_install_package(agent_id: &str) -> Option<String> {
     if !agent_detection::agent_uses_npm_install(agent_id) {
         return None;
@@ -1256,7 +1406,7 @@ async fn scan_agent_cli_item(
         },
         None => {
             if agent_cli_npm_install_package(agent_id).is_some() {
-                let target = if choices.toolchain_mode == "managed" {
+                let target = if is_managed_mode(choices) {
                     "in VibeAround managed"
                 } else {
                     "with npm"
@@ -1370,7 +1520,7 @@ fn manual_guidance_for_item(
                 url,
             })
         }
-        "tunnels.cloudflare.binary" if choices.toolchain_mode != "managed" => {
+        "tunnels.cloudflare.binary" if !is_managed_mode(choices) => {
             let command = match platform {
                 "macos" => Some("brew install cloudflared".to_string()),
                 "windows" => Some(
@@ -1574,8 +1724,7 @@ fn apply_startkit_env(
     command.env("STARTKIT_ROOT", &paths.root);
     command.env("STARTKIT_CACHE_DIR", &paths.cache_dir);
     command.env("STARTKIT_SOURCE", &choices.source);
-    let managed_item_active =
-        item_uses_managed_dependency_dir(item) && choices.toolchain_mode == "managed";
+    let managed_item_active = item_uses_managed_dependency_dir(item) && is_managed_mode(choices);
     command.env(
         "STARTKIT_ITEM_MANAGED",
         if managed_item_active { "true" } else { "false" },
@@ -1685,8 +1834,8 @@ fn plan_from_manifest(
         if !supports_platform(item, platform) {
             continue;
         }
-        if should_include(item, choices) {
-            add_with_deps(item, &by_id, platform, &mut selected)?;
+        if should_include(item, choices, platform) {
+            add_with_deps(item, &by_id, platform, choices, &mut selected)?;
         }
     }
 
@@ -1698,6 +1847,7 @@ fn plan_from_manifest(
             id,
             &by_id,
             platform,
+            choices,
             &selected,
             &mut temporary,
             &mut permanent,
@@ -1722,17 +1872,18 @@ fn add_with_deps(
     item: &StartkitItem,
     by_id: &HashMap<&str, &StartkitItem>,
     platform: &str,
+    choices: &StartkitChoices,
     selected: &mut HashSet<String>,
 ) -> anyhow::Result<()> {
     selected.insert(item.id.clone());
-    for dep in effective_item_dependencies(item) {
+    for dep in effective_item_dependencies(item, choices, platform) {
         let dep_item = by_id
             .get(dep)
             .ok_or_else(|| anyhow!("startkit item '{}' depends on missing '{}'", item.id, dep))?;
         if !supports_platform(dep_item, platform) {
             continue;
         }
-        add_with_deps(dep_item, by_id, platform, selected)?;
+        add_with_deps(dep_item, by_id, platform, choices, selected)?;
     }
     Ok(())
 }
@@ -1741,6 +1892,7 @@ fn visit(
     id: &str,
     by_id: &HashMap<&str, &StartkitItem>,
     platform: &str,
+    choices: &StartkitChoices,
     selected: &HashSet<String>,
     temporary: &mut HashSet<String>,
     permanent: &mut HashSet<String>,
@@ -1755,14 +1907,14 @@ fn visit(
     let item = by_id
         .get(id)
         .ok_or_else(|| anyhow!("planned startkit item missing: {id}"))?;
-    for dep in effective_item_dependencies(item) {
+    for dep in effective_item_dependencies(item, choices, platform) {
         if selected.contains(dep) {
             let dep_item = by_id.get(dep).ok_or_else(|| {
                 anyhow!("startkit item '{}' depends on missing '{}'", item.id, dep)
             })?;
             if supports_platform(dep_item, platform) {
                 visit(
-                    dep, by_id, platform, selected, temporary, permanent, ordered,
+                    dep, by_id, platform, choices, selected, temporary, permanent, ordered,
                 )?;
             }
         }
@@ -1773,12 +1925,19 @@ fn visit(
     Ok(())
 }
 
-fn effective_item_dependencies(item: &StartkitItem) -> Vec<&str> {
+fn effective_item_dependencies<'a>(
+    item: &'a StartkitItem,
+    choices: &StartkitChoices,
+    platform: &str,
+) -> Vec<&'a str> {
     let mut deps = item
         .depends_on
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
+    if item.id == "channels.plugins" && is_managed_mode(choices) && platform != "windows" {
+        deps.retain(|dep| *dep != "essentials.git");
+    }
     if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
         if agent_detection::agent_uses_npm_install(agent_id) && !deps.contains(&"essentials.node") {
             deps.push("essentials.node");
@@ -1787,18 +1946,21 @@ fn effective_item_dependencies(item: &StartkitItem) -> Vec<&str> {
     deps
 }
 
-fn should_include(item: &StartkitItem, choices: &StartkitChoices) -> bool {
+fn should_include(item: &StartkitItem, choices: &StartkitChoices, platform: &str) -> bool {
+    if item.id == "essentials.git" && is_managed_mode(choices) && platform != "windows" {
+        return false;
+    }
     item.include_if.iter().any(|rule| match rule.as_str() {
         "always" => true,
         "agent:any" => !choices.agents.is_empty(),
         "channels:any" => !choices.channels.is_empty(),
         "tunnel:any" => choices.tunnel != "none",
         "shell_path:true" => choices.shell_path,
-        "toolchain:system" => choices.toolchain_mode != "managed",
-        "toolchain:managed" => choices.toolchain_mode == "managed",
+        "toolchain:system" => !is_managed_mode(choices),
+        "toolchain:managed" => is_managed_mode(choices),
         rule if rule.starts_with("managed-tunnel:") => {
             let tunnel = &rule["managed-tunnel:".len()..];
-            choices.toolchain_mode == "managed" && choices.tunnel == tunnel
+            is_managed_mode(choices) && choices.tunnel == tunnel
         }
         rule if rule.starts_with("agent:") => {
             let agent = &rule["agent:".len()..];
@@ -1810,6 +1972,13 @@ fn should_include(item: &StartkitItem, choices: &StartkitChoices) -> bool {
         }
         _ => false,
     })
+}
+
+fn is_managed_mode(choices: &StartkitChoices) -> bool {
+    choices
+        .toolchain_mode
+        .trim()
+        .eq_ignore_ascii_case("managed")
 }
 
 fn supports_platform(item: &StartkitItem, platform: &str) -> bool {
@@ -1893,8 +2062,12 @@ mod tests {
     use super::*;
 
     fn ids(choices: StartkitChoices) -> Vec<String> {
+        ids_for_platform(choices, "macos")
+    }
+
+    fn ids_for_platform(choices: StartkitChoices, platform: &str) -> Vec<String> {
         let manifest = load_manifest().unwrap();
-        plan_from_manifest(&manifest, &choices, "macos")
+        plan_from_manifest(&manifest, &choices, platform)
             .unwrap()
             .item_ids
     }
@@ -2111,6 +2284,41 @@ mod tests {
             toolchain_mode: "system".to_string(),
             shell_path: false,
         });
+
+        assert!(item_ids.contains(&"essentials.node".to_string()));
+        assert!(item_ids.contains(&"essentials.git".to_string()));
+        assert!(item_ids.contains(&"channels.plugins".to_string()));
+    }
+
+    #[test]
+    fn managed_channels_on_macos_do_not_pull_git() {
+        let item_ids = ids(StartkitChoices {
+            agents: Vec::new(),
+            tunnel: "none".to_string(),
+            channels: vec!["telegram".to_string()],
+            source: "global".to_string(),
+            toolchain_mode: "managed".to_string(),
+            shell_path: false,
+        });
+
+        assert!(item_ids.contains(&"essentials.node".to_string()));
+        assert!(!item_ids.contains(&"essentials.git".to_string()));
+        assert!(item_ids.contains(&"channels.plugins".to_string()));
+    }
+
+    #[test]
+    fn managed_channels_on_windows_include_portable_git() {
+        let item_ids = ids_for_platform(
+            StartkitChoices {
+                agents: Vec::new(),
+                tunnel: "none".to_string(),
+                channels: vec!["telegram".to_string()],
+                source: "global".to_string(),
+                toolchain_mode: "managed".to_string(),
+                shell_path: false,
+            },
+            "windows",
+        );
 
         assert!(item_ids.contains(&"essentials.node".to_string()));
         assert!(item_ids.contains(&"essentials.git".to_string()));
