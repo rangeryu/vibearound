@@ -6,6 +6,7 @@ import {
   pruneOverrides,
   requiresProfileModel,
   selectedEndpoint,
+  shouldShowBaseUrl,
 } from "../src/Launch/profileFormHelpers";
 import type { CatalogEntry } from "../src/Launch/types";
 
@@ -143,6 +144,17 @@ test("mimo token plan uses catalog default model without profile override", () =
   )!;
 
   expect(requiresProfileModel(mimoProvider, endpoint)).toBe(false);
+  expect(shouldShowBaseUrl(mimoProvider, endpoint, {})).toBe(false);
+  expect(
+    shouldShowBaseUrl(mimoProvider, endpoint, {
+      base_url: "https://token-plan-cn.xiaomimimo.com/v1",
+    }),
+  ).toBe(false);
+  expect(
+    shouldShowBaseUrl(mimoProvider, endpoint, {
+      base_url: "https://example.test/v1",
+    }),
+  ).toBe(true);
   expect(
     overrideForEndpoint(endpoint, {
       model: "mimo-v2.5-pro",

@@ -258,9 +258,6 @@ export function shouldShowBaseUrl(
   overrides: ApiTypeOverrides,
 ): boolean {
   if (provider.id === "custom") return true;
-  if (provider.id === "mimo" && endpointId(endpoint).startsWith("token-plan")) {
-    return true;
-  }
   if (!endpoint.default_base_url) return true;
   return !!overrides.base_url && overrides.base_url !== endpoint.default_base_url;
 }
