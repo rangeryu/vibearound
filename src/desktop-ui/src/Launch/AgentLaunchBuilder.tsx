@@ -42,7 +42,7 @@ import {
   removeLauncherWorkspace,
   reorderLauncherWorkspaces,
   reorderProfiles,
-  getDesktopAppEntries,
+  getDesktopAppEntriesForAgents,
   getAgentExecutableResolution,
   updateLauncherAgent,
   setProfileConnection,
@@ -181,11 +181,9 @@ export function AgentLaunchBuilder({
   }, [prefs, workspaceOptions, agentId]);
 
   useEffect(() => {
-    void Promise.all([
-      listAgents(),
-      getDesktopAppEntries().catch(() => null),
-    ])
-      .then(([items, desktopApps]) => {
+    void listAgents()
+      .then(async (items) => {
+        const desktopApps = await getDesktopAppEntriesForAgents(items);
         setDesktopAppEntries(desktopApps);
         const rank = new Map(AGENT_ORDER.map((id, index) => [id, index]));
         const installedDesktopAgents = new Set(
