@@ -608,6 +608,10 @@ export function FormBody({
               provider={provider}
               apiType={modelsDialogApiType}
               endpoint={modelsDialogEndpoint}
+              baseUrl={
+                modelsDialogOverride.base_url?.trim() ||
+                modelsDialogEndpoint.default_base_url
+              }
               selectedModel={modelsDialogSelectedModel}
               checkedModels={
                 selectedTestModels[
@@ -732,6 +736,7 @@ function ModelCatalogDialog({
   provider,
   apiType,
   endpoint,
+  baseUrl,
   selectedModel,
   checkedModels,
   statuses,
@@ -745,6 +750,7 @@ function ModelCatalogDialog({
   provider: CatalogEntry;
   apiType: string;
   endpoint: CatalogEntry["endpoints"][number];
+  baseUrl: string;
   selectedModel: string;
   checkedModels: string[];
   statuses: Record<string, ModelTestStatus>;
@@ -788,6 +794,14 @@ function ModelCatalogDialog({
           <DialogDescription className="sr-only">
             {t("Provider model catalog and connection tests.")}
           </DialogDescription>
+          <div className="flex min-w-0 flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
+            <span className="rounded bg-muted px-1.5 py-0.5">
+              {t(endpointLabel(endpoint))}
+            </span>
+            <span className="min-w-0 truncate font-mono">
+              {baseUrl || t("Endpoint URL required")}
+            </span>
+          </div>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-auto px-5 py-3 [scrollbar-gutter:stable]">
