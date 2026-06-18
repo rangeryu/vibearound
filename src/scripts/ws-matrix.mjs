@@ -15,7 +15,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 
-const SERVER_PORT = 12358;
+const SERVER_PORT = parsePort(
+  process.env.VIBEAROUND_MATRIX_PORT ?? process.env.VIBEAROUND_PORT ?? "12358",
+  "VIBEAROUND_MATRIX_PORT",
+);
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REAL_HOME = homedir();
 const MATRIX_TIMEOUT_MS = Number(process.env.VIBEAROUND_MATRIX_TIMEOUT_MS ?? 45_000);
@@ -253,6 +256,14 @@ function apiSlug(apiType) {
     default:
       return apiType.replaceAll(/[^a-z0-9]+/g, "-");
   }
+}
+
+function parsePort(value, label) {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error(`${label} must be a TCP port between 1 and 65535`);
+  }
+  return port;
 }
 
 async function main() {
@@ -959,6 +970,7 @@ function startVibeAroundServer(home) {
       PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
       CARGO_HOME: process.env.CARGO_HOME ?? path.join(REAL_HOME, ".cargo"),
       RUSTUP_HOME: process.env.RUSTUP_HOME ?? path.join(REAL_HOME, ".rustup"),
+      VIBEAROUND_PORT: String(SERVER_PORT),
       VIBEAROUND_MATRIX_BASE_URL: `http://127.0.0.1:${SERVER_PORT}`,
     },
     stdio: ["ignore", "pipe", "pipe"],

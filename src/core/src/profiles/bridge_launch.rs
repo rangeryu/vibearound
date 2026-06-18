@@ -594,7 +594,7 @@ mod tests {
             "launch-test",
             "openai-responses",
             "anthropic",
-            Some("kimi-code"),
+            Some("kimi-for-coding"),
             None,
             &[],
         )
@@ -603,7 +603,7 @@ mod tests {
         assert!(rendered
             .command_args
             .iter()
-            .any(|arg| arg == "model='kimi-code'"));
+            .any(|arg| arg == "model='kimi-for-coding'"));
         assert!(rendered
             .command_args
             .iter()
@@ -621,7 +621,7 @@ mod tests {
         let catalog: Value =
             serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
         let model = &catalog["models"][0];
-        assert_eq!(model["slug"], "kimi-code");
+        assert_eq!(model["slug"], "kimi-for-coding");
         assert_eq!(model["context_window"], 256_000);
         assert_eq!(model["max_context_window"], 256_000);
     }
@@ -644,7 +644,7 @@ mod tests {
                     capabilities: Default::default(),
                 },
                 ProfileBridgeModelRoute {
-                    upstream_model: "qwen3.5-plus".to_string(),
+                    upstream_model: "qwen3.7-plus".to_string(),
                     agent_model: "gpt-5.1-mini".to_string(),
                     capabilities: Default::default(),
                 },
