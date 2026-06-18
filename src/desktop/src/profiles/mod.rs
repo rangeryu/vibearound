@@ -176,14 +176,31 @@ pub async fn launcher_get_preferences() -> Result<LauncherPreferences, String> {
 #[tauri::command]
 pub async fn launcher_agent_executable_resolution(
     agent_id: String,
+    scan: Option<bool>,
 ) -> Result<AgentExecutableResolution, String> {
     let agent_id = resources::agent_by_alias(&agent_id)
         .map(|def| def.id.clone())
         .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
-    let detection = common::agent_detection::scan_agent_and_persist(&agent_id)
-        .await
-        .map_err(|error| error.to_string())?;
-    let configured = common::agent_detection::configured_candidate_with_version(&agent_id).await;
+    let scan = scan.unwrap_or(false);
+    let detection = if scan {
+        common::agent_detection::scan_agent_and_persist(&agent_id)
+            .await
+            .map_err(|error| error.to_string())?
+    } else {
+        common::agent_detection::read_detected_agents()
+            .and_then(|detected| detected.agents.get(&agent_id).cloned())
+            .unwrap_or(common::agent_detection::AgentDetection {
+                default_candidate: None,
+                system_selected: None,
+                legacy_selected: None,
+                candidates: Vec::new(),
+            })
+    };
+    let configured = if scan {
+        common::agent_detection::configured_candidate_with_version(&agent_id).await
+    } else {
+        common::agent_detection::configured_candidate(&agent_id)
+    };
     let mode = config::ensure_loaded().toolchain_mode.as_str();
     let selected = configured.clone().or_else(|| {
         common::agent_detection::preferred_startkit_candidate(&agent_id, &detection, mode)

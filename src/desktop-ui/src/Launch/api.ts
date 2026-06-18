@@ -146,9 +146,11 @@ export interface AgentExecutableLatest {
 
 export function getAgentExecutableResolution(
   agentId: string,
+  options?: { scan?: boolean },
 ): Promise<AgentExecutableResolution> {
   return invoke<AgentExecutableResolution>("launcher_agent_executable_resolution", {
     agentId,
+    scan: options?.scan ?? false,
   });
 }
 
@@ -193,6 +195,10 @@ export function rescanDesktopAppEntries(): Promise<DesktopAppDetectionFile> {
 
 export function getDesktopAppEntries(): Promise<DesktopAppDetectionFile | null> {
   return invoke<DesktopAppDetectionFile | null>("get_desktop_app_entries");
+}
+
+export function checkSelectedLaunchEntry(): Promise<boolean> {
+  return invoke<boolean>("check_selected_launch_entry");
 }
 
 export interface TerminalOption {

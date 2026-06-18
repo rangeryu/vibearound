@@ -43,7 +43,6 @@ import {
   reorderLauncherWorkspaces,
   reorderProfiles,
   getDesktopAppEntries,
-  getAgentExecutableLatest,
   getAgentExecutableResolution,
   updateLauncherAgent,
   setProfileConnection,
@@ -55,7 +54,6 @@ import {
   setLauncherTerminal,
   setLauncherWorkspace,
   type AgentSummary,
-  type AgentExecutableLatest,
   type AgentExecutableResolution,
   type DesktopAppDetectionFile,
   type LaunchSessionSummary,
@@ -261,7 +259,7 @@ export function AgentLaunchBuilder({
   }, [agentId, prefs, profileChoiceAgentId, profiles]);
 
   const refreshAgentExecutable = useCallback(
-    async (targetAgentId = agentId) => {
+    async (targetAgentId = agentId, scan = false) => {
       if (!targetAgentId) {
         setAgentExecutable(null);
         return;
@@ -273,7 +271,9 @@ export function AgentLaunchBuilder({
       }
       setAgentExecutableLoading(true);
       try {
-        const resolution = await getAgentExecutableResolution(targetAgentId);
+        const resolution = await getAgentExecutableResolution(targetAgentId, {
+          scan,
+        });
         if (targetAgentId === agentId) {
           setAgentExecutable(resolution);
         }
@@ -292,8 +292,9 @@ export function AgentLaunchBuilder({
   );
 
   useEffect(() => {
-    void refreshAgentExecutable(agentId);
-  }, [agentId, refreshAgentExecutable]);
+    setAgentExecutable(null);
+    setAgentExecutableLoading(false);
+  }, [agentId]);
 
   useEffect(() => {
     if (!prefs || !agentId) {
@@ -829,7 +830,7 @@ export function AgentLaunchBuilder({
     onError(null);
     try {
       await updateLauncherAgent(targetAgent.id, executablePath);
-      await refreshAgentExecutable(targetAgent.id);
+      await refreshAgentExecutable(targetAgent.id, false);
       onToast(t("Agent updated"));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
@@ -839,18 +840,10 @@ export function AgentLaunchBuilder({
     }
   }
 
-  const checkAgentExecutableLatest = useCallback(
-    async (executablePath: string): Promise<AgentExecutableLatest> => {
-      if (!pathAgent) throw new Error("No agent selected");
-      return getAgentExecutableLatest(pathAgent.id, executablePath);
-    },
-    [pathAgent],
-  );
-
   function openAgentPathDialog(agent: AgentSummary) {
     setPathAgent(agent);
     if (!agent.direct_only) {
-      void refreshAgentExecutable(agent.id);
+      void refreshAgentExecutable(agent.id, false);
     }
   }
 
@@ -879,6 +872,8 @@ export function AgentLaunchBuilder({
       };
   const sessionTitle = selectedSession?.title ?? t("New session");
   const selectedAgentPreference = viewPrefs.agentPreferences[agentId];
+  const currentAgentExecutable =
+    agentExecutable?.agentId === agentId ? agentExecutable : null;
   const terminalArgCount = agentLaunchArgCount(selectedAgentPreference);
   const showLaunchControls = !selectedAgentIsDirectOnly;
   const desktopAppEntryForAgent = (targetAgentId: string) =>
@@ -902,7 +897,7 @@ export function AgentLaunchBuilder({
     selectedAgentPreference?.executablePath ??
     (selectedAgentIsDirectOnly
       ? desktopAppPathForAgent(agentId)
-      : agentExecutable?.selected?.path) ??
+      : currentAgentExecutable?.selected?.path) ??
     selectedAgent.pty_command;
   const selectedExecutableLabel = selectedAgentIsDirectOnly
     ? desktopAppLaunchTargetLabel(agentId, selectedExecutablePath)
@@ -1238,7 +1233,9 @@ export function AgentLaunchBuilder({
         preference={
           pathAgent ? viewPrefs.agentPreferences[pathAgent.id] : undefined
         }
-        executableResolution={pathAgent?.id === agentId ? agentExecutable : null}
+        executableResolution={
+          pathAgent?.id === agentId ? currentAgentExecutable : null
+        }
         executableLoading={
           pathAgent?.id === agentId ? agentExecutableLoading : false
         }
@@ -1251,9 +1248,10 @@ export function AgentLaunchBuilder({
         onClose={() => setPathAgent(null)}
         onSaveExecutablePath={saveAgentExecutablePath}
         onRefreshExecutableResolution={() =>
-          pathAgent ? refreshAgentExecutable(pathAgent.id) : Promise.resolve()
+          pathAgent
+            ? refreshAgentExecutable(pathAgent.id, true)
+            : Promise.resolve()
         }
-        onCheckLatest={checkAgentExecutableLatest}
         onUpdateAgent={updateAgentExecutable}
       />
     </TooltipProvider>
