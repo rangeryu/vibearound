@@ -122,8 +122,8 @@ Verification result:
 
 Catalog endpoints:
 
-- Global API / Token Plan base URLs `https://api.minimax.io/v1` and `https://api.minimax.io/anthropic`.
-- CN API / Token Plan base URLs `https://api.minimaxi.com/v1` and `https://api.minimaxi.com/anthropic`.
+- API / Token Plan Global base URLs `https://api.minimax.io/v1` and `https://api.minimax.io/anthropic`.
+- API / Token Plan CN base URLs `https://api.minimaxi.com/v1` and `https://api.minimaxi.com/anthropic`.
 
 Official evidence:
 
@@ -133,8 +133,8 @@ Official evidence:
 
 Verification result:
 
-- Keep global and CN endpoints.
-- Keep `MiniMax-M3` first; it is the current default for new setup.
+- Label endpoint groups explicitly as `API / Token Plan Global` and `API / Token Plan CN`; do not display bare `Global` or `CN`.
+- Keep `MiniMax-M3` first within each endpoint group.
 - Keep M2.7 and M2.5 family as compatibility/model options with 204.8K context.
 - Mark image input only on `MiniMax-M3`; do not mark file input or web search in the catalog.
 

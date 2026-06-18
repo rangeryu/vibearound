@@ -152,7 +152,7 @@
     },
     {
       "id": "coding-global",
-      "label": "Coding Global",
+      "label": "Coding Plan Global",
       "api_type": "openai-chat",
       "default_base_url": "https://api.z.ai/api/coding/paas/v4",
       "models": [
@@ -211,7 +211,7 @@
     },
     {
       "id": "coding-global",
-      "label": "Coding Global",
+      "label": "Coding Plan Global",
       "api_type": "anthropic",
       "default_base_url": "https://api.z.ai/api/anthropic",
       "models": [
@@ -264,7 +264,7 @@
     },
     {
       "id": "coding-cn",
-      "label": "Coding CN",
+      "label": "Coding Plan CN",
       "api_type": "openai-chat",
       "default_base_url": "https://open.bigmodel.cn/api/coding/paas/v4",
       "models": [
@@ -323,7 +323,7 @@
     },
     {
       "id": "coding-cn",
-      "label": "Coding CN",
+      "label": "Coding Plan CN",
       "api_type": "anthropic",
       "default_base_url": "https://open.bigmodel.cn/api/anthropic",
       "models": [

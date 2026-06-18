@@ -6,7 +6,7 @@
   "endpoints": [
     {
       "id": "coding-plan",
-      "label": "Coding Plan",
+      "label": "Coding Plan International",
       "api_type": "anthropic",
       "default_base_url": "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic",
       "headers": {
@@ -138,7 +138,7 @@
     },
     {
       "id": "coding-plan",
-      "label": "Coding Plan",
+      "label": "Coding Plan International",
       "api_type": "openai-chat",
       "default_base_url": "https://coding-intl.dashscope.aliyuncs.com/v1",
       "headers": {

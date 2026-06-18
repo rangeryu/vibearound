@@ -77,8 +77,9 @@ Catalog implications:
 
 Catalog implications:
 
-- `MiniMax-M3` should be first-class and probably the default for new setup.
-- Keep API and Token Plan separate if key labels, quota copy, or setup instructions differ, even when base URLs match.
+- Display endpoint groups explicitly as `API / Token Plan Global` and `API / Token Plan CN`; avoid ambiguous labels such as `Global`, `CN`, or "default source".
+- Keep `MiniMax-M3` first-class and first in each endpoint group's model list.
+- Keep API and Token Plan naming visible even when their base URLs match.
 - Add/keep model discovery for both OpenAI and Anthropic interfaces.
 
 ## Volcengine / ModelArk

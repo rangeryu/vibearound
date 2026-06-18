@@ -6,7 +6,7 @@
   "endpoints": [
     {
       "id": "ark-api",
-      "label": "Ark API",
+      "label": "Ark API CN Beijing",
       "api_type": "anthropic",
       "default_base_url": "https://ark.cn-beijing.volces.com/api/compatible",
       "auth_header": true,
@@ -78,7 +78,7 @@
     },
     {
       "id": "coding-plan",
-      "label": "Coding Plan",
+      "label": "Coding Plan CN Beijing",
       "api_type": "anthropic",
       "default_base_url": "https://ark.cn-beijing.volces.com/api/coding",
       "auth_header": true,
@@ -152,7 +152,7 @@
     },
     {
       "id": "agent-plan",
-      "label": "Agent Plan",
+      "label": "Agent Plan CN Beijing",
       "api_type": "anthropic",
       "default_base_url": "https://ark.cn-beijing.volces.com/api/plan",
       "auth_header": true,
@@ -226,7 +226,7 @@
     },
     {
       "id": "ark-api",
-      "label": "Ark API",
+      "label": "Ark API CN Beijing",
       "api_type": "openai-responses",
       "default_base_url": "https://ark.cn-beijing.volces.com/api/v3",
       "append_v1_path": false,
@@ -311,7 +311,7 @@
     },
     {
       "id": "ark-api",
-      "label": "Ark API",
+      "label": "Ark API CN Beijing",
       "api_type": "openai-chat",
       "default_base_url": "https://ark.cn-beijing.volces.com/api/v3",
       "append_v1_path": false,
@@ -396,7 +396,7 @@
     },
     {
       "id": "coding-plan",
-      "label": "Coding Plan",
+      "label": "Coding Plan CN Beijing",
       "api_type": "openai-chat",
       "default_base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
       "append_v1_path": false,
@@ -482,7 +482,7 @@
     },
     {
       "id": "agent-plan",
-      "label": "Agent Plan",
+      "label": "Agent Plan CN Beijing",
       "api_type": "openai-chat",
       "default_base_url": "https://ark.cn-beijing.volces.com/api/plan/v3",
       "append_v1_path": false,

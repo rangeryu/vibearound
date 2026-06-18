@@ -6,7 +6,7 @@
   "endpoints": [
     {
       "id": "moonshot-global",
-      "label": "Moonshot Global",
+      "label": "Moonshot API Global",
       "api_type": "openai-chat",
       "default_base_url": "https://api.moonshot.ai/v1",
       "models": [
@@ -115,7 +115,7 @@
     },
     {
       "id": "moonshot-global",
-      "label": "Moonshot Global",
+      "label": "Moonshot API Global",
       "api_type": "anthropic",
       "default_base_url": "https://api.moonshot.ai/anthropic",
       "models": [
@@ -218,7 +218,7 @@
     },
     {
       "id": "moonshot-cn",
-      "label": "Moonshot CN",
+      "label": "Moonshot API CN",
       "api_type": "openai-chat",
       "default_base_url": "https://api.moonshot.cn/v1",
       "models": [
@@ -327,7 +327,7 @@
     },
     {
       "id": "moonshot-cn",
-      "label": "Moonshot CN",
+      "label": "Moonshot API CN",
       "api_type": "anthropic",
       "default_base_url": "https://api.moonshot.cn/anthropic",
       "models": [
@@ -430,7 +430,7 @@
     },
     {
       "id": "kimi-coding",
-      "label": "Kimi Coding",
+      "label": "Kimi Coding API",
       "api_type": "openai-chat",
       "default_base_url": "https://api.kimi.com/coding/v1",
       "append_v1_path": false,
@@ -477,7 +477,7 @@
     },
     {
       "id": "kimi-coding",
-      "label": "Kimi Coding",
+      "label": "Kimi Coding API",
       "api_type": "anthropic",
       "default_base_url": "https://api.kimi.com/coding/",
       "headers": {

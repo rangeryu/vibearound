@@ -515,19 +515,22 @@ mod tests {
             .collect();
         assert!(api_types.contains(&"anthropic"));
         assert!(api_types.contains(&"openai-chat"));
-        for (endpoint_id, openai_base, anthropic_base) in [
+        for (endpoint_id, endpoint_label, openai_base, anthropic_base) in [
             (
                 "moonshot-global",
+                "Moonshot API Global",
                 "https://api.moonshot.ai/v1",
                 "https://api.moonshot.ai/anthropic",
             ),
             (
                 "moonshot-cn",
+                "Moonshot API CN",
                 "https://api.moonshot.cn/v1",
                 "https://api.moonshot.cn/anthropic",
             ),
             (
                 "kimi-coding",
+                "Kimi Coding API",
                 "https://api.kimi.com/coding/v1",
                 "https://api.kimi.com/coding/",
             ),
@@ -536,6 +539,8 @@ mod tests {
                 .unwrap_or_else(|| panic!("moonshot openai endpoint {endpoint_id}"));
             let anthropic = find_endpoint(provider, "anthropic", Some(endpoint_id))
                 .unwrap_or_else(|| panic!("moonshot anthropic endpoint {endpoint_id}"));
+            assert_eq!(openai.label.as_deref(), Some(endpoint_label));
+            assert_eq!(anthropic.label.as_deref(), Some(endpoint_label));
             assert_eq!(openai.default_base_url, openai_base);
             assert_eq!(anthropic.default_base_url, anthropic_base);
         }
@@ -711,6 +716,7 @@ mod tests {
         assert!(find_endpoint(provider, "openai-chat", Some("token-plan")).is_none());
         let token = find_endpoint(provider, "openai-chat", Some("token-plan-cn"))
             .expect("token plan endpoint");
+        assert_eq!(token.label.as_deref(), Some("Token Plan CN"));
         assert_eq!(
             token.default_base_url,
             "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
@@ -718,6 +724,7 @@ mod tests {
 
         let coding = find_endpoint(provider, "openai-chat", Some("coding-plan"))
             .expect("coding plan endpoint");
+        assert_eq!(coding.label.as_deref(), Some("Coding Plan International"));
         assert_eq!(
             coding.default_base_url,
             "https://coding-intl.dashscope.aliyuncs.com/v1"
@@ -810,6 +817,8 @@ mod tests {
         let provider = get("minimax").expect("minimax must exist");
         let global = find_endpoint(provider, "anthropic", Some("global")).expect("global endpoint");
         let cn = find_endpoint(provider, "anthropic", Some("cn")).expect("cn endpoint");
+        assert_eq!(global.label.as_deref(), Some("API / Token Plan Global"));
+        assert_eq!(cn.label.as_deref(), Some("API / Token Plan CN"));
         assert_eq!(global.default_base_url, "https://api.minimax.io/anthropic");
         assert_eq!(cn.default_base_url, "https://api.minimaxi.com/anthropic");
         assert!(global.auth_header);
@@ -841,6 +850,12 @@ mod tests {
         for endpoint_id in ["global", "cn"] {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
                 .unwrap_or_else(|| panic!("minimax chat endpoint {endpoint_id}"));
+            let expected_label = if endpoint_id == "global" {
+                "API / Token Plan Global"
+            } else {
+                "API / Token Plan CN"
+            };
+            assert_eq!(endpoint.label.as_deref(), Some(expected_label));
             let m3 = model(endpoint, "MiniMax-M3");
             assert_eq!(m3.context_window, Some(1_000_000));
             assert!(m3.capabilities.image_input);
@@ -992,6 +1007,7 @@ mod tests {
 
         let ark_anthropic =
             find_endpoint(provider, "anthropic", Some("ark-api")).expect("ark anthropic");
+        assert_eq!(ark_anthropic.label.as_deref(), Some("Ark API CN Beijing"));
         assert_eq!(
             ark_anthropic.default_base_url,
             "https://ark.cn-beijing.volces.com/api/compatible"
@@ -1023,6 +1039,7 @@ mod tests {
         for api_type in ["openai-responses", "openai-chat"] {
             let endpoint =
                 find_endpoint(provider, api_type, Some("ark-api")).expect("ark endpoint");
+            assert_eq!(endpoint.label.as_deref(), Some("Ark API CN Beijing"));
             assert_eq!(
                 endpoint.default_base_url,
                 "https://ark.cn-beijing.volces.com/api/v3"
@@ -1049,6 +1066,10 @@ mod tests {
 
         let coding_anthropic =
             find_endpoint(provider, "anthropic", Some("coding-plan")).expect("coding anthropic");
+        assert_eq!(
+            coding_anthropic.label.as_deref(),
+            Some("Coding Plan CN Beijing")
+        );
         assert_eq!(
             coding_anthropic.default_base_url,
             "https://ark.cn-beijing.volces.com/api/coding"
@@ -1082,6 +1103,7 @@ mod tests {
 
         let coding_chat =
             find_endpoint(provider, "openai-chat", Some("coding-plan")).expect("coding chat");
+        assert_eq!(coding_chat.label.as_deref(), Some("Coding Plan CN Beijing"));
         assert_eq!(
             coding_chat.default_base_url,
             "https://ark.cn-beijing.volces.com/api/coding/v3"
@@ -1116,6 +1138,10 @@ mod tests {
         let agent_anthropic =
             find_endpoint(provider, "anthropic", Some("agent-plan")).expect("agent anthropic");
         assert_eq!(
+            agent_anthropic.label.as_deref(),
+            Some("Agent Plan CN Beijing")
+        );
+        assert_eq!(
             agent_anthropic.default_base_url,
             "https://ark.cn-beijing.volces.com/api/plan"
         );
@@ -1139,6 +1165,7 @@ mod tests {
 
         let agent_chat =
             find_endpoint(provider, "openai-chat", Some("agent-plan")).expect("agent chat");
+        assert_eq!(agent_chat.label.as_deref(), Some("Agent Plan CN Beijing"));
         assert_eq!(
             agent_chat.default_base_url,
             "https://ark.cn-beijing.volces.com/api/plan/v3"
@@ -1194,6 +1221,10 @@ mod tests {
         let coding_anthropic = find_endpoint(provider, "anthropic", Some("coding-global"))
             .expect("zai coding anthropic endpoint");
         assert_eq!(
+            coding_anthropic.label.as_deref(),
+            Some("Coding Plan Global")
+        );
+        assert_eq!(
             coding_anthropic.default_base_url,
             "https://api.z.ai/api/anthropic"
         );
@@ -1209,6 +1240,7 @@ mod tests {
 
         let coding_cn_anthropic = find_endpoint(provider, "anthropic", Some("coding-cn"))
             .expect("zai coding cn anthropic endpoint");
+        assert_eq!(coding_cn_anthropic.label.as_deref(), Some("Coding Plan CN"));
         assert_eq!(
             coding_cn_anthropic.default_base_url,
             "https://open.bigmodel.cn/api/anthropic"
@@ -1217,6 +1249,7 @@ mod tests {
 
         let global_chat =
             find_endpoint(provider, "openai-chat", Some("global")).expect("zai global chat");
+        assert_eq!(global_chat.label.as_deref(), Some("Global API"));
         assert_eq!(
             model(global_chat, "glm-5.2").context_window,
             Some(1_000_000)

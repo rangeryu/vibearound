@@ -6,7 +6,7 @@
   "endpoints": [
     {
       "id": "global",
-      "label": "Global",
+      "label": "API / Token Plan Global",
       "api_type": "anthropic",
       "default_base_url": "https://api.minimax.io/anthropic",
       "auth_header": true,
@@ -65,7 +65,7 @@
     },
     {
       "id": "cn",
-      "label": "CN",
+      "label": "API / Token Plan CN",
       "api_type": "anthropic",
       "default_base_url": "https://api.minimaxi.com/anthropic",
       "auth_header": true,
@@ -124,7 +124,7 @@
     },
     {
       "id": "global",
-      "label": "Global",
+      "label": "API / Token Plan Global",
       "api_type": "openai-chat",
       "default_base_url": "https://api.minimax.io/v1",
       "models": [
@@ -189,7 +189,7 @@
     },
     {
       "id": "global",
-      "label": "Global",
+      "label": "API / Token Plan Global",
       "api_type": "openai-responses",
       "default_base_url": "https://api.minimax.io/v1",
       "append_v1_path": false,
@@ -258,7 +258,7 @@
     },
     {
       "id": "cn",
-      "label": "CN",
+      "label": "API / Token Plan CN",
       "api_type": "openai-chat",
       "default_base_url": "https://api.minimaxi.com/v1",
       "models": [
