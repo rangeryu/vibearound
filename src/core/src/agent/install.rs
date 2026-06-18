@@ -466,15 +466,20 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
         }
         // Native binary agents with install command (Cursor, Kiro)
         else if let Some(install_cmd) = native_agent_install_command(agent_id, agent_def) {
-            let detected =
-                if let Some(candidate) = crate::agent_detection::selected_candidate(agent_id) {
-                    Some(candidate)
-                } else {
-                    crate::agent_detection::scan_agent_and_persist(agent_id)
-                        .await
-                        .ok()
-                        .and_then(|detection| detection.system_selected_candidate())
-                };
+            let config = crate::config::ensure_loaded();
+            let detected = crate::agent_availability::resolve_agent_availability(
+                agent_id,
+                crate::agent_availability::AgentAvailabilityRequest {
+                    scan_policy: crate::agent_availability::AgentScanPolicy::RefreshIfMissing,
+                    toolchain_mode: config.toolchain_mode.as_str(),
+                    candidate_preference:
+                        crate::agent_availability::AgentCandidatePreference::SystemToolchain,
+                    include_configured_version: false,
+                },
+            )
+            .await
+            .ok()
+            .and_then(|availability| availability.selected);
             if detected.is_some() || is_program_available(&agent_def.acp.program) {
                 continue;
             }
