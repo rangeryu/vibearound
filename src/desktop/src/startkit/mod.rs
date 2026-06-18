@@ -1449,12 +1449,12 @@ async fn run_script(
     }
 
     let mut command = if platform == "windows" {
-        let mut cmd = Command::new("powershell.exe");
+        let mut cmd = common::process::env::silent_command("powershell.exe");
         cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]);
         cmd.arg(&full_path);
         cmd
     } else {
-        let mut cmd = Command::new("sh");
+        let mut cmd = common::process::env::silent_command("sh");
         cmd.arg(&full_path);
         cmd
     };

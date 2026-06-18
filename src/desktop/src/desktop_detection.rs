@@ -4,7 +4,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
 
 const DESKTOP_DETECTION_SCHEMA_VERSION: u32 = 1;
 
@@ -141,14 +140,6 @@ async fn macos_application_entry(app_name: &str) -> Option<(String, String, Stri
 }
 
 async fn windows_application_entry(app_name: &str) -> Option<(String, String, String)> {
-    if let Some(app_id) = windows_start_app_id(app_name).await {
-        return Some((
-            app_id,
-            "windows_start_apps".to_string(),
-            "Windows Start Apps".to_string(),
-        ));
-    }
-
     if let Some(path) = windows_application_candidate_paths(app_name)
         .into_iter()
         .find(|path| path.is_file())
@@ -157,6 +148,14 @@ async fn windows_application_entry(app_name: &str) -> Option<(String, String, St
             path.to_string_lossy().to_string(),
             "windows_known_location".to_string(),
             "Windows known location".to_string(),
+        ));
+    }
+
+    if let Some(app_id) = windows_start_app_id(app_name).await {
+        return Some((
+            app_id,
+            "windows_start_apps".to_string(),
+            "Windows Start Apps".to_string(),
         ));
     }
 
@@ -261,7 +260,7 @@ async fn windows_start_app_id(app_name: &str) -> Option<String> {
 async fn command_stdout_line(command: &str, args: &[&str]) -> Option<String> {
     let output = tokio::time::timeout(
         Duration::from_secs(6),
-        Command::new(command).args(args).output(),
+        common::process::env::command(command).args(args).output(),
     )
     .await
     .ok()?

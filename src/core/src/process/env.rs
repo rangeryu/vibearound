@@ -10,6 +10,7 @@
 //! so only well-known PATH directories are appended as a safety net.
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -55,20 +56,33 @@ pub fn child_env() -> HashMap<String, String> {
 
 /// Create a `tokio::process::Command` with the enriched environment pre-set.
 /// Drop-in replacement for `tokio::process::Command::new(program)`.
-pub fn command(program: &str) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new(program);
-    hide_windows_console(&mut cmd);
+pub fn command(program: impl AsRef<OsStr>) -> tokio::process::Command {
+    let mut cmd = silent_command(program);
     cmd.env_clear();
     cmd.envs(child_env());
     cmd
 }
 
 /// Create a `std::process::Command` with the enriched environment pre-set.
-pub fn std_command(program: &str) -> std::process::Command {
-    let mut cmd = std::process::Command::new(program);
-    hide_windows_console_std(&mut cmd);
+pub fn std_command(program: impl AsRef<OsStr>) -> std::process::Command {
+    let mut cmd = silent_std_command(program);
     cmd.env_clear();
     cmd.envs(child_env());
+    cmd
+}
+
+/// Create a command without altering its environment, but suppress transient
+/// console windows for short-lived helper processes on Windows.
+pub fn silent_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    hide_windows_console(&mut cmd);
+    cmd
+}
+
+/// Synchronous variant of [`silent_command`].
+pub fn silent_std_command(program: impl AsRef<OsStr>) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    hide_windows_console_std(&mut cmd);
     cmd
 }
 
@@ -272,7 +286,7 @@ foreach ($part in $parts) {
 }
 [Environment]::SetEnvironmentVariable('Path', ($current.TrimEnd(';') + ';' + $dir), 'User')
 "#;
-    let output = std::process::Command::new("powershell.exe")
+    let output = std_command("powershell.exe")
         .args([
             "-NoProfile",
             "-ExecutionPolicy",
