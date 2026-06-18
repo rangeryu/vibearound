@@ -25,9 +25,8 @@ import { Launch } from "./Launch";
 import { StatusDashboard } from "./StatusDashboard";
 import { SettingsDialog } from "./Settings";
 import {
+  checkSelectedLaunchEntry,
   getLauncherPreferences,
-  rescanAgentEntries,
-  rescanDesktopAppEntries,
   type LauncherPreferences,
 } from "./Launch/api";
 import { LanguageMenu } from "./components/LanguageMenu";
@@ -50,11 +49,11 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.allSettled([rescanAgentEntries(), rescanDesktopAppEntries()]).then(
-      () => {
+    void checkSelectedLaunchEntry()
+      .catch(() => null)
+      .then(() => {
         if (!cancelled) setStartupScanDone(true);
-      },
-    );
+      });
     return () => {
       cancelled = true;
     };

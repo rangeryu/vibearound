@@ -8,7 +8,7 @@ mod profiles;
 mod startkit;
 mod tray;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, Runtime};
@@ -138,6 +138,49 @@ fn get_desktop_app_entries() -> Option<desktop_detection::DesktopAppDetectionFil
     desktop_detection::read_detected_desktop_apps()
 }
 
+#[tauri::command]
+fn check_selected_launch_entry() -> Result<bool, String> {
+    let cfg = common::config::ensure_loaded();
+    let prefs = common::agent_state::read_prefs();
+    let agent_id = common::agent_state::resolve_selected_agent(&prefs, &cfg);
+    let agent = common::resources::agent_by_alias(&agent_id)
+        .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
+
+    let configured_path = common::agent_state::resolve_agent_executable_path(&prefs, &agent.id);
+    let exists = if agent.direct_only {
+        configured_path.as_deref().is_some_and(Path::is_file)
+            || desktop_detection::refresh_known_agent_and_persist(&agent.id)
+                .map_err(|error| error.to_string())?
+                .is_some()
+            || selected_desktop_app_cached(&agent.id, configured_path.as_deref())
+    } else {
+        configured_path.as_deref().is_some_and(Path::is_file)
+            || common::agent_detection::selected_candidate(&agent.id)
+                .as_ref()
+                .is_some_and(|candidate| Path::new(&candidate.path).is_file())
+    };
+    Ok(exists)
+}
+
+fn selected_desktop_app_cached(agent_id: &str, configured_path: Option<&Path>) -> bool {
+    let Some(detected) = desktop_detection::read_detected_desktop_apps() else {
+        return false;
+    };
+    let Some(entry) = detected
+        .apps
+        .get(agent_id)
+        .and_then(|detection| detection.entry.as_ref())
+    else {
+        return false;
+    };
+    if entry.source == "windows_start_apps" {
+        return configured_path
+            .map(|path| path.to_string_lossy().eq_ignore_ascii_case(&entry.path))
+            .unwrap_or(true);
+    }
+    Path::new(&entry.path).is_file()
+}
+
 /// Open an HTTP URL in the user's default external browser.
 ///
 /// We can't use `window.open` from the desktop-ui because it creates a
@@ -217,6 +260,7 @@ fn main() {
             rescan_agent_entries,
             rescan_desktop_app_entries,
             get_desktop_app_entries,
+            check_selected_launch_entry,
             open_external_url,
             restart_services,
             set_ui_locale,

@@ -1,6 +1,5 @@
 //! Codex model metadata bridge for provider models that Codex does not bundle.
 
-use std::process::Command;
 use std::sync::LazyLock;
 
 use serde_json::{json, Value};
@@ -72,7 +71,7 @@ fn input_modalities(spec: &CodexModelCatalogSpec<'_>) -> Value {
 }
 
 fn load_bundled_model_template() -> Option<Value> {
-    let output = Command::new("codex")
+    let output = crate::process::env::silent_std_command("codex")
         .args(["debug", "models", "--bundled"])
         .output()
         .ok()?;

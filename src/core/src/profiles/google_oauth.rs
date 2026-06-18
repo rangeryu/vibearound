@@ -250,7 +250,7 @@ fn platform_open_command(url: &str) -> std::process::Command {
     }
     #[cfg(target_os = "windows")]
     {
-        let mut command = std::process::Command::new("cmd");
+        let mut command = crate::process::env::std_command("cmd");
         command.args(["/C", "start", "", url]);
         command
     }

@@ -62,7 +62,7 @@ pub(super) fn kill_pids_on_ports(ports: &[u16]) {
     {
         // Windows fallback: taskkill /T kills the process tree rooted at each PID.
         for pid in pids {
-            let _ = std::process::Command::new("taskkill")
+            let _ = crate::process::env::std_command("taskkill")
                 .args(["/T", "/F", "/PID", &pid.to_string()])
                 .output();
         }

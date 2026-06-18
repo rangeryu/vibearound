@@ -370,7 +370,7 @@ fn windows_start_app_id(app: WindowsDesktopApp) -> Option<String> {
         "$app = Get-StartApps -Name {} | Select-Object -First 1; if ($app) {{ $app.AppID }}",
         powershell_single_quoted(app_name)
     );
-    let output = std::process::Command::new("powershell.exe")
+    let output = ::common::process::env::std_command("powershell.exe")
         .args(["-NoProfile", "-Command", &script])
         .output()
         .ok()?;
