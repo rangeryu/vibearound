@@ -248,6 +248,6 @@ Verification result:
 
 - Keep only CN Token Plan endpoint. Removed unconfirmed Singapore/Amsterdam Token Plan regional endpoints.
 - Keep web search on OpenAI-compatible MiMo endpoints based on the official model capability table.
-- Mark image input only for Omni-series `mimo-v2.5` and `mimo-v2-omni`.
+- Mark image input for `mimo-v2.5` and `mimo-v2-omni` on both OpenAI-compatible and Anthropic-compatible MiMo endpoints. Official image understanding docs show both OpenAI Chat and Anthropic Messages image examples and list those two supported models.
 - Do not mark file input. MiMo docs say "Full-modal Understanding" and mention image/audio/video scenarios, but do not document file/document content-block support.
 - Do not configure Anthropic model discovery under `/anthropic/v1/models`; route is unsupported.

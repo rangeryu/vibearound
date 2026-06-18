@@ -881,6 +881,13 @@ mod tests {
                 model(endpoint, "mimo-v2.5-pro").context_window,
                 Some(1_000_000)
             );
+            assert!(!model(endpoint, "mimo-v2.5-pro").capabilities.image_input);
+            assert!(model(endpoint, "mimo-v2.5").capabilities.image_input);
+            assert!(!model(endpoint, "mimo-v2.5").capabilities.file_input);
+            assert!(!model(endpoint, "mimo-v2-pro").capabilities.image_input);
+            assert!(model(endpoint, "mimo-v2-omni").capabilities.image_input);
+            assert!(!model(endpoint, "mimo-v2-omni").capabilities.file_input);
+            assert!(!model(endpoint, "mimo-v2-flash").capabilities.image_input);
         }
     }
 

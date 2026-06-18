@@ -169,7 +169,10 @@
         {
           "id": "mimo-v2.5",
           "label": "MiMo V2.5",
-          "context_window": 1000000
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "mimo-v2-pro",
@@ -179,7 +182,10 @@
         {
           "id": "mimo-v2-omni",
           "label": "MiMo V2 Omni",
-          "context_window": 256000
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "mimo-v2-flash",
@@ -226,7 +232,10 @@
         {
           "id": "mimo-v2.5",
           "label": "MiMo V2.5",
-          "context_window": 1000000
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "mimo-v2-pro",
@@ -236,7 +245,10 @@
         {
           "id": "mimo-v2-omni",
           "label": "MiMo V2 Omni",
-          "context_window": 256000
+          "context_window": 256000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "mimo-v2-flash",
