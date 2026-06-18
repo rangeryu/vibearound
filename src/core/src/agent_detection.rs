@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -1171,17 +1172,22 @@ fn program_from_command(command: &str) -> Option<String> {
 fn replace_command_program(command: &str, program: &str) -> String {
     let trimmed = command.trim_start();
     let Some(first) = program_from_command(trimmed) else {
-        return program.to_string();
+        return shell_command_word(program);
     };
     let rest = trimmed
         .strip_prefix(&first)
         .map(str::trim_start)
         .unwrap_or_default();
+    let program = shell_command_word(program);
     if rest.is_empty() {
-        program.to_string()
+        program
     } else {
         format!("{program} {rest}")
     }
+}
+
+fn shell_command_word(value: &str) -> String {
+    shell_escape::unix::escape(Cow::Borrowed(value)).to_string()
 }
 
 fn comparable_version(value: &str) -> Option<String> {
@@ -1280,6 +1286,25 @@ mod tests {
         assert_eq!(
             source_package("codex", "app_bundled").as_deref(),
             Some("@openai/codex")
+        );
+    }
+
+    #[test]
+    fn replace_command_program_quotes_selected_paths_with_spaces() {
+        assert_eq!(
+            replace_command_program(
+                "claude code --permission-mode acceptEdits",
+                "/Applications/Claude CLI/bin/claude"
+            ),
+            "'/Applications/Claude CLI/bin/claude' code --permission-mode acceptEdits"
+        );
+    }
+
+    #[test]
+    fn replace_command_program_quotes_empty_fallback() {
+        assert_eq!(
+            replace_command_program("", "/tmp/Codex CLI"),
+            "'/tmp/Codex CLI'"
         );
     }
 
