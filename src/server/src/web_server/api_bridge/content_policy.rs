@@ -424,9 +424,9 @@ mod tests {
     #[test]
     fn allows_catalog_image_model() {
         validate_request_content(
-            &profile("dashscope", "qwen3.6-plus"),
+            &profile("dashscope", "qwen3.7-plus"),
             "openai-chat",
-            &image_request("qwen3.6-plus"),
+            &image_request("qwen3.7-plus"),
         )
         .unwrap();
     }
@@ -442,9 +442,9 @@ mod tests {
 
         assert!(error.contains("Alibaba DashScope model 'glm-5.1'"));
         assert!(error.contains("Compatible models for image input on this endpoint"));
-        assert!(error.contains("qwen3.6-plus"));
-        assert!(error.contains("qwen3.5-plus"));
-        assert!(error.contains("kimi-k2.5"));
+        assert!(error.contains("qwen3.7-plus"));
+        assert!(error.contains("qwen3.6-flash"));
+        assert!(error.contains("kimi-k2.6"));
     }
 
     #[test]
@@ -558,10 +558,10 @@ mod tests {
 
     #[test]
     fn leaves_supported_image_model_unchanged() {
-        let mut request = image_request("qwen3.6-plus");
+        let mut request = image_request("qwen3.7-plus");
 
         let result = sanitize_request_content(
-            &profile("dashscope", "qwen3.6-plus"),
+            &profile("dashscope", "qwen3.7-plus"),
             "openai-chat",
             &mut request,
         );
