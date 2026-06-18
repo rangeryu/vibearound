@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context};
@@ -28,13 +28,18 @@ const STARTKIT_COMPLETE_EVENT: &str = "startkit-complete";
 const STARTKIT_ITEM_SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 
 pub struct StartkitRunState {
+    active: Arc<Mutex<Option<Arc<StartkitRunControl>>>>,
+}
+
+struct StartkitRunControl {
+    run_id: String,
     cancelled: Arc<AtomicBool>,
 }
 
 impl Default for StartkitRunState {
     fn default() -> Self {
         Self {
-            cancelled: Arc::new(AtomicBool::new(false)),
+            active: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -302,6 +307,8 @@ pub struct StartkitScanReport {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartkitProgressEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
     pub id: String,
     pub label: String,
     pub status: StartkitItemStatus,
@@ -312,6 +319,7 @@ pub struct StartkitProgressEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartkitCompleteEvent {
+    pub run_id: String,
     pub status: String,
 }
 
@@ -383,29 +391,60 @@ pub async fn start_startkit_install<R: Runtime>(
     state: State<'_, StartkitRunState>,
     settings: Value,
     choices: StartkitChoices,
+    run_id: Option<String>,
 ) -> Result<(), String> {
-    state.cancelled.store(false, Ordering::Relaxed);
     common::config::write_settings_json(&settings).map_err(|e| e.to_string())?;
 
-    let cancelled = Arc::clone(&state.cancelled);
+    let run_id = normalize_run_id(run_id);
+    let control = Arc::new(StartkitRunControl {
+        run_id: run_id.clone(),
+        cancelled: Arc::new(AtomicBool::new(false)),
+    });
+    {
+        let mut active = state
+            .active
+            .lock()
+            .map_err(|_| "startkit run state lock poisoned".to_string())?;
+        if let Some(previous) = active.replace(Arc::clone(&control)) {
+            previous.cancelled.store(true, Ordering::Relaxed);
+        }
+    }
+
+    let active = Arc::clone(&state.active);
     tauri::async_runtime::spawn(async move {
-        let status = match run_startkit_install(app.clone(), settings, choices, cancelled).await {
+        let status = match run_startkit_install(
+            app.clone(),
+            settings,
+            choices,
+            Arc::clone(&control.cancelled),
+            run_id.clone(),
+        )
+        .await
+        {
             Ok(status) => status,
             Err(err) => {
-                let _ = app.emit(
-                    STARTKIT_PROGRESS_EVENT,
-                    StartkitProgressEvent {
-                        id: "startkit".to_string(),
-                        label: "Startkit".to_string(),
-                        status: StartkitItemStatus::Error,
-                        message: Some(err.to_string()),
-                        report: None,
-                    },
-                );
+                if is_active_run(&active, &run_id) {
+                    let _ = app.emit(
+                        STARTKIT_PROGRESS_EVENT,
+                        StartkitProgressEvent {
+                            run_id: Some(run_id.clone()),
+                            id: "startkit".to_string(),
+                            label: "Startkit".to_string(),
+                            status: StartkitItemStatus::Error,
+                            message: Some(err.to_string()),
+                            report: None,
+                        },
+                    );
+                }
                 "error".to_string()
             }
         };
-        let _ = app.emit(STARTKIT_COMPLETE_EVENT, StartkitCompleteEvent { status });
+        if finish_active_run(&active, &run_id) {
+            let _ = app.emit(
+                STARTKIT_COMPLETE_EVENT,
+                StartkitCompleteEvent { run_id, status },
+            );
+        }
     });
 
     Ok(())
@@ -413,8 +452,44 @@ pub async fn start_startkit_install<R: Runtime>(
 
 #[tauri::command]
 pub async fn cancel_startkit_install(state: State<'_, StartkitRunState>) -> Result<(), String> {
-    state.cancelled.store(true, Ordering::Relaxed);
+    if let Some(control) = state
+        .active
+        .lock()
+        .map_err(|_| "startkit run state lock poisoned".to_string())?
+        .as_ref()
+    {
+        control.cancelled.store(true, Ordering::Relaxed);
+    }
     Ok(())
+}
+
+fn normalize_run_id(run_id: Option<String>) -> String {
+    run_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+}
+
+fn is_active_run(active: &Arc<Mutex<Option<Arc<StartkitRunControl>>>>, run_id: &str) -> bool {
+    active
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|control| control.run_id == run_id))
+        .unwrap_or(false)
+}
+
+fn finish_active_run(active: &Arc<Mutex<Option<Arc<StartkitRunControl>>>>, run_id: &str) -> bool {
+    let Ok(mut guard) = active.lock() else {
+        return false;
+    };
+    let matches = guard
+        .as_ref()
+        .map(|control| control.run_id == run_id)
+        .unwrap_or(false);
+    if matches {
+        *guard = None;
+    }
+    matches
 }
 
 pub fn manifest_summary() -> anyhow::Result<StartkitManifestSummary> {
@@ -594,16 +669,27 @@ async fn scan_with_progress<R: Runtime>(
         if let Some(app) = app {
             emit_progress(
                 app,
+                None,
                 item,
                 StartkitItemStatus::Running,
                 Some("Checking".to_string()),
                 None,
             );
         }
-        let report = scan_item(&manifest, &paths, item, settings, choices, platform).await;
+        let report = scan_item_with_timeout(
+            &manifest,
+            &paths,
+            item,
+            settings,
+            choices,
+            platform,
+            STARTKIT_ITEM_SCAN_TIMEOUT,
+        )
+        .await;
         if let Some(app) = app {
             emit_progress(
                 app,
+                None,
                 item,
                 report.status.clone(),
                 report.message.clone(),
@@ -614,6 +700,28 @@ async fn scan_with_progress<R: Runtime>(
     }
 
     Ok(StartkitScanReport { plan, reports })
+}
+
+async fn scan_item_with_timeout(
+    manifest: &Manifest,
+    paths: &StartkitPaths,
+    item: &StartkitItem,
+    settings: &Value,
+    choices: &StartkitChoices,
+    platform: &str,
+    max_duration: Duration,
+) -> StartkitItemReport {
+    tokio::time::timeout(
+        max_duration,
+        scan_item(manifest, paths, item, settings, choices, platform),
+    )
+    .await
+    .unwrap_or_else(|_| StartkitItemReport {
+        status: StartkitItemStatus::Error,
+        message: Some("Check timed out".to_string()),
+        actions: Vec::new(),
+        ..base_report(item)
+    })
 }
 
 #[allow(dead_code)]
@@ -701,6 +809,7 @@ async fn run_startkit_install<R: Runtime>(
     settings: Value,
     choices: StartkitChoices,
     cancelled: Arc<AtomicBool>,
+    run_id: String,
 ) -> anyhow::Result<String> {
     let manifest = load_manifest()?;
     let platform = current_platform();
@@ -722,6 +831,7 @@ async fn run_startkit_install<R: Runtime>(
             blocked_item_ids.insert(item.id.clone());
             emit_progress(
                 &app,
+                Some(&run_id),
                 item,
                 StartkitItemStatus::Skipped,
                 Some("Skipped because a dependency is not ready".to_string()),
@@ -735,13 +845,13 @@ async fn run_startkit_install<R: Runtime>(
         }
 
         let report = if item.kind.as_deref() == Some("builtin_channel_plugins") {
-            run_channel_plugins_item(&app, item, &choices, &cancelled).await
+            run_channel_plugins_item(&app, Some(&run_id), item, &choices, &cancelled).await
         } else if item.kind.as_deref() == Some("managed_npm_package") {
-            run_managed_npm_package_item(&app, item, &cancelled).await
+            run_managed_npm_package_item(&app, Some(&run_id), item, &cancelled).await
         } else {
             let progress =
                 |item: &StartkitItem, status: StartkitItemStatus, message: Option<String>| {
-                    emit_progress(&app, item, status, message, None);
+                    emit_progress(&app, Some(&run_id), item, status, message, None);
                 };
             execute_item_with_cancel(
                 &settings,
@@ -767,6 +877,7 @@ async fn run_startkit_install<R: Runtime>(
                 }
                 emit_progress(
                     &app,
+                    Some(&run_id),
                     item,
                     report.status.clone(),
                     report.message.clone(),
@@ -778,6 +889,7 @@ async fn run_startkit_install<R: Runtime>(
                 blocked_item_ids.insert(item.id.clone());
                 emit_progress(
                     &app,
+                    Some(&run_id),
                     item,
                     StartkitItemStatus::Error,
                     Some(err.to_string()),
@@ -950,6 +1062,7 @@ async fn execute_managed_toolchain_item(
 
 async fn run_channel_plugins_item<R: Runtime>(
     app: &AppHandle<R>,
+    run_id: Option<&str>,
     item: &StartkitItem,
     choices: &StartkitChoices,
     cancelled: &Arc<AtomicBool>,
@@ -970,7 +1083,7 @@ async fn run_channel_plugins_item<R: Runtime>(
                 ..base_report(item)
             });
         }
-        install_channel_plugin(app, channel_id, cancelled).await?;
+        install_channel_plugin(app, run_id, channel_id, cancelled).await?;
     }
 
     Ok(StartkitItemReport {
@@ -983,6 +1096,7 @@ async fn run_channel_plugins_item<R: Runtime>(
 
 async fn run_managed_npm_package_item<R: Runtime>(
     app: &AppHandle<R>,
+    run_id: Option<&str>,
     item: &StartkitItem,
     cancelled: &Arc<AtomicBool>,
 ) -> anyhow::Result<StartkitItemReport> {
@@ -1002,6 +1116,7 @@ async fn run_managed_npm_package_item<R: Runtime>(
     let install_dir = managed_item_dependency_dir(item)?;
     emit_progress(
         app,
+        run_id,
         item,
         StartkitItemStatus::Running,
         Some(format!("Installing {}", item.label)),
@@ -1012,7 +1127,14 @@ async fn run_managed_npm_package_item<R: Runtime>(
         package,
         &install_dir,
         |line| {
-            emit_progress(app, item, StartkitItemStatus::Running, Some(line), None);
+            emit_progress(
+                app,
+                run_id,
+                item,
+                StartkitItemStatus::Running,
+                Some(line),
+                None,
+            );
         },
         || cancelled.load(Ordering::Relaxed),
     )
@@ -1035,6 +1157,7 @@ async fn run_managed_npm_package_item<R: Runtime>(
 
 async fn install_channel_plugin<R: Runtime>(
     app: &AppHandle<R>,
+    run_id: Option<&str>,
     channel_id: &str,
     cancelled: &Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
@@ -1042,6 +1165,7 @@ async fn install_channel_plugin<R: Runtime>(
     if crate::onboarding::check_plugin_status(channel_id.to_string()) == "ready" {
         emit_progress_event(
             app,
+            run_id,
             progress_id,
             channel_id.to_string(),
             StartkitItemStatus::Ok,
@@ -1056,6 +1180,7 @@ async fn install_channel_plugin<R: Runtime>(
 
     emit_progress_event(
         app,
+        run_id,
         progress_id.clone(),
         plugin.name.clone(),
         StartkitItemStatus::Running,
@@ -1071,6 +1196,7 @@ async fn install_channel_plugin<R: Runtime>(
         |line| {
             emit_progress_event(
                 app,
+                run_id,
                 progress_id.clone(),
                 plugin.name.clone(),
                 StartkitItemStatus::Running,
@@ -1086,6 +1212,7 @@ async fn install_channel_plugin<R: Runtime>(
         Ok(_) => {
             emit_progress_event(
                 app,
+                run_id,
                 progress_id,
                 plugin.name.clone(),
                 StartkitItemStatus::Ok,
@@ -1097,6 +1224,7 @@ async fn install_channel_plugin<R: Runtime>(
         Err(error) => {
             emit_progress_event(
                 app,
+                run_id,
                 progress_id,
                 plugin.name.clone(),
                 StartkitItemStatus::Error,
@@ -1119,6 +1247,7 @@ fn install_phase_message(item: &StartkitItem) -> String {
 
 fn emit_progress<R: Runtime>(
     app: &AppHandle<R>,
+    run_id: Option<&str>,
     item: &StartkitItem,
     status: StartkitItemStatus,
     message: Option<String>,
@@ -1126,6 +1255,7 @@ fn emit_progress<R: Runtime>(
 ) {
     emit_progress_event(
         app,
+        run_id,
         item.id.clone(),
         item.label.clone(),
         status,
@@ -1136,6 +1266,7 @@ fn emit_progress<R: Runtime>(
 
 fn emit_progress_event<R: Runtime>(
     app: &AppHandle<R>,
+    run_id: Option<&str>,
     id: String,
     label: String,
     status: StartkitItemStatus,
@@ -1145,6 +1276,7 @@ fn emit_progress_event<R: Runtime>(
     let _ = app.emit(
         STARTKIT_PROGRESS_EVENT,
         StartkitProgressEvent {
+            run_id: run_id.map(str::to_string),
             id,
             label,
             status,

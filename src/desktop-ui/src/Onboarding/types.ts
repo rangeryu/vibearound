@@ -272,6 +272,7 @@ export interface StartkitScanReport {
 }
 
 export interface StartkitProgressEvent {
+  runId?: string;
   id: string;
   label: string;
   status: StartkitStatus;
@@ -280,5 +281,6 @@ export interface StartkitProgressEvent {
 }
 
 export interface StartkitCompleteEvent {
+  runId: string;
   status: string;
 }
