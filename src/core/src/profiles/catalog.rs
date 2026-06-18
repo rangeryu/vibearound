@@ -528,15 +528,44 @@ mod tests {
 
         let anthropic =
             find_endpoint(provider, "anthropic", None).expect("moonshot anthropic endpoint");
+        assert_eq!(
+            model(anthropic, "kimi-k2.7-code").context_window,
+            Some(256_000)
+        );
+        assert!(model(anthropic, "kimi-k2.7-code").capabilities.image_input);
         let kimi_k26 = model(anthropic, "kimi-k2.6");
         assert!(kimi_k26.capabilities.image_input);
         assert!(!kimi_k26.capabilities.file_input);
 
         let openai_chat =
             find_endpoint(provider, "openai-chat", None).expect("moonshot chat endpoint");
+        assert_eq!(
+            model(openai_chat, "kimi-k2.7-code").context_window,
+            Some(256_000)
+        );
+        assert!(
+            model(openai_chat, "kimi-k2.7-code")
+                .capabilities
+                .image_input
+        );
         let kimi_k26 = model(openai_chat, "kimi-k2.6");
         assert!(kimi_k26.capabilities.image_input);
         assert!(!kimi_k26.capabilities.file_input);
+
+        let kimi_coding_chat =
+            find_endpoint(provider, "openai-chat", Some("kimi-coding")).expect("kimi coding chat");
+        assert_eq!(
+            kimi_coding_chat.default_base_url,
+            "https://api.kimi.com/coding/v1"
+        );
+        assert!(!kimi_coding_chat.append_v1_path);
+        assert!(
+            model(kimi_coding_chat, "kimi-for-coding")
+                .capabilities
+                .image_input
+        );
+        assert!(find_model(kimi_coding_chat, "kimi-code").is_none());
+        assert!(find_model(kimi_coding_chat, "k2p5").is_none());
     }
 
     #[test]
@@ -607,7 +636,10 @@ mod tests {
             .filter(|e| e.api_type == "anthropic")
             .map(endpoint_id)
             .collect();
-        assert_eq!(anthropic_endpoints, vec!["coding-plan", "coding-plan-cn"]);
+        assert_eq!(
+            anthropic_endpoints,
+            vec!["coding-plan", "coding-plan-cn", "token-plan-cn"]
+        );
 
         for &endpoint_id in &endpoints {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
@@ -645,7 +677,7 @@ mod tests {
             .expect("token plan endpoint");
         assert_eq!(
             token.default_base_url,
-            "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+            "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
         );
 
         let coding = find_endpoint(provider, "openai-chat", Some("coding-plan"))
@@ -685,6 +717,15 @@ mod tests {
             "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"
         );
         assert!(anthropic.auth_header);
+
+        let token_anthropic = find_endpoint(provider, "anthropic", Some("token-plan-cn"))
+            .expect("token plan anthropic endpoint");
+        assert_eq!(
+            token_anthropic.default_base_url,
+            "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"
+        );
+        assert!(token_anthropic.auth_header);
+        assert!(find_model(token_anthropic, "qwen3.7-max").is_some());
     }
 
     #[test]
@@ -743,6 +784,10 @@ mod tests {
             assert!(m3.capabilities.image_input);
             assert!(!m3.capabilities.file_input);
             assert!(!model(endpoint, "MiniMax-M2.7").capabilities.image_input);
+            assert_eq!(
+                model(endpoint, "MiniMax-M2.5-highspeed").context_window,
+                Some(204_800)
+            );
         }
 
         for endpoint_id in ["global", "cn"] {
@@ -753,7 +798,21 @@ mod tests {
             assert!(m3.capabilities.image_input);
             assert!(!m3.capabilities.file_input);
             assert!(!model(endpoint, "MiniMax-M2.7").capabilities.image_input);
+            assert_eq!(
+                model(endpoint, "MiniMax-M2.5").context_window,
+                Some(204_800)
+            );
         }
+
+        let responses = find_endpoint(provider, "openai-responses", Some("global"))
+            .expect("minimax responses endpoint");
+        assert_eq!(responses.default_base_url, "https://api.minimax.io/v1");
+        assert!(!responses.append_v1_path);
+        assert!(responses.capabilities.reasoning_effort);
+        assert_eq!(
+            model(responses, "MiniMax-M3").context_window,
+            Some(1_000_000)
+        );
     }
 
     #[test]
@@ -764,26 +823,33 @@ mod tests {
 
         assert!(!payg.append_v1_path);
         assert_eq!(payg.default_base_url, "https://api.xiaomimimo.com/v1");
-        for (endpoint_id, base_url) in [
-            ("token-plan-cn", "https://token-plan-cn.xiaomimimo.com/v1"),
-            ("token-plan-sgp", "https://token-plan-sgp.xiaomimimo.com/v1"),
-            ("token-plan-ams", "https://token-plan-ams.xiaomimimo.com/v1"),
-        ] {
+        assert!(payg.capabilities.content.web_search);
+        for (endpoint_id, base_url) in
+            [("token-plan-cn", "https://token-plan-cn.xiaomimimo.com/v1")]
+        {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
                 .unwrap_or_else(|| panic!("mimo token-plan endpoint {endpoint_id}"));
             assert_eq!(endpoint.default_base_url, base_url);
             assert!(!endpoint.append_v1_path);
         }
+        assert!(find_endpoint(provider, "openai-chat", Some("token-plan-sgp")).is_none());
+        assert!(find_endpoint(provider, "openai-chat", Some("token-plan-ams")).is_none());
         assert_eq!(
             model(payg, "mimo-v2.5-pro").label.as_deref(),
             Some("MiMo V2.5 Pro")
         );
-        for endpoint in &provider.endpoints {
+        for endpoint in provider
+            .endpoints
+            .iter()
+            .filter(|endpoint| endpoint.api_type == "openai-chat")
+        {
             assert_eq!(
                 model(endpoint, "mimo-v2.5-pro").context_window,
                 Some(1_000_000)
             );
             assert_eq!(model(endpoint, "mimo-v2.5").context_window, Some(1_000_000));
+            assert!(model(endpoint, "mimo-v2.5").capabilities.image_input);
+            assert!(!model(endpoint, "mimo-v2.5").capabilities.file_input);
             assert_eq!(
                 model(endpoint, "mimo-v2-pro").context_window,
                 Some(1_000_000)
@@ -792,9 +858,28 @@ mod tests {
                 model(endpoint, "mimo-v2-omni").context_window,
                 Some(256_000)
             );
+            assert!(model(endpoint, "mimo-v2-omni").capabilities.image_input);
+            assert!(!model(endpoint, "mimo-v2-omni").capabilities.file_input);
             assert_eq!(
                 model(endpoint, "mimo-v2-flash").context_window,
                 Some(256_000)
+            );
+        }
+
+        for (endpoint_id, base_url) in [
+            ("pay-as-you-go", "https://api.xiaomimimo.com/anthropic"),
+            (
+                "token-plan-cn",
+                "https://token-plan-cn.xiaomimimo.com/anthropic",
+            ),
+        ] {
+            let endpoint = find_endpoint(provider, "anthropic", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("mimo anthropic endpoint {endpoint_id}"));
+            assert_eq!(endpoint.default_base_url, base_url);
+            assert!(endpoint.auth_header);
+            assert_eq!(
+                model(endpoint, "mimo-v2.5-pro").context_window,
+                Some(1_000_000)
             );
         }
     }
@@ -1040,16 +1125,30 @@ mod tests {
     #[test]
     fn zai_catalog_tracks_context_windows() {
         let provider = get("zai").expect("zai must exist");
-        for api_type in ["anthropic", "openai-chat"] {
-            let endpoint = find_endpoint(provider, api_type, None)
-                .unwrap_or_else(|| panic!("zai {api_type} endpoint"));
-            assert_eq!(model(endpoint, "glm-5.1").context_window, Some(200_000));
-            assert_eq!(model(endpoint, "glm-5").context_window, Some(200_000));
-            assert_eq!(model(endpoint, "glm-4.7").context_window, Some(200_000));
-            assert_eq!(model(endpoint, "glm-4.5").context_window, Some(128_000));
-            assert!(!model(endpoint, "glm-5").capabilities.image_input);
-            assert!(!model(endpoint, "glm-4.7").capabilities.image_input);
-        }
+        let coding_anthropic = find_endpoint(provider, "anthropic", Some("coding-global"))
+            .expect("zai coding anthropic endpoint");
+        assert_eq!(
+            coding_anthropic.default_base_url,
+            "https://api.z.ai/api/anthropic"
+        );
+        assert_eq!(
+            model(coding_anthropic, "glm-5.2").context_window,
+            Some(1_000_000)
+        );
+        assert_eq!(
+            model(coding_anthropic, "glm-5-turbo").context_window,
+            Some(200_000)
+        );
+        assert!(find_model(coding_anthropic, "glm-5.1").is_none());
+
+        let global_chat =
+            find_endpoint(provider, "openai-chat", Some("global")).expect("zai global chat");
+        assert_eq!(model(global_chat, "glm-5.1").context_window, Some(200_000));
+        assert_eq!(model(global_chat, "glm-5").context_window, Some(200_000));
+        assert_eq!(model(global_chat, "glm-4.7").context_window, Some(200_000));
+        assert_eq!(model(global_chat, "glm-4.5").context_window, Some(128_000));
+        assert!(!model(global_chat, "glm-5").capabilities.image_input);
+        assert!(!model(global_chat, "glm-4.7").capabilities.image_input);
 
         for endpoint_id in ["global", "cn"] {
             let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
@@ -1059,6 +1158,27 @@ mod tests {
             assert!(vision.capabilities.file_input);
             assert!(model(endpoint, "glm-4.6v").capabilities.image_input);
             assert!(model(endpoint, "glm-4.5v").capabilities.file_input);
+        }
+
+        let cn_anthropic =
+            find_endpoint(provider, "anthropic", Some("cn")).expect("zai cn anthropic endpoint");
+        assert_eq!(
+            cn_anthropic.default_base_url,
+            "https://open.bigmodel.cn/api/anthropic"
+        );
+        assert_eq!(
+            model(cn_anthropic, "glm-5.2").context_window,
+            Some(1_000_000)
+        );
+        assert_eq!(model(cn_anthropic, "glm-5.1").context_window, Some(200_000));
+        assert!(find_model(cn_anthropic, "glm-4.6").is_none());
+
+        for endpoint_id in ["coding-global", "coding-cn"] {
+            let endpoint = find_endpoint(provider, "openai-chat", Some(endpoint_id))
+                .unwrap_or_else(|| panic!("zai coding endpoint {endpoint_id}"));
+            assert_eq!(model(endpoint, "glm-5.2").context_window, Some(1_000_000));
+            assert!(find_model(endpoint, "glm-5.1").is_none());
+            assert!(find_model(endpoint, "glm-4.5-air").is_some());
         }
     }
 

@@ -75,6 +75,33 @@ const azureProvider: CatalogEntry = {
   ],
 };
 
+const mimoProvider: CatalogEntry = {
+  id: "mimo",
+  label: "Xiaomi MiMo",
+  icon: null,
+  homepage: null,
+  endpoints: [
+    {
+      id: "pay-as-you-go",
+      label: "Pay-as-you-go",
+      api_type: "openai-chat",
+      default_base_url: "https://api.xiaomimimo.com/v1",
+      append_v1_path: false,
+      models: [{ id: "mimo-v2.5-pro", label: "MiMo V2.5 Pro" }],
+      auth_modes: [],
+    },
+    {
+      id: "token-plan-cn",
+      label: "Token Plan CN",
+      api_type: "openai-chat",
+      default_base_url: "https://token-plan-cn.xiaomimimo.com/v1",
+      append_v1_path: false,
+      models: [{ id: "mimo-v2.5-pro", label: "MiMo V2.5 Pro" }],
+      auth_modes: [],
+    },
+  ],
+};
+
 test("catalog model endpoints do not create profile model defaults", () => {
   const endpoint = geminiProvider.endpoints.find(
     (candidate) => candidate.api_type === "openai-chat" && candidate.id === "gemini-api",
@@ -103,6 +130,38 @@ test("saving a catalog-backed profile drops legacy model settings", () => {
   expect(pruneOverrides(overrides, ["openai-chat"], geminiProvider)).toEqual({
     "openai-chat": {
       endpoint_id: "gemini-api",
+    },
+  });
+});
+
+test("mimo token plan uses catalog default model without profile override", () => {
+  const endpoint = mimoProvider.endpoints.find(
+    (candidate) => candidate.id === "token-plan-cn",
+  )!;
+
+  expect(requiresProfileModel(mimoProvider, endpoint)).toBe(false);
+  expect(
+    overrideForEndpoint(endpoint, {
+      model: "mimo-v2.5",
+    }),
+  ).toEqual({
+    endpoint_id: "token-plan-cn",
+    base_url: "https://token-plan-cn.xiaomimimo.com/v1",
+  });
+  expect(
+    pruneOverrides(
+      {
+        "openai-chat": {
+          endpoint_id: "token-plan-cn",
+          model: "mimo-v2.5",
+        },
+      },
+      ["openai-chat"],
+      mimoProvider,
+    ),
+  ).toEqual({
+    "openai-chat": {
+      endpoint_id: "token-plan-cn",
     },
   });
 });

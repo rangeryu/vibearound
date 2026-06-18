@@ -5,17 +5,22 @@
   "homepage": "https://docs.z.ai",
   "endpoints": [
     {
+      "id": "coding-global",
+      "label": "Coding Global",
       "api_type": "anthropic",
       "default_base_url": "https://api.z.ai/api/anthropic",
       "models": [
         {
-          "id": "glm-5.1",
-          "label": "GLM-5.1",
-          "context_window": 200000
+          "id": "glm-5.2",
+          "label": "GLM-5.2",
+          "aliases": [
+            "glm-5.2[1m]"
+          ],
+          "context_window": 1000000
         },
         {
-          "id": "glm-5",
-          "label": "GLM-5",
+          "id": "glm-5-turbo",
+          "label": "GLM-5 Turbo",
           "context_window": 200000
         },
         {
@@ -24,14 +29,8 @@
           "context_window": 200000
         },
         {
-          "id": "glm-4.6",
-          "label": "GLM-4.6",
-          "context_window": 200000
-        },
-        {
-          "id": "glm-4.5",
-          "label": "GLM-4.5",
-          "context_window": 128000
+          "id": "glm-4.5-air",
+          "label": "GLM-4.5 Air"
         }
       ],
       "auth_modes": [
@@ -49,6 +48,70 @@
           "render": {
             "env": {
               "ANTHROPIC_API_KEY": "{{api_key}}",
+              "ANTHROPIC_AUTH_TOKEN": "{{api_key}}",
+              "ANTHROPIC_BASE_URL": "{{base_url}}",
+              "ANTHROPIC_MODEL": "{{model}}"
+            },
+            "settings_files": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "cn",
+      "label": "CN",
+      "api_type": "anthropic",
+      "default_base_url": "https://open.bigmodel.cn/api/anthropic",
+      "models": [
+        {
+          "id": "glm-5.2",
+          "label": "GLM-5.2",
+          "aliases": [
+            "glm-5.2[1m]"
+          ],
+          "context_window": 1000000
+        },
+        {
+          "id": "glm-5.1",
+          "label": "GLM-5.1",
+          "context_window": 200000
+        },
+        {
+          "id": "glm-5",
+          "label": "GLM-5",
+          "context_window": 200000
+        },
+        {
+          "id": "glm-5-turbo",
+          "label": "GLM-5 Turbo",
+          "context_window": 200000
+        },
+        {
+          "id": "glm-4.7",
+          "label": "GLM-4.7",
+          "context_window": 200000
+        },
+        {
+          "id": "glm-4.5-air",
+          "label": "GLM-4.5 Air"
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "Z.AI API key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "ANTHROPIC_API_KEY": "{{api_key}}",
+              "ANTHROPIC_AUTH_TOKEN": "{{api_key}}",
               "ANTHROPIC_BASE_URL": "{{base_url}}",
               "ANTHROPIC_MODEL": "{{model}}"
             },
@@ -280,14 +343,12 @@
       "default_base_url": "https://api.z.ai/api/coding/paas/v4",
       "models": [
         {
-          "id": "glm-5.1",
-          "label": "GLM-5.1",
-          "context_window": 200000
-        },
-        {
-          "id": "glm-5",
-          "label": "GLM-5",
-          "context_window": 200000
+          "id": "glm-5.2",
+          "label": "GLM-5.2",
+          "aliases": [
+            "glm-5.2[1m]"
+          ],
+          "context_window": 1000000
         },
         {
           "id": "glm-5-turbo",
@@ -300,12 +361,8 @@
           "context_window": 200000
         },
         {
-          "id": "glm-4.7-flash",
-          "label": "GLM-4.7 Flash"
-        },
-        {
-          "id": "glm-4.7-flashx",
-          "label": "GLM-4.7 FlashX"
+          "id": "glm-4.5-air",
+          "label": "GLM-4.5 Air"
         }
       ],
       "auth_modes": [
@@ -345,14 +402,12 @@
       "default_base_url": "https://open.bigmodel.cn/api/coding/paas/v4",
       "models": [
         {
-          "id": "glm-5.1",
-          "label": "GLM-5.1",
-          "context_window": 200000
-        },
-        {
-          "id": "glm-5",
-          "label": "GLM-5",
-          "context_window": 200000
+          "id": "glm-5.2",
+          "label": "GLM-5.2",
+          "aliases": [
+            "glm-5.2[1m]"
+          ],
+          "context_window": 1000000
         },
         {
           "id": "glm-5-turbo",
@@ -365,12 +420,8 @@
           "context_window": 200000
         },
         {
-          "id": "glm-4.7-flash",
-          "label": "GLM-4.7 Flash"
-        },
-        {
-          "id": "glm-4.7-flashx",
-          "label": "GLM-4.7 FlashX"
+          "id": "glm-4.5-air",
+          "label": "GLM-4.5 Air"
         }
       ],
       "auth_modes": [

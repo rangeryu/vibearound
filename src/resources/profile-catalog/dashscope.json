@@ -426,7 +426,7 @@
       "id": "token-plan",
       "label": "Token Plan",
       "api_type": "openai-chat",
-      "default_base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
       "headers": {
         "User-Agent": "codex-cli/0.80.0 (external, cli)",
         "X-DashScope-AuthType": "openai",
@@ -587,7 +587,7 @@
       "id": "token-plan-cn",
       "label": "Token Plan CN",
       "api_type": "openai-chat",
-      "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
       "headers": {
         "User-Agent": "codex-cli/0.80.0 (external, cli)",
         "X-DashScope-AuthType": "openai",
@@ -740,6 +740,58 @@
                 "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
               }
             ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "token-plan-cn",
+      "label": "Token Plan CN",
+      "api_type": "anthropic",
+      "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic",
+      "headers": {
+        "User-Agent": "claude-code/0.1.0"
+      },
+      "auth_header": true,
+      "models": [
+        {
+          "id": "qwen3.7-max",
+          "label": "qwen3.7-max"
+        },
+        {
+          "id": "qwen3.7-plus",
+          "label": "qwen3.7-plus"
+        },
+        {
+          "id": "qwen3.6-flash",
+          "label": "qwen3.6-flash",
+          "context_window": 1000000
+        },
+        {
+          "id": "qwen3.6-plus",
+          "label": "qwen3.6-plus",
+          "context_window": 1000000
+        }
+      ],
+      "auth_modes": [
+        {
+          "mode": "api_key",
+          "label": "Use API key",
+          "fields": [
+            {
+              "name": "api_key",
+              "label": "DashScope Token Plan key",
+              "secret": true,
+              "required": true
+            }
+          ],
+          "render": {
+            "env": {
+              "ANTHROPIC_AUTH_TOKEN": "{{api_key}}",
+              "ANTHROPIC_BASE_URL": "{{base_url}}",
+              "ANTHROPIC_MODEL": "{{model}}"
+            },
+            "settings_files": []
           }
         }
       ]

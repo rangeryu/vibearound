@@ -10,6 +10,11 @@
       "api_type": "openai-chat",
       "default_base_url": "https://api.xiaomimimo.com/v1",
       "append_v1_path": false,
+      "capabilities": {
+        "content": {
+          "web_search": true
+        }
+      },
       "models": [
         {
           "id": "mimo-v2.5-pro",
@@ -19,7 +24,10 @@
         {
           "id": "mimo-v2.5",
           "label": "MiMo V2.5",
-          "context_window": 1000000
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "mimo-v2-pro",
@@ -31,8 +39,7 @@
           "label": "MiMo V2 Omni",
           "context_window": 256000,
           "capabilities": {
-            "image_input": true,
-            "file_input": true
+            "image_input": true
           }
         },
         {
@@ -78,6 +85,11 @@
       "api_type": "openai-chat",
       "default_base_url": "https://token-plan-cn.xiaomimimo.com/v1",
       "append_v1_path": false,
+      "capabilities": {
+        "content": {
+          "web_search": true
+        }
+      },
       "models": [
         {
           "id": "mimo-v2.5-pro",
@@ -87,7 +99,10 @@
         {
           "id": "mimo-v2.5",
           "label": "MiMo V2.5",
-          "context_window": 1000000
+          "context_window": 1000000,
+          "capabilities": {
+            "image_input": true
+          }
         },
         {
           "id": "mimo-v2-pro",
@@ -99,8 +114,7 @@
           "label": "MiMo V2 Omni",
           "context_window": 256000,
           "capabilities": {
-            "image_input": true,
-            "file_input": true
+            "image_input": true
           }
         },
         {
@@ -141,11 +155,11 @@
       ]
     },
     {
-      "id": "token-plan-sgp",
-      "label": "Token Plan Singapore",
-      "api_type": "openai-chat",
-      "default_base_url": "https://token-plan-sgp.xiaomimimo.com/v1",
-      "append_v1_path": false,
+      "id": "pay-as-you-go",
+      "label": "Pay-as-you-go",
+      "api_type": "anthropic",
+      "default_base_url": "https://api.xiaomimimo.com/anthropic",
+      "auth_header": true,
       "models": [
         {
           "id": "mimo-v2.5-pro",
@@ -165,11 +179,7 @@
         {
           "id": "mimo-v2-omni",
           "label": "MiMo V2 Omni",
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
+          "context_window": 256000
         },
         {
           "id": "mimo-v2-flash",
@@ -180,40 +190,33 @@
       "auth_modes": [
         {
           "mode": "api_key",
-          "label": "Use MiMo token-plan key",
+          "label": "Use MiMo API key",
           "fields": [
             {
               "name": "api_key",
               "label": "MiMo API key",
               "secret": true,
               "required": true,
-              "placeholder": "tp-..."
+              "placeholder": "sk-..."
             }
           ],
           "render": {
             "env": {
-              "OPENAI_API_KEY": "{{api_key}}"
+              "ANTHROPIC_AUTH_TOKEN": "{{api_key}}",
+              "ANTHROPIC_BASE_URL": "{{base_url}}",
+              "ANTHROPIC_MODEL": "{{model}}"
             },
-            "settings_files": [
-              {
-                "rel_path": "config.toml",
-                "template": "model = \"{{model}}\"\nmodel_provider = \"mimo\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.mimo]\nname = \"Xiaomi MiMo\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nrequires_openai_auth = true\n"
-              },
-              {
-                "rel_path": "auth.json",
-                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
-              }
-            ]
+            "settings_files": []
           }
         }
       ]
     },
     {
-      "id": "token-plan-ams",
-      "label": "Token Plan Europe",
-      "api_type": "openai-chat",
-      "default_base_url": "https://token-plan-ams.xiaomimimo.com/v1",
-      "append_v1_path": false,
+      "id": "token-plan-cn",
+      "label": "Token Plan CN",
+      "api_type": "anthropic",
+      "default_base_url": "https://token-plan-cn.xiaomimimo.com/anthropic",
+      "auth_header": true,
       "models": [
         {
           "id": "mimo-v2.5-pro",
@@ -233,11 +236,7 @@
         {
           "id": "mimo-v2-omni",
           "label": "MiMo V2 Omni",
-          "context_window": 256000,
-          "capabilities": {
-            "image_input": true,
-            "file_input": true
-          }
+          "context_window": 256000
         },
         {
           "id": "mimo-v2-flash",
@@ -260,18 +259,11 @@
           ],
           "render": {
             "env": {
-              "OPENAI_API_KEY": "{{api_key}}"
+              "ANTHROPIC_AUTH_TOKEN": "{{api_key}}",
+              "ANTHROPIC_BASE_URL": "{{base_url}}",
+              "ANTHROPIC_MODEL": "{{model}}"
             },
-            "settings_files": [
-              {
-                "rel_path": "config.toml",
-                "template": "model = \"{{model}}\"\nmodel_provider = \"mimo\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.mimo]\nname = \"Xiaomi MiMo\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nrequires_openai_auth = true\n"
-              },
-              {
-                "rel_path": "auth.json",
-                "template": "{\n  \"OPENAI_API_KEY\": \"{{api_key|json}}\"\n}\n"
-              }
-            ]
+            "settings_files": []
           }
         }
       ]
