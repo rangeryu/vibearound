@@ -145,6 +145,7 @@ where
     F: FnMut(String),
     C: Fn() -> bool,
 {
+    ensure_managed_node_for_npm(&mut on_log, &is_cancelled).await?;
     std::fs::create_dir_all(package_dir).with_context(|| format!("creating {:?}", package_dir))?;
 
     let pkg_json = package_dir.join("package.json");
@@ -235,63 +236,9 @@ fn npm_install_args(args: &[&str]) -> Vec<String> {
     out
 }
 
-async fn npm_process(
-    args: &[String],
-    cwd: &std::path::Path,
-) -> std::io::Result<tokio::process::Command> {
-    let node_info = crate::process::env::command("node")
-        .args(["-p", "process.execPath"])
-        .output()
-        .await?;
-    let node_exec = String::from_utf8_lossy(&node_info.stdout)
-        .trim()
-        .to_string();
-    let node_dir = std::path::Path::new(&node_exec).parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "cannot determine node install directory",
-        )
-    })?;
-
-    let candidates = [
-        node_dir
-            .join("node_modules")
-            .join("npm")
-            .join("bin")
-            .join("npm-cli.js"),
-        node_dir.join("../lib/node_modules/npm/bin/npm-cli.js"),
-        std::path::PathBuf::from("/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js"),
-        std::path::PathBuf::from("/usr/local/lib/node_modules/npm/bin/npm-cli.js"),
-    ];
-    let npm_cli = candidates
-        .iter()
-        .find(|p| p.exists())
-        .cloned()
-        .ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!(
-                    "npm-cli.js not found in any of: {:?} — is npm installed with Node.js?",
-                    candidates
-                ),
-            )
-        })?;
-
-    let mut node_args: Vec<String> = vec![npm_cli.to_string_lossy().to_string()];
-    node_args.extend(args.iter().cloned());
-
-    let mut command = crate::process::env::command("node");
-    command
-        .args(&node_args)
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    Ok(command)
-}
-
 async fn npm_global_bin_dir(cwd: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
     let args = vec!["prefix".to_string(), "-g".to_string()];
-    let output = npm_process(&args, cwd)
+    let output = crate::process::env::npm_process(&args, cwd)
         .await?
         .output()
         .await
@@ -325,7 +272,7 @@ async fn npm_command_streaming<F>(
 where
     F: FnMut(String),
 {
-    let mut child = npm_process(args, cwd).await?.spawn()?;
+    let mut child = crate::process::env::npm_process(args, cwd).await?.spawn()?;
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(&'static str, String)>();
@@ -398,6 +345,28 @@ where
         stdout: stdout_buf.into_bytes(),
         stderr: stderr_buf.into_bytes(),
     })
+}
+
+async fn ensure_managed_node_for_npm<F, C>(on_log: &mut F, is_cancelled: &C) -> anyhow::Result<()>
+where
+    F: FnMut(String),
+    C: Fn() -> bool,
+{
+    if !crate::config::ensure_loaded().toolchain_mode.is_managed() {
+        return Ok(());
+    }
+    let status = crate::toolchain::managed_node_status(None).await;
+    if status.ready {
+        return Ok(());
+    }
+    on_log("Installing VibeAround-managed Node.js".to_string());
+    crate::toolchain::ensure_node_lts(
+        &crate::toolchain::NodeSource::default(),
+        on_log,
+        is_cancelled,
+    )
+    .await
+    .map(|_| ())
 }
 
 /// Install a native agent CLI by running its official install command.

@@ -4,7 +4,7 @@ use anyhow::{bail, Context};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use common::{plugins, resources};
+use common::{archive, plugins, resources};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,76 +21,6 @@ pub struct InstallPluginResponse {
     /// The plugin ID as declared in the installed plugin.json (may differ from the requested id).
     pub actual_plugin_id: Option<String>,
     pub logs: Vec<String>,
-}
-
-/// Invoke npm via `node npm-cli.js`.
-///
-/// On Windows, `npm` is a `.cmd` batch script that `Command::new("npm")` cannot
-/// spawn directly. Locating npm-cli.js next to `node` and calling it via node
-/// works cross-platform without any PATH or shell workarounds.
-async fn npm_process(
-    args: &[String],
-    cwd: &std::path::Path,
-) -> std::io::Result<tokio::process::Command> {
-    let node_info = common::process::env::command("node")
-        .args(["-p", "process.execPath"])
-        .output()
-        .await?;
-    let node_exec = String::from_utf8_lossy(&node_info.stdout)
-        .trim()
-        .to_string();
-    let node_dir = std::path::Path::new(&node_exec).parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "cannot determine node install directory",
-        )
-    })?;
-
-    // Try multiple known locations for npm-cli.js:
-    // 1. Next to node binary (nvm, volta, default installs)
-    // 2. Homebrew global lib (brew install node on macOS)
-    // 3. Homebrew prefix /opt/homebrew or /usr/local
-    let candidates = [
-        node_dir
-            .join("node_modules")
-            .join("npm")
-            .join("bin")
-            .join("npm-cli.js"),
-        node_dir
-            .join("../lib/node_modules/npm/bin/npm-cli.js")
-            .into(),
-        std::path::PathBuf::from("/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js"),
-        std::path::PathBuf::from("/usr/local/lib/node_modules/npm/bin/npm-cli.js"),
-    ];
-    let npm_cli = candidates
-        .iter()
-        .find(|p| p.exists())
-        .cloned()
-        .ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!(
-                    "npm-cli.js not found in any of: {:?} — is npm installed with Node.js?",
-                    candidates
-                ),
-            )
-        })?;
-
-    let mut node_args: Vec<String> = vec![npm_cli.to_string_lossy().to_string()];
-    node_args.extend(args.iter().cloned());
-
-    tracing::info!(
-        "[npm_command] node {} {}",
-        npm_cli.display(),
-        args.join(" ")
-    );
-    let mut command = common::process::env::command("node");
-    command
-        .args(&node_args)
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    Ok(command)
 }
 
 #[tauri::command]
@@ -133,98 +63,110 @@ where
     std::fs::create_dir_all(&plugins_dir).context("creating plugins directory")?;
 
     if has_step(&install_steps, "git_clone") {
-        // If a previous install left a partial directory, wipe it for a clean clone.
-        // Complete git installs are refreshed to the registry HEAD so "Install"
-        // also acts as "Update" for already-installed plugins.
-        let needs_clone = if target_dir.exists() {
-            if installed_tree_complete(&target_dir, plugin_kind) {
-                if target_dir.join(".git").exists() {
-                    tracing::info!(
-                        "[install_plugin] {} already installed at {:?}, refreshing git HEAD",
-                        request.plugin_id,
-                        target_dir
-                    );
-                    let message = "Refreshing existing plugin checkout".to_string();
-                    logs.push(message.clone());
-                    on_log(message);
-
-                    let mut fetch = common::process::env::command("git");
-                    fetch.args(["fetch", "--depth", "1", "origin", "HEAD"]);
-                    fetch.current_dir(&target_dir);
-                    let output = command_streaming(fetch, &mut on_log, &is_cancelled)
-                        .await
-                        .context("git fetch")?;
-                    push_output_logs(&mut logs, "git fetch", &output);
-                    if !output.status.success() {
-                        bail!(
-                            "git fetch failed: {}",
-                            String::from_utf8_lossy(&output.stderr)
+        if let Some(archive_url) = managed_archive_url(&request.github_url) {
+            install_github_archive_checkout(
+                &target_dir,
+                &archive_url,
+                &mut logs,
+                &mut on_log,
+                &is_cancelled,
+            )
+            .await?;
+        } else {
+            // If a previous install left a partial directory, wipe it for a clean clone.
+            // Complete git installs are refreshed to the registry HEAD so "Install"
+            // also acts as "Update" for already-installed plugins.
+            let needs_clone = if target_dir.exists() {
+                if installed_tree_complete(&target_dir, plugin_kind) {
+                    if target_dir.join(".git").exists() {
+                        tracing::info!(
+                            "[install_plugin] {} already installed at {:?}, refreshing git HEAD",
+                            request.plugin_id,
+                            target_dir
                         );
-                    }
+                        let message = "Refreshing existing plugin checkout".to_string();
+                        logs.push(message.clone());
+                        on_log(message);
 
-                    let mut reset = common::process::env::command("git");
-                    reset.args(["reset", "--hard", "FETCH_HEAD"]);
-                    reset.current_dir(&target_dir);
-                    let output = command_streaming(reset, &mut on_log, &is_cancelled)
-                        .await
-                        .context("git reset")?;
-                    push_output_logs(&mut logs, "git reset", &output);
-                    if !output.status.success() {
-                        bail!(
-                            "git reset failed: {}",
-                            String::from_utf8_lossy(&output.stderr)
+                        let mut fetch = common::process::env::command("git");
+                        fetch.args(["fetch", "--depth", "1", "origin", "HEAD"]);
+                        fetch.current_dir(&target_dir);
+                        let output = command_streaming(fetch, &mut on_log, &is_cancelled)
+                            .await
+                            .context("git fetch")?;
+                        push_output_logs(&mut logs, "git fetch", &output);
+                        if !output.status.success() {
+                            bail!(
+                                "git fetch failed: {}",
+                                String::from_utf8_lossy(&output.stderr)
+                            );
+                        }
+
+                        let mut reset = common::process::env::command("git");
+                        reset.args(["reset", "--hard", "FETCH_HEAD"]);
+                        reset.current_dir(&target_dir);
+                        let output = command_streaming(reset, &mut on_log, &is_cancelled)
+                            .await
+                            .context("git reset")?;
+                        push_output_logs(&mut logs, "git reset", &output);
+                        if !output.status.success() {
+                            bail!(
+                                "git reset failed: {}",
+                                String::from_utf8_lossy(&output.stderr)
+                            );
+                        }
+                        false
+                    } else {
+                        tracing::info!(
+                            "[install_plugin] {} exists without git metadata at {:?}, re-cloning",
+                            request.plugin_id,
+                            target_dir
                         );
+                        std::fs::remove_dir_all(&target_dir)
+                            .context("removing non-git plugin directory")?;
+                        true
                     }
-                    false
                 } else {
                     tracing::info!(
-                        "[install_plugin] {} exists without git metadata at {:?}, re-cloning",
+                        "[install_plugin] {} has a stale install at {:?}, re-cloning",
                         request.plugin_id,
                         target_dir
                     );
                     std::fs::remove_dir_all(&target_dir)
-                        .context("removing non-git plugin directory")?;
+                        .context("removing stale plugin directory")?;
                     true
                 }
             } else {
+                true
+            };
+
+            if needs_clone {
                 tracing::info!(
-                    "[install_plugin] {} has a stale install at {:?}, re-cloning",
-                    request.plugin_id,
+                    "[install_plugin] cloning {} → {:?}",
+                    request.github_url,
                     target_dir
                 );
-                std::fs::remove_dir_all(&target_dir).context("removing stale plugin directory")?;
-                true
-            }
-        } else {
-            true
-        };
-
-        if needs_clone {
-            tracing::info!(
-                "[install_plugin] cloning {} → {:?}",
-                request.github_url,
-                target_dir
-            );
-            let message = format!("Running: git clone --depth 1 {}", request.github_url);
-            logs.push(message.clone());
-            on_log(message);
-            let mut command = common::process::env::command("git");
-            command.args([
-                "clone",
-                "--depth",
-                "1",
-                &request.github_url,
-                &target_dir.to_string_lossy(),
-            ]);
-            let output = command_streaming(command, &mut on_log, &is_cancelled)
-                .await
-                .context("git clone")?;
-            push_output_logs(&mut logs, "git clone", &output);
-            if !output.status.success() {
-                bail!(
-                    "git clone failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
+                let message = format!("Running: git clone --depth 1 {}", request.github_url);
+                logs.push(message.clone());
+                on_log(message);
+                let mut command = common::process::env::command("git");
+                command.args([
+                    "clone",
+                    "--depth",
+                    "1",
+                    &request.github_url,
+                    &target_dir.to_string_lossy(),
+                ]);
+                let output = command_streaming(command, &mut on_log, &is_cancelled)
+                    .await
+                    .context("git clone")?;
+                push_output_logs(&mut logs, "git clone", &output);
+                if !output.status.success() {
+                    bail!(
+                        "git clone failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
             }
         }
     } else if !target_dir.exists() {
@@ -232,6 +174,7 @@ where
     }
 
     if has_step(&install_steps, "npm_install") {
+        ensure_managed_node_for_plugin(&mut on_log, &is_cancelled).await?;
         tracing::info!("[install_plugin] npm install in {:?}", target_dir);
         let mut install_args = npm_install_args_for(&target_dir);
         install_args.extend(common::process::env::npm_registry_args());
@@ -239,7 +182,7 @@ where
         logs.push(install_message.clone());
         on_log(install_message);
         let output = command_streaming(
-            npm_process(&install_args, &target_dir).await?,
+            common::process::env::npm_process(&install_args, &target_dir).await?,
             &mut on_log,
             &is_cancelled,
         )
@@ -255,12 +198,13 @@ where
     }
 
     if has_step(&install_steps, "npm_build") {
+        ensure_managed_node_for_plugin(&mut on_log, &is_cancelled).await?;
         tracing::info!("[install_plugin] npm run build in {:?}", target_dir);
         logs.push("Running: npm run build".into());
         on_log("Running: npm run build".into());
         let build_args = vec!["run".to_string(), "build".to_string()];
         let output = command_streaming(
-            npm_process(&build_args, &target_dir).await?,
+            common::process::env::npm_process(&build_args, &target_dir).await?,
             &mut on_log,
             &is_cancelled,
         )
@@ -363,6 +307,83 @@ pub fn check_plugin_status(plugin_id: String) -> String {
         return "installed_not_built".to_string();
     }
     "installed_not_discoverable".to_string()
+}
+
+fn managed_archive_url(github_url: &str) -> Option<String> {
+    if !common::config::ensure_loaded().toolchain_mode.is_managed() {
+        return None;
+    }
+    archive::github_head_archive_url(github_url)
+}
+
+async fn install_github_archive_checkout<F, C>(
+    target_dir: &std::path::Path,
+    archive_url: &str,
+    logs: &mut Vec<String>,
+    on_log: &mut F,
+    is_cancelled: &C,
+) -> anyhow::Result<()>
+where
+    F: FnMut(String),
+    C: Fn() -> bool,
+{
+    if is_cancelled() {
+        bail!("install cancelled");
+    }
+
+    tracing::info!(
+        "[install_plugin] installing plugin archive {} → {:?}",
+        archive_url,
+        target_dir
+    );
+    let message = format!("Downloading plugin archive: {archive_url}");
+    logs.push(message.clone());
+    on_log(message);
+
+    let staging_dir = archive::staging_dir_for(target_dir, "plugin")?;
+    archive::recreate_dir(&staging_dir)?;
+    archive::download_and_extract_strip_root(
+        archive_url,
+        archive::ArchiveFormat::Zip,
+        &staging_dir,
+    )
+    .await
+    .context("downloading plugin archive")?;
+
+    if is_cancelled() {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        bail!("install cancelled");
+    }
+
+    archive::atomic_replace_dir(&staging_dir, target_dir)?;
+    let message = "Plugin archive extracted".to_string();
+    logs.push(message.clone());
+    on_log(message);
+    Ok(())
+}
+
+async fn ensure_managed_node_for_plugin<F, C>(
+    on_log: &mut F,
+    is_cancelled: &C,
+) -> anyhow::Result<()>
+where
+    F: FnMut(String),
+    C: Fn() -> bool,
+{
+    if !common::config::ensure_loaded().toolchain_mode.is_managed() {
+        return Ok(());
+    }
+    if common::toolchain::managed_node_status(None).await.ready {
+        return Ok(());
+    }
+    on_log("Installing VibeAround-managed Node.js".to_string());
+    common::toolchain::ensure_node_lts(
+        &common::toolchain::NodeSource::default(),
+        on_log,
+        is_cancelled,
+    )
+    .await
+    .map(|_| ())
 }
 
 fn default_install_steps() -> Vec<String> {
