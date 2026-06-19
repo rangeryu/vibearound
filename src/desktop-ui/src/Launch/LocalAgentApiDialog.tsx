@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Check,
+  ListChecks,
   Loader2,
   MessageSquare,
   Send,
@@ -75,6 +76,9 @@ export function LocalAgentApiDialog({
   const modelsUrl = `${baseUrl}/models`;
   const modelListValue =
     modelOptions.length > 0 ? modelOptions.join(", ") : model || t("Loading…");
+  const routeSummary = `${selectedProtocol.label} -> Local API -> ${
+    target?.agentLabel ?? ""
+  }${model ? ` · ${model}` : ""}`;
 
   useEffect(() => {
     if (!target) return;
@@ -160,174 +164,208 @@ export function LocalAgentApiDialog({
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="!flex max-h-[calc(100vh-64px)] w-[min(760px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(760px,calc(100vw-32px))]"
+        className="!flex max-h-[calc(100vh-64px)] w-[min(860px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(860px,calc(100vw-32px))]"
         onEscapeKeyDown={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
       >
-        <DialogHeader className="shrink-0 border-b border-border px-5 py-3 pr-12">
-          <DialogTitle className="flex items-center gap-2 text-base">
+        <DialogHeader className="shrink-0 px-6 pb-4 pt-6 pr-12">
+          <DialogTitle className="flex items-center gap-2 text-lg">
             <Server className="h-4 w-4 text-primary" />
             {t("Local API")}
           </DialogTitle>
-          <DialogDescription className="truncate text-xs">
+          <DialogDescription className="mt-2 truncate text-sm">
             {target.agentLabel} · {target.profileLabel}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-5 py-3 [scrollbar-gutter:stable]">
-          <Tabs
-            value={protocol}
-            onValueChange={(value) => {
-              setProtocol(value as LocalApiProtocol);
-              setTestResult(null);
-            }}
-          >
-            <TabsList className="h-7">
-              {LOCAL_API_PROTOCOLS.map((item) => (
-                <TabsTrigger
-                  key={item.id}
-                  value={item.id}
-                  className="px-2.5 text-[11px]"
-                >
-                  {item.shortLabel}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-
-          <section className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-xs font-semibold">
-                {t("Manual configuration")}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]">
+          <section className="grid gap-3 rounded-md border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Server className="h-4 w-4 text-primary" />
+                {t("Local API endpoint")}
               </div>
-              <div className="text-[11px] text-muted-foreground">
-                {t("Click a value to copy.")}
-              </div>
+              <Tabs
+                value={protocol}
+                onValueChange={(value) => {
+                  setProtocol(value as LocalApiProtocol);
+                  setTestResult(null);
+                }}
+              >
+                <TabsList className="h-8">
+                  {LOCAL_API_PROTOCOLS.map((item) => (
+                    <TabsTrigger
+                      key={item.id}
+                      value={item.id}
+                      className="px-3 text-xs"
+                    >
+                      {item.shortLabel}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
             </div>
-            <ManualField
-              label={t("API URL")}
-              value={endpointUrl}
-              copied={copiedKey === protocol}
-              onCopy={() => copyValue(protocol, endpointUrl)}
-            />
-            <ManualField
-              label={t("Models")}
-              value={modelListValue}
-              copied={copiedKey === "model-list"}
-              onCopy={() => copyValue("model-list", modelListValue)}
-              tone="primary"
-            />
-            <ManualField
-              label={t("Models API")}
-              value={modelsUrl}
-              copied={copiedKey === "models"}
-              onCopy={() => copyValue("models", modelsUrl)}
-            />
-            <ManualField
-              label={t("Auth header")}
-              value={maskLocalApiAuthHeader(authHeaderValue)}
-              copied={copiedKey === "auth"}
-              onCopy={() => copyValue("auth", authHeaderValue)}
-            />
-            {modelsStatus && (
-              <div className="text-[11px] text-muted-foreground">
-                {modelsStatus}
-              </div>
-            )}
-          </section>
 
-          <section className="grid gap-2 rounded-md border border-border/70 bg-card p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-xs font-semibold">
-                <MessageSquare className="h-3.5 w-3.5 text-primary" />
-                {t("Test message")} · {selectedProtocol.shortLabel}
+            <div className="grid gap-1.5">
+              <div className="text-xs text-muted-foreground">
+                {t("Model list")}
               </div>
-            </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2">
-              <label className="grid gap-1 text-[11px] text-muted-foreground">
-                <span>{t("Model")}</span>
-                {modelOptions.length > 0 ? (
-                  <Select value={model} onValueChange={setModel}>
-                    <SelectTrigger size="sm" className="h-7 w-full font-mono text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {modelOptions.map((modelId) => (
-                        <SelectItem key={modelId} value={modelId} className="font-mono text-xs">
-                          {modelId}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    value={model}
-                    onChange={(event) => setModel(event.currentTarget.value)}
-                    className="h-7 font-mono text-xs"
-                  />
+              <button
+                type="button"
+                className="flex min-w-0 items-center gap-3 rounded-md border border-border/80 px-3 py-2 text-left shadow-xs transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                title={modelListValue}
+                onClick={() => copyValue("model-list", modelListValue)}
+              >
+                <ListChecks className="h-4 w-4 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-mono text-sm font-semibold text-foreground">
+                    {modelListValue}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {modelsStatus ?? t("Models endpoint")}
+                  </span>
+                </span>
+                {copiedKey === "model-list" && (
+                  <span className="shrink-0 text-xs text-primary">
+                    {t("Copied")}
+                  </span>
                 )}
-              </label>
+              </button>
+            </div>
+
+            <div className="truncate font-mono text-xs font-medium text-primary">
+              {routeSummary}
+            </div>
+
+            <div className="grid gap-2 rounded-md border border-border/70 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-sm font-semibold">
+                  {t("Manual configuration")}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {t("Click a value to copy.")}
+                </div>
+              </div>
+              <ManualField
+                label={t("Base URL")}
+                value={endpointUrl}
+                copied={copiedKey === protocol}
+                onCopy={() => copyValue(protocol, endpointUrl)}
+              />
+              <ManualField
+                label={t("Model")}
+                value={modelListValue}
+                copied={copiedKey === "model-list"}
+                onCopy={() => copyValue("model-list", modelListValue)}
+                tone="primary"
+              />
+              <ManualField
+                label={t("Models API")}
+                value={modelsUrl}
+                copied={copiedKey === "models"}
+                onCopy={() => copyValue("models", modelsUrl)}
+              />
+              <ManualField
+                label={t("Auth header")}
+                value={maskLocalApiAuthHeader(authHeaderValue)}
+                copied={copiedKey === "auth"}
+                onCopy={() => copyValue("auth", authHeaderValue)}
+              />
+            </div>
+
+            <div className="grid gap-2 rounded-md border border-border/70 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <MessageSquare className="h-4 w-4 text-primary" />
+                  {t("Test message")}
+                </div>
+              </div>
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2">
+                <label className="grid gap-1 text-[11px] text-muted-foreground">
+                  <span>{t("Model")}</span>
+                  {modelOptions.length > 0 ? (
+                    <Select value={model} onValueChange={setModel}>
+                      <SelectTrigger size="sm" className="h-8 w-full font-mono text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {modelOptions.map((modelId) => (
+                          <SelectItem key={modelId} value={modelId} className="font-mono text-xs">
+                            {modelId}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={model}
+                      onChange={(event) => setModel(event.currentTarget.value)}
+                      className="h-8 font-mono text-xs"
+                    />
+                  )}
+                </label>
+                <label className="grid gap-1 text-[11px] text-muted-foreground">
+                  <span>{t("Workspace")}</span>
+                  <Input
+                    value={target.workspacePath}
+                    readOnly
+                    className="h-8 font-mono text-xs"
+                  />
+                </label>
+              </div>
               <label className="grid gap-1 text-[11px] text-muted-foreground">
-                <span>{t("Workspace")}</span>
-                <Input
-                  value={target.workspacePath}
-                  readOnly
-                  className="h-7 font-mono text-xs"
+                <span>{t("Message")}</span>
+                <textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.currentTarget.value)}
+                  className="min-h-[76px] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
               </label>
-            </div>
-            <label className="grid gap-1 text-[11px] text-muted-foreground">
-              <span>{t("Message")}</span>
-              <textarea
-                value={prompt}
-                onChange={(event) => setPrompt(event.currentTarget.value)}
-                className="min-h-[72px] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              />
-            </label>
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0 text-[11px] text-muted-foreground">
-                {t("Sessionless request · a fresh ACP turn is created for each test.")}
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 text-[11px] text-muted-foreground">
+                  {t("Sessionless request · a fresh ACP turn is created for each test.")}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={testing || !prompt.trim() || !model.trim()}
+                  onClick={() => void runTest()}
+                >
+                  {testing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                  {testing ? t("Testing…") : t("Send test")}
+                </Button>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                disabled={testing || !prompt.trim() || !model.trim()}
-                onClick={() => void runTest()}
-              >
-                {testing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Send className="h-3.5 w-3.5" />
-                )}
-                {testing ? t("Testing…") : t("Send test")}
-              </Button>
-            </div>
-            {testResult && (
-              <div
-                className={`grid gap-1 rounded-md border p-2 ${
-                  testResult.ok
-                    ? "border-emerald-500/25 bg-emerald-500/5"
-                    : "border-destructive/25 bg-destructive/5"
-                }`}
-              >
+              {testResult && (
                 <div
-                  className={`flex items-center gap-1.5 text-[11px] font-medium ${
-                    testResult.ok ? "text-emerald-600" : "text-destructive"
+                  className={`grid gap-1 rounded-md border p-2 ${
+                    testResult.ok
+                      ? "border-emerald-500/25 bg-emerald-500/5"
+                      : "border-destructive/25 bg-destructive/5"
                   }`}
                 >
-                  {testResult.ok ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : (
-                    <AlertCircle className="h-3.5 w-3.5" />
-                  )}
-                  {t("HTTP {{status}}", { status: testResult.status })}
+                  <div
+                    className={`flex items-center gap-1.5 text-[11px] font-medium ${
+                      testResult.ok ? "text-emerald-600" : "text-destructive"
+                    }`}
+                  >
+                    {testResult.ok ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <AlertCircle className="h-3.5 w-3.5" />
+                    )}
+                    {t("HTTP {{status}}", { status: testResult.status })}
+                  </div>
+                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-background/70 p-2 font-mono text-[11px] leading-5 text-foreground">
+                    {testResult.text || t("Empty")}
+                  </pre>
                 </div>
-                <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-background/70 p-2 font-mono text-[11px] leading-5 text-foreground">
-                  {testResult.text || t("Empty")}
-                </pre>
-              </div>
-            )}
+              )}
+            </div>
           </section>
         </div>
       </DialogContent>
@@ -359,7 +397,7 @@ function ManualField({
         variant="ghost"
         className={`h-7 w-full min-w-0 justify-start rounded-md px-2 font-mono text-xs ${
           tone === "primary"
-            ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+            ? "text-primary hover:bg-muted hover:text-primary"
             : "hover:bg-muted"
         }`}
         aria-label={t("Copy")}
