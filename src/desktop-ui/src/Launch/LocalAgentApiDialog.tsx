@@ -614,7 +614,7 @@ function ModelListField({
         <div className="min-w-0 text-[11px] leading-5 text-muted-foreground">
           <span className="truncate">{label}</span>
         </div>
-        <div className="flex h-5 min-w-0 items-center rounded bg-primary/5 px-1.5 font-mono text-[11px] leading-5 text-primary">
+        <div className="flex h-5 min-w-0 items-center rounded bg-muted/35 px-1.5 font-mono text-[11px] leading-5 text-foreground">
           <span className="min-w-0 truncate">{fallback}</span>
         </div>
       </div>
@@ -626,17 +626,17 @@ function ModelListField({
       <div className="min-w-0 text-[11px] leading-5 text-muted-foreground">
         <span className="truncate">{label}</span>
       </div>
-      <div className="flex min-h-5 min-w-0 flex-wrap items-center gap-1 rounded bg-primary/5 px-1.5 py-0.5">
+      <div className="flex min-h-5 min-w-0 flex-wrap items-center gap-1 rounded bg-muted/35 px-1.5 py-0.5">
         {models.map((model) => (
           <button
             key={model.id}
             type="button"
-            className="inline-flex h-4 max-w-[220px] shrink-0 items-center rounded px-1 text-left text-[11px] leading-4 transition-colors hover:bg-primary/10"
+            className="inline-flex h-4 max-w-[220px] shrink-0 items-center rounded px-1 text-left text-[11px] leading-4 transition-colors hover:bg-muted/60"
             aria-label={t("Copy")}
             title={model.id}
             onClick={() => onCopy(model.id)}
           >
-            <span className="min-w-0 truncate font-mono text-primary">
+            <span className="min-w-0 truncate font-mono text-foreground">
               {model.id}
             </span>
             {copiedKey === `model:${model.id}` && (
