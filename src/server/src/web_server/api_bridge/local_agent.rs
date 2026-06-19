@@ -667,15 +667,297 @@ fn source_raw(request: &UniversalRequest) -> Option<&Value> {
 fn universal_request_to_acp_prompt(
     request: &UniversalRequest,
 ) -> Result<Vec<acp::ContentBlock>, String> {
-    let transcript = universal_request_to_transcript(request);
-    if transcript.trim().is_empty() {
+    let mut blocks = Vec::new();
+    if !request.instructions.is_empty() {
+        push_acp_text(&mut blocks, "Instructions:");
+        append_content_blocks_to_acp_prompt(&mut blocks, &request.instructions);
+    }
+    if !request.input.is_empty() {
+        push_acp_text(&mut blocks, "Conversation:");
+        for item in &request.input {
+            append_universal_item_to_acp_prompt(&mut blocks, item);
+        }
+    }
+    if blocks.is_empty() {
         return Err("request does not contain any prompt content".to_string());
     }
-    Ok(vec![acp::ContentBlock::Text(acp::TextContent::new(
-        transcript,
-    ))])
+    Ok(blocks)
 }
 
+fn append_universal_item_to_acp_prompt(blocks: &mut Vec<acp::ContentBlock>, item: &UniversalItem) {
+    match item {
+        UniversalItem::Message { role, content, .. } => {
+            push_acp_text(blocks, format!("[{}]", role_label(*role)));
+            append_content_blocks_to_acp_prompt(blocks, content);
+        }
+        UniversalItem::ToolCall {
+            id,
+            name,
+            arguments,
+            ..
+        } => push_acp_text(blocks, format!("[tool_call:{id}]\n{name} {arguments}")),
+        UniversalItem::ToolResult {
+            tool_call_id,
+            content,
+            is_error,
+            ..
+        } => {
+            push_acp_text(
+                blocks,
+                format!(
+                    "[tool_result:{tool_call_id}{}]",
+                    if *is_error { ":error" } else { "" }
+                ),
+            );
+            append_content_blocks_to_acp_prompt(blocks, content);
+        }
+        UniversalItem::Reasoning { text, .. } => {
+            push_acp_text(
+                blocks,
+                format!(
+                    "[assistant_reasoning]\n{}",
+                    text.clone().unwrap_or_default()
+                ),
+            );
+        }
+        UniversalItem::Unknown { raw } => push_acp_text(blocks, format!("[unknown]\n{raw}")),
+    }
+}
+
+fn append_content_blocks_to_acp_prompt(
+    blocks: &mut Vec<acp::ContentBlock>,
+    content: &[UniversalContentBlock],
+) {
+    for block in content {
+        append_content_block_to_acp_prompt(blocks, block);
+    }
+}
+
+fn append_content_block_to_acp_prompt(
+    blocks: &mut Vec<acp::ContentBlock>,
+    block: &UniversalContentBlock,
+) {
+    match block {
+        UniversalContentBlock::Text { text } => push_acp_text(blocks, text.clone()),
+        UniversalContentBlock::Image {
+            media_type,
+            url,
+            data,
+            extensions,
+        } => blocks.push(universal_image_to_acp_block(
+            media_type.as_deref(),
+            url.as_deref(),
+            data.as_deref(),
+            extensions,
+        )),
+        UniversalContentBlock::File {
+            media_type,
+            filename,
+            url,
+            data,
+            extensions,
+        } => blocks.push(universal_file_to_acp_block(
+            filename.as_deref(),
+            media_type.as_deref(),
+            url.as_deref(),
+            data.as_deref(),
+            extensions,
+        )),
+        UniversalContentBlock::ToolCall {
+            id,
+            name,
+            arguments,
+            ..
+        } => push_acp_text(blocks, format!("[tool_call:{id}] {name} {arguments}")),
+        UniversalContentBlock::ToolResult {
+            tool_call_id,
+            content,
+            is_error,
+            ..
+        } => {
+            push_acp_text(
+                blocks,
+                format!(
+                    "[tool_result:{tool_call_id}{}]",
+                    if *is_error { ":error" } else { "" }
+                ),
+            );
+            append_content_blocks_to_acp_prompt(blocks, content);
+        }
+        UniversalContentBlock::Reasoning {
+            text: Some(text), ..
+        } => push_acp_text(blocks, text.clone()),
+        UniversalContentBlock::Reasoning { .. } => {}
+        UniversalContentBlock::Unknown { raw } => push_acp_text(blocks, raw.to_string()),
+    }
+}
+
+fn push_acp_text(blocks: &mut Vec<acp::ContentBlock>, text: impl Into<String>) {
+    let text = text.into();
+    if text.trim().is_empty() {
+        return;
+    }
+    blocks.push(acp::ContentBlock::Text(acp::TextContent::new(text)));
+}
+
+fn universal_image_to_acp_block(
+    media_type: Option<&str>,
+    url: Option<&str>,
+    data: Option<&str>,
+    extensions: &Extensions,
+) -> acp::ContentBlock {
+    if let Some(payload) = media_payload(first_non_empty(data, data_url_source(url))) {
+        let mime_type = media_type
+            .or(payload.media_type.as_deref())
+            .unwrap_or("image/png");
+        let mut image = acp::ImageContent::new(payload.data, mime_type.to_string());
+        if let Some(uri) = url.filter(|uri| !is_data_url(uri)).map(str::to_string) {
+            image = image.uri(uri);
+        }
+        return acp::ContentBlock::Image(image);
+    }
+    if let Some(url) = non_empty(url) {
+        return resource_link_block("image", url, media_type, None);
+    }
+    if let Some(file_id) = extension_string(extensions, "file_id") {
+        return resource_link_block(
+            "image",
+            &format!("urn:vibearound:provider-file:{file_id}"),
+            media_type,
+            Some("Provider image file id; content was not embedded"),
+        );
+    }
+    acp::ContentBlock::Text(acp::TextContent::new(media_placeholder(
+        "image", media_type, url, data,
+    )))
+}
+
+fn universal_file_to_acp_block(
+    filename: Option<&str>,
+    media_type: Option<&str>,
+    url: Option<&str>,
+    data: Option<&str>,
+    extensions: &Extensions,
+) -> acp::ContentBlock {
+    let name = first_non_empty(filename, None).unwrap_or("attachment");
+    if let Some(payload) = media_payload(first_non_empty(data, data_url_source(url))) {
+        let blob = acp::BlobResourceContents::new(
+            payload.data,
+            non_data_uri(url).unwrap_or_else(|| embedded_resource_uri("file", name)),
+        )
+        .mime_type(
+            media_type
+                .or(payload.media_type.as_deref())
+                .map(str::to_string),
+        );
+        return acp::ContentBlock::Resource(acp::EmbeddedResource::new(
+            acp::EmbeddedResourceResource::BlobResourceContents(blob),
+        ));
+    }
+    if let Some(url) = non_data_uri(url) {
+        return resource_link_block(name, &url, media_type, filename);
+    }
+    if let Some(file_id) = extension_string(extensions, "file_id") {
+        return resource_link_block(
+            name,
+            &format!("urn:vibearound:provider-file:{file_id}"),
+            media_type,
+            Some("Provider file id; content was not embedded"),
+        );
+    }
+    acp::ContentBlock::Text(acp::TextContent::new(media_placeholder(
+        name, media_type, url, data,
+    )))
+}
+
+struct MediaPayload {
+    media_type: Option<String>,
+    data: String,
+}
+
+fn media_payload(source: Option<&str>) -> Option<MediaPayload> {
+    let source = non_empty(source)?;
+    if let Some(payload) = split_base64_data_url(source) {
+        return Some(payload);
+    }
+    if source.starts_with("data:")
+        || source.starts_with("http://")
+        || source.starts_with("https://")
+    {
+        return None;
+    }
+    Some(MediaPayload {
+        media_type: None,
+        data: source.to_string(),
+    })
+}
+
+fn split_base64_data_url(source: &str) -> Option<MediaPayload> {
+    let rest = source.strip_prefix("data:")?;
+    let (metadata, data) = rest.split_once(',')?;
+    let mut media_type = None;
+    let mut base64 = false;
+    for part in metadata.split(';') {
+        if part.eq_ignore_ascii_case("base64") {
+            base64 = true;
+        } else if !part.is_empty() && media_type.is_none() {
+            media_type = Some(part.to_string());
+        }
+    }
+    base64.then(|| MediaPayload {
+        media_type,
+        data: data.to_string(),
+    })
+}
+
+fn data_url_source(source: Option<&str>) -> Option<&str> {
+    source.filter(|value| is_data_url(value))
+}
+
+fn is_data_url(source: &str) -> bool {
+    source.trim_start().starts_with("data:")
+}
+
+fn non_data_uri(source: Option<&str>) -> Option<String> {
+    non_empty(source)
+        .filter(|value| !is_data_url(value))
+        .map(str::to_string)
+}
+
+fn resource_link_block(
+    name: &str,
+    uri: &str,
+    media_type: Option<&str>,
+    title: Option<&str>,
+) -> acp::ContentBlock {
+    let mut link = acp::ResourceLink::new(name.to_string(), uri.to_string())
+        .mime_type(media_type.map(str::to_string));
+    if let Some(title) = first_non_empty(title, None) {
+        link = link.title(title.to_string());
+    }
+    acp::ContentBlock::ResourceLink(link)
+}
+
+fn embedded_resource_uri(kind: &str, name: &str) -> String {
+    format!(
+        "urn:vibearound:local-agent:{kind}:{}",
+        local_agent_model_id_part(name)
+    )
+}
+
+fn extension_string<'a>(extensions: &'a Extensions, key: &str) -> Option<&'a str> {
+    first_non_empty(extensions.get(key).and_then(Value::as_str), None)
+}
+
+fn non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn first_non_empty<'a>(first: Option<&'a str>, second: Option<&'a str>) -> Option<&'a str> {
+    non_empty(first).or_else(|| non_empty(second))
+}
+
+#[cfg(test)]
 fn universal_request_to_transcript(request: &UniversalRequest) -> String {
     let mut sections = Vec::new();
     if !request.instructions.is_empty() {
@@ -697,6 +979,7 @@ fn universal_request_to_transcript(request: &UniversalRequest) -> String {
     sections.join("\n\n")
 }
 
+#[cfg(test)]
 fn universal_item_to_text(item: &UniversalItem) -> String {
     match item {
         UniversalItem::Message { role, content, .. } => {
@@ -742,6 +1025,7 @@ fn role_label(role: Role) -> &'static str {
     }
 }
 
+#[cfg(test)]
 fn content_blocks_to_text(blocks: &[UniversalContentBlock]) -> String {
     blocks
         .iter()
@@ -751,6 +1035,7 @@ fn content_blocks_to_text(blocks: &[UniversalContentBlock]) -> String {
         .join("\n")
 }
 
+#[cfg(test)]
 fn content_block_to_text(block: &UniversalContentBlock) -> String {
     match block {
         UniversalContentBlock::Text { text } => text.clone(),
@@ -1021,6 +1306,120 @@ mod tests {
         assert!(transcript.contains("[user]\nHello"));
         assert!(transcript.contains("[assistant]\nHi"));
         assert!(transcript.contains("[user]\nContinue"));
+    }
+
+    #[test]
+    fn converts_openai_responses_media_to_acp_prompt_blocks() {
+        let request = BridgeProtocol::OpenAiResponses
+            .decode_agent_request(json!({
+                "model": "local",
+                "input": [{
+                    "role": "user",
+                    "content": [
+                        { "type": "input_text", "text": "describe these" },
+                        { "type": "input_image", "image_url": "data:image/png;base64,abc123" },
+                        {
+                            "type": "input_file",
+                            "filename": "paper.pdf",
+                            "file_data": "data:application/pdf;base64,AAAA"
+                        }
+                    ]
+                }]
+            }))
+            .expect("responses request decodes");
+
+        let prompt = universal_request_to_acp_prompt(&request).expect("prompt builds");
+
+        assert!(prompt.iter().any(|block| {
+            matches!(
+                block,
+                acp::ContentBlock::Image(image)
+                    if image.mime_type == "image/png" && image.data == "abc123"
+            )
+        }));
+        assert!(prompt.iter().any(|block| {
+            matches!(
+                block,
+                acp::ContentBlock::Resource(resource)
+                    if matches!(
+                        &resource.resource,
+                        acp::EmbeddedResourceResource::BlobResourceContents(blob)
+                            if blob.mime_type.as_deref() == Some("application/pdf")
+                                && blob.blob == "AAAA"
+                                && blob.uri == "urn:vibearound:local-agent:file:paper-pdf"
+                    )
+            )
+        }));
+    }
+
+    #[test]
+    fn converts_openai_chat_image_url_to_acp_resource_link() {
+        let request = BridgeProtocol::OpenAiChat
+            .decode_agent_request(json!({
+                "model": "local",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        { "type": "text", "text": "describe it" },
+                        {
+                            "type": "image_url",
+                            "image_url": { "url": "https://example.test/image.png" }
+                        }
+                    ]
+                }]
+            }))
+            .expect("chat request decodes");
+
+        let prompt = universal_request_to_acp_prompt(&request).expect("prompt builds");
+
+        assert!(prompt.iter().any(|block| {
+            matches!(
+                block,
+                acp::ContentBlock::ResourceLink(link)
+                    if link.name == "image" && link.uri == "https://example.test/image.png"
+            )
+        }));
+    }
+
+    #[test]
+    fn converts_anthropic_document_to_acp_blob_resource() {
+        let request = BridgeProtocol::AnthropicMessages
+            .decode_agent_request(json!({
+                "model": "local",
+                "max_tokens": 1024,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        { "type": "text", "text": "summarize" },
+                        {
+                            "type": "document",
+                            "title": "report.pdf",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": "BBBB"
+                            }
+                        }
+                    ]
+                }]
+            }))
+            .expect("anthropic request decodes");
+
+        let prompt = universal_request_to_acp_prompt(&request).expect("prompt builds");
+
+        assert!(prompt.iter().any(|block| {
+            matches!(
+                block,
+                acp::ContentBlock::Resource(resource)
+                    if matches!(
+                        &resource.resource,
+                        acp::EmbeddedResourceResource::BlobResourceContents(blob)
+                            if blob.mime_type.as_deref() == Some("application/pdf")
+                                && blob.blob == "BBBB"
+                                && blob.uri == "urn:vibearound:local-agent:file:report-pdf"
+                    )
+            )
+        }));
     }
 
     #[test]
