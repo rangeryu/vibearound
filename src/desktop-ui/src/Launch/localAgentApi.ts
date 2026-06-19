@@ -37,7 +37,7 @@ export const LOCAL_API_PROTOCOLS: LocalApiProtocolSpec[] = [
 ];
 
 export function localAgentBasePath(target: LocalAgentApiTarget): string {
-  return `/va/local-agent/${encodeURIComponent(target.agentId)}/${encodeURIComponent(
+  return `/local-agent/${encodeURIComponent(target.agentId)}/${encodeURIComponent(
     target.profileId,
   )}/v1`;
 }

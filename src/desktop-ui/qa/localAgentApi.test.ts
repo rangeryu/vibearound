@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { loopbackBaseUrl } from "@va/client";
 
 import {
   extractLocalAgentResponseText,
@@ -20,7 +21,10 @@ const target: LocalAgentApiTarget = {
 
 test("local agent base path encodes agent and profile path segments", () => {
   expect(localAgentBasePath(target)).toBe(
-    "/va/local-agent/codex%20cli/direct%2Fprofile/v1",
+    "/local-agent/codex%20cli/direct%2Fprofile/v1",
+  );
+  expect(`${loopbackBaseUrl(12358)}${localAgentBasePath(target)}`).toBe(
+    "http://127.0.0.1:12358/va/local-agent/codex%20cli/direct%2Fprofile/v1",
   );
 });
 
