@@ -320,16 +320,16 @@ async fn handle_local_agent_request(
         Ok(prompt) => prompt,
         Err(message) => return json_error(StatusCode::UNPROCESSABLE_ENTITY, &message),
     };
-    let model = request
+    let model_id = request
         .model
         .clone()
         .filter(|model| !model.trim().is_empty())
-        .unwrap_or_else(|| agent_id.clone());
+        .map(|model| model.trim().to_string());
     let workspace = request_workspace(&headers, &agent_id);
     let turn = LocalAgentTurn {
         agent_id,
         profile_id,
-        model,
+        model_id,
         workspace,
         prompt,
     };
@@ -464,7 +464,7 @@ async fn run_local_agent_turn(
         vec![
             UniversalEvent::ResponseStart {
                 id: Some(response_id),
-                model: Some(turn.model.clone()),
+                model: turn.model_id.clone(),
                 extensions: Extensions::new(),
             },
             UniversalEvent::MessageStart {
@@ -501,6 +501,7 @@ async fn run_local_agent_turn(
         let session = agent
             .new_session(acp::NewSessionRequest::new(turn.workspace.clone()))
             .await?;
+        apply_local_agent_model(&agent, &session, turn.model_id.as_deref()).await?;
         agent
             .prompt(acp::PromptRequest::new(session.session_id, turn.prompt))
             .await
@@ -517,6 +518,34 @@ async fn run_local_agent_turn(
         ),
     );
     Ok(())
+}
+
+async fn apply_local_agent_model(
+    agent: &common::agent::Agent,
+    session: &acp::NewSessionResponse,
+    model_id: Option<&str>,
+) -> acp::Result<()> {
+    let Some(model_id) = model_id.map(str::trim).filter(|model| !model.is_empty()) else {
+        return Ok(());
+    };
+    let Some(config_id) = model_config_option_id(session.config_options.as_deref()) else {
+        return Ok(());
+    };
+    agent
+        .set_session_config_option(acp::SetSessionConfigOptionRequest::new(
+            session.session_id.clone(),
+            config_id,
+            model_id.to_string(),
+        ))
+        .await?;
+    Ok(())
+}
+
+fn model_config_option_id(options: Option<&[acp::SessionConfigOption]>) -> Option<String> {
+    options?
+        .iter()
+        .find(|option| is_model_config_option(option))
+        .map(|option| option.id.to_string())
 }
 
 fn launch_args_and_env(
@@ -818,7 +847,7 @@ fn acp_content_to_text(content: &acp::ContentBlock) -> Option<String> {
 struct LocalAgentTurn {
     agent_id: String,
     profile_id: String,
-    model: String,
+    model_id: Option<String>,
     workspace: PathBuf,
     prompt: Vec<acp::ContentBlock>,
 }
@@ -923,6 +952,32 @@ mod tests {
                 LocalAgentModel::new("claude-opus-4-5", "Claude Opus"),
             ]
         );
+    }
+
+    #[test]
+    fn finds_model_config_option_id_for_setting_model_id() {
+        let config = acp::SessionConfigOption::select(
+            "model",
+            "Model",
+            "claude-sonnet-4-6",
+            vec![acp::SessionConfigSelectOption::new(
+                "claude-sonnet-4-6",
+                "Claude Sonnet",
+            )],
+        )
+        .category(acp::SessionConfigOptionCategory::Model);
+        let other = acp::SessionConfigOption::select(
+            "permission-mode",
+            "Permission mode",
+            "default",
+            vec![acp::SessionConfigSelectOption::new("default", "Default")],
+        );
+
+        assert_eq!(
+            model_config_option_id(Some(&[other, config])),
+            Some("model".to_string())
+        );
+        assert_eq!(model_config_option_id(None), None);
     }
 
     #[test]

@@ -15,6 +15,11 @@ export interface LocalApiProtocolSpec {
   endpoint: string;
 }
 
+export interface LocalAgentModel {
+  id: string;
+  displayName: string;
+}
+
 export const LOCAL_API_PROTOCOLS: LocalApiProtocolSpec[] = [
   {
     id: "openai-responses",
@@ -76,16 +81,29 @@ export function localAgentTestPayload(
   }
 }
 
-export function extractLocalAgentModelIds(payload: unknown): string[] {
+export function extractLocalAgentModels(payload: unknown): LocalAgentModel[] {
   const seen = new Set<string>();
-  const ids: string[] = [];
+  const models: LocalAgentModel[] = [];
   for (const item of asArray(asRecord(payload).data)) {
-    const id = stringValue(asRecord(item).id).trim();
+    const record = asRecord(item);
+    const id = stringValue(record.id).trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    ids.push(id);
+    models.push({
+      id,
+      displayName: stringValue(record.display_name).trim() || id,
+    });
   }
-  return ids;
+  return models;
+}
+
+export function extractLocalAgentModelIds(payload: unknown): string[] {
+  return extractLocalAgentModels(payload).map((model) => model.id);
+}
+
+export function formatLocalAgentModelLabel(model: LocalAgentModel): string {
+  if (!model.displayName || model.displayName === model.id) return model.id;
+  return `${model.displayName} · ${model.id}`;
 }
 
 export function parseLocalAgentJson(text: string): unknown {
@@ -134,12 +152,6 @@ export function maskLocalApiAuthHeader(value: string): string {
   if (!token || token === "<token>") return value;
   if (token.length <= 18) return `${prefix}${token}`;
   return `${prefix}${token.slice(0, 8)}...${token.slice(-6)}`;
-}
-
-export function maskLocalApiKey(value: string): string {
-  if (!value || value === "<token>") return value;
-  if (value.length <= 18) return value;
-  return `${value.slice(0, 8)}...${value.slice(-6)}`;
 }
 
 function asArray(value: unknown): unknown[] {

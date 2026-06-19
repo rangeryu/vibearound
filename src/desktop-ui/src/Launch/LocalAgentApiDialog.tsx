@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -26,17 +26,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { API_BASE, apiFetch, getAuthToken } from "@/lib/api";
+import { API_BASE } from "@/lib/api";
 import {
   LOCAL_API_PROTOCOLS,
-  extractLocalAgentModelIds,
+  extractLocalAgentModels,
   extractLocalAgentResponseText,
+  formatLocalAgentModelLabel,
   localAgentBasePath,
   localAgentErrorText,
   localAgentProtocolSpec,
   localAgentTestPayload,
-  maskLocalApiKey,
   parseLocalAgentJson,
+  type LocalAgentModel,
   type LocalAgentApiTarget,
   type LocalApiProtocol,
 } from "./localAgentApi";
@@ -58,13 +59,12 @@ export function LocalAgentApiDialog({
 }: LocalAgentApiDialogProps) {
   const { t } = useI18n();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [authToken, setAuthToken] = useState<string | null>(null);
   const [modelsStatus, setModelsStatus] = useState<string | null>(null);
   const [protocol, setProtocol] =
     useState<LocalApiProtocol>("openai-responses");
   const [prompt, setPrompt] = useState("Reply with exactly: VA_LOCAL_API_OK");
   const [model, setModel] = useState("");
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelOptions, setModelOptions] = useState<LocalAgentModel[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
@@ -74,7 +74,9 @@ export function LocalAgentApiDialog({
   const endpointUrl = selectedProtocol ? `${baseUrl}/${selectedProtocol.endpoint}` : baseUrl;
   const modelsUrl = `${baseUrl}/models`;
   const modelListValue =
-    modelOptions.length > 0 ? modelOptions.join(", ") : model || t("Loading…");
+    modelOptions.length > 0
+      ? modelOptions.map(formatLocalAgentModelLabel).join(", ")
+      : model || t("Loading…");
 
   useEffect(() => {
     if (!target) return;
@@ -84,8 +86,7 @@ export function LocalAgentApiDialog({
     setModelOptions([]);
     setTestResult(null);
     setModelsStatus(null);
-    void getAuthToken().then(setAuthToken).catch(() => setAuthToken(null));
-    void apiFetch(`${localAgentBasePath(target)}/models`, {
+    void fetch(`${API_BASE}${localAgentBasePath(target)}/models`, {
       headers: {
         "x-vibearound-cwd": target.workspacePath,
       },
@@ -98,9 +99,9 @@ export function LocalAgentApiDialog({
           return;
         }
         const payload = await response.json().catch(() => null);
-        const models = extractLocalAgentModelIds(payload);
+        const models = extractLocalAgentModels(payload);
         setModelOptions(models);
-        setModel(models[0] ?? target.agentId);
+        setModel(models[0]?.id ?? target.agentId);
         setModelsStatus(t("Models endpoint ready · {{count}} models", { count: models.length }));
       })
       .catch((error) => {
@@ -108,10 +109,6 @@ export function LocalAgentApiDialog({
         setModelsStatus(error instanceof Error ? error.message : String(error));
       });
   }, [target, t]);
-
-  const apiKeyValue = useMemo(() => {
-    return authToken || "<token>";
-  }, [authToken]);
 
   if (!target) return null;
 
@@ -132,7 +129,7 @@ export function LocalAgentApiDialog({
     setTesting(true);
     setTestResult(null);
     try {
-      const response = await apiFetch(`${basePath}/${selectedProtocol.endpoint}`, {
+      const response = await fetch(`${API_BASE}${basePath}/${selectedProtocol.endpoint}`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -224,12 +221,6 @@ export function LocalAgentApiDialog({
                 onCopy={() => copyValue("models", modelsUrl)}
               />
               <ManualField
-                label={t("API key")}
-                value={maskLocalApiKey(apiKeyValue)}
-                copied={copiedKey === "api-key"}
-                onCopy={() => copyValue("api-key", apiKeyValue)}
-              />
-              <ManualField
                 label={t("Models")}
                 value={modelListValue}
                 copied={copiedKey === "model-list"}
@@ -258,8 +249,12 @@ export function LocalAgentApiDialog({
                       </SelectTrigger>
                       <SelectContent>
                         {modelOptions.map((modelId) => (
-                          <SelectItem key={modelId} value={modelId} className="font-mono text-xs">
-                            {modelId}
+                          <SelectItem
+                            key={modelId.id}
+                            value={modelId.id}
+                            className="font-mono text-xs"
+                          >
+                            {formatLocalAgentModelLabel(modelId)}
                           </SelectItem>
                         ))}
                       </SelectContent>

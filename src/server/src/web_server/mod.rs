@@ -137,9 +137,16 @@ async fn spa_fallback_handler(
 }
 
 fn is_dashboard_api_path(path: &str) -> bool {
-    ["/va/local-api/", "/local-api/", "/va/bridge/", "/bridge/"]
-        .into_iter()
-        .any(|prefix| path.starts_with(prefix))
+    [
+        "/va/local-api/",
+        "/local-api/",
+        "/va/local-agent/",
+        "/local-agent/",
+        "/va/bridge/",
+        "/bridge/",
+    ]
+    .into_iter()
+    .any(|prefix| path.starts_with(prefix))
 }
 
 /// Runs the Axum server (static files + WebSocket + session API). Binds to 127.0.0.1 (localhost only).
@@ -263,27 +270,6 @@ pub async fn run_web_server(
         .route("/api/tunnels/{provider}", delete(api::kill_tunnel_handler))
         .route("/api/agents/{route_key}", delete(api::kill_agent_handler))
         .route("/api/pty/{session_id}", delete(api::kill_pty_handler))
-        .merge(
-            Router::new()
-                .route(
-                    "/local-agent/{agent_id}/{profile_id}/v1/responses",
-                    post(api_bridge::local_agent_responses_handler),
-                )
-                .route(
-                    "/local-agent/{agent_id}/{profile_id}/v1/chat/completions",
-                    post(api_bridge::local_agent_chat_completions_handler),
-                )
-                .route(
-                    "/local-agent/{agent_id}/{profile_id}/v1/messages",
-                    post(api_bridge::local_agent_messages_handler),
-                )
-                .route(
-                    "/local-agent/{agent_id}/{profile_id}/v1/models",
-                    get(api_bridge::local_agent_models_handler),
-                )
-                .route_layer(axum::middleware::from_fn(require_local_bridge))
-                .layer(DefaultBodyLimit::max(LOCAL_BRIDGE_BODY_LIMIT_BYTES)),
-        )
         .route("/api/previews", get(api::list_previews_handler))
         .route("/api/previews/{slug}", delete(api::delete_preview_handler))
         .route(
@@ -313,6 +299,22 @@ pub async fn run_web_server(
     // short-lived authentication token (10-min TTL, cryptographically random;
     // single source of truth: `common::previews::SHARE_TTL_SECS`).
     let bridge_routes = Router::new()
+        .route(
+            "/local-agent/{agent_id}/{profile_id}/v1/responses",
+            post(api_bridge::local_agent_responses_handler),
+        )
+        .route(
+            "/local-agent/{agent_id}/{profile_id}/v1/chat/completions",
+            post(api_bridge::local_agent_chat_completions_handler),
+        )
+        .route(
+            "/local-agent/{agent_id}/{profile_id}/v1/messages",
+            post(api_bridge::local_agent_messages_handler),
+        )
+        .route(
+            "/local-agent/{agent_id}/{profile_id}/v1/models",
+            get(api_bridge::local_agent_models_handler),
+        )
         .route(
             "/bridge/{profile_id}/{target_api_type}/v1/responses",
             post(api_bridge::legacy_responses_handler),
@@ -435,7 +437,13 @@ mod tests {
             "/va/local-api/deepseek/scope/extra/openai-chat/v1/responses"
         ));
         assert!(is_dashboard_api_path(
+            "/va/local-agent/claude/direct/v1/responses"
+        ));
+        assert!(is_dashboard_api_path(
             "/local-api/deepseek/scope/extra/openai-chat/v1/responses"
+        ));
+        assert!(is_dashboard_api_path(
+            "/local-agent/claude/direct/v1/responses"
         ));
         assert!(is_dashboard_api_path(
             "/va/bridge/profile/openai-chat/v1/responses"

@@ -2,13 +2,14 @@ import { expect, test } from "bun:test";
 import { loopbackBaseUrl } from "@va/client";
 
 import {
+  extractLocalAgentModels,
   extractLocalAgentModelIds,
   extractLocalAgentResponseText,
+  formatLocalAgentModelLabel,
   localAgentBasePath,
   localAgentErrorText,
   localAgentTestPayload,
   maskLocalApiAuthHeader,
-  maskLocalApiKey,
   parseLocalAgentJson,
   type LocalAgentApiTarget,
 } from "../src/Launch/localAgentApi";
@@ -49,19 +50,32 @@ test("local agent test payloads match supported wire protocols", () => {
   });
 });
 
-test("local agent model ids come from the models endpoint payload", () => {
-  expect(
-    extractLocalAgentModelIds({
-      data: [
-        { id: "claude" },
-        { id: "claude" },
-        { id: "codex", display_name: "Codex CLI" },
-        { id: "" },
-        { object: "model" },
-      ],
-    }),
-  ).toEqual(["claude", "codex"]);
+test("local agent models come from the models endpoint payload", () => {
+  const payload = {
+    data: [
+      { id: "claude", display_name: "Claude Code" },
+      { id: "claude", display_name: "Duplicate" },
+      { id: "codex", display_name: "Codex CLI" },
+      { id: "" },
+      { object: "model" },
+    ],
+  };
+
+  expect(extractLocalAgentModels(payload)).toEqual([
+    { id: "claude", displayName: "Claude Code" },
+    { id: "codex", displayName: "Codex CLI" },
+  ]);
+  expect(extractLocalAgentModelIds(payload)).toEqual(["claude", "codex"]);
   expect(extractLocalAgentModelIds({ data: null })).toEqual([]);
+  expect(
+    formatLocalAgentModelLabel({
+      id: "opus",
+      displayName: "Opus",
+    }),
+  ).toBe("Opus · opus");
+  expect(formatLocalAgentModelLabel({ id: "codex", displayName: "codex" })).toBe(
+    "codex",
+  );
 });
 
 test("local agent response text extraction supports all protocol shapes", () => {
@@ -105,5 +119,4 @@ test("local agent json/error/auth helpers are conservative", () => {
   expect(maskLocalApiAuthHeader("Authorization: Bearer abcdefghijklmnopqrstuvwxyz")).toBe(
     "Authorization: Bearer abcdefgh...uvwxyz",
   );
-  expect(maskLocalApiKey("abcdefghijklmnopqrstuvwxyz")).toBe("abcdefgh...uvwxyz");
 });
