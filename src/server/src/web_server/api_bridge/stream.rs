@@ -299,7 +299,7 @@ fn sse_data(frame: &[u8]) -> Option<String> {
     }
 }
 
-fn encode_wire_sse_event(event: WireEvent) -> String {
+pub(super) fn encode_wire_sse_event(event: WireEvent) -> String {
     let event_name = event.event.or_else(|| {
         event
             .data

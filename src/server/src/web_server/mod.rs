@@ -263,6 +263,27 @@ pub async fn run_web_server(
         .route("/api/tunnels/{provider}", delete(api::kill_tunnel_handler))
         .route("/api/agents/{route_key}", delete(api::kill_agent_handler))
         .route("/api/pty/{session_id}", delete(api::kill_pty_handler))
+        .merge(
+            Router::new()
+                .route(
+                    "/local-agent/{agent_id}/{profile_id}/v1/responses",
+                    post(api_bridge::local_agent_responses_handler),
+                )
+                .route(
+                    "/local-agent/{agent_id}/{profile_id}/v1/chat/completions",
+                    post(api_bridge::local_agent_chat_completions_handler),
+                )
+                .route(
+                    "/local-agent/{agent_id}/{profile_id}/v1/messages",
+                    post(api_bridge::local_agent_messages_handler),
+                )
+                .route(
+                    "/local-agent/{agent_id}/{profile_id}/v1/models",
+                    get(api_bridge::local_agent_models_handler),
+                )
+                .route_layer(axum::middleware::from_fn(require_local_bridge))
+                .layer(DefaultBodyLimit::max(LOCAL_BRIDGE_BODY_LIMIT_BYTES)),
+        )
         .route("/api/previews", get(api::list_previews_handler))
         .route("/api/previews/{slug}", delete(api::delete_preview_handler))
         .route(

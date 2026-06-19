@@ -15,6 +15,7 @@ use va_ai_api_bridge::{
 mod completion;
 mod content_policy;
 mod google_code_assist;
+mod local_agent;
 mod model_mapping;
 mod normalization;
 mod passthrough;
@@ -29,6 +30,10 @@ use completion::{
     translated_completion_response, UpstreamResponseTransform,
 };
 use content_policy::{sanitize_request_content_with_capabilities, ContentSanitization};
+pub use local_agent::{
+    local_agent_chat_completions_handler, local_agent_messages_handler, local_agent_models_handler,
+    local_agent_responses_handler,
+};
 use model_mapping::{bridge_model_mapping, bridge_route_preference};
 use normalization::normalize_target_request;
 use passthrough::{buffered_passthrough_response, passthrough_response};
