@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
+  ChevronDown,
   Check,
   Loader2,
   MessageSquare,
@@ -60,9 +61,11 @@ export function LocalAgentApiDialog({
     useState<LocalApiProtocol>("openai-responses");
   const [prompt, setPrompt] = useState("Reply with exactly: VA_LOCAL_API_OK");
   const [model, setModel] = useState("");
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [modelOptions, setModelOptions] = useState<LocalAgentModel[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const modelInputRef = useRef<HTMLInputElement>(null);
 
   const basePath = target ? localAgentBasePath(target) : "";
   const baseUrl = target ? `${API_BASE}${basePath}` : "";
@@ -79,6 +82,7 @@ export function LocalAgentApiDialog({
     setProtocol("openai-responses");
     setPrompt("Reply with exactly: VA_LOCAL_API_OK");
     setModel("");
+    setModelMenuOpen(false);
     setModelOptions([]);
     setTestResult(null);
     void fetch(`${API_BASE}${localAgentBasePath(target)}/models`, {
@@ -228,22 +232,57 @@ export function LocalAgentApiDialog({
                 </div>
               </div>
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2">
-                <label className="grid gap-1 text-[11px] text-muted-foreground">
+                <div className="grid gap-1 text-[11px] text-muted-foreground">
                   <span>{t("Model")}</span>
-                  <Input
-                    list="local-agent-test-models"
-                    value={model}
-                    onChange={(event) => setModel(event.currentTarget.value)}
-                    className="h-8 font-mono text-xs"
-                  />
-                  {modelOptions.length > 0 && (
-                    <datalist id="local-agent-test-models">
-                      {modelOptions.map((modelOption) => (
-                        <option key={modelOption.id} value={modelOption.id} />
-                      ))}
-                    </datalist>
-                  )}
-                </label>
+                  <div className="relative">
+                    <Input
+                      ref={modelInputRef}
+                      value={model}
+                      onFocus={() => setModelMenuOpen(true)}
+                      onBlur={() => setModelMenuOpen(false)}
+                      onChange={(event) => setModel(event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          setModelMenuOpen(false);
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      className="h-8 pr-8 font-mono text-xs"
+                    />
+                    {modelOptions.length > 0 && (
+                      <button
+                        type="button"
+                        className="absolute inset-y-0 right-1 flex w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          modelInputRef.current?.focus();
+                          setModelMenuOpen((open) => !open);
+                        }}
+                        aria-label={t("Show models")}
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {modelMenuOpen && modelOptions.length > 0 && (
+                      <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-36 overflow-auto rounded-md border border-border bg-popover p-1 shadow-md">
+                        {modelOptions.map((modelOption) => (
+                          <button
+                            key={modelOption.id}
+                            type="button"
+                            className="flex h-7 w-full items-center rounded px-2 text-left font-mono text-xs text-popover-foreground hover:bg-muted"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              setModel(modelOption.id);
+                              setModelMenuOpen(false);
+                            }}
+                          >
+                            {modelOption.id}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <label className="grid gap-1 text-[11px] text-muted-foreground">
                   <span>{t("Workspace")}</span>
                   <Input
