@@ -607,7 +607,7 @@ function ManualField({
       </div>
       <button
         type="button"
-        className={`flex h-5 w-full min-w-0 items-center rounded px-1.5 text-left font-mono text-[11px] leading-5 transition-colors ${
+        className={`flex h-5 w-full min-w-0 cursor-pointer items-center rounded px-1.5 text-left font-mono text-[11px] leading-5 transition-colors ${
           tone === "primary"
             ? "bg-primary/5 text-primary hover:bg-primary/10"
             : "bg-muted/35 text-foreground hover:bg-muted/60"
@@ -664,7 +664,7 @@ function ModelListField({
           <button
             key={model.id}
             type="button"
-            className="inline-flex h-4 max-w-[220px] shrink-0 items-center rounded px-1 text-left text-[11px] leading-4 transition-colors hover:bg-muted/60"
+            className="inline-flex h-4 max-w-[220px] shrink-0 cursor-pointer items-center rounded px-1 text-left text-[11px] leading-4 transition-colors hover:bg-muted/60"
             aria-label={t("Copy")}
             title={model.id}
             onClick={() => onCopy(model.id)}
