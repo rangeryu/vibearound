@@ -387,11 +387,11 @@ function ModelListField({
   }
 
   return (
-    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-start gap-2">
       <div className="min-w-0 text-[11px] leading-5 text-muted-foreground">
         <span className="truncate">{label}</span>
       </div>
-      <div className="flex min-h-5 min-w-0 items-center gap-1 overflow-x-auto rounded bg-primary/5 px-1.5 py-0.5">
+      <div className="flex min-h-5 min-w-0 flex-wrap items-center gap-1 rounded bg-primary/5 px-1.5 py-0.5">
         {models.map((model) => {
           const description =
             model.description && model.description !== model.id
