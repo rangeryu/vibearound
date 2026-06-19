@@ -57,8 +57,11 @@ export const zhCNLaunch: Record<string, string> = {
   "Supported protocols": "支持的协议",
   "Auth header": "认证请求头",
   "Models": "模型列表",
+  "Models API": "模型接口",
+  "Models endpoint": "模型列表接口",
   "Models endpoint returned {{status}}": "模型列表接口返回 {{status}}",
   "Models endpoint ready · {{count}} model": "模型列表接口可用 · {{count}} 个模型",
+  "Models endpoint ready · {{count}} models": "模型列表接口可用 · {{count}} 个模型",
   "Test message": "测试消息",
   Message: "消息",
   "Sessionless request · a fresh ACP turn is created for each test.":

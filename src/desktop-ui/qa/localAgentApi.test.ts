@@ -8,6 +8,7 @@ import {
   localAgentErrorText,
   localAgentTestPayload,
   maskLocalApiAuthHeader,
+  maskLocalApiKey,
   parseLocalAgentJson,
   type LocalAgentApiTarget,
 } from "../src/Launch/localAgentApi";
@@ -104,4 +105,5 @@ test("local agent json/error/auth helpers are conservative", () => {
   expect(maskLocalApiAuthHeader("Authorization: Bearer abcdefghijklmnopqrstuvwxyz")).toBe(
     "Authorization: Bearer abcdefgh...uvwxyz",
   );
+  expect(maskLocalApiKey("abcdefghijklmnopqrstuvwxyz")).toBe("abcdefgh...uvwxyz");
 });

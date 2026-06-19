@@ -136,6 +136,12 @@ export function maskLocalApiAuthHeader(value: string): string {
   return `${prefix}${token.slice(0, 8)}...${token.slice(-6)}`;
 }
 
+export function maskLocalApiKey(value: string): string {
+  if (!value || value === "<token>") return value;
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }

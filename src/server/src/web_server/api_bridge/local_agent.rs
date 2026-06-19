@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -79,36 +80,124 @@ pub async fn local_agent_messages_handler(
 
 pub async fn local_agent_models_handler(
     Path((agent_id, profile_id)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> Response {
-    let model_id = local_agent_model_id(&agent_id, &profile_id);
+    let workspace = request_workspace(&headers, &agent_id);
+    let models_result = fetch_local_agent_models(&agent_id, &profile_id, &workspace).await;
+    let (models, source, warning) = match models_result {
+        Ok(models) if !models.is_empty() => (models, "acp", None),
+        Ok(_) => (
+            fallback_local_agent_models(&agent_id),
+            "fallback",
+            Some("ACP session did not expose a model selector".to_string()),
+        ),
+        Err(message) => (
+            fallback_local_agent_models(&agent_id),
+            "fallback",
+            Some(message),
+        ),
+    };
+    local_agent_models_response(agent_id, profile_id, models, source, warning)
+}
+
+fn local_agent_models_response(
+    agent_id: String,
+    profile_id: String,
+    models: Vec<LocalAgentModel>,
+    source: &str,
+    warning: Option<String>,
+) -> Response {
+    let data: Vec<_> = models
+        .into_iter()
+        .map(|model| {
+            json!({
+                "id": model.id,
+                "object": "model",
+                "type": "model",
+                "display_name": model.display_name,
+                "owned_by": "vibearound-local-agent",
+                "created": 0,
+                "created_at": null,
+                "agent": agent_id,
+                "profile": profile_id,
+                "capabilities": {
+                    "sessionless": true,
+                    "streaming": true,
+                }
+            })
+        })
+        .collect();
     Json(json!({
         "object": "list",
-        "data": [{
-            "id": model_id,
-            "object": "model",
-            "type": "model",
-            "display_name": format!("{agent_id} · {profile_id}"),
-            "owned_by": "vibearound-local-agent",
-            "created": 0,
-            "created_at": null,
-            "agent": agent_id,
-            "profile": profile_id,
-            "capabilities": {
-                "sessionless": true,
-                "streaming": true,
-            }
-        }],
+        "data": data,
         "has_more": false,
+        "source": source,
+        "warning": warning,
     }))
     .into_response()
 }
 
-fn local_agent_model_id(agent_id: &str, profile_id: &str) -> String {
-    format!(
-        "{}-{}-local-api",
-        local_agent_model_id_part(agent_id),
-        local_agent_model_id_part(profile_id)
+async fn fetch_local_agent_models(
+    agent_id: &str,
+    profile_id: &str,
+    workspace: &std::path::Path,
+) -> Result<Vec<LocalAgentModel>, String> {
+    let agent_id =
+        common::resources::resolve_agent_id(agent_id).map_err(|error| error.to_string())?;
+    let route = common::routing::RouteKey::new(
+        LOCAL_AGENT_CHANNEL_KIND,
+        &format!("api_models_{}", Uuid::new_v4().simple()),
+    );
+    let (extra_args, env_vars) = launch_args_and_env(&agent_id, profile_id, workspace, &route)?;
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let handler = Arc::new(ApiAgentClientHandler::new(tx));
+    let ready = common::agent::Agent::spawn(
+        agent_id,
+        &route,
+        workspace,
+        common::agent::StartupSession::Fresh,
+        handler,
+        extra_args,
+        env_vars,
     )
+    .await
+    .map_err(|error| format!("{error:#}"))?;
+    let agent = ready.agent;
+    let result = async {
+        let session = agent
+            .new_session(acp::NewSessionRequest::new(workspace.to_path_buf()))
+            .await?;
+        Ok::<_, acp::Error>(models_from_acp_config_options(
+            session.config_options.as_deref().unwrap_or_default(),
+        ))
+    }
+    .await;
+    agent.shutdown().await;
+    result.map_err(|error| error.message.to_string())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalAgentModel {
+    id: String,
+    display_name: String,
+}
+
+impl LocalAgentModel {
+    fn new(id: impl Into<String>, display_name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            display_name: display_name.into(),
+        }
+    }
+}
+
+fn fallback_local_agent_models(agent_id: &str) -> Vec<LocalAgentModel> {
+    let id = local_agent_fallback_model_id(agent_id);
+    vec![LocalAgentModel::new(id.clone(), id)]
+}
+
+fn local_agent_fallback_model_id(agent_id: &str) -> String {
+    local_agent_model_id_part(agent_id)
 }
 
 fn local_agent_model_id_part(value: &str) -> String {
@@ -129,6 +218,78 @@ fn local_agent_model_id_part(value: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+fn models_from_acp_config_options(options: &[acp::SessionConfigOption]) -> Vec<LocalAgentModel> {
+    let mut seen = BTreeSet::new();
+    let mut models = Vec::new();
+    for option in options {
+        if !is_model_config_option(option) {
+            continue;
+        }
+        let acp::SessionConfigKind::Select(select) = &option.kind else {
+            continue;
+        };
+        collect_acp_select_models(&select.options, &mut seen, &mut models);
+        push_acp_model(
+            &mut seen,
+            &mut models,
+            select.current_value.to_string(),
+            select.current_value.to_string(),
+        );
+    }
+    models
+}
+
+fn is_model_config_option(option: &acp::SessionConfigOption) -> bool {
+    matches!(
+        option.category,
+        Some(acp::SessionConfigOptionCategory::Model)
+    ) || option.id.to_string().eq_ignore_ascii_case("model")
+        || option.name.eq_ignore_ascii_case("model")
+}
+
+fn collect_acp_select_models(
+    options: &acp::SessionConfigSelectOptions,
+    seen: &mut BTreeSet<String>,
+    models: &mut Vec<LocalAgentModel>,
+) {
+    match options {
+        acp::SessionConfigSelectOptions::Ungrouped(options) => {
+            for option in options {
+                push_acp_model(seen, models, option.value.to_string(), option.name.clone());
+            }
+        }
+        acp::SessionConfigSelectOptions::Grouped(groups) => {
+            for group in groups {
+                for option in &group.options {
+                    push_acp_model(seen, models, option.value.to_string(), option.name.clone());
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_acp_model(
+    seen: &mut BTreeSet<String>,
+    models: &mut Vec<LocalAgentModel>,
+    id: String,
+    display_name: String,
+) {
+    let id = id.trim().to_string();
+    if id.is_empty() || !seen.insert(id.clone()) {
+        return;
+    }
+    let display_name = display_name.trim();
+    models.push(LocalAgentModel::new(
+        id.clone(),
+        if display_name.is_empty() {
+            id
+        } else {
+            display_name.to_string()
+        },
+    ));
 }
 
 async fn handle_local_agent_request(
@@ -730,14 +891,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builds_stable_local_agent_model_ids() {
-        assert_eq!(
-            local_agent_model_id("claude", "direct"),
-            "claude-direct-local-api"
+    fn builds_simple_fallback_local_agent_model_ids() {
+        assert_eq!(local_agent_fallback_model_id("claude"), "claude");
+        assert_eq!(local_agent_fallback_model_id("codex cli"), "codex-cli");
+    }
+
+    #[test]
+    fn extracts_models_from_acp_model_config_options() {
+        let config = acp::SessionConfigOption::select(
+            "model",
+            "Model",
+            "claude-sonnet-4-6",
+            vec![
+                acp::SessionConfigSelectOption::new("claude-sonnet-4-6", "Claude Sonnet"),
+                acp::SessionConfigSelectOption::new("claude-opus-4-5", "Claude Opus"),
+                acp::SessionConfigSelectOption::new("claude-sonnet-4-6", "Duplicate"),
+            ],
+        )
+        .category(acp::SessionConfigOptionCategory::Model);
+        let other = acp::SessionConfigOption::select(
+            "permission-mode",
+            "Permission mode",
+            "default",
+            vec![acp::SessionConfigSelectOption::new("default", "Default")],
         );
+
         assert_eq!(
-            local_agent_model_id("codex cli", "direct/profile"),
-            "codex-cli-direct-profile-local-api"
+            models_from_acp_config_options(&[other, config]),
+            vec![
+                LocalAgentModel::new("claude-sonnet-4-6", "Claude Sonnet"),
+                LocalAgentModel::new("claude-opus-4-5", "Claude Opus"),
+            ]
         );
     }
 
