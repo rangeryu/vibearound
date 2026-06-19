@@ -203,10 +203,15 @@ export function LocalApiWorkbench({
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-4">
         <div className="flex min-w-0 items-center gap-2">
           <Server className="h-4 w-4 text-primary" />
-          <span className="font-semibold">{t("Local API service")}</span>
+          <span className="shrink-0 font-semibold">
+            {t("Local API service")}
+          </span>
+          <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+            {t("Expose local agents as OpenAI / Anthropic compatible APIs.")}
+          </span>
           <Badge
             className={cn(
-              "h-5 rounded-md px-2 text-[11px]",
+              "h-5 shrink-0 rounded-md px-2 text-[11px]",
               serviceEnabled
                 ? "bg-primary/10 text-primary"
                 : "bg-muted text-muted-foreground",

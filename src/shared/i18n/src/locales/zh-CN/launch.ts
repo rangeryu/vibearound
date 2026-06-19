@@ -56,6 +56,8 @@ export const zhCNLaunch: Record<string, string> = {
   Default: "默认",
   "Local API": "本地 API",
   "Local API service": "本地 API 服务",
+  "Expose local agents as OpenAI / Anthropic compatible APIs.":
+    "将本地 Agent 暴露为 OpenAI / Anthropic 兼容接口。",
   Running: "运行中",
   Stopped: "已关闭",
   Enabled: "已开启",
