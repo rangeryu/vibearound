@@ -92,9 +92,13 @@ function modelIdSuggestions(
   value: string,
   maxSuggestions: number,
 ): ModelIdComboboxOption[] {
-  const query = value.trim().toLowerCase();
+  const trimmed = value.trim();
+  const query = trimmed.toLowerCase();
+  const exactValue = options.some((option) => option.id === trimmed);
   const filtered = query
-    ? options.filter((option) => modelIdOptionMatches(option, query))
+    ? exactValue
+      ? options
+      : options.filter((option) => modelIdOptionMatches(option, query))
     : options;
   return filtered.slice(0, maxSuggestions);
 }

@@ -115,6 +115,7 @@ fn local_agent_models_response(
                 "object": "model",
                 "type": "model",
                 "display_name": model.display_name,
+                "description": model.display_name,
                 "owned_by": "vibearound-local-agent",
                 "created": 0,
                 "created_at": null,

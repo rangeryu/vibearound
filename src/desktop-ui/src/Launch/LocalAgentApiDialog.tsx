@@ -28,7 +28,6 @@ import {
   LOCAL_API_PROTOCOLS,
   extractLocalAgentModels,
   extractLocalAgentResponseText,
-  formatLocalAgentModelLabel,
   localAgentBasePath,
   localAgentErrorText,
   localAgentProtocolSpec,
@@ -70,10 +69,6 @@ export function LocalAgentApiDialog({
   const selectedProtocol = localAgentProtocolSpec(protocol);
   const endpointUrl = selectedProtocol ? `${baseUrl}/${selectedProtocol.endpoint}` : baseUrl;
   const modelsUrl = `${baseUrl}/models`;
-  const modelListValue =
-    modelOptions.length > 0
-      ? modelOptions.map(formatLocalAgentModelLabel).join(", ")
-      : model || t("Loading…");
 
   useEffect(() => {
     if (!target) return;
@@ -212,12 +207,12 @@ export function LocalAgentApiDialog({
                 copied={copiedKey === "models"}
                 onCopy={() => copyValue("models", modelsUrl)}
               />
-              <ManualField
+              <ModelListField
                 label={t("Models")}
-                value={modelListValue}
-                copied={copiedKey === "model-list"}
-                onCopy={() => copyValue("model-list", modelListValue)}
-                tone="primary"
+                models={modelOptions}
+                fallback={model || t("Loading…")}
+                copiedKey={copiedKey}
+                onCopy={(modelId) => copyValue(`model:${modelId}`, modelId)}
               />
             </div>
 
@@ -233,9 +228,12 @@ export function LocalAgentApiDialog({
                   <span>{t("Model")}</span>
                   <ModelIdCombobox
                     value={model}
-                    options={modelOptions}
+                    options={modelOptions.map((option) => ({
+                      id: option.id,
+                      label: option.description,
+                    }))}
                     onValueChange={setModel}
-                    inputClassName="h-8 w-full font-mono text-xs"
+                    inputClassName="h-7 w-full font-mono text-xs"
                   />
                 </div>
                 <label className="grid gap-1 text-[11px] text-muted-foreground">
@@ -243,7 +241,7 @@ export function LocalAgentApiDialog({
                   <Input
                     value={target.workspacePath}
                     readOnly
-                    className="h-8 font-mono text-xs"
+                    className="h-7 font-mono text-xs"
                   />
                 </label>
               </div>
@@ -252,7 +250,7 @@ export function LocalAgentApiDialog({
                 <textarea
                   value={prompt}
                   onChange={(event) => setPrompt(event.currentTarget.value)}
-                  className="min-h-[76px] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="min-h-[64px] w-full resize-y rounded-md border border-input bg-transparent px-2 py-1.5 text-xs text-foreground shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
               </label>
               <div className="flex items-center justify-end gap-3">
@@ -340,6 +338,75 @@ function ManualField({
           </span>
         )}
       </button>
+    </div>
+  );
+}
+
+function ModelListField({
+  label,
+  models,
+  fallback,
+  copiedKey,
+  onCopy,
+}: {
+  label: string;
+  models: LocalAgentModel[];
+  fallback: string;
+  copiedKey: string | null;
+  onCopy: (modelId: string) => void;
+}) {
+  const { t } = useI18n();
+  if (models.length === 0) {
+    return (
+      <div className="grid grid-cols-[78px_minmax(0,1fr)] items-start gap-2">
+        <div className="min-w-0 text-[11px] leading-5 text-muted-foreground">
+          <span className="truncate">{label}</span>
+        </div>
+        <div className="flex h-5 min-w-0 items-center rounded bg-primary/5 px-1.5 font-mono text-[11px] leading-5 text-primary">
+          <span className="min-w-0 truncate">{fallback}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-start gap-2">
+      <div className="min-w-0 text-[11px] leading-5 text-muted-foreground">
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="grid min-w-0 gap-1">
+        {models.map((model) => {
+          const description =
+            model.description && model.description !== model.id
+              ? model.description
+              : model.displayName !== model.id
+                ? model.displayName
+                : "";
+          return (
+            <button
+              key={model.id}
+              type="button"
+              className="grid min-h-5 w-full min-w-0 grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto] items-center gap-2 rounded bg-primary/5 px-1.5 text-left text-[11px] leading-5 transition-colors hover:bg-primary/10"
+              aria-label={t("Copy")}
+              title={t("Copy")}
+              onClick={() => onCopy(model.id)}
+            >
+              <span className="min-w-0 truncate font-mono text-primary">
+                {model.id}
+              </span>
+              {description && (
+                <span className="min-w-0 truncate text-muted-foreground">
+                  {description}
+                </span>
+              )}
+              {!description && <span />}
+              {copiedKey === `model:${model.id}` && (
+                <span className="shrink-0 text-primary">{t("Copied")}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

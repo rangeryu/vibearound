@@ -18,6 +18,7 @@ export interface LocalApiProtocolSpec {
 export interface LocalAgentModel {
   id: string;
   displayName: string;
+  description: string;
 }
 
 export const LOCAL_API_PROTOCOLS: LocalApiProtocolSpec[] = [
@@ -89,9 +90,11 @@ export function extractLocalAgentModels(payload: unknown): LocalAgentModel[] {
     const id = stringValue(record.id).trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
+    const displayName = stringValue(record.display_name).trim() || id;
     models.push({
       id,
-      displayName: stringValue(record.display_name).trim() || id,
+      displayName,
+      description: stringValue(record.description).trim() || displayName,
     });
   }
   return models;

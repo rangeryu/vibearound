@@ -55,15 +55,15 @@ test("local agent models come from the models endpoint payload", () => {
     data: [
       { id: "claude", display_name: "Claude Code" },
       { id: "claude", display_name: "Duplicate" },
-      { id: "codex", display_name: "Codex CLI" },
+      { id: "codex", display_name: "Codex CLI", description: "Codex model" },
       { id: "" },
       { object: "model" },
     ],
   };
 
   expect(extractLocalAgentModels(payload)).toEqual([
-    { id: "claude", displayName: "Claude Code" },
-    { id: "codex", displayName: "Codex CLI" },
+    { id: "claude", displayName: "Claude Code", description: "Claude Code" },
+    { id: "codex", displayName: "Codex CLI", description: "Codex model" },
   ]);
   expect(extractLocalAgentModelIds(payload)).toEqual(["claude", "codex"]);
   expect(extractLocalAgentModelIds({ data: null })).toEqual([]);
@@ -71,11 +71,16 @@ test("local agent models come from the models endpoint payload", () => {
     formatLocalAgentModelLabel({
       id: "opus",
       displayName: "Opus",
+      description: "Claude Opus",
     }),
   ).toBe("opus");
-  expect(formatLocalAgentModelLabel({ id: "codex", displayName: "codex" })).toBe(
-    "codex",
-  );
+  expect(
+    formatLocalAgentModelLabel({
+      id: "codex",
+      displayName: "codex",
+      description: "codex",
+    }),
+  ).toBe("codex");
 });
 
 test("local agent response text extraction supports all protocol shapes", () => {
