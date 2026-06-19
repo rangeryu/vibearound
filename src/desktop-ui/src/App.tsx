@@ -5,6 +5,7 @@ import {
   Settings,
   Eye,
   Rocket,
+  Server,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 import { useChannelsState } from "./hooks/useChannelsState";
@@ -22,6 +23,7 @@ import { Splash } from "./Splash";
 import Onboarding from "./Onboarding";
 import { Previews } from "./Previews";
 import { Launch } from "./Launch";
+import { LocalApiWorkbench } from "./LocalApiWorkbench";
 import { StatusDashboard } from "./StatusDashboard";
 import { SettingsDialog } from "./Settings";
 import {
@@ -70,7 +72,7 @@ function App() {
   return <Dashboard />;
 }
 
-type DashboardPage = "launch" | "status" | "previews";
+type DashboardPage = "launch" | "status" | "previews" | "localApi";
 
 function Dashboard() {
   const { t } = useI18n();
@@ -260,6 +262,12 @@ function Dashboard() {
               >
                 <Eye /> {t("Previews")}
               </TabsTrigger>
+              <TabsTrigger
+                value="localApi"
+                className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Server /> {t("Local API")}
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -303,6 +311,10 @@ function Dashboard() {
       {effectivePage === "previews" ? (
         <div className="flex-1 overflow-y-auto">
           <Previews />
+        </div>
+      ) : effectivePage === "localApi" ? (
+        <div className="flex-1 min-h-0">
+          <LocalApiWorkbench refreshToken={launchRefreshToken} />
         </div>
       ) : effectivePage === "launch" ? (
         <div className="flex-1 min-h-0">
