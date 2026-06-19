@@ -272,7 +272,6 @@ fn is_model_config_option(option: &acp::SessionConfigOption) -> bool {
         option.category,
         Some(acp::SessionConfigOptionCategory::Model)
     ) || option.id.to_string().eq_ignore_ascii_case("model")
-        || option.name.eq_ignore_ascii_case("model")
 }
 
 struct ApiAgentClientHandler {

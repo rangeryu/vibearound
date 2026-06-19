@@ -53,6 +53,7 @@ import { ModelIdCombobox } from "./ModelIdCombobox";
 
 const DEFAULT_TEST_PROMPT = "Reply with exactly: VA_LOCAL_API_OK";
 const MAX_LOCAL_API_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_LOCAL_API_ATTACHMENT_TOTAL_BYTES = 40 * 1024 * 1024;
 
 interface LocalAgentApiDialogProps {
   target: LocalAgentApiTarget | null;
@@ -78,6 +79,7 @@ export function LocalAgentApiDialog({
   const [prompt, setPrompt] = useState(DEFAULT_TEST_PROMPT);
   const [model, setModel] = useState("");
   const [modelLoading, setModelLoading] = useState(false);
+  const [modelLoadError, setModelLoadError] = useState(false);
   const [modelOptions, setModelOptions] = useState<LocalAgentModel[]>([]);
   const [attachments, setAttachments] = useState<LocalAgentTestAttachment[]>(
     [],
@@ -109,6 +111,7 @@ export function LocalAgentApiDialog({
     setPrompt(DEFAULT_TEST_PROMPT);
     setModel("");
     setModelLoading(true);
+    setModelLoadError(false);
     setModelOptions([]);
     setAttachments([]);
     setAttachmentLoading(false);
@@ -125,17 +128,22 @@ export function LocalAgentApiDialog({
         if (cancelled) return;
         if (!response.ok) {
           setModel(target.agentId);
+          setModelOptions([]);
+          setModelLoadError(true);
           return;
         }
         const payload = await response.json().catch(() => null);
         if (cancelled) return;
         const models = extractLocalAgentModels(payload);
         setModelOptions(models);
+        setModelLoadError(models.length === 0);
         setModel(models[0]?.id ?? target.agentId);
       })
       .catch((error) => {
         if (cancelled) return;
         setModel(target.agentId);
+        setModelOptions([]);
+        setModelLoadError(true);
         console.warn("[desktop-ui] local agent models fetch failed:", error);
       })
       .finally(() => {
@@ -166,12 +174,22 @@ export function LocalAgentApiDialog({
     const files = Array.from(filesLike);
     if (files.length === 0) return;
 
-    const tooLarge = files.filter(
-      (file) => file.size > MAX_LOCAL_API_ATTACHMENT_BYTES,
-    );
-    const readable = files.filter(
-      (file) => file.size <= MAX_LOCAL_API_ATTACHMENT_BYTES,
-    );
+    const tooLarge: File[] = [];
+    const totalOverflow: File[] = [];
+    const readable: File[] = [];
+    let nextTotal = attachments.reduce((sum, attachment) => sum + attachment.size, 0);
+    for (const file of files) {
+      if (file.size > MAX_LOCAL_API_ATTACHMENT_BYTES) {
+        tooLarge.push(file);
+        continue;
+      }
+      if (nextTotal + file.size > MAX_LOCAL_API_ATTACHMENT_TOTAL_BYTES) {
+        totalOverflow.push(file);
+        continue;
+      }
+      readable.push(file);
+      nextTotal += file.size;
+    }
 
     setAttachmentLoading(readable.length > 0);
     setAttachmentError(null);
@@ -199,6 +217,15 @@ export function LocalAgentApiDialog({
           t("{{count}} files exceed {{limit}} MB.", {
             count: tooLarge.length,
             limit: Math.round(MAX_LOCAL_API_ATTACHMENT_BYTES / 1024 / 1024),
+          }),
+        );
+      }
+      if (totalOverflow.length > 0) {
+        messages.push(
+          t("Total attachments exceed {{limit}} MB.", {
+            limit: Math.round(
+              MAX_LOCAL_API_ATTACHMENT_TOTAL_BYTES / 1024 / 1024,
+            ),
           }),
         );
       }
@@ -367,7 +394,13 @@ export function LocalAgentApiDialog({
               <ModelListField
                 label={t("Models")}
                 models={modelOptions}
-                fallback={modelLoading ? t("Loading…") : model || target.agentId}
+                fallback={
+                  modelLoading
+                    ? t("Loading…")
+                    : modelLoadError
+                      ? t("Failed to fetch model list")
+                      : model || target.agentId
+                }
                 copiedKey={copiedKey}
                 onCopy={(modelId) => copyValue(`model:${modelId}`, modelId)}
               />

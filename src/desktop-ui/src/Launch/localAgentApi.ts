@@ -17,8 +17,6 @@ export interface LocalApiProtocolSpec {
 
 export interface LocalAgentModel {
   id: string;
-  displayName: string;
-  description: string;
 }
 
 export interface LocalAgentTestAttachment {
@@ -240,22 +238,9 @@ export function extractLocalAgentModels(payload: unknown): LocalAgentModel[] {
     const id = stringValue(record.id).trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    const displayName = stringValue(record.display_name).trim() || id;
-    models.push({
-      id,
-      displayName,
-      description: stringValue(record.description).trim() || displayName,
-    });
+    models.push({ id });
   }
   return models;
-}
-
-export function extractLocalAgentModelIds(payload: unknown): string[] {
-  return extractLocalAgentModels(payload).map((model) => model.id);
-}
-
-export function formatLocalAgentModelLabel(model: LocalAgentModel): string {
-  return model.id;
 }
 
 export function parseLocalAgentJson(text: string): unknown {
@@ -295,15 +280,6 @@ export function extractLocalAgentResponseText(
 export function localAgentErrorText(payload: unknown, fallback: string): string {
   const error = asRecord(asRecord(payload).error);
   return stringValue(error.message) || fallback;
-}
-
-export function maskLocalApiAuthHeader(value: string): string {
-  const prefix = "Authorization: Bearer ";
-  if (!value.startsWith(prefix)) return value;
-  const token = value.slice(prefix.length);
-  if (!token || token === "<token>") return value;
-  if (token.length <= 18) return `${prefix}${token}`;
-  return `${prefix}${token.slice(0, 8)}...${token.slice(-6)}`;
 }
 
 function asArray(value: unknown): unknown[] {

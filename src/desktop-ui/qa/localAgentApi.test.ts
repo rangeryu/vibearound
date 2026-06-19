@@ -3,13 +3,10 @@ import { loopbackBaseUrl } from "@va/client";
 
 import {
   extractLocalAgentModels,
-  extractLocalAgentModelIds,
   extractLocalAgentResponseText,
-  formatLocalAgentModelLabel,
   localAgentBasePath,
   localAgentErrorText,
   localAgentTestPayload,
-  maskLocalApiAuthHeader,
   parseLocalAgentJson,
   type LocalAgentApiTarget,
 } from "../src/Launch/localAgentApi";
@@ -129,34 +126,19 @@ test("local agent test payloads include images and files for each protocol", () 
 test("local agent models come from the models endpoint payload", () => {
   const payload = {
     data: [
-      { id: "claude", display_name: "Claude Code" },
-      { id: "claude", display_name: "Duplicate" },
-      { id: "codex", display_name: "Codex CLI", description: "Codex model" },
+      { id: "claude" },
+      { id: "claude" },
+      { id: "codex" },
       { id: "" },
       { object: "model" },
     ],
   };
 
   expect(extractLocalAgentModels(payload)).toEqual([
-    { id: "claude", displayName: "Claude Code", description: "Claude Code" },
-    { id: "codex", displayName: "Codex CLI", description: "Codex model" },
+    { id: "claude" },
+    { id: "codex" },
   ]);
-  expect(extractLocalAgentModelIds(payload)).toEqual(["claude", "codex"]);
-  expect(extractLocalAgentModelIds({ data: null })).toEqual([]);
-  expect(
-    formatLocalAgentModelLabel({
-      id: "opus",
-      displayName: "Opus",
-      description: "Claude Opus",
-    }),
-  ).toBe("opus");
-  expect(
-    formatLocalAgentModelLabel({
-      id: "codex",
-      displayName: "codex",
-      description: "codex",
-    }),
-  ).toBe("codex");
+  expect(extractLocalAgentModels({ data: null })).toEqual([]);
 });
 
 test("local agent response text extraction supports all protocol shapes", () => {
@@ -190,14 +172,11 @@ test("local agent response text extraction supports all protocol shapes", () => 
   ).toBe("anthropic ok");
 });
 
-test("local agent json/error/auth helpers are conservative", () => {
+test("local agent json/error helpers are conservative", () => {
   expect(parseLocalAgentJson("{\"ok\":true}")).toEqual({ ok: true });
   expect(parseLocalAgentJson("not json")).toBeNull();
   expect(localAgentErrorText({ error: { message: "bad request" } }, "fallback")).toBe(
     "bad request",
   );
   expect(localAgentErrorText({}, "fallback")).toBe("fallback");
-  expect(maskLocalApiAuthHeader("Authorization: Bearer abcdefghijklmnopqrstuvwxyz")).toBe(
-    "Authorization: Bearer abcdefgh...uvwxyz",
-  );
 });
