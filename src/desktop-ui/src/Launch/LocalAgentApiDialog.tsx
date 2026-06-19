@@ -407,7 +407,7 @@ export function LocalAgentApiDialog({
               <div
                 role="group"
                 className={cn(
-                  "relative flex min-h-[104px] flex-col rounded-md border border-input bg-background/70 p-2 shadow-xs transition-[border-color,box-shadow,background-color] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/25",
+                  "relative flex min-h-[96px] flex-col rounded-md border border-input bg-background/70 p-2 shadow-xs transition-[border-color,box-shadow,background-color] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/25",
                   showDropTarget &&
                     "border-primary/70 bg-primary/5 ring-2 ring-primary/25",
                 )}
@@ -481,7 +481,7 @@ export function LocalAgentApiDialog({
                   onCompositionEnd={() => {
                     isComposingRef.current = false;
                   }}
-                  className="min-h-[64px] w-full flex-1 resize-none border-0 bg-transparent px-1 py-1 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
+                  className="min-h-[48px] w-full flex-1 resize-none border-0 bg-transparent px-1 py-1 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
                 />
                 <div className="flex shrink-0 items-center justify-between gap-2 pt-1">
                   <div className="flex min-w-0 items-center gap-1.5">
