@@ -43,6 +43,10 @@ async function getToken(): Promise<string | null> {
   return fetchToken();
 }
 
+export async function getAuthToken(): Promise<string | null> {
+  return getToken();
+}
+
 /**
  * Authenticated fetch against the daemon. Transparently re-fetches the
  * token on a 401 (daemon restart invalidates the previous token).

@@ -63,6 +63,10 @@ import {
 import { AgentLaunchSettingsDialog } from "./AgentLaunchSettingsDialog";
 import { buildProfileCopyDraft } from "./profileClone";
 import {
+  LocalAgentApiDialog,
+  type LocalAgentApiTarget,
+} from "./LocalAgentApiDialog";
+import {
   agentLabel,
   connectionAgentId,
   agentProfileId,
@@ -156,6 +160,8 @@ export function AgentLaunchBuilder({
   const [sessionChoice, setSessionChoice] = useState<SessionChoice>(null);
   const [settingsAgent, setSettingsAgent] = useState<AgentSummary | null>(null);
   const [pathAgent, setPathAgent] = useState<AgentSummary | null>(null);
+  const [localApiTarget, setLocalApiTarget] =
+    useState<LocalAgentApiTarget | null>(null);
   const [agentExecutable, setAgentExecutable] =
     useState<AgentExecutableResolution | null>(null);
   const [agentExecutableLoading, setAgentExecutableLoading] = useState(false);
@@ -844,6 +850,30 @@ export function AgentLaunchBuilder({
     }
   }
 
+  function openDirectLocalApi() {
+    if (!selectedAgent) return;
+    setOpenSelector(null);
+    setLocalApiTarget({
+      agentId,
+      agentLabel: selectedAgent.display_name,
+      profileId: "direct",
+      profileLabel: t("Direct"),
+      workspacePath: selectedWorkspace.path,
+    });
+  }
+
+  function openProfileLocalApi(profile: ProfileSummary) {
+    if (!selectedAgent) return;
+    setOpenSelector(null);
+    setLocalApiTarget({
+      agentId,
+      agentLabel: selectedAgent.display_name,
+      profileId: profile.id,
+      profileLabel: profile.label,
+      workspacePath: selectedWorkspace.path,
+    });
+  }
+
   if (!viewPrefs || agents.length === 0 || !selectedAgent) {
     if (prefs?.enabledAgents.length === 0) {
       return (
@@ -1180,6 +1210,8 @@ export function AgentLaunchBuilder({
                   void chooseProfileApiType(profile, apiType)
                 }
                 onMakeDefault={makeDefault}
+                onOpenDirectLocalApi={openDirectLocalApi}
+                onOpenProfileLocalApi={openProfileLocalApi}
                 onEditProfile={onEditProfile}
                 onDuplicateProfile={(profile) => void duplicateProfile(profile)}
                 onConnectionSettings={onConnectionSettings}
@@ -1242,6 +1274,10 @@ export function AgentLaunchBuilder({
             : Promise.resolve()
         }
         onUpdateAgent={updateAgentExecutable}
+      />
+      <LocalAgentApiDialog
+        target={localApiTarget}
+        onClose={() => setLocalApiTarget(null)}
       />
     </TooltipProvider>
   );

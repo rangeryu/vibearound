@@ -154,6 +154,8 @@ export function ProfilePanel({
   onSelect,
   onSelectApiType,
   onMakeDefault,
+  onOpenDirectLocalApi,
+  onOpenProfileLocalApi,
   onEditProfile,
   onDuplicateProfile,
   onConnectionSettings,
@@ -169,6 +171,8 @@ export function ProfilePanel({
   onSelect: (choice: ProfileChoice) => void;
   onSelectApiType: (profile: ProfileSummary, apiType: string) => void;
   onMakeDefault: (choice: ProfileChoice) => Promise<void>;
+  onOpenDirectLocalApi: () => void;
+  onOpenProfileLocalApi: (profile: ProfileSummary) => void;
   onEditProfile: (profile: ProfileSummary) => void;
   onDuplicateProfile: (profile: ProfileSummary) => void;
   onConnectionSettings: (
@@ -251,6 +255,7 @@ export function ProfilePanel({
               isDefault={directIsGlobalDefault}
               disabled={busy}
               onMakeDefault={() => void onMakeDefault({ kind: "direct" })}
+              onLocalApi={onOpenDirectLocalApi}
             />
           </div>
         </SelectableItemCard>
@@ -389,6 +394,7 @@ export function ProfilePanel({
                               onConnectionSettings(profile, connectionId);
                             }
                           }}
+                          onLocalApi={onOpenProfileLocalApi}
                           onEditProfile={onEditProfile}
                           onDuplicateProfile={onDuplicateProfile}
                           onDeleteProfile={onDeleteProfile}

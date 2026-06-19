@@ -6,6 +6,7 @@ import {
   MoreVertical,
   Pencil,
   Plug,
+  Server,
   SlidersHorizontal,
   Star,
   Trash2,
@@ -43,6 +44,7 @@ interface Props {
   onEdit: () => void;
   onDelete: () => Promise<void>;
   onConnectionSettings: () => void;
+  onLocalApi?: () => void;
   defaultAgent?: string;
   defaultProfiles?: Record<string, string>;
   profileConnections?: ProfileConnections;
@@ -58,6 +60,7 @@ export function ProfileCard({
   onEdit,
   onDelete,
   onConnectionSettings,
+  onLocalApi,
   defaultAgent,
   defaultProfiles = {},
   profileConnections,
@@ -160,6 +163,11 @@ export function ProfileCard({
             <DropdownMenuItem className="text-xs" onSelect={onConnectionSettings}>
               <SlidersHorizontal className="w-3 h-3" /> {t("Connection settings")}
             </DropdownMenuItem>
+            {onLocalApi && (
+              <DropdownMenuItem className="text-xs" onSelect={onLocalApi}>
+                <Server className="w-3 h-3" /> {t("Local API")}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-xs" onSelect={onEdit}>
               <Pencil className="w-3 h-3" /> {t("Edit")}
