@@ -245,11 +245,11 @@ export function LocalAgentApiDialog({
                     value={model}
                     options={modelOptions.map((option) => ({
                       id: option.id,
-                      label: option.description,
                     }))}
                     onValueChange={setModel}
                     placeholder={modelLoading ? t("Loading…") : undefined}
                     inputClassName="h-7 w-full font-mono text-xs"
+                    dropdownClassName="max-h-36"
                     disabled={modelLoading}
                   />
                 </div>
@@ -392,36 +392,23 @@ function ModelListField({
         <span className="truncate">{label}</span>
       </div>
       <div className="flex min-h-5 min-w-0 flex-wrap items-center gap-1 rounded bg-primary/5 px-1.5 py-0.5">
-        {models.map((model) => {
-          const description =
-            model.description && model.description !== model.id
-              ? model.description
-              : model.displayName !== model.id
-                ? model.displayName
-                : "";
-          return (
-            <button
-              key={model.id}
-              type="button"
-              className="inline-flex h-4 max-w-[260px] shrink-0 items-center gap-1.5 rounded px-1 text-left text-[11px] leading-4 transition-colors hover:bg-primary/10"
-              aria-label={t("Copy")}
-              title={description ? `${model.id} ${description}` : model.id}
-              onClick={() => onCopy(model.id)}
-            >
-              <span className="min-w-0 truncate font-mono text-primary">
-                {model.id}
-              </span>
-              {description && (
-                <span className="min-w-0 truncate text-muted-foreground">
-                  {description}
-                </span>
-              )}
-              {copiedKey === `model:${model.id}` && (
-                <span className="shrink-0 text-primary">{t("Copied")}</span>
-              )}
-            </button>
-          );
-        })}
+        {models.map((model) => (
+          <button
+            key={model.id}
+            type="button"
+            className="inline-flex h-4 max-w-[220px] shrink-0 items-center rounded px-1 text-left text-[11px] leading-4 transition-colors hover:bg-primary/10"
+            aria-label={t("Copy")}
+            title={model.id}
+            onClick={() => onCopy(model.id)}
+          >
+            <span className="min-w-0 truncate font-mono text-primary">
+              {model.id}
+            </span>
+            {copiedKey === `model:${model.id}` && (
+              <span className="ml-1.5 shrink-0 text-primary">{t("Copied")}</span>
+            )}
+          </button>
+        ))}
       </div>
     </div>
   );

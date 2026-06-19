@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 export interface ModelIdComboboxOption {
   id: string;
@@ -16,6 +17,7 @@ interface ModelIdComboboxProps {
   onValueChange: (value: string) => void;
   placeholder?: string;
   inputClassName?: string;
+  dropdownClassName?: string;
   maxSuggestions?: number;
   disabled?: boolean;
 }
@@ -26,6 +28,7 @@ export function ModelIdCombobox({
   onValueChange,
   placeholder,
   inputClassName = "h-7 w-full font-mono text-xs",
+  dropdownClassName,
   maxSuggestions = 8,
   disabled = false,
 }: ModelIdComboboxProps) {
@@ -48,7 +51,10 @@ export function ModelIdCombobox({
       {open && suggestions.length > 0 && (
         <div
           role="listbox"
-          className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg"
+          className={cn(
+            "absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg",
+            dropdownClassName,
+          )}
         >
           {suggestions.map((candidate) => (
             <button
