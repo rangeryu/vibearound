@@ -50,6 +50,82 @@ test("local agent test payloads match supported wire protocols", () => {
   });
 });
 
+test("local agent test payloads include images and files for each protocol", () => {
+  const image = {
+    id: "image-1",
+    name: "chart.png",
+    mimeType: "image/png",
+    size: 12,
+    dataUrl: "data:image/png;base64,aW1hZ2U=",
+  };
+  const pdf = {
+    id: "file-1",
+    name: "notes.pdf",
+    mimeType: "application/pdf",
+    size: 34,
+    dataUrl: "data:application/pdf;base64,ZmlsZQ==",
+  };
+
+  expect(
+    localAgentTestPayload("openai-responses", "model-a", "hello", [
+      image,
+      pdf,
+    ]),
+  ).toEqual({
+    model: "model-a",
+    input: [
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: "hello" },
+          { type: "input_image", image_url: image.dataUrl },
+          {
+            type: "input_file",
+            filename: "notes.pdf",
+            file_data: pdf.dataUrl,
+          },
+        ],
+      },
+    ],
+    stream: false,
+  });
+  expect(localAgentTestPayload("openai-chat", "model-b", "hello", [image])).toEqual({
+    model: "model-b",
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hello" },
+          { type: "image_url", image_url: { url: image.dataUrl } },
+        ],
+      },
+    ],
+    stream: false,
+  });
+  expect(localAgentTestPayload("anthropic", "model-c", "hello", [pdf])).toEqual({
+    model: "model-c",
+    max_tokens: 1024,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hello" },
+          {
+            type: "document",
+            title: "notes.pdf",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: "ZmlsZQ==",
+            },
+          },
+        ],
+      },
+    ],
+    stream: false,
+  });
+});
+
 test("local agent models come from the models endpoint payload", () => {
   const payload = {
     data: [

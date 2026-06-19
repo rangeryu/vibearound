@@ -1,11 +1,20 @@
-import { useEffect, useState } from "react";
+import {
+  type ChangeEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertCircle,
   Check,
   Loader2,
   MessageSquare,
+  Paperclip,
   Send,
   Server,
+  X,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
@@ -24,6 +33,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { API_BASE } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   LOCAL_API_PROTOCOLS,
   extractLocalAgentModels,
@@ -35,9 +45,13 @@ import {
   parseLocalAgentJson,
   type LocalAgentModel,
   type LocalAgentApiTarget,
+  type LocalAgentTestAttachment,
   type LocalApiProtocol,
 } from "./localAgentApi";
 import { ModelIdCombobox } from "./ModelIdCombobox";
+
+const DEFAULT_TEST_PROMPT = "Reply with exactly: VA_LOCAL_API_OK";
+const MAX_LOCAL_API_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 interface LocalAgentApiDialogProps {
   target: LocalAgentApiTarget | null;
@@ -55,29 +69,50 @@ export function LocalAgentApiDialog({
   onClose,
 }: LocalAgentApiDialogProps) {
   const { t } = useI18n();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isComposingRef = useRef(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [protocol, setProtocol] =
     useState<LocalApiProtocol>("openai-responses");
-  const [prompt, setPrompt] = useState("Reply with exactly: VA_LOCAL_API_OK");
+  const [prompt, setPrompt] = useState(DEFAULT_TEST_PROMPT);
   const [model, setModel] = useState("");
   const [modelLoading, setModelLoading] = useState(false);
   const [modelOptions, setModelOptions] = useState<LocalAgentModel[]>([]);
+  const [attachments, setAttachments] = useState<LocalAgentTestAttachment[]>(
+    [],
+  );
+  const [attachmentLoading, setAttachmentLoading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [dragDepth, setDragDepth] = useState(0);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   const basePath = target ? localAgentBasePath(target) : "";
   const baseUrl = target ? `${API_BASE}${basePath}` : "";
   const selectedProtocol = localAgentProtocolSpec(protocol);
-  const endpointUrl = selectedProtocol ? `${baseUrl}/${selectedProtocol.endpoint}` : baseUrl;
+  const endpointUrl = selectedProtocol
+    ? `${baseUrl}/${selectedProtocol.endpoint}`
+    : baseUrl;
   const modelsUrl = `${baseUrl}/models`;
+  const showDropTarget = dragDepth > 0;
+  const canSendTest =
+    !testing &&
+    !modelLoading &&
+    !attachmentLoading &&
+    Boolean(model.trim()) &&
+    (Boolean(prompt.trim()) || attachments.length > 0);
 
   useEffect(() => {
     if (!target) return;
     setProtocol("openai-responses");
-    setPrompt("Reply with exactly: VA_LOCAL_API_OK");
+    setPrompt(DEFAULT_TEST_PROMPT);
     setModel("");
     setModelLoading(true);
     setModelOptions([]);
+    setAttachments([]);
+    setAttachmentLoading(false);
+    setAttachmentError(null);
+    setDragDepth(0);
     setTestResult(null);
     let cancelled = false;
     void fetch(`${API_BASE}${localAgentBasePath(target)}/models`, {
@@ -126,6 +161,110 @@ export function LocalAgentApiDialog({
     }
   }
 
+  async function appendFiles(filesLike: FileList | File[]) {
+    const files = Array.from(filesLike);
+    if (files.length === 0) return;
+
+    const tooLarge = files.filter(
+      (file) => file.size > MAX_LOCAL_API_ATTACHMENT_BYTES,
+    );
+    const readable = files.filter(
+      (file) => file.size <= MAX_LOCAL_API_ATTACHMENT_BYTES,
+    );
+
+    setAttachmentLoading(readable.length > 0);
+    setAttachmentError(null);
+    setTestResult(null);
+
+    try {
+      const settled = await Promise.allSettled(
+        readable.map(readLocalApiAttachment),
+      );
+      const nextAttachments = settled
+        .filter(
+          (
+            result,
+          ): result is PromiseFulfilledResult<LocalAgentTestAttachment> =>
+            result.status === "fulfilled",
+        )
+        .map((result) => result.value);
+      if (nextAttachments.length > 0) {
+        setAttachments((current) => [...current, ...nextAttachments]);
+      }
+      const failedCount = settled.length - nextAttachments.length;
+      const messages: string[] = [];
+      if (tooLarge.length > 0) {
+        messages.push(
+          t("{{count}} files exceed {{limit}} MB.", {
+            count: tooLarge.length,
+            limit: Math.round(MAX_LOCAL_API_ATTACHMENT_BYTES / 1024 / 1024),
+          }),
+        );
+      }
+      if (failedCount > 0) {
+        messages.push(
+          t("{{count}} files failed to read.", { count: failedCount }),
+        );
+      }
+      setAttachmentError(messages.join(" "));
+    } finally {
+      setAttachmentLoading(false);
+    }
+  }
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    if (event.currentTarget.files) {
+      void appendFiles(event.currentTarget.files);
+    }
+    event.currentTarget.value = "";
+  }
+
+  function handleDragEnter(event: DragEvent<HTMLDivElement>) {
+    if (!dragEventHasFiles(event)) return;
+    event.preventDefault();
+    setDragDepth((current) => current + 1);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (!dragEventHasFiles(event)) return;
+    event.preventDefault();
+    setDragDepth((current) => Math.max(0, current - 1));
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    if (!dragEventHasFiles(event)) return;
+    event.preventDefault();
+    setDragDepth(0);
+    void appendFiles(event.dataTransfer.files);
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((current) => current.filter((item) => item.id !== id));
+    setAttachmentError(null);
+    setTestResult(null);
+  }
+
+  function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !isComposingRef.current
+    ) {
+      event.preventDefault();
+      if (canSendTest) {
+        void runTest();
+      }
+    }
+  }
+
   async function runTest() {
     if (!target || !selectedProtocol) return;
     setTesting(true);
@@ -137,7 +276,9 @@ export function LocalAgentApiDialog({
           "content-type": "application/json",
           "x-vibearound-cwd": target.workspacePath,
         },
-        body: JSON.stringify(localAgentTestPayload(protocol, model, prompt)),
+        body: JSON.stringify(
+          localAgentTestPayload(protocol, model, prompt, attachments),
+        ),
       });
       const rawText = await response.text();
       const payload = parseLocalAgentJson(rawText);
@@ -178,7 +319,7 @@ export function LocalAgentApiDialog({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 [scrollbar-gutter:stable]">
-          <section className="grid gap-3 rounded-md border border-border p-3">
+          <section className="grid gap-3">
             <div className="flex flex-wrap items-center gap-3">
               <Tabs
                 value={protocol}
@@ -262,28 +403,121 @@ export function LocalAgentApiDialog({
                   />
                 </label>
               </div>
-              <label className="grid gap-1 text-[11px] text-muted-foreground">
-                <span>{t("Message")}</span>
+              <div
+                role="group"
+                className={cn(
+                  "relative flex min-h-[104px] flex-col rounded-md border border-input bg-background/70 shadow-xs transition-[border-color,box-shadow,background-color] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/25",
+                  showDropTarget &&
+                    "border-primary/70 bg-primary/5 ring-2 ring-primary/25",
+                )}
+                onDragEnter={handleDragEnter}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
+                {showDropTarget && (
+                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border border-primary/40 bg-background/85 backdrop-blur-sm">
+                    <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-medium text-primary shadow-sm">
+                      <Paperclip className="h-4 w-4" />
+                      {t("Drop files to attach")}
+                    </div>
+                  </div>
+                )}
                 <textarea
                   value={prompt}
-                  onChange={(event) => setPrompt(event.currentTarget.value)}
-                  className="min-h-[64px] w-full resize-y rounded-md border border-input bg-transparent px-2 py-1.5 text-xs text-foreground shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  aria-label={t("Message")}
+                  placeholder={t("Message")}
+                  onChange={(event) => {
+                    setPrompt(event.currentTarget.value);
+                    setTestResult(null);
+                  }}
+                  onKeyDown={handlePromptKeyDown}
+                  onCompositionStart={() => {
+                    isComposingRef.current = true;
+                  }}
+                  onCompositionEnd={() => {
+                    isComposingRef.current = false;
+                  }}
+                  className="min-h-[64px] w-full flex-1 resize-y border-0 bg-transparent px-2.5 py-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
                 />
-              </label>
-              <div className="flex items-center justify-end gap-3">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={testing || modelLoading || !prompt.trim() || !model.trim()}
-                  onClick={() => void runTest()}
-                >
-                  {testing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Send className="h-3.5 w-3.5" />
-                  )}
-                  {testing ? t("Testing…") : t("Send test")}
-                </Button>
+                {(attachments.length > 0 ||
+                  attachmentLoading ||
+                  attachmentError) && (
+                  <div className="space-y-1.5 border-t border-border/60 px-2 py-1.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      {attachments.map((attachment) => (
+                        <span
+                          key={attachment.id}
+                          className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground"
+                          title={attachment.name}
+                        >
+                          <Paperclip className="h-3 w-3 shrink-0" />
+                          <span className="min-w-0 truncate text-foreground">
+                            {attachment.name}
+                          </span>
+                          <span className="shrink-0 text-muted-foreground/70">
+                            {formatAttachmentSize(attachment.size)}
+                          </span>
+                          <button
+                            type="button"
+                            className="ml-0.5 rounded-sm text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            onClick={() => removeAttachment(attachment.id)}
+                            aria-label={t("Remove attachment")}
+                            title={t("Remove attachment")}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                      {attachmentLoading && (
+                        <span className="rounded-md border border-border/70 bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {t("Loading…")}
+                        </span>
+                      )}
+                    </div>
+                    {attachmentError && (
+                      <p className="text-[11px] text-destructive">
+                        {attachmentError}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="flex shrink-0 items-center justify-between gap-2 px-2 py-1.5">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                      disabled={testing || attachmentLoading}
+                      aria-label={t("Attach files")}
+                      title={t("Attach files")}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Paperclip className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!canSendTest}
+                    onClick={() => void runTest()}
+                  >
+                    {testing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    {testing ? t("Testing…") : t("Send test")}
+                  </Button>
+                </div>
               </div>
               {testResult && (
                 <div
@@ -412,4 +646,42 @@ function ModelListField({
       </div>
     </div>
   );
+}
+
+function dragEventHasFiles(event: DragEvent<HTMLElement>): boolean {
+  return Array.from(event.dataTransfer.types).includes("Files");
+}
+
+function readLocalApiAttachment(file: File): Promise<LocalAgentTestAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("File read failed"));
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("File read failed"));
+        return;
+      }
+      resolve({
+        id: createAttachmentId(file),
+        name: file.name || "attachment",
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        dataUrl: reader.result,
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function createAttachmentId(file: File): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${file.name}-${file.size}`;
+}
+
+function formatAttachmentSize(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
+  return `${(size / 1024 / 1024).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }

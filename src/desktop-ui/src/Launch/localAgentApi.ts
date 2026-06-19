@@ -21,6 +21,14 @@ export interface LocalAgentModel {
   description: string;
 }
 
+export interface LocalAgentTestAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+}
+
 export const LOCAL_API_PROTOCOLS: LocalApiProtocolSpec[] = [
   {
     id: "openai-responses",
@@ -61,7 +69,12 @@ export function localAgentTestPayload(
   protocol: LocalApiProtocol,
   model: string,
   prompt: string,
+  attachments: readonly LocalAgentTestAttachment[] = [],
 ) {
+  if (attachments.length > 0) {
+    return localAgentMultimodalTestPayload(protocol, model, prompt, attachments);
+  }
+
   switch (protocol) {
     case "openai-chat":
       return {
@@ -80,6 +93,143 @@ export function localAgentTestPayload(
     default:
       return { model, input: prompt, stream: false };
   }
+}
+
+function localAgentMultimodalTestPayload(
+  protocol: LocalApiProtocol,
+  model: string,
+  prompt: string,
+  attachments: readonly LocalAgentTestAttachment[],
+) {
+  switch (protocol) {
+    case "openai-chat":
+      return {
+        model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              ...openAiChatTextBlocks(prompt),
+              ...attachments.map(openAiChatAttachmentBlock),
+            ],
+          },
+        ],
+        stream: false,
+      };
+    case "anthropic":
+      return {
+        model,
+        max_tokens: 1024,
+        messages: [
+          {
+            role: "user",
+            content: [
+              ...anthropicTextBlocks(prompt),
+              ...attachments.map(anthropicAttachmentBlock),
+            ],
+          },
+        ],
+        stream: false,
+      };
+    case "openai-responses":
+    default:
+      return {
+        model,
+        input: [
+          {
+            role: "user",
+            content: [
+              ...openAiResponsesTextBlocks(prompt),
+              ...attachments.map(openAiResponsesAttachmentBlock),
+            ],
+          },
+        ],
+        stream: false,
+      };
+  }
+}
+
+function openAiResponsesTextBlocks(prompt: string): unknown[] {
+  return prompt.trim() ? [{ type: "input_text", text: prompt }] : [];
+}
+
+function openAiChatTextBlocks(prompt: string): unknown[] {
+  return prompt.trim() ? [{ type: "text", text: prompt }] : [];
+}
+
+function anthropicTextBlocks(prompt: string): unknown[] {
+  return prompt.trim() ? [{ type: "text", text: prompt }] : [];
+}
+
+function openAiResponsesAttachmentBlock(attachment: LocalAgentTestAttachment) {
+  if (isImageMime(attachment.mimeType)) {
+    return {
+      type: "input_image",
+      image_url: attachment.dataUrl,
+    };
+  }
+  return {
+    type: "input_file",
+    filename: attachment.name,
+    file_data: attachment.dataUrl,
+  };
+}
+
+function openAiChatAttachmentBlock(attachment: LocalAgentTestAttachment) {
+  if (isImageMime(attachment.mimeType)) {
+    return {
+      type: "image_url",
+      image_url: {
+        url: attachment.dataUrl,
+      },
+    };
+  }
+  return {
+    type: "input_file",
+    filename: attachment.name,
+    file_data: attachment.dataUrl,
+    media_type: attachment.mimeType || "application/octet-stream",
+  };
+}
+
+function anthropicAttachmentBlock(attachment: LocalAgentTestAttachment) {
+  const source = anthropicBase64Source(attachment);
+  if (isImageMime(attachment.mimeType)) {
+    return {
+      type: "image",
+      source,
+    };
+  }
+  return {
+    type: "document",
+    title: attachment.name,
+    source,
+  };
+}
+
+function anthropicBase64Source(attachment: LocalAgentTestAttachment) {
+  const parsed = splitBase64DataUrl(attachment.dataUrl);
+  return {
+    type: "base64",
+    media_type:
+      parsed?.mimeType || attachment.mimeType || "application/octet-stream",
+    data: parsed?.data || attachment.dataUrl,
+  };
+}
+
+function splitBase64DataUrl(
+  dataUrl: string,
+): { mimeType: string; data: string } | null {
+  const match = /^data:([^;,]+)?(?:;[^,]*)?;base64,(.*)$/i.exec(dataUrl);
+  if (!match) return null;
+  return {
+    mimeType: match[1] || "application/octet-stream",
+    data: match[2] || "",
+  };
+}
+
+function isImageMime(mimeType: string): boolean {
+  return mimeType.toLowerCase().startsWith("image/");
 }
 
 export function extractLocalAgentModels(payload: unknown): LocalAgentModel[] {
