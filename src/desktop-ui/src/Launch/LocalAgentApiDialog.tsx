@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
-  ChevronDown,
   Check,
   Loader2,
   MessageSquare,
@@ -39,6 +38,7 @@ import {
   type LocalAgentApiTarget,
   type LocalApiProtocol,
 } from "./localAgentApi";
+import { ModelIdCombobox } from "./ModelIdCombobox";
 
 interface LocalAgentApiDialogProps {
   target: LocalAgentApiTarget | null;
@@ -61,11 +61,9 @@ export function LocalAgentApiDialog({
     useState<LocalApiProtocol>("openai-responses");
   const [prompt, setPrompt] = useState("Reply with exactly: VA_LOCAL_API_OK");
   const [model, setModel] = useState("");
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [modelOptions, setModelOptions] = useState<LocalAgentModel[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const modelInputRef = useRef<HTMLInputElement>(null);
 
   const basePath = target ? localAgentBasePath(target) : "";
   const baseUrl = target ? `${API_BASE}${basePath}` : "";
@@ -82,7 +80,6 @@ export function LocalAgentApiDialog({
     setProtocol("openai-responses");
     setPrompt("Reply with exactly: VA_LOCAL_API_OK");
     setModel("");
-    setModelMenuOpen(false);
     setModelOptions([]);
     setTestResult(null);
     void fetch(`${API_BASE}${localAgentBasePath(target)}/models`, {
@@ -194,12 +191,12 @@ export function LocalAgentApiDialog({
               </Tabs>
             </div>
 
-            <div className="grid gap-2 rounded-md border border-border/70 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-sm font-semibold">
+            <div className="grid gap-1 rounded-md border border-border/70 p-2">
+              <div className="flex min-h-5 flex-wrap items-center gap-2">
+                <div className="text-xs font-semibold">
                   {t("Manual configuration")}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-[11px] text-muted-foreground">
                   {t("Click a value to copy.")}
                 </div>
               </div>
@@ -234,54 +231,12 @@ export function LocalAgentApiDialog({
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2">
                 <div className="grid gap-1 text-[11px] text-muted-foreground">
                   <span>{t("Model")}</span>
-                  <div className="relative">
-                    <Input
-                      ref={modelInputRef}
-                      value={model}
-                      onFocus={() => setModelMenuOpen(true)}
-                      onBlur={() => setModelMenuOpen(false)}
-                      onChange={(event) => setModel(event.currentTarget.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          setModelMenuOpen(false);
-                          event.currentTarget.blur();
-                        }
-                      }}
-                      className="h-8 pr-8 font-mono text-xs"
-                    />
-                    {modelOptions.length > 0 && (
-                      <button
-                        type="button"
-                        className="absolute inset-y-0 right-1 flex w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          modelInputRef.current?.focus();
-                          setModelMenuOpen((open) => !open);
-                        }}
-                        aria-label={t("Show models")}
-                      >
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    {modelMenuOpen && modelOptions.length > 0 && (
-                      <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-36 overflow-auto rounded-md border border-border bg-popover p-1 shadow-md">
-                        {modelOptions.map((modelOption) => (
-                          <button
-                            key={modelOption.id}
-                            type="button"
-                            className="flex h-7 w-full items-center rounded px-2 text-left font-mono text-xs text-popover-foreground hover:bg-muted"
-                            onMouseDown={(event) => {
-                              event.preventDefault();
-                              setModel(modelOption.id);
-                              setModelMenuOpen(false);
-                            }}
-                          >
-                            {modelOption.id}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <ModelIdCombobox
+                    value={model}
+                    options={modelOptions}
+                    onValueChange={setModel}
+                    inputClassName="h-8 w-full font-mono text-xs"
+                  />
                 </div>
                 <label className="grid gap-1 text-[11px] text-muted-foreground">
                   <span>{t("Workspace")}</span>
@@ -300,10 +255,7 @@ export function LocalAgentApiDialog({
                   className="min-h-[76px] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
               </label>
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 text-[11px] text-muted-foreground">
-                  {t("Sessionless request · a fresh ACP turn is created for each test.")}
-                </div>
+              <div className="flex items-center justify-end gap-3">
                 <Button
                   type="button"
                   size="sm"
@@ -366,17 +318,16 @@ function ManualField({
 }) {
   const { t } = useI18n();
   return (
-    <div className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-3">
-      <div className="min-w-0 text-xs text-muted-foreground">
+    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+      <div className="min-w-0 text-[11px] leading-5 text-muted-foreground">
         <span className="truncate">{label}</span>
       </div>
-      <Button
+      <button
         type="button"
-        variant="ghost"
-        className={`h-7 w-full min-w-0 justify-start rounded-md px-2 font-mono text-xs ${
+        className={`flex h-5 w-full min-w-0 items-center rounded px-1.5 text-left font-mono text-[11px] leading-5 transition-colors ${
           tone === "primary"
-            ? "text-primary hover:bg-muted hover:text-primary"
-            : "hover:bg-muted"
+            ? "bg-primary/5 text-primary hover:bg-primary/10"
+            : "bg-muted/35 text-foreground hover:bg-muted/60"
         }`}
         aria-label={t("Copy")}
         title={t("Copy")}
@@ -388,7 +339,7 @@ function ManualField({
             {t("Copied")}
           </span>
         )}
-      </Button>
+      </button>
     </div>
   );
 }
