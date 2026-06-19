@@ -76,11 +76,8 @@ export const zhCNLaunch: Record<string, string> = {
   "Manual configuration": "手动配置",
   "Models": "模型列表",
   "Models API": "模型接口",
-  "Model list loads in the test panel": "模型列表会在测试区加载",
   "Failed to fetch model list": "未能获取模型列表",
   "Test message": "测试消息",
-  "Test composer will use this selected route.":
-    "测试输入框会使用当前选中的路径。",
   Message: "消息",
   "Send test": "发送测试",
   "Testing…": "测试中…",
