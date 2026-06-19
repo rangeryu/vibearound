@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, Play, Search, Server, Square } from "lucide-react";
+import {
+  AlertCircle,
+  Copy,
+  Loader2,
+  Play,
+  Search,
+  Server,
+  Square,
+} from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DAEMON_PORT } from "@/lib/api";
+import { API_BASE, DAEMON_PORT } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   getLauncherPreferences,
@@ -41,6 +49,11 @@ interface LocalApiRoute {
   target: LocalAgentApiTarget;
 }
 
+type RouteProbeState =
+  | { status: "loading" }
+  | { status: "ok"; latencyMs: number; modelCount: number }
+  | { status: "error"; latencyMs: number; error: string };
+
 export function LocalApiWorkbench({
   refreshToken = 0,
 }: {
@@ -56,6 +69,9 @@ export function LocalApiWorkbench({
   const [routeId, setRouteId] = useState("");
   const [query, setQuery] = useState("");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [routeProbes, setRouteProbes] = useState<
+    Record<string, RouteProbeState>
+  >({});
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -169,6 +185,93 @@ export function LocalApiWorkbench({
     routes.find((route) => route.id === routeId) ?? routes[0] ?? null;
   const enabledCount = routes.filter((route) => route.enabled).length;
   const disabledCount = Math.max(0, routes.length - enabledCount);
+  const probeValues = Object.values(routeProbes);
+  const checkedCount = probeValues.filter(
+    (probe) => probe.status === "ok" || probe.status === "error",
+  ).length;
+  const probeErrorCount = probeValues.filter(
+    (probe) => probe.status === "error",
+  ).length;
+  const routeProbeKey = routes
+    .map(
+      (route) =>
+        `${route.id}:${route.enabled ? "1" : "0"}:${route.workspacePath}`,
+    )
+    .join("|");
+
+  useEffect(() => {
+    const enabledRoutes = routes.filter((route) => route.enabled);
+    if (enabledRoutes.length === 0) {
+      setRouteProbes({});
+      return;
+    }
+
+    const controller = new AbortController();
+    const activeIds = new Set(enabledRoutes.map((route) => route.id));
+    setRouteProbes((current) => {
+      const next: Record<string, RouteProbeState> = {};
+      for (const route of enabledRoutes) {
+        next[route.id] = current[route.id] ?? { status: "loading" };
+      }
+      return next;
+    });
+
+    for (const route of enabledRoutes) {
+      const startedAt = performance.now();
+      setRouteProbes((current) => ({
+        ...current,
+        [route.id]: { status: "loading" },
+      }));
+      void fetch(`${API_BASE}${localAgentBasePath(route.target)}/models`, {
+        headers: {
+          "x-vibearound-cwd": route.workspacePath,
+        },
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const latencyMs = Math.max(
+            0,
+            Math.round(performance.now() - startedAt),
+          );
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const payload = await response.json().catch(() => null);
+          const data =
+            payload && typeof payload === "object"
+              ? (payload as { data?: unknown }).data
+              : null;
+          const modelCount = Array.isArray(data) ? data.length : 0;
+          setRouteProbes((current) => {
+            if (!activeIds.has(route.id)) return current;
+            return {
+              ...current,
+              [route.id]: { status: "ok", latencyMs, modelCount },
+            };
+          });
+        })
+        .catch((err) => {
+          if (controller.signal.aborted) return;
+          const latencyMs = Math.max(
+            0,
+            Math.round(performance.now() - startedAt),
+          );
+          setRouteProbes((current) => {
+            if (!activeIds.has(route.id)) return current;
+            return {
+              ...current,
+              [route.id]: {
+                status: "error",
+                latencyMs,
+                error: err instanceof Error ? err.message : String(err),
+              },
+            };
+          });
+        });
+    }
+
+    return () => controller.abort();
+  }, [routeProbeKey]);
 
   async function copyValue(key: string, value: string) {
     if (!value) return;
@@ -243,7 +346,28 @@ export function LocalApiWorkbench({
             {t("Disabled")}{" "}
             <span className="font-mono text-foreground">{disabledCount}</span>
           </span>
-          <Button type="button" variant="outline" size="xs">
+          <span>
+            {t("Checked")}{" "}
+            <span className="font-mono text-foreground">{checkedCount}</span>
+          </span>
+          <span>
+            {t("Errors")}{" "}
+            <span
+              className={cn(
+                "font-mono",
+                probeErrorCount > 0 ? "text-destructive" : "text-foreground",
+              )}
+            >
+              {probeErrorCount}
+            </span>
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            disabled
+            title={t("Service stop is not available yet")}
+          >
             <Square className="h-3 w-3 text-destructive" />
             {t("Stop service")}
           </Button>
@@ -309,12 +433,14 @@ export function LocalApiWorkbench({
             <RouteSection
               title={t("Enabled routes")}
               routes={routes.filter((route) => route.enabled)}
+              probes={routeProbes}
               selectedRouteId={selectedRoute?.id ?? ""}
               onSelect={setRouteId}
             />
             <RouteSection
               title={t("Disabled routes")}
               routes={routes.filter((route) => !route.enabled)}
+              probes={routeProbes}
               selectedRouteId={selectedRoute?.id ?? ""}
               onSelect={setRouteId}
             />
@@ -411,11 +537,13 @@ export function LocalApiWorkbench({
 function RouteSection({
   title,
   routes,
+  probes,
   selectedRouteId,
   onSelect,
 }: {
   title: string;
   routes: LocalApiRoute[];
+  probes: Record<string, RouteProbeState>;
   selectedRouteId: string;
   onSelect: (routeId: string) => void;
 }) {
@@ -458,18 +586,49 @@ function RouteSection({
                 {localAgentBasePath(route.target).replace("/local-agent/", "/")}
               </span>
             </span>
-            <span
-              className={cn(
-                "h-2 w-2 shrink-0 rounded-full",
-                route.enabled
-                  ? "bg-primary"
-                  : "border border-muted-foreground/50",
-              )}
-            />
+            <RouteProbeBadge enabled={route.enabled} probe={probes[route.id]} />
           </button>
         ))}
       </div>
     </section>
+  );
+}
+
+function RouteProbeBadge({
+  enabled,
+  probe,
+}: {
+  enabled: boolean;
+  probe?: RouteProbeState;
+}) {
+  if (!enabled) {
+    return (
+      <span className="h-2 w-2 shrink-0 rounded-full border border-muted-foreground/50" />
+    );
+  }
+  if (!probe || probe.status === "loading") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+      </span>
+    );
+  }
+  if (probe.status === "error") {
+    return (
+      <span
+        className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-destructive"
+        title={probe.error}
+      >
+        <AlertCircle className="h-3 w-3" />
+        {probe.latencyMs} ms
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-primary">
+      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+      {probe.latencyMs} ms
+    </span>
   );
 }
 
