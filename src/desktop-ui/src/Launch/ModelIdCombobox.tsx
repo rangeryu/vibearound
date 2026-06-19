@@ -17,6 +17,7 @@ interface ModelIdComboboxProps {
   placeholder?: string;
   inputClassName?: string;
   maxSuggestions?: number;
+  disabled?: boolean;
 }
 
 export function ModelIdCombobox({
@@ -26,9 +27,10 @@ export function ModelIdCombobox({
   placeholder,
   inputClassName = "h-7 w-full font-mono text-xs",
   maxSuggestions = 8,
+  disabled = false,
 }: ModelIdComboboxProps) {
   const [open, setOpen] = useState(false);
-  const suggestions = modelIdSuggestions(options, value, maxSuggestions);
+  const suggestions = disabled ? [] : modelIdSuggestions(options, value, maxSuggestions);
 
   return (
     <div className="relative">
@@ -36,6 +38,7 @@ export function ModelIdCombobox({
         value={value}
         className={inputClassName}
         placeholder={placeholder}
+        disabled={disabled}
         onFocus={() => setOpen(true)}
         onBlur={() => {
           window.setTimeout(() => setOpen(false), 120);

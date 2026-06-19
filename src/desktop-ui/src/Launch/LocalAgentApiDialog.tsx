@@ -60,6 +60,7 @@ export function LocalAgentApiDialog({
     useState<LocalApiProtocol>("openai-responses");
   const [prompt, setPrompt] = useState("Reply with exactly: VA_LOCAL_API_OK");
   const [model, setModel] = useState("");
+  const [modelLoading, setModelLoading] = useState(false);
   const [modelOptions, setModelOptions] = useState<LocalAgentModel[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
@@ -75,27 +76,41 @@ export function LocalAgentApiDialog({
     setProtocol("openai-responses");
     setPrompt("Reply with exactly: VA_LOCAL_API_OK");
     setModel("");
+    setModelLoading(true);
     setModelOptions([]);
     setTestResult(null);
+    let cancelled = false;
     void fetch(`${API_BASE}${localAgentBasePath(target)}/models`, {
       headers: {
         "x-vibearound-cwd": target.workspacePath,
       },
     })
       .then(async (response) => {
+        if (cancelled) return;
         if (!response.ok) {
+          setModel(target.agentId);
           return;
         }
         const payload = await response.json().catch(() => null);
+        if (cancelled) return;
         const models = extractLocalAgentModels(payload);
         setModelOptions(models);
         setModel(models[0]?.id ?? target.agentId);
       })
       .catch((error) => {
+        if (cancelled) return;
         setModel(target.agentId);
         console.warn("[desktop-ui] local agent models fetch failed:", error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setModelLoading(false);
+        }
       });
-  }, [target, t]);
+    return () => {
+      cancelled = true;
+    };
+  }, [target]);
 
   if (!target) return null;
 
@@ -210,7 +225,7 @@ export function LocalAgentApiDialog({
               <ModelListField
                 label={t("Models")}
                 models={modelOptions}
-                fallback={model || t("Loading…")}
+                fallback={modelLoading ? t("Loading…") : model || target.agentId}
                 copiedKey={copiedKey}
                 onCopy={(modelId) => copyValue(`model:${modelId}`, modelId)}
               />
@@ -233,7 +248,9 @@ export function LocalAgentApiDialog({
                       label: option.description,
                     }))}
                     onValueChange={setModel}
+                    placeholder={modelLoading ? t("Loading…") : undefined}
                     inputClassName="h-7 w-full font-mono text-xs"
+                    disabled={modelLoading}
                   />
                 </div>
                 <label className="grid gap-1 text-[11px] text-muted-foreground">
@@ -257,7 +274,7 @@ export function LocalAgentApiDialog({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={testing || !prompt.trim() || !model.trim()}
+                  disabled={testing || modelLoading || !prompt.trim() || !model.trim()}
                   onClick={() => void runTest()}
                 >
                   {testing ? (
@@ -370,11 +387,11 @@ function ModelListField({
   }
 
   return (
-    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-start gap-2">
+    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
       <div className="min-w-0 text-[11px] leading-5 text-muted-foreground">
         <span className="truncate">{label}</span>
       </div>
-      <div className="grid min-w-0 gap-1">
+      <div className="flex min-h-5 min-w-0 items-center gap-1 overflow-x-auto rounded bg-primary/5 px-1.5 py-0.5">
         {models.map((model) => {
           const description =
             model.description && model.description !== model.id
@@ -386,9 +403,9 @@ function ModelListField({
             <button
               key={model.id}
               type="button"
-              className="grid min-h-5 w-full min-w-0 grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto] items-center gap-2 rounded bg-primary/5 px-1.5 text-left text-[11px] leading-5 transition-colors hover:bg-primary/10"
+              className="inline-flex h-4 max-w-[260px] shrink-0 items-center gap-1.5 rounded px-1 text-left text-[11px] leading-4 transition-colors hover:bg-primary/10"
               aria-label={t("Copy")}
-              title={t("Copy")}
+              title={description ? `${model.id} ${description}` : model.id}
               onClick={() => onCopy(model.id)}
             >
               <span className="min-w-0 truncate font-mono text-primary">
@@ -399,7 +416,6 @@ function ModelListField({
                   {description}
                 </span>
               )}
-              {!description && <span />}
               {copiedKey === `model:${model.id}` && (
                 <span className="shrink-0 text-primary">{t("Copied")}</span>
               )}
