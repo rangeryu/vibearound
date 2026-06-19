@@ -435,7 +435,7 @@ export function LocalAgentApiDialog({
                           className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground"
                           title={attachment.name}
                         >
-                          <Paperclip className="h-3 w-3 shrink-0" />
+                          <Paperclip className="h-3.5 w-3.5 shrink-0" />
                           <span className="min-w-0 truncate text-foreground">
                             {attachment.name}
                           </span>
@@ -502,7 +502,7 @@ export function LocalAgentApiDialog({
                       title={t("Attach files")}
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      <FileUp className="h-3.5 w-3.5" />
+                      <FileUp className="h-4 w-4" />
                     </Button>
                   </div>
                   <Button
