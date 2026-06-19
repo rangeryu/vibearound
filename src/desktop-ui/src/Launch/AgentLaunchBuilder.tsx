@@ -63,10 +63,6 @@ import {
 import { AgentLaunchSettingsDialog } from "./AgentLaunchSettingsDialog";
 import { buildProfileCopyDraft } from "./profileClone";
 import {
-  LocalAgentApiDialog,
-} from "./LocalAgentApiDialog";
-import type { LocalAgentApiTarget } from "./localAgentApi";
-import {
   agentLabel,
   connectionAgentId,
   agentProfileId,
@@ -160,17 +156,15 @@ export function AgentLaunchBuilder({
   const [sessionChoice, setSessionChoice] = useState<SessionChoice>(null);
   const [settingsAgent, setSettingsAgent] = useState<AgentSummary | null>(null);
   const [pathAgent, setPathAgent] = useState<AgentSummary | null>(null);
-  const [localApiTarget, setLocalApiTarget] =
-    useState<LocalAgentApiTarget | null>(null);
   const [agentExecutable, setAgentExecutable] =
     useState<AgentExecutableResolution | null>(null);
   const [agentExecutableLoading, setAgentExecutableLoading] = useState(false);
   const [desktopAppEntries, setDesktopAppEntries] =
     useState<DesktopAppDetectionFile | null>(null);
   const [busy, setBusy] = useState(false);
-  const postLaunchSessionRefreshTimers = useRef<ReturnType<
-    typeof setTimeout
-  >[]>([]);
+  const postLaunchSessionRefreshTimers = useRef<
+    ReturnType<typeof setTimeout>[]
+  >([]);
 
   const enabledAgentKey = prefs?.enabledAgents.join("|") ?? "";
   const enabledAgents = useMemo(
@@ -222,7 +216,7 @@ export function AgentLaunchBuilder({
       ? prefs.selectedAgent
       : agents.some((agent) => agent.id === prefs.defaultAgent)
         ? prefs.defaultAgent
-      : (agents[0]?.id ?? "");
+        : (agents[0]?.id ?? "");
     setAgentId(preferredAgent);
   }, [agentId, agents, prefs]);
 
@@ -416,7 +410,11 @@ export function AgentLaunchBuilder({
     }
     let cancelled = false;
     setSessionsLoading(true);
-    void listLaunchSessions(agentId, currentAgentWorkspace, showArchivedSessions)
+    void listLaunchSessions(
+      agentId,
+      currentAgentWorkspace,
+      showArchivedSessions,
+    )
       .then((items) => {
         if (cancelled) return;
         setSessions(items);
@@ -466,9 +464,6 @@ export function AgentLaunchBuilder({
 
   const selectedAgent = agents.find((agent) => agent.id === agentId);
   const selectedAgentIsDirectOnly = Boolean(selectedAgent?.direct_only);
-  const selectedAgentSupportsLocalApi = Boolean(
-    selectedAgent && !selectedAgent.direct_only && selectedAgent.acp_program.trim(),
-  );
   const selectedProfile =
     profileChoice.kind === "profile"
       ? profileById(profiles, profileChoice.profileId)
@@ -487,7 +482,9 @@ export function AgentLaunchBuilder({
     sessionChoice,
     visibleSessions,
   );
-  const selectedSession = selectedAgentIsDirectOnly ? null : resolvedSelectedSession;
+  const selectedSession = selectedAgentIsDirectOnly
+    ? null
+    : resolvedSelectedSession;
   const selectionLaunchable = viewPrefs
     ? isSelectionLaunchable(profileChoice, selectedProfile, agentId, viewPrefs)
     : false;
@@ -545,10 +542,14 @@ export function AgentLaunchBuilder({
     }
   }
 
-  async function chooseProfileApiType(profile: ProfileSummary, apiType: string) {
+  async function chooseProfileApiType(
+    profile: ProfileSummary,
+    apiType: string,
+  ) {
     const connectionId = connectionAgentId(agentId);
     if (!viewPrefs || !connectionId) return;
-    const current = viewPrefs.profileConnections[profile.id]?.[connectionId] ?? {};
+    const current =
+      viewPrefs.profileConnections[profile.id]?.[connectionId] ?? {};
     onError(null);
     try {
       await setProfileConnection(profile.id, connectionId, {
@@ -704,8 +705,9 @@ export function AgentLaunchBuilder({
       copiedProfileId = copiedProfile.id;
       const sourceConnections = prefs.profileConnections[profile.id] ?? {};
       const connectionCopies = Object.entries(sourceConnections)
-        .filter((entry): entry is [ConnectionAgentId, ProfileConnectionPreference] =>
-          Boolean(entry[1]),
+        .filter(
+          (entry): entry is [ConnectionAgentId, ProfileConnectionPreference] =>
+            Boolean(entry[1]),
         )
         .map(([connectionAgentId, preference]) =>
           setProfileConnection(
@@ -853,30 +855,6 @@ export function AgentLaunchBuilder({
     }
   }
 
-  function openDirectLocalApi() {
-    if (!selectedAgent) return;
-    setOpenSelector(null);
-    setLocalApiTarget({
-      agentId,
-      agentLabel: selectedAgent.display_name,
-      profileId: "direct",
-      profileLabel: t("Direct"),
-      workspacePath: selectedWorkspace.path,
-    });
-  }
-
-  function openProfileLocalApi(profile: ProfileSummary) {
-    if (!selectedAgent) return;
-    setOpenSelector(null);
-    setLocalApiTarget({
-      agentId,
-      agentLabel: selectedAgent.display_name,
-      profileId: profile.id,
-      profileLabel: profile.label,
-      workspacePath: selectedWorkspace.path,
-    });
-  }
-
   if (!viewPrefs || agents.length === 0 || !selectedAgent) {
     if (prefs?.enabledAgents.length === 0) {
       return (
@@ -907,7 +885,9 @@ export function AgentLaunchBuilder({
   const showLaunchControls = !selectedAgentIsDirectOnly;
   const desktopAppEntryForAgent = (targetAgentId: string) =>
     desktopAppEntries?.apps[targetAgentId]?.entry;
-  const desktopAppPathForAgent = (targetAgentId: string): string | undefined => {
+  const desktopAppPathForAgent = (
+    targetAgentId: string,
+  ): string | undefined => {
     const app = desktopAppEntries?.apps[targetAgentId];
     return app?.entry?.path ?? app?.launchCommand;
   };
@@ -1213,12 +1193,6 @@ export function AgentLaunchBuilder({
                   void chooseProfileApiType(profile, apiType)
                 }
                 onMakeDefault={makeDefault}
-                onOpenDirectLocalApi={
-                  selectedAgentSupportsLocalApi ? openDirectLocalApi : undefined
-                }
-                onOpenProfileLocalApi={
-                  selectedAgentSupportsLocalApi ? openProfileLocalApi : undefined
-                }
                 onEditProfile={onEditProfile}
                 onDuplicateProfile={(profile) => void duplicateProfile(profile)}
                 onConnectionSettings={onConnectionSettings}
@@ -1281,10 +1255,6 @@ export function AgentLaunchBuilder({
             : Promise.resolve()
         }
         onUpdateAgent={updateAgentExecutable}
-      />
-      <LocalAgentApiDialog
-        target={localApiTarget}
-        onClose={() => setLocalApiTarget(null)}
       />
     </TooltipProvider>
   );

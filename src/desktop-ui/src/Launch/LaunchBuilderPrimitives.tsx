@@ -12,7 +12,6 @@ import {
   MoreVertical,
   Pencil,
   Plug,
-  Server,
   Star,
   Terminal,
   Trash2,
@@ -86,7 +85,9 @@ export function SelectorTile({
           </span>
           {badges}
         </span>
-        <span className="block truncate text-[12px] font-semibold">{title}</span>
+        <span className="block truncate text-[12px] font-semibold">
+          {title}
+        </span>
         <span className="block truncate text-[10px] text-muted-foreground">
           {detail}
         </span>
@@ -311,7 +312,6 @@ export function ProfileActionsMenu({
   onMakeDefault,
   makeDefaultDisabled = false,
   onConnectionSettings,
-  onLocalApi,
   onEditProfile,
   onDuplicateProfile,
   onDeleteProfile,
@@ -322,7 +322,6 @@ export function ProfileActionsMenu({
   onMakeDefault?: () => void;
   makeDefaultDisabled?: boolean;
   onConnectionSettings: (profile: ProfileSummary) => void;
-  onLocalApi?: (profile: ProfileSummary) => void;
   onEditProfile: (profile: ProfileSummary) => void;
   onDuplicateProfile: (profile: ProfileSummary) => void;
   onDeleteProfile: (profile: ProfileSummary) => void;
@@ -364,16 +363,6 @@ export function ProfileActionsMenu({
             {t("API bridge")}
           </DropdownMenuItem>
         )}
-        {onLocalApi && (
-          <DropdownMenuItem
-            className="text-xs"
-            disabled={disabled}
-            onSelect={() => onLocalApi(profile)}
-          >
-            <Server className="h-3 w-3" />
-            {t("Local API")}
-          </DropdownMenuItem>
-        )}
         <DropdownMenuItem
           className="text-xs"
           disabled={disabled}
@@ -399,41 +388,6 @@ export function ProfileActionsMenu({
         >
           <Trash2 className="h-3 w-3" />
           {t("Delete")}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-export function DirectProfileActionsMenu({
-  disabled,
-  onLocalApi,
-}: {
-  disabled: boolean;
-  onLocalApi?: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          size="icon-xs"
-          variant="ghost"
-          className="h-7 w-7 text-muted-foreground"
-          aria-label={t("More")}
-        >
-          <MoreVertical className="h-3.5 w-3.5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
-        <DropdownMenuItem
-          className="text-xs"
-          disabled={disabled || !onLocalApi}
-          onSelect={() => onLocalApi?.()}
-        >
-          <Server className="h-3 w-3" />
-          {t("Local API")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
