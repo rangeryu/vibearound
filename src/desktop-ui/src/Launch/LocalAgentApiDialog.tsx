@@ -19,13 +19,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { API_BASE } from "@/lib/api";
 import {
   LOCAL_API_PROTOCOLS,
@@ -59,7 +56,6 @@ export function LocalAgentApiDialog({
 }: LocalAgentApiDialogProps) {
   const { t } = useI18n();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [modelsStatus, setModelsStatus] = useState<string | null>(null);
   const [protocol, setProtocol] =
     useState<LocalApiProtocol>("openai-responses");
   const [prompt, setPrompt] = useState("Reply with exactly: VA_LOCAL_API_OK");
@@ -85,7 +81,6 @@ export function LocalAgentApiDialog({
     setModel("");
     setModelOptions([]);
     setTestResult(null);
-    setModelsStatus(null);
     void fetch(`${API_BASE}${localAgentBasePath(target)}/models`, {
       headers: {
         "x-vibearound-cwd": target.workspacePath,
@@ -93,20 +88,16 @@ export function LocalAgentApiDialog({
     })
       .then(async (response) => {
         if (!response.ok) {
-          setModelsStatus(t("Models endpoint returned {{status}}", {
-            status: response.status,
-          }));
           return;
         }
         const payload = await response.json().catch(() => null);
         const models = extractLocalAgentModels(payload);
         setModelOptions(models);
         setModel(models[0]?.id ?? target.agentId);
-        setModelsStatus(t("Models endpoint ready · {{count}} models", { count: models.length }));
       })
       .catch((error) => {
         setModel(target.agentId);
-        setModelsStatus(error instanceof Error ? error.message : String(error));
+        console.warn("[desktop-ui] local agent models fetch failed:", error);
       });
   }, [target, t]);
 
@@ -227,9 +218,6 @@ export function LocalAgentApiDialog({
                 onCopy={() => copyValue("model-list", modelListValue)}
                 tone="primary"
               />
-              <div className="truncate text-xs text-muted-foreground">
-                {modelsStatus ?? t("Models endpoint")}
-              </div>
             </div>
 
             <div className="grid gap-2 rounded-md border border-border/70 p-3">
@@ -242,29 +230,18 @@ export function LocalAgentApiDialog({
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2">
                 <label className="grid gap-1 text-[11px] text-muted-foreground">
                   <span>{t("Model")}</span>
-                  {modelOptions.length > 0 ? (
-                    <Select value={model} onValueChange={setModel}>
-                      <SelectTrigger size="sm" className="h-8 w-full font-mono text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {modelOptions.map((modelId) => (
-                          <SelectItem
-                            key={modelId.id}
-                            value={modelId.id}
-                            className="font-mono text-xs"
-                          >
-                            {formatLocalAgentModelLabel(modelId)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      value={model}
-                      onChange={(event) => setModel(event.currentTarget.value)}
-                      className="h-8 font-mono text-xs"
-                    />
+                  <Input
+                    list="local-agent-test-models"
+                    value={model}
+                    onChange={(event) => setModel(event.currentTarget.value)}
+                    className="h-8 font-mono text-xs"
+                  />
+                  {modelOptions.length > 0 && (
+                    <datalist id="local-agent-test-models">
+                      {modelOptions.map((modelOption) => (
+                        <option key={modelOption.id} value={modelOption.id} />
+                      ))}
+                    </datalist>
                   )}
                 </label>
                 <label className="grid gap-1 text-[11px] text-muted-foreground">

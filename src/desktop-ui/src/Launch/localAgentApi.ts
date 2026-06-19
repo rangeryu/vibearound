@@ -102,8 +102,7 @@ export function extractLocalAgentModelIds(payload: unknown): string[] {
 }
 
 export function formatLocalAgentModelLabel(model: LocalAgentModel): string {
-  if (!model.displayName || model.displayName === model.id) return model.id;
-  return `${model.displayName} · ${model.id}`;
+  return model.id;
 }
 
 export function parseLocalAgentJson(text: string): unknown {

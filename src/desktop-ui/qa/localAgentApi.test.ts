@@ -72,7 +72,7 @@ test("local agent models come from the models endpoint payload", () => {
       id: "opus",
       displayName: "Opus",
     }),
-  ).toBe("Opus · opus");
+  ).toBe("opus");
   expect(formatLocalAgentModelLabel({ id: "codex", displayName: "codex" })).toBe(
     "codex",
   );
