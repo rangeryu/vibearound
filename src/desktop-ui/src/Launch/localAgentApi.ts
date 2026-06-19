@@ -76,6 +76,18 @@ export function localAgentTestPayload(
   }
 }
 
+export function extractLocalAgentModelIds(payload: unknown): string[] {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const item of asArray(asRecord(payload).data)) {
+    const id = stringValue(asRecord(item).id).trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
 export function parseLocalAgentJson(text: string): unknown {
   try {
     return JSON.parse(text);

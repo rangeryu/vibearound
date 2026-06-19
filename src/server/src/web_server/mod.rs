@@ -15,7 +15,7 @@ mod ws_pty;
 
 use axum::body::Body;
 use axum::extract::DefaultBodyLimit;
-use axum::http::{HeaderValue, Method, StatusCode};
+use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, delete, get, post};
 use axum::Router;
@@ -407,32 +407,14 @@ pub async fn run_web_server(
     Ok(())
 }
 
-/// Build a tight CORS layer.
+/// Build an open CORS layer for the local daemon API.
 ///
-/// Allowed origins:
-/// - `http://127.0.0.1:{port}` / `http://localhost:{port}` — the SPA served
-///   from this same server, opened in a regular browser.
-/// - `tauri://localhost` / `http://tauri.localhost` — the Tauri webview
-///   on macOS/Linux and Windows respectively.
-/// - `http://localhost:5181` — the desktop-ui Vite dev server during
-///   development.
-///
-/// Everything else is rejected, so random websites the user visits cannot
-/// fetch from the loopback port.
-fn build_cors_layer(port: u16) -> tower_http::cors::CorsLayer {
-    let origins: Vec<HeaderValue> = [
-        format!("http://127.0.0.1:{port}"),
-        format!("http://localhost:{port}"),
-        "tauri://localhost".to_string(),
-        "http://tauri.localhost".to_string(),
-        "http://localhost:5181".to_string(),
-    ]
-    .into_iter()
-    .filter_map(|s| HeaderValue::from_str(&s).ok())
-    .collect();
-
+/// VibeAround intentionally exposes local API-compatible endpoints for tools,
+/// scripts, and browser clients running on the user's machine. Authentication
+/// still protects dashboard APIs; CORS should not be the capability boundary.
+fn build_cors_layer(_port: u16) -> tower_http::cors::CorsLayer {
     tower_http::cors::CorsLayer::new()
-        .allow_origin(origins)
+        .allow_origin(tower_http::cors::Any)
         .allow_methods([
             Method::GET,
             Method::POST,
@@ -440,13 +422,7 @@ fn build_cors_layer(port: u16) -> tower_http::cors::CorsLayer {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([
-            axum::http::header::AUTHORIZATION,
-            axum::http::header::CONTENT_TYPE,
-            axum::http::header::ACCEPT,
-            // `bypass-tunnel-reminder` is set by the SPA for loca.lt tunnels.
-            axum::http::HeaderName::from_static("bypass-tunnel-reminder"),
-        ])
+        .allow_headers(tower_http::cors::Any)
 }
 
 #[cfg(test)]

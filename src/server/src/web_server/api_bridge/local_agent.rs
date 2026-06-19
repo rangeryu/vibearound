@@ -80,16 +80,18 @@ pub async fn local_agent_messages_handler(
 pub async fn local_agent_models_handler(
     Path((agent_id, profile_id)): Path<(String, String)>,
 ) -> Response {
+    let model_id = local_agent_model_id(&agent_id, &profile_id);
     Json(json!({
         "object": "list",
         "data": [{
-            "id": agent_id,
+            "id": model_id,
             "object": "model",
             "type": "model",
-            "display_name": agent_id,
+            "display_name": format!("{agent_id} · {profile_id}"),
             "owned_by": "vibearound-local-agent",
             "created": 0,
             "created_at": null,
+            "agent": agent_id,
             "profile": profile_id,
             "capabilities": {
                 "sessionless": true,
@@ -99,6 +101,34 @@ pub async fn local_agent_models_handler(
         "has_more": false,
     }))
     .into_response()
+}
+
+fn local_agent_model_id(agent_id: &str, profile_id: &str) -> String {
+    format!(
+        "{}-{}-local-api",
+        local_agent_model_id_part(agent_id),
+        local_agent_model_id_part(profile_id)
+    )
+}
+
+fn local_agent_model_id_part(value: &str) -> String {
+    let mut output = String::new();
+    let mut last_was_separator = false;
+    for ch in value.trim().chars() {
+        if ch.is_ascii_alphanumeric() {
+            output.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if !last_was_separator {
+            output.push('-');
+            last_was_separator = true;
+        }
+    }
+    let trimmed = output.trim_matches('-');
+    if trimmed.is_empty() {
+        "local".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 async fn handle_local_agent_request(
@@ -698,6 +728,18 @@ impl common::agent::AgentClientHandler for ApiAgentClientHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builds_stable_local_agent_model_ids() {
+        assert_eq!(
+            local_agent_model_id("claude", "direct"),
+            "claude-direct-local-api"
+        );
+        assert_eq!(
+            local_agent_model_id("codex cli", "direct/profile"),
+            "codex-cli-direct-profile-local-api"
+        );
+    }
 
     #[test]
     fn builds_sessionless_chat_transcript() {

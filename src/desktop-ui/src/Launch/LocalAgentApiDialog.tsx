@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import {
   AlertCircle,
   Check,
-  Copy,
-  KeyRound,
   Loader2,
   MessageSquare,
   Send,
@@ -12,21 +9,27 @@ import {
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { API_BASE, apiFetch, getAuthToken } from "@/lib/api";
 import {
   LOCAL_API_PROTOCOLS,
+  extractLocalAgentModelIds,
   extractLocalAgentResponseText,
   localAgentBasePath,
   localAgentErrorText,
@@ -61,18 +64,24 @@ export function LocalAgentApiDialog({
     useState<LocalApiProtocol>("openai-responses");
   const [prompt, setPrompt] = useState("Reply with exactly: VA_LOCAL_API_OK");
   const [model, setModel] = useState("");
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   const basePath = target ? localAgentBasePath(target) : "";
   const baseUrl = target ? `${API_BASE}${basePath}` : "";
   const selectedProtocol = localAgentProtocolSpec(protocol);
+  const endpointUrl = selectedProtocol ? `${baseUrl}/${selectedProtocol.endpoint}` : baseUrl;
+  const modelsUrl = `${baseUrl}/models`;
+  const modelListValue =
+    modelOptions.length > 0 ? modelOptions.join(", ") : model || t("Loading…");
 
   useEffect(() => {
     if (!target) return;
     setProtocol("openai-responses");
     setPrompt("Reply with exactly: VA_LOCAL_API_OK");
-    setModel(`${target.agentId}-${target.profileId}-local-api`);
+    setModel("");
+    setModelOptions([]);
     setTestResult(null);
     setModelsStatus(null);
     void getAuthToken().then(setAuthToken).catch(() => setAuthToken(null));
@@ -85,12 +94,15 @@ export function LocalAgentApiDialog({
           return;
         }
         const payload = await response.json().catch(() => null);
-        const count = Array.isArray(payload?.data) ? payload.data.length : 0;
-        setModelsStatus(t("Models endpoint ready · {{count}} model", { count }));
+        const models = extractLocalAgentModelIds(payload);
+        setModelOptions(models);
+        setModel(models[0] ?? target.agentId);
+        setModelsStatus(t("Models endpoint ready · {{count}} models", { count: models.length }));
       })
-      .catch((error) =>
-        setModelsStatus(error instanceof Error ? error.message : String(error)),
-      );
+      .catch((error) => {
+        setModel(target.agentId);
+        setModelsStatus(error instanceof Error ? error.message : String(error));
+      });
   }, [target, t]);
 
   const authHeaderValue = useMemo(() => {
@@ -147,7 +159,12 @@ export function LocalAgentApiDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="!flex max-h-[calc(100vh-64px)] w-[min(840px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(840px,calc(100vw-32px))]">
+      <DialogContent
+        className="!flex max-h-[calc(100vh-64px)] w-[min(840px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(840px,calc(100vw-32px))]"
+        onEscapeKeyDown={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+      >
         <DialogHeader className="shrink-0 border-b border-border px-6 py-4 pr-12">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Server className="h-4 w-4 text-primary" />
@@ -159,53 +176,66 @@ export function LocalAgentApiDialog({
         </DialogHeader>
 
         <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 py-4 [scrollbar-gutter:stable]">
-          <section className="grid gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-medium text-muted-foreground">
-                {t("Supported protocols")}
-              </span>
+          <Tabs
+            value={protocol}
+            onValueChange={(value) => {
+              setProtocol(value as LocalApiProtocol);
+              setTestResult(null);
+            }}
+          >
+            <TabsList className="h-8">
               {LOCAL_API_PROTOCOLS.map((item) => (
-                <Badge
+                <TabsTrigger
                   key={item.id}
-                  variant="secondary"
-                  className="border border-primary/25 bg-primary/10 text-primary"
+                  value={item.id}
+                  className="px-3 text-[12px]"
                 >
                   {item.shortLabel}
-                </Badge>
+                </TabsTrigger>
               ))}
+            </TabsList>
+          </Tabs>
+
+          <section className="grid gap-3 rounded-md border border-border bg-card/60 p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-[13px] font-semibold">
+                {t("Manual configuration")}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {t("Click a value to copy.")}
+              </div>
             </div>
-            <CopyRow
+            <ManualField
               label={t("Base URL")}
               value={baseUrl}
               copied={copiedKey === "base"}
               onCopy={() => copyValue("base", baseUrl)}
             />
-            <CopyRow
+            <ManualField
+              label={selectedProtocol.label}
+              value={endpointUrl}
+              copied={copiedKey === protocol}
+              onCopy={() => copyValue(protocol, endpointUrl)}
+            />
+            <ManualField
+              label={t("Models")}
+              value={modelListValue}
+              copied={copiedKey === "model-list"}
+              onCopy={() => copyValue("model-list", modelListValue)}
+              tone="primary"
+            />
+            <ManualField
+              label={t("Models URL")}
+              value={modelsUrl}
+              copied={copiedKey === "models"}
+              onCopy={() => copyValue("models", modelsUrl)}
+            />
+            <ManualField
               label={t("Auth header")}
               value={maskLocalApiAuthHeader(authHeaderValue)}
               copied={copiedKey === "auth"}
               onCopy={() => copyValue("auth", authHeaderValue)}
-              icon={<KeyRound className="h-3.5 w-3.5" />}
             />
-            <div className="grid gap-1 rounded-md border border-border/70 bg-muted/20 p-2">
-              {LOCAL_API_PROTOCOLS.map((item) => (
-                <CopyRow
-                  key={item.id}
-                  label={item.label}
-                  value={`${baseUrl}/${item.endpoint}`}
-                  copied={copiedKey === item.id}
-                  onCopy={() =>
-                    copyValue(item.id, `${baseUrl}/${item.endpoint}`)
-                  }
-                />
-              ))}
-              <CopyRow
-                label={t("Models")}
-                value={`${baseUrl}/models`}
-                copied={copiedKey === "models"}
-                onCopy={() => copyValue("models", `${baseUrl}/models`)}
-              />
-            </div>
             {modelsStatus && (
               <div className="text-[11px] text-muted-foreground">
                 {modelsStatus}
@@ -217,36 +247,32 @@ export function LocalAgentApiDialog({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-[13px] font-semibold">
                 <MessageSquare className="h-4 w-4 text-primary" />
-                {t("Test message")}
+                {t("Test message")} · {selectedProtocol.shortLabel}
               </div>
-              <Tabs
-                value={protocol}
-                onValueChange={(value) => {
-                  setProtocol(value as LocalApiProtocol);
-                  setTestResult(null);
-                }}
-              >
-                <TabsList className="h-8">
-                  {LOCAL_API_PROTOCOLS.map((item) => (
-                    <TabsTrigger
-                      key={item.id}
-                      value={item.id}
-                      className="px-2 text-[11px]"
-                    >
-                      {item.shortLabel}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
             </div>
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2">
               <label className="grid gap-1 text-[11px] text-muted-foreground">
                 <span>{t("Model")}</span>
-                <Input
-                  value={model}
-                  onChange={(event) => setModel(event.currentTarget.value)}
-                  className="h-8 font-mono text-xs"
-                />
+                {modelOptions.length > 0 ? (
+                  <Select value={model} onValueChange={setModel}>
+                    <SelectTrigger size="sm" className="h-8 w-full font-mono text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modelOptions.map((modelId) => (
+                        <SelectItem key={modelId} value={modelId} className="font-mono text-xs">
+                          {modelId}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={model}
+                    onChange={(event) => setModel(event.currentTarget.value)}
+                    className="h-8 font-mono text-xs"
+                  />
+                )}
               </label>
               <label className="grid gap-1 text-[11px] text-muted-foreground">
                 <span>{t("Workspace")}</span>
@@ -310,50 +336,48 @@ export function LocalAgentApiDialog({
             )}
           </section>
         </div>
-
-        <DialogFooter className="shrink-0 border-t border-border px-6 py-4">
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
-            {t("Close")}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function CopyRow({
+function ManualField({
   label,
   value,
   copied,
   onCopy,
-  icon,
+  tone = "default",
 }: {
   label: string;
   value: string;
   copied: boolean;
   onCopy: () => void;
-  icon?: ReactNode;
+  tone?: "default" | "primary";
 }) {
   const { t } = useI18n();
   return (
-    <div className="grid grid-cols-[120px_minmax(0,1fr)_28px] items-center gap-2 rounded-md border border-border/70 bg-background px-2 py-1.5">
-      <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-        {icon}
+    <div className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-4">
+      <div className="min-w-0 text-[13px] text-muted-foreground">
         <span className="truncate">{label}</span>
-      </div>
-      <div className="min-w-0 truncate font-mono text-[11px] text-foreground" title={value}>
-        {value}
       </div>
       <Button
         type="button"
         variant="ghost"
-        size="icon-xs"
-        className="h-6 w-6"
+        className={`h-8 w-full min-w-0 justify-start rounded-md px-2 font-mono text-sm ${
+          tone === "primary"
+            ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+            : "hover:bg-muted"
+        }`}
         aria-label={t("Copy")}
         title={t("Copy")}
         onClick={onCopy}
       >
-        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        <span className="min-w-0 truncate">{value}</span>
+        {copied && (
+          <span className="ml-2 shrink-0 text-[11px] font-sans text-primary">
+            {t("Copied")}
+          </span>
+        )}
       </Button>
     </div>
   );

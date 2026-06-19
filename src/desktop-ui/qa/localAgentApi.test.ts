@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { loopbackBaseUrl } from "@va/client";
 
 import {
+  extractLocalAgentModelIds,
   extractLocalAgentResponseText,
   localAgentBasePath,
   localAgentErrorText,
@@ -45,6 +46,21 @@ test("local agent test payloads match supported wire protocols", () => {
     messages: [{ role: "user", content: "hello" }],
     stream: false,
   });
+});
+
+test("local agent model ids come from the models endpoint payload", () => {
+  expect(
+    extractLocalAgentModelIds({
+      data: [
+        { id: "claude" },
+        { id: "claude" },
+        { id: "codex", display_name: "Codex CLI" },
+        { id: "" },
+        { object: "model" },
+      ],
+    }),
+  ).toEqual(["claude", "codex"]);
+  expect(extractLocalAgentModelIds({ data: null })).toEqual([]);
 });
 
 test("local agent response text extraction supports all protocol shapes", () => {
