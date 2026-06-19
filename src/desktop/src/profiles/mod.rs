@@ -182,29 +182,26 @@ pub async fn launcher_agent_executable_resolution(
         .map(|def| def.id.clone())
         .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
     let scan = scan.unwrap_or(false);
-    let detection = if scan {
-        common::agent_detection::scan_agent_and_persist(&agent_id)
-            .await
-            .map_err(|error| error.to_string())?
-    } else {
-        common::agent_detection::read_detected_agents()
-            .and_then(|detected| detected.agents.get(&agent_id).cloned())
-            .unwrap_or(common::agent_detection::AgentDetection {
-                default_candidate: None,
-                system_selected: None,
-                legacy_selected: None,
-                candidates: Vec::new(),
-            })
-    };
-    let configured = if scan {
-        common::agent_detection::configured_candidate_with_version(&agent_id).await
-    } else {
-        common::agent_detection::configured_candidate(&agent_id)
-    };
-    let mode = config::ensure_loaded().toolchain_mode.as_str();
-    let selected = configured.clone().or_else(|| {
-        common::agent_detection::preferred_startkit_candidate(&agent_id, &detection, mode)
-    });
+    let config = config::ensure_loaded();
+    let availability = common::agent_availability::resolve_agent_availability(
+        &agent_id,
+        common::agent_availability::AgentAvailabilityRequest {
+            scan_policy: if scan {
+                common::agent_availability::AgentScanPolicy::Refresh
+            } else {
+                common::agent_availability::AgentScanPolicy::CacheOnly
+            },
+            toolchain_mode: config.toolchain_mode.as_str(),
+            candidate_preference:
+                common::agent_availability::AgentCandidatePreference::ToolchainMode,
+            include_configured_version: scan,
+        },
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    let detection = availability.detection;
+    let configured = availability.configured;
+    let selected = availability.selected;
     let configured_path =
         agent_state::resolve_agent_executable_path(&agent_state::read_prefs(), &agent_id)
             .map(|path| path.to_string_lossy().to_string());
@@ -282,9 +279,20 @@ pub async fn launcher_update_agent(
     let agent_id = resources::agent_by_alias(&agent_id)
         .map(|def| def.id.clone())
         .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
-    let detection = common::agent_detection::scan_agent_and_persist(&agent_id)
-        .await
-        .map_err(|error| error.to_string())?;
+    let config = config::ensure_loaded();
+    let availability = common::agent_availability::resolve_agent_availability(
+        &agent_id,
+        common::agent_availability::AgentAvailabilityRequest {
+            scan_policy: common::agent_availability::AgentScanPolicy::Refresh,
+            toolchain_mode: config.toolchain_mode.as_str(),
+            candidate_preference:
+                common::agent_availability::AgentCandidatePreference::ToolchainMode,
+            include_configured_version: true,
+        },
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    let detection = availability.detection;
     let candidate = if let Some(path) = executable_path {
         let path = PathBuf::from(path.trim());
         if !path.is_file() {
@@ -298,13 +306,8 @@ pub async fn launcher_update_agent(
                 .map_err(|error| error.to_string())?
         }
     } else {
-        common::agent_detection::selected_candidate(&agent_id)
-            .or_else(|| {
-                common::agent_detection::startkit_candidate_for_mode(
-                    &agent_id,
-                    config::ensure_loaded().toolchain_mode.as_str(),
-                )
-            })
+        availability
+            .selected
             .ok_or_else(|| format!("no selected executable for '{agent_id}'"))?
     };
     let command =

@@ -197,6 +197,17 @@ export function getDesktopAppEntries(): Promise<DesktopAppDetectionFile | null> 
   return invoke<DesktopAppDetectionFile | null>("get_desktop_app_entries");
 }
 
+export async function getDesktopAppEntriesForAgents(
+  agents: Pick<AgentSummary, "id" | "direct_only">[],
+): Promise<DesktopAppDetectionFile | null> {
+  const cached = await getDesktopAppEntries().catch(() => null);
+  const needsScan =
+    !cached ||
+    agents.some((agent) => agent.direct_only && !(agent.id in cached.apps));
+  if (!needsScan) return cached;
+  return rescanDesktopAppEntries().catch(() => cached);
+}
+
 export function checkSelectedLaunchEntry(): Promise<boolean> {
   return invoke<boolean>("check_selected_launch_entry");
 }

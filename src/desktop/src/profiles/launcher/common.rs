@@ -18,14 +18,12 @@ pub(super) struct LaunchPlan {
     pub windows_executable_path: Option<PathBuf>,
 }
 
-#[cfg(any(target_os = "windows", test))]
 pub(super) fn command_words_with_args(command: &str, args: &[String]) -> Vec<String> {
     let mut words = split_command_words(command);
     words.extend(args.iter().cloned());
     words
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn split_command_words(command: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();
@@ -148,18 +146,11 @@ fn is_valid_env_key(key: &str) -> bool {
 }
 
 fn command_with_unix_args(command: &str, args: &[String]) -> String {
-    if args.is_empty() {
-        return command.to_string();
-    }
-
-    let mut out = command.to_string();
-    for arg in args {
-        out.push(' ');
-        out.push_str(&shell_escape::unix::escape(std::borrow::Cow::Borrowed(
-            arg.as_str(),
-        )));
-    }
-    out
+    command_words_with_args(command, args)
+        .iter()
+        .map(|word| shell_escape::unix::escape(std::borrow::Cow::Borrowed(word.as_str())))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn append_bash_color_env(out: &mut String) {
@@ -244,6 +235,31 @@ mod tests {
 
         assert!(script.contains("exec codex -c 'model_catalog_json="));
         assert!(script.contains("/tmp/VibeAround Catalog/codex.json"));
+    }
+
+    #[test]
+    fn build_bash_script_escapes_command_program_with_spaces() {
+        let script = build_bash_script(&plan(
+            Vec::new(),
+            "\"/Applications/Codex CLI.app/Contents/MacOS/Codex CLI\"",
+            vec!["--resume".to_string(), "session 1".to_string()],
+        ));
+
+        assert!(script.contains(
+            "exec '/Applications/Codex CLI.app/Contents/MacOS/Codex CLI' --resume 'session 1'\n"
+        ));
+    }
+
+    #[test]
+    fn build_bash_script_escapes_command_program_payload() {
+        let script = build_bash_script(&plan(
+            Vec::new(),
+            "\"/tmp/tool $(touch /tmp/pwned)\"",
+            Vec::new(),
+        ));
+
+        assert!(script.contains("exec '/tmp/tool $(touch /tmp/pwned)'\n"));
+        assert!(!script.contains("$(touch /tmp/pwned)\n"));
     }
 
     #[test]

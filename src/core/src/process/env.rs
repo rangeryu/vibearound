@@ -44,13 +44,15 @@ pub fn enriched_env() -> &'static HashMap<String, String> {
 /// Return the environment VibeAround should pass to child processes.
 ///
 /// This is the cached shell environment captured from the user's login shell.
-/// In VibeAround-managed toolchain mode, managed npm package binaries are
-/// prepended so agent/tunnel packages installed under `~/.vibearound/plugins`
-/// win over user PATH entries. Node.js and Git themselves still come from the
-/// user's system environment.
+/// In VibeAround-managed toolchain mode, the app-managed Node/Git paths and
+/// managed npm package binaries are prepended so app-owned tools win over user
+/// PATH entries without modifying the user's shell profile.
 pub fn child_env() -> HashMap<String, String> {
     let mut env = enriched_env().clone();
-    prepend_managed_npm_bin_path(&mut env);
+    if crate::config::ensure_loaded().toolchain_mode.is_managed() {
+        crate::toolchain::prepend_managed_tool_paths(&mut env);
+        prepend_managed_npm_bin_path(&mut env);
+    }
     env
 }
 
@@ -117,6 +119,65 @@ pub fn npm_registry_url() -> Option<String> {
     npm_registry_for_source(source).map(str::to_string)
 }
 
+/// Invoke npm through `node npm-cli.js`.
+///
+/// This avoids platform-specific wrappers (`npm.cmd` on Windows) and works for
+/// both a user-installed Node.js and VibeAround's managed portable Node.js.
+pub async fn npm_process(
+    args: &[String],
+    cwd: &std::path::Path,
+) -> std::io::Result<tokio::process::Command> {
+    let node_info = command("node")
+        .args(["-p", "process.execPath"])
+        .output()
+        .await?;
+    let node_exec = String::from_utf8_lossy(&node_info.stdout)
+        .trim()
+        .to_string();
+    let node_dir = std::path::Path::new(&node_exec).parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "cannot determine node install directory",
+        )
+    })?;
+
+    let candidates = [
+        node_dir
+            .join("node_modules")
+            .join("npm")
+            .join("bin")
+            .join("npm-cli.js"),
+        node_dir.join("../lib/node_modules/npm/bin/npm-cli.js"),
+        std::path::PathBuf::from("/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js"),
+        std::path::PathBuf::from("/usr/local/lib/node_modules/npm/bin/npm-cli.js"),
+    ];
+    let npm_cli = candidates
+        .iter()
+        .find(|path| path.exists())
+        .cloned()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "npm-cli.js not found in any of: {:?} — is npm installed with Node.js?",
+                    candidates
+                ),
+            )
+        })?;
+
+    let mut node_args: Vec<String> = vec![npm_cli.to_string_lossy().to_string()];
+    node_args.extend(args.iter().cloned());
+
+    tracing::info!("[npm] node {} {}", npm_cli.display(), args.join(" "));
+    let mut command = command("node");
+    command
+        .args(&node_args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    Ok(command)
+}
+
 fn npm_registry_for_source(source: &str) -> Option<&'static str> {
     match source {
         "cn" => Some(NPM_REGISTRY_CN),
@@ -153,10 +214,6 @@ pub fn managed_npm_bin_dir() -> std::path::PathBuf {
 }
 
 fn prepend_managed_npm_bin_path(env: &mut HashMap<String, String>) {
-    if !crate::config::ensure_loaded().toolchain_mode.is_managed() {
-        return;
-    }
-
     let candidate = managed_npm_bin_dir();
     if !candidate.exists() {
         return;

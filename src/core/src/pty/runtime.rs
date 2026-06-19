@@ -86,7 +86,12 @@ fn tool_exec_argv(tool: PtyTool, tmux_session: Option<&str>) -> String {
         return "bash -l".to_string();
     };
     crate::resources::agent_by_id(agent_id)
-        .map(|agent| crate::agent_detection::resolve_agent_command(agent_id, &agent.pty.command))
+        .map(|agent| {
+            crate::agent_detection::resolve_agent_command(
+                agent_id,
+                agent.pty_command_for_current_platform(),
+            )
+        })
         .unwrap_or_else(|| agent_id.to_string())
 }
 

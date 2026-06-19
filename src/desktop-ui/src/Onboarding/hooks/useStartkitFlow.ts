@@ -70,6 +70,13 @@ function needsInstall(report: StartkitItemReport): boolean {
   );
 }
 
+function createStartkitRunId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `startkit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function reportsForInstallStart(
   reports: StartkitItemReport[],
 ): StartkitItemReport[] {
@@ -100,15 +107,6 @@ function finalizeQueuedReports(
       return report;
     }
 
-    if (status === "complete" || status === "needs_input") {
-      return {
-        ...report,
-        status: "ok",
-        message: "Installed",
-        actions: [],
-      };
-    }
-
     if (status === "cancelled") {
       return {
         ...report,
@@ -120,7 +118,10 @@ function finalizeQueuedReports(
     return {
       ...report,
       status: "error",
-      message: "Install did not finish",
+      message:
+        status === "complete" || status === "needs_input"
+          ? "Install result was not reported"
+          : "Install did not finish",
     };
   });
 }
@@ -155,6 +156,7 @@ export function useStartkitFlow(): UseStartkitFlowResult {
   const [finalStatus, setFinalStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
+  const activeRunIdRef = useRef<string | null>(null);
 
   const reportById = useMemo(
     () => new Map(reports.map((report) => [report.id, report])),
@@ -186,6 +188,7 @@ export function useStartkitFlow(): UseStartkitFlowResult {
       scanProgressUnlisten = await listen<StartkitProgressEvent>(
         "startkit-progress",
         (event) => {
+          if (event.payload.runId) return;
           setReports((previous) => applyProgress(previous, event.payload));
         },
       );
@@ -219,6 +222,8 @@ export function useStartkitFlow(): UseStartkitFlowResult {
     choices: StartkitChoices,
     initialReports?: StartkitItemReport[],
   ) => {
+    const runId = createStartkitRunId();
+    activeRunIdRef.current = runId;
     setRunning(true);
     setComplete(false);
     setFinalStatus(null);
@@ -236,6 +241,7 @@ export function useStartkitFlow(): UseStartkitFlowResult {
       const unlistenProgress = await listen<StartkitProgressEvent>(
         "startkit-progress",
         (event) => {
+          if (event.payload.runId !== runId) return;
           setReports((previous) => applyProgress(previous, event.payload));
         },
       );
@@ -243,6 +249,8 @@ export function useStartkitFlow(): UseStartkitFlowResult {
       const unlistenComplete = await listen<StartkitCompleteEvent>(
         "startkit-complete",
         (event) => {
+          if (event.payload.runId !== runId) return;
+          activeRunIdRef.current = null;
           setFinalStatus(event.payload.status);
           setReports((previous) =>
             finalizeQueuedReports(previous, event.payload.status),
@@ -253,8 +261,11 @@ export function useStartkitFlow(): UseStartkitFlowResult {
       );
 
       unlistenRefs.current = [unlistenProgress, unlistenComplete];
-      await invoke("start_startkit_install", { settings, choices });
+      await invoke("start_startkit_install", { settings, choices, runId });
     } catch (err) {
+      if (activeRunIdRef.current === runId) {
+        activeRunIdRef.current = null;
+      }
       setError(String(err));
       setRunning(false);
     }
@@ -262,6 +273,7 @@ export function useStartkitFlow(): UseStartkitFlowResult {
 
   const cancel = useCallback(async () => {
     await invoke("cancel_startkit_install");
+    activeRunIdRef.current = null;
     setRunning(false);
     setComplete(true);
     setFinalStatus("cancelled");
@@ -271,6 +283,7 @@ export function useStartkitFlow(): UseStartkitFlowResult {
     if (running) return;
     for (const unlisten of unlistenRefs.current) unlisten();
     unlistenRefs.current = [];
+    activeRunIdRef.current = null;
     setPlan(null);
     setReports([]);
     setScanning(false);

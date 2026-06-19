@@ -4,7 +4,11 @@ use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     common::logging::init();
-    let daemon = server::ServerDaemon::new(common::config::DEFAULT_PORT);
+    let port = std::env::var("VIBEAROUND_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(common::config::DEFAULT_PORT);
+    let daemon = server::ServerDaemon::new(port);
     let dist_path = PathBuf::from("web").join("dist");
 
     let rt = tokio::runtime::Runtime::new()?;
