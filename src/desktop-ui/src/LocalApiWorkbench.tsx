@@ -216,10 +216,6 @@ export function LocalApiWorkbench({
           </Badge>
         </div>
         <div className="flex shrink-0 items-center gap-3 text-[11px] text-muted-foreground">
-          <span>
-            {serviceEnabled ? t("Enabled") : t("Disabled")}{" "}
-            <span className="font-mono text-foreground">{routes.length}</span>
-          </span>
           <label className="flex items-center gap-2">
             <span>
               {serviceEnabled ? t("Service enabled") : t("Service disabled")}
@@ -235,7 +231,12 @@ export function LocalApiWorkbench({
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)]">
+      <div
+        className={cn(
+          "grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)] transition-[filter,opacity]",
+          !serviceEnabled && "pointer-events-none opacity-45 grayscale",
+        )}
+      >
         <aside className="flex min-h-0 flex-col border-r border-border bg-background/70">
           <div className="shrink-0 border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
@@ -248,9 +249,6 @@ export function LocalApiWorkbench({
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold">
                   {selectedAgent.display_name}
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {routes.length} {t("routes")}
                 </div>
               </div>
             </div>
@@ -369,7 +367,7 @@ function RouteSection({
   return (
     <section className="mb-4">
       <div className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
-        {title} · {routes.length}
+        {title}
       </div>
       <div className="grid gap-1.5">
         {routes.map((route) => (
