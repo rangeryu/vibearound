@@ -64,8 +64,8 @@ import { AgentLaunchSettingsDialog } from "./AgentLaunchSettingsDialog";
 import { buildProfileCopyDraft } from "./profileClone";
 import {
   LocalAgentApiDialog,
-  type LocalAgentApiTarget,
 } from "./LocalAgentApiDialog";
+import type { LocalAgentApiTarget } from "./localAgentApi";
 import {
   agentLabel,
   connectionAgentId,
@@ -466,6 +466,9 @@ export function AgentLaunchBuilder({
 
   const selectedAgent = agents.find((agent) => agent.id === agentId);
   const selectedAgentIsDirectOnly = Boolean(selectedAgent?.direct_only);
+  const selectedAgentSupportsLocalApi = Boolean(
+    selectedAgent && !selectedAgent.direct_only && selectedAgent.acp_program.trim(),
+  );
   const selectedProfile =
     profileChoice.kind === "profile"
       ? profileById(profiles, profileChoice.profileId)
@@ -1210,8 +1213,12 @@ export function AgentLaunchBuilder({
                   void chooseProfileApiType(profile, apiType)
                 }
                 onMakeDefault={makeDefault}
-                onOpenDirectLocalApi={openDirectLocalApi}
-                onOpenProfileLocalApi={openProfileLocalApi}
+                onOpenDirectLocalApi={
+                  selectedAgentSupportsLocalApi ? openDirectLocalApi : undefined
+                }
+                onOpenProfileLocalApi={
+                  selectedAgentSupportsLocalApi ? openProfileLocalApi : undefined
+                }
                 onEditProfile={onEditProfile}
                 onDuplicateProfile={(profile) => void duplicateProfile(profile)}
                 onConnectionSettings={onConnectionSettings}

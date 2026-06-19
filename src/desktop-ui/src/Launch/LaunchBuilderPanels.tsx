@@ -171,8 +171,8 @@ export function ProfilePanel({
   onSelect: (choice: ProfileChoice) => void;
   onSelectApiType: (profile: ProfileSummary, apiType: string) => void;
   onMakeDefault: (choice: ProfileChoice) => Promise<void>;
-  onOpenDirectLocalApi: () => void;
-  onOpenProfileLocalApi: (profile: ProfileSummary) => void;
+  onOpenDirectLocalApi?: () => void;
+  onOpenProfileLocalApi?: (profile: ProfileSummary) => void;
   onEditProfile: (profile: ProfileSummary) => void;
   onDuplicateProfile: (profile: ProfileSummary) => void;
   onConnectionSettings: (
@@ -252,9 +252,7 @@ export function ProfilePanel({
             onClick={(event) => event.stopPropagation()}
           >
             <DirectProfileActionsMenu
-              isDefault={directIsGlobalDefault}
               disabled={busy}
-              onMakeDefault={() => void onMakeDefault({ kind: "direct" })}
               onLocalApi={onOpenDirectLocalApi}
             />
           </div>

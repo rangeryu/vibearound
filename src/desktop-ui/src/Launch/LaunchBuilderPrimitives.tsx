@@ -406,50 +406,13 @@ export function ProfileActionsMenu({
 }
 
 export function DirectProfileActionsMenu({
-  isDefault,
   disabled,
-  onMakeDefault,
   onLocalApi,
 }: {
-  isDefault: boolean;
   disabled: boolean;
-  onMakeDefault: () => void;
   onLocalApi?: () => void;
 }) {
   const { t } = useI18n();
-  if (onLocalApi) {
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            size="icon-xs"
-            variant="ghost"
-            className="h-7 w-7 text-muted-foreground"
-            disabled={disabled}
-            aria-label={t("More")}
-          >
-            <MoreVertical className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem
-            className="text-xs"
-            disabled={disabled}
-            onSelect={() => onLocalApi()}
-          >
-            <Server className="h-3 w-3" />
-            {t("Local API")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
-  if (isDefault) {
-    return (
-      <DisabledMoreButton reason={t("Direct profile cannot be edited or deleted")} />
-    );
-  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -466,16 +429,11 @@ export function DirectProfileActionsMenu({
       <DropdownMenuContent align="end" className="w-40">
         <DropdownMenuItem
           className="text-xs"
-          disabled={disabled}
-          onSelect={() => onMakeDefault()}
+          disabled={disabled || !onLocalApi}
+          onSelect={() => onLocalApi?.()}
         >
-          <Star className="h-3 w-3" />
-          {t("Set app default")}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-xs" disabled>
-          <Pencil className="h-3 w-3" />
-          {t("Direct profile is fixed")}
+          <Server className="h-3 w-3" />
+          {t("Local API")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -25,16 +25,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { API_BASE, apiFetch, getAuthToken } from "@/lib/api";
-
-type LocalApiProtocol = "openai-responses" | "openai-chat" | "anthropic";
-
-export interface LocalAgentApiTarget {
-  agentId: string;
-  agentLabel: string;
-  profileId: string;
-  profileLabel: string;
-  workspacePath: string;
-}
+import {
+  LOCAL_API_PROTOCOLS,
+  extractLocalAgentResponseText,
+  localAgentBasePath,
+  localAgentErrorText,
+  localAgentProtocolSpec,
+  localAgentTestPayload,
+  maskLocalApiAuthHeader,
+  parseLocalAgentJson,
+  type LocalAgentApiTarget,
+  type LocalApiProtocol,
+} from "./localAgentApi";
 
 interface LocalAgentApiDialogProps {
   target: LocalAgentApiTarget | null;
@@ -46,32 +48,6 @@ interface TestResult {
   status: number;
   text: string;
 }
-
-const PROTOCOLS: Array<{
-  id: LocalApiProtocol;
-  label: string;
-  shortLabel: string;
-  endpoint: string;
-}> = [
-  {
-    id: "openai-responses",
-    label: "OpenAI Responses",
-    shortLabel: "Responses",
-    endpoint: "responses",
-  },
-  {
-    id: "openai-chat",
-    label: "OpenAI Chat Completions",
-    shortLabel: "Chat",
-    endpoint: "chat/completions",
-  },
-  {
-    id: "anthropic",
-    label: "Anthropic Messages",
-    shortLabel: "Anthropic",
-    endpoint: "messages",
-  },
-];
 
 export function LocalAgentApiDialog({
   target,
@@ -90,8 +66,7 @@ export function LocalAgentApiDialog({
 
   const basePath = target ? localAgentBasePath(target) : "";
   const baseUrl = target ? `${API_BASE}${basePath}` : "";
-  const selectedProtocol =
-    PROTOCOLS.find((item) => item.id === protocol) ?? PROTOCOLS[0];
+  const selectedProtocol = localAgentProtocolSpec(protocol);
 
   useEffect(() => {
     if (!target) return;
@@ -148,16 +123,16 @@ export function LocalAgentApiDialog({
           "content-type": "application/json",
           "x-vibearound-cwd": target.workspacePath,
         },
-        body: JSON.stringify(testPayload(protocol, model, prompt)),
+        body: JSON.stringify(localAgentTestPayload(protocol, model, prompt)),
       });
       const rawText = await response.text();
-      const payload = parseJson(rawText);
+      const payload = parseLocalAgentJson(rawText);
       setTestResult({
         ok: response.ok,
         status: response.status,
         text: response.ok
-          ? extractResponseText(protocol, payload) || rawText
-          : errorText(payload, rawText),
+          ? extractLocalAgentResponseText(protocol, payload) || rawText
+          : localAgentErrorText(payload, rawText),
       });
     } catch (error) {
       setTestResult({
@@ -189,7 +164,7 @@ export function LocalAgentApiDialog({
               <span className="text-[11px] font-medium text-muted-foreground">
                 {t("Supported protocols")}
               </span>
-              {PROTOCOLS.map((item) => (
+              {LOCAL_API_PROTOCOLS.map((item) => (
                 <Badge
                   key={item.id}
                   variant="secondary"
@@ -207,13 +182,13 @@ export function LocalAgentApiDialog({
             />
             <CopyRow
               label={t("Auth header")}
-              value={maskAuthHeader(authHeaderValue)}
+              value={maskLocalApiAuthHeader(authHeaderValue)}
               copied={copiedKey === "auth"}
               onCopy={() => copyValue("auth", authHeaderValue)}
               icon={<KeyRound className="h-3.5 w-3.5" />}
             />
             <div className="grid gap-1 rounded-md border border-border/70 bg-muted/20 p-2">
-              {PROTOCOLS.map((item) => (
+              {LOCAL_API_PROTOCOLS.map((item) => (
                 <CopyRow
                   key={item.id}
                   label={item.label}
@@ -252,7 +227,7 @@ export function LocalAgentApiDialog({
                 }}
               >
                 <TabsList className="h-8">
-                  {PROTOCOLS.map((item) => (
+                  {LOCAL_API_PROTOCOLS.map((item) => (
                     <TabsTrigger
                       key={item.id}
                       value={item.id}
@@ -344,90 +319,6 @@ export function LocalAgentApiDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function localAgentBasePath(target: LocalAgentApiTarget): string {
-  return `/va/local-agent/${encodeURIComponent(target.agentId)}/${encodeURIComponent(
-    target.profileId,
-  )}/v1`;
-}
-
-function testPayload(protocol: LocalApiProtocol, model: string, prompt: string) {
-  switch (protocol) {
-    case "openai-chat":
-      return {
-        model,
-        messages: [{ role: "user", content: prompt }],
-        stream: false,
-      };
-    case "anthropic":
-      return {
-        model,
-        max_tokens: 1024,
-        messages: [{ role: "user", content: prompt }],
-        stream: false,
-      };
-    case "openai-responses":
-    default:
-      return { model, input: prompt, stream: false };
-  }
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-function extractResponseText(protocol: LocalApiProtocol, payload: unknown): string {
-  if (!payload || typeof payload !== "object") return "";
-  const record = payload as Record<string, unknown>;
-  if (protocol === "openai-chat") {
-    const choice = asArray(record.choices)[0];
-    const message = asRecord(asRecord(choice).message);
-    return stringValue(message.content);
-  }
-  if (protocol === "anthropic") {
-    return asArray(record.content)
-      .map((part) => stringValue(asRecord(part).text))
-      .filter(Boolean)
-      .join("");
-  }
-  const outputText = stringValue(record.output_text);
-  if (outputText) return outputText;
-  return asArray(record.output)
-    .flatMap((item) => asArray(asRecord(item).content))
-    .map((part) => stringValue(asRecord(part).text))
-    .filter(Boolean)
-    .join("");
-}
-
-function errorText(payload: unknown, fallback: string): string {
-  const error = asRecord(asRecord(payload).error);
-  return stringValue(error.message) || fallback;
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function maskAuthHeader(value: string): string {
-  const prefix = "Authorization: Bearer ";
-  if (!value.startsWith(prefix)) return value;
-  const token = value.slice(prefix.length);
-  if (!token || token === "<token>") return value;
-  if (token.length <= 18) return `${prefix}${token}`;
-  return `${prefix}${token.slice(0, 8)}...${token.slice(-6)}`;
 }
 
 function CopyRow({
