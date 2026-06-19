@@ -29,7 +29,7 @@ use std::sync::{Arc, OnceLock};
 use anyhow::{anyhow, Context};
 use tokio::sync::{oneshot, Mutex};
 
-use acp::schema;
+use acp::schema::v1 as schema;
 use agent_client_protocol as acp;
 
 use crate::process::bridge::{BridgeFactory, ProcessBridge};

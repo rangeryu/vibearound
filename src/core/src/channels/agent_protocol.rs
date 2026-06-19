@@ -1,4 +1,4 @@
-use agent_client_protocol::schema as acp;
+use agent_client_protocol::schema::v1 as acp;
 use serde_json::Value;
 
 pub(crate) const PROTOCOL_OPEN: &str = "<va-agent-protocol>";

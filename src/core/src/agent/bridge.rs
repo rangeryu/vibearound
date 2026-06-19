@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use acp::schema;
+use acp::schema::v1 as schema;
 use agent_client_protocol as acp;
 use anyhow::anyhow;
 use tokio::sync::oneshot;
@@ -109,7 +109,8 @@ async fn drive_agent_bridge(
             acp::on_receive_notification!(),
         )
         .connect_with(transport, async move |conn| {
-            let init_req = schema::InitializeRequest::new(schema::ProtocolVersion::V1).client_info(
+            let init_req =
+                schema::InitializeRequest::new(acp::schema::ProtocolVersion::V1).client_info(
                 schema::Implementation::new("vibearound", env!("CARGO_PKG_VERSION"))
                     .title("VibeAround"),
             );
