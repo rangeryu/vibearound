@@ -46,6 +46,7 @@ const MAX_LOCAL_API_ATTACHMENT_TOTAL_BYTES = 40 * 1024 * 1024;
 interface LocalAgentApiPanelProps {
   target: LocalAgentApiTarget;
   className?: string;
+  serviceEnabled?: boolean;
 }
 
 interface TestResult {
@@ -57,6 +58,7 @@ interface TestResult {
 export function LocalAgentApiPanel({
   target,
   className,
+  serviceEnabled = true,
 }: LocalAgentApiPanelProps) {
   const { t } = useI18n();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -87,6 +89,7 @@ export function LocalAgentApiPanel({
   const modelsUrl = `${baseUrl}/models`;
   const showDropTarget = dragDepth > 0;
   const canSendTest =
+    serviceEnabled &&
     !testing &&
     !modelLoading &&
     !attachmentLoading &&
@@ -106,6 +109,11 @@ export function LocalAgentApiPanel({
     setAttachmentError(null);
     setDragDepth(0);
     setTestResult(null);
+    if (!serviceEnabled) {
+      setModelLoading(false);
+      setModelLoadError(true);
+      return;
+    }
     let cancelled = false;
     void fetch(`${API_BASE}${localAgentBasePath(target)}/models`, {
       headers: {
@@ -142,7 +150,7 @@ export function LocalAgentApiPanel({
     return () => {
       cancelled = true;
     };
-  }, [target]);
+  }, [target, serviceEnabled]);
 
   async function copyValue(key: string, value: string) {
     try {
@@ -157,6 +165,7 @@ export function LocalAgentApiPanel({
   }
 
   async function appendFiles(filesLike: FileList | File[]) {
+    if (!serviceEnabled) return;
     const files = Array.from(filesLike);
     if (files.length === 0) return;
 
@@ -283,7 +292,7 @@ export function LocalAgentApiPanel({
   }
 
   async function runTest() {
-    if (!target || !selectedProtocol) return;
+    if (!target || !selectedProtocol || !serviceEnabled) return;
     setTesting(true);
     setTestResult(null);
     try {
@@ -369,11 +378,13 @@ export function LocalAgentApiPanel({
           label={t("Models")}
           models={modelOptions}
           fallback={
-            modelLoading
-              ? t("Loading…")
-              : modelLoadError
-                ? t("Failed to fetch model list")
-                : model || target.agentId
+            !serviceEnabled
+              ? t("Local API service disabled")
+              : modelLoading
+                ? t("Loading…")
+                : modelLoadError
+                  ? t("Failed to fetch model list")
+                  : model || target.agentId
           }
           copiedKey={copiedKey}
           onCopy={(modelId) => copyValue(`model:${modelId}`, modelId)}
@@ -399,7 +410,7 @@ export function LocalAgentApiPanel({
               placeholder={modelLoading ? t("Loading…") : undefined}
               inputClassName="h-7 w-full font-mono text-xs"
               dropdownClassName="max-h-36"
-              disabled={modelLoading}
+              disabled={modelLoading || !serviceEnabled}
             />
           </div>
           <label className="grid gap-1 text-[11px] text-muted-foreground">
@@ -475,6 +486,7 @@ export function LocalAgentApiPanel({
             value={prompt}
             aria-label={t("Message")}
             placeholder={t("Message")}
+            disabled={!serviceEnabled}
             onChange={(event) => {
               setPrompt(event.currentTarget.value);
               setTestResult(null);
@@ -486,7 +498,7 @@ export function LocalAgentApiPanel({
             onCompositionEnd={() => {
               isComposingRef.current = false;
             }}
-            className="min-h-[48px] w-full flex-1 resize-none border-0 bg-transparent px-1 py-1 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
+            className="min-h-[48px] w-full flex-1 resize-none border-0 bg-transparent px-1 py-1 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60"
           />
           <div className="flex shrink-0 items-center justify-between gap-2 pt-1">
             <div className="flex min-w-0 items-center gap-1.5">
@@ -502,7 +514,7 @@ export function LocalAgentApiPanel({
                 variant="ghost"
                 size="icon-xs"
                 className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                disabled={testing || attachmentLoading}
+                disabled={!serviceEnabled || testing || attachmentLoading}
                 aria-label={t("Attach files")}
                 title={t("Attach files")}
                 onClick={() => fileInputRef.current?.click()}

@@ -148,10 +148,13 @@ export function getAgentExecutableResolution(
   agentId: string,
   options?: { scan?: boolean },
 ): Promise<AgentExecutableResolution> {
-  return invoke<AgentExecutableResolution>("launcher_agent_executable_resolution", {
-    agentId,
-    scan: options?.scan ?? false,
-  });
+  return invoke<AgentExecutableResolution>(
+    "launcher_agent_executable_resolution",
+    {
+      agentId,
+      scan: options?.scan ?? false,
+    },
+  );
 }
 
 export function getAgentExecutableLatest(
@@ -230,6 +233,7 @@ export interface LauncherPreferences {
   enabledAgents: string[];
   defaultProfiles: Record<string, string>;
   compatibilityBridge: CompatibilityBridgeMode;
+  localAgentApiEnabled: boolean;
   profileConnections: ProfileConnections;
 }
 
@@ -259,7 +263,9 @@ export function getSettings(): Promise<Settings> {
   return invoke<Settings>("get_settings");
 }
 
-export function listLauncherWorkspaces(agentId?: string): Promise<WorkspaceOption[]> {
+export function listLauncherWorkspaces(
+  agentId?: string,
+): Promise<WorkspaceOption[]> {
   return invoke<WorkspaceOption[]>("launcher_list_workspaces", {
     agentId: agentId ?? null,
   });
@@ -305,6 +311,12 @@ export function setLauncherCompatibilityBridge(
   mode: CompatibilityBridgeMode,
 ): Promise<void> {
   return invoke<void>("launcher_set_compatibility_bridge", { mode });
+}
+
+export function setLauncherLocalAgentApiEnabled(
+  enabled: boolean,
+): Promise<void> {
+  return invoke<void>("launcher_set_local_agent_api_enabled", { enabled });
 }
 
 export function setProfileConnection(

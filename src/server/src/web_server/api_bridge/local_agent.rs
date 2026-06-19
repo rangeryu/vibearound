@@ -27,6 +27,9 @@ pub async fn local_agent_responses_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    if !local_agent_api_enabled() {
+        return local_agent_api_disabled_response();
+    }
     handle_local_agent_request(
         state,
         agent_id,
@@ -44,6 +47,9 @@ pub async fn local_agent_chat_completions_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    if !local_agent_api_enabled() {
+        return local_agent_api_disabled_response();
+    }
     handle_local_agent_request(
         state,
         agent_id,
@@ -61,6 +67,9 @@ pub async fn local_agent_messages_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    if !local_agent_api_enabled() {
+        return local_agent_api_disabled_response();
+    }
     handle_local_agent_request(
         state,
         agent_id,
@@ -70,6 +79,17 @@ pub async fn local_agent_messages_handler(
         body,
     )
     .await
+}
+
+pub(super) fn local_agent_api_enabled() -> bool {
+    common::config::ensure_loaded().local_agent_api.enabled
+}
+
+pub(super) fn local_agent_api_disabled_response() -> Response {
+    json_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "local agent API service is disabled",
+    )
 }
 
 async fn handle_local_agent_request(

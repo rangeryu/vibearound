@@ -321,6 +321,7 @@ fn main() {
             profiles::launcher_remove_workspace,
             profiles::launcher_reorder_workspaces,
             profiles::launcher_set_compatibility_bridge,
+            profiles::launcher_set_local_agent_api_enabled,
             profiles::launcher_set_profile_connection,
         ])
         .setup({

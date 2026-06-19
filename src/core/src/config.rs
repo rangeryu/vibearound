@@ -166,6 +166,8 @@ pub struct Config {
     pub proxy: HttpProxyConfig,
     // --- API bridge behavior ---
     pub api_bridge: ApiBridgeConfig,
+    // --- Local ACP-to-API service ---
+    pub local_agent_api: LocalAgentApiConfig,
     // --- Host-side web search fallback ---
     pub search_tool: SearchToolConfig,
     // --- Raw channels JSON (for dynamic plugin config) ---
@@ -217,6 +219,11 @@ pub struct ApiBridgeConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalAgentApiConfig {
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SearchToolConfig {
     pub stdio_path: Option<PathBuf>,
     pub max_results: Option<usize>,
@@ -262,6 +269,12 @@ impl Default for ApiBridgeConfig {
             retry_429: Retry429Config::default(),
             replace_provider_web_search: false,
         }
+    }
+}
+
+impl Default for LocalAgentApiConfig {
+    fn default() -> Self {
+        Self { enabled: false }
     }
 }
 
@@ -569,6 +582,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
 
     let im_agent = load_im_agent_config(&root);
     let api_bridge = load_api_bridge_config(&root);
+    let local_agent_api = load_local_agent_api_config(&root);
     let search_tool = load_search_tool_config(&root);
 
     let proxy = root
@@ -615,6 +629,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         integrations,
         proxy,
         api_bridge,
+        local_agent_api,
         search_tool,
         raw_channels,
     }
@@ -649,6 +664,20 @@ fn load_api_bridge_config(root: &serde_json::Value) -> ApiBridgeConfig {
                 &["replace_provider_web_search", "replaceProviderWebSearch"],
             )
             .unwrap_or(false),
+        })
+        .unwrap_or_default()
+}
+
+fn load_local_agent_api_config(root: &serde_json::Value) -> LocalAgentApiConfig {
+    root.get("local_agent_api")
+        .or_else(|| root.get("localAgentApi"))
+        .or_else(|| root.get("local_api"))
+        .and_then(|value| value.as_object())
+        .map(|settings| LocalAgentApiConfig {
+            enabled: settings
+                .get("enabled")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false),
         })
         .unwrap_or_default()
 }
@@ -943,6 +972,7 @@ impl Default for Config {
             integrations: AgentIntegrationsConfig::default(),
             proxy: HttpProxyConfig::default(),
             api_bridge: ApiBridgeConfig::default(),
+            local_agent_api: LocalAgentApiConfig::default(),
             search_tool: SearchToolConfig::default(),
             raw_channels: serde_json::Value::Object(serde_json::Map::new()),
         }
@@ -1110,6 +1140,32 @@ mod tests {
         assert_eq!(config.api_bridge.retry_429.max_retries, Some(10));
         assert_eq!(config.api_bridge.retry_429.delay_seconds, 10);
         assert!(!config.api_bridge.replace_provider_web_search);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn local_agent_api_defaults_to_disabled() {
+        let dir = unique_test_dir("local-agent-api-default");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, "{}").unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert!(!config.local_agent_api.enabled);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn local_agent_api_can_be_enabled() {
+        let dir = unique_test_dir("local-agent-api-enabled");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, r#"{ "local_agent_api": { "enabled": true } }"#).unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert!(config.local_agent_api.enabled);
         fs::remove_dir_all(&dir).unwrap();
     }
 
