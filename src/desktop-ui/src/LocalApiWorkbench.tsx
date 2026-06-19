@@ -1,20 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Copy,
-  Layers3,
-  Play,
-  Search,
-  Server,
-  Square,
-} from "lucide-react";
+import { Copy, Play, Search, Server, Square } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { API_BASE, DAEMON_PORT } from "@/lib/api";
+import { DAEMON_PORT } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   getLauncherPreferences,
@@ -24,12 +16,10 @@ import {
   type LauncherPreferences,
 } from "./Launch/api";
 import {
-  LOCAL_API_PROTOCOLS,
   localAgentBasePath,
-  localAgentProtocolSpec,
   type LocalAgentApiTarget,
-  type LocalApiProtocol,
 } from "./Launch/localAgentApi";
+import { LocalAgentApiPanel } from "./Launch/LocalAgentApiPanel";
 import {
   agentWorkspace,
   isBridgeAgent,
@@ -51,7 +41,11 @@ interface LocalApiRoute {
   target: LocalAgentApiTarget;
 }
 
-export function LocalApiWorkbench({ refreshToken = 0 }: { refreshToken?: number }) {
+export function LocalApiWorkbench({
+  refreshToken = 0,
+}: {
+  refreshToken?: number;
+}) {
   const { t } = useI18n();
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
@@ -61,8 +55,6 @@ export function LocalApiWorkbench({ refreshToken = 0 }: { refreshToken?: number 
   const [agentId, setAgentId] = useState("");
   const [routeId, setRouteId] = useState("");
   const [query, setQuery] = useState("");
-  const [protocol, setProtocol] =
-    useState<LocalApiProtocol>("openai-responses");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -96,12 +88,16 @@ export function LocalApiWorkbench({ refreshToken = 0 }: { refreshToken?: number 
   useEffect(() => {
     if (!prefs || visibleAgents.length === 0) return;
     if (agentId && visibleAgents.some((agent) => agent.id === agentId)) return;
-    const preferred = visibleAgents.find((agent) => agent.id === prefs.selectedAgent);
+    const preferred = visibleAgents.find(
+      (agent) => agent.id === prefs.selectedAgent,
+    );
     setAgentId((preferred ?? visibleAgents[0]).id);
   }, [agentId, prefs, visibleAgents]);
 
   const selectedAgent =
-    visibleAgents.find((agent) => agent.id === agentId) ?? visibleAgents[0] ?? null;
+    visibleAgents.find((agent) => agent.id === agentId) ??
+    visibleAgents[0] ??
+    null;
 
   const routes = useMemo<LocalApiRoute[]>(() => {
     if (!selectedAgent || !prefs) return [];
@@ -169,14 +165,8 @@ export function LocalApiWorkbench({ refreshToken = 0 }: { refreshToken?: number 
     setRouteId((routes.find((route) => route.enabled) ?? routes[0]).id);
   }, [routeId, routes]);
 
-  const selectedRoute = routes.find((route) => route.id === routeId) ?? routes[0] ?? null;
-  const selectedProtocol = localAgentProtocolSpec(protocol);
-  const basePath = selectedRoute ? localAgentBasePath(selectedRoute.target) : "";
-  const endpointUrl =
-    selectedRoute && selectedProtocol
-      ? `${API_BASE}${basePath}/${selectedProtocol.endpoint}`
-      : "";
-  const modelsUrl = selectedRoute ? `${API_BASE}${basePath}/models` : "";
+  const selectedRoute =
+    routes.find((route) => route.id === routeId) ?? routes[0] ?? null;
   const enabledCount = routes.filter((route) => route.enabled).length;
   const disabledCount = Math.max(0, routes.length - enabledCount);
 
@@ -231,7 +221,13 @@ export function LocalApiWorkbench({ refreshToken = 0 }: { refreshToken?: number 
             title={t("Copy")}
           >
             127.0.0.1:{DAEMON_PORT}
-            <Copy className="h-3 w-3 text-muted-foreground" />
+            {copiedKey === "daemon-url" ? (
+              <span className="font-sans text-[11px] text-primary">
+                {t("Copied")}
+              </span>
+            ) : (
+              <Copy className="h-3 w-3 text-muted-foreground" />
+            )}
           </button>
           <span className="hidden truncate text-[11px] text-muted-foreground md:inline">
             {t("Local only")} · {t("Path prefix")}{" "}
@@ -331,11 +327,14 @@ export function LocalApiWorkbench({ refreshToken = 0 }: { refreshToken?: number 
               <section className="flex items-start justify-between gap-4">
                 <div className="flex min-w-0 items-start gap-3">
                   <BrandIcon
-                    kind={selectedRoute.profileId === "direct" ? "cli" : "provider"}
+                    kind={
+                      selectedRoute.profileId === "direct" ? "cli" : "provider"
+                    }
                     id={
                       selectedRoute.profileId === "direct"
                         ? selectedRoute.agentId
-                        : (selectedRoute.providerId ?? selectedRoute.providerLabel)
+                        : (selectedRoute.providerId ??
+                          selectedRoute.providerLabel)
                     }
                     fallback={selectedRoute.providerIcon}
                     label={selectedRoute.profileLabel}
@@ -368,7 +367,9 @@ export function LocalApiWorkbench({ refreshToken = 0 }: { refreshToken?: number 
                       : "bg-muted text-muted-foreground",
                   )}
                 >
-                  {selectedRoute.enabled ? t("Bridge enabled") : t("Bridge disabled")}
+                  {selectedRoute.enabled
+                    ? t("Bridge enabled")
+                    : t("Bridge disabled")}
                 </Badge>
               </section>
 
@@ -395,60 +396,10 @@ export function LocalApiWorkbench({ refreshToken = 0 }: { refreshToken?: number 
                 />
               </section>
 
-              <Tabs
-                value={protocol}
-                onValueChange={(value) => setProtocol(value as LocalApiProtocol)}
-              >
-                <TabsList className="h-8">
-                  {LOCAL_API_PROTOCOLS.map((item) => (
-                    <TabsTrigger
-                      key={item.id}
-                      value={item.id}
-                      className="px-3 text-xs"
-                    >
-                      {item.shortLabel}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-
-              <section className="rounded-md border border-border bg-card p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <div className="text-sm font-semibold">
-                    {t("Manual configuration")}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {t("Click a value to copy.")}
-                  </div>
-                </div>
-                <CopyRow
-                  label={t("Base URL")}
-                  value={endpointUrl}
-                  copied={copiedKey === "endpoint"}
-                  onCopy={() => copyValue("endpoint", endpointUrl)}
-                />
-                <CopyRow
-                  label={t("Models API")}
-                  value={modelsUrl}
-                  copied={copiedKey === "models"}
-                  onCopy={() => copyValue("models", modelsUrl)}
-                />
-                <CopyRow
-                  label={t("Models")}
-                  value={t("Model list loads in the test panel")}
-                  muted
-                />
-              </section>
-
-              <section className="rounded-md border border-border bg-card p-3">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <Layers3 className="h-4 w-4 text-primary" />
-                  {t("Test message")}
-                </div>
-                <div className="mt-3 rounded-md border border-dashed border-border bg-muted/20 px-3 py-5 text-xs text-muted-foreground">
-                  {t("Test composer will use this selected route.")}
-                </div>
-              </section>
+              <LocalAgentApiPanel
+                key={selectedRoute.id}
+                target={selectedRoute.target}
+              />
             </div>
           )}
         </main>
@@ -510,7 +461,9 @@ function RouteSection({
             <span
               className={cn(
                 "h-2 w-2 shrink-0 rounded-full",
-                route.enabled ? "bg-primary" : "border border-muted-foreground/50",
+                route.enabled
+                  ? "bg-primary"
+                  : "border border-muted-foreground/50",
               )}
             />
           </button>
@@ -536,8 +489,12 @@ function RouteStep({
         active ? "border-primary/25 bg-primary/10" : "border-border bg-card",
       )}
     >
-      <div className="truncate text-xs font-semibold text-foreground">{title}</div>
-      <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{detail}</div>
+      <div className="truncate text-xs font-semibold text-foreground">
+        {title}
+      </div>
+      <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+        {detail}
+      </div>
     </div>
   );
 }
@@ -546,54 +503,6 @@ function RouteArrow() {
   return (
     <div className="flex h-6 items-center justify-center text-muted-foreground">
       <Play className="h-3 w-3" />
-    </div>
-  );
-}
-
-function CopyRow({
-  label,
-  value,
-  copied = false,
-  muted = false,
-  onCopy,
-}: {
-  label: string;
-  value: string;
-  copied?: boolean;
-  muted?: boolean;
-  onCopy?: () => void;
-}) {
-  const { t } = useI18n();
-  const clickable = Boolean(onCopy);
-  return (
-    <div className="grid grid-cols-[76px_minmax(0,1fr)] items-center gap-3 border-t border-border/70 py-1.5 first:border-t-0">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      {clickable ? (
-        <button
-          type="button"
-          className="flex h-6 min-w-0 cursor-pointer items-center justify-between gap-2 rounded bg-muted/30 px-2 text-left font-mono text-[11px] hover:bg-muted/60"
-          title={t("Copy")}
-          onClick={onCopy}
-        >
-          <span className="min-w-0 truncate">{value}</span>
-          {copied ? (
-            <span className="shrink-0 font-sans text-[11px] text-primary">
-              {t("Copied")}
-            </span>
-          ) : (
-            <Copy className="h-3 w-3 shrink-0 text-muted-foreground" />
-          )}
-        </button>
-      ) : (
-        <div
-          className={cn(
-            "flex h-6 min-w-0 items-center rounded bg-muted/30 px-2 font-mono text-[11px]",
-            muted ? "text-muted-foreground" : "text-foreground",
-          )}
-        >
-          <span className="min-w-0 truncate">{value}</span>
-        </div>
-      )}
     </div>
   );
 }
