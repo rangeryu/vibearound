@@ -644,6 +644,32 @@ pub fn launcher_set_compatibility_bridge(
 }
 
 #[tauri::command]
+pub fn launcher_set_local_agent_api_enabled(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    config::update_settings_json(|root| {
+        if !root.is_object() {
+            *root = serde_json::json!({});
+        }
+        let Some(root_obj) = root.as_object_mut() else {
+            return;
+        };
+        let entry = root_obj
+            .entry("local_agent_api".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        if !entry.is_object() {
+            *entry = serde_json::json!({});
+        }
+        if let Some(settings) = entry.as_object_mut() {
+            settings.insert("enabled".to_string(), serde_json::json!(enabled));
+        }
+    })?;
+    emit_launch_config_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn launcher_set_profile_connection(
     app: tauri::AppHandle,
     profile_id: String,

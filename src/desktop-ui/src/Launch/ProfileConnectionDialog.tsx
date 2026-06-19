@@ -56,6 +56,7 @@ import {
   manualBridgeConfig,
   type ManualSetting,
 } from "./ProfileConnectionManualGuide";
+import { ModelIdCombobox, type ModelIdComboboxOption } from "./ModelIdCombobox";
 import type {
   ConnectionAgentId,
   ModelDef,
@@ -731,8 +732,14 @@ function ModelSettingDialog({
   const [models, setModels] = useState<ProfileBridgeModelPreference[]>(
     () => setting.models.length > 0 ? setting.models : [{ upstreamModel: "" }],
   );
-  const [openPickerIndex, setOpenPickerIndex] = useState<number | null>(null);
   const cleaned = cleanBridgeModels(models);
+  const pickerOptions: ModelIdComboboxOption[] = setting.options.map((option) => ({
+    id: option.id,
+    label: option.label,
+    aliases: option.aliases,
+    contextText: modelContextText(option, t),
+    inputText: inputCapabilityText(option.capabilities, t),
+  }));
 
   function updateModel(index: number, patch: ProfileBridgeModelPreference) {
     setModels((current) =>
@@ -771,7 +778,6 @@ function ModelSettingDialog({
               const upstreamModel = cleanModelId(model.upstreamModel);
               const option = findModelOption(setting.options, upstreamModel);
               const isCustomModel = !!upstreamModel && !option;
-              const suggestions = modelOptionSuggestions(setting.options, upstreamModel);
               return (
                 <div
                   key={index}
@@ -791,75 +797,21 @@ function ModelSettingDialog({
                     </label>
                     <div className="grid min-w-0 gap-1 text-[11px] text-muted-foreground">
                       <span>{t("Upstream model")}</span>
-                      <div className="relative">
-                        <Input
-                          value={model.upstreamModel ?? ""}
-                          className="h-7 w-full font-mono text-xs"
-                          placeholder={t("model id (e.g. gpt-4o, claude-sonnet-4-6)")}
-                          onFocus={() => setOpenPickerIndex(index)}
-                          onBlur={() => {
-                            window.setTimeout(() => {
-                              setOpenPickerIndex((current) =>
-                                current === index ? null : current,
-                              );
-                            }, 120);
-                          }}
-                          onChange={(event) =>
-                            updateModel(
-                              index,
-                              upstreamModelPatch(
-                                setting.options,
-                                event.currentTarget.value,
-                                model.capabilities,
-                              ),
-                            )
-                          }
-                        />
-                        {openPickerIndex === index && suggestions.length > 0 && (
-                          <div
-                            role="listbox"
-                            className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg"
-                          >
-                            {suggestions.map((candidate) => (
-                              <button
-                                key={candidate.id}
-                                type="button"
-                                role="option"
-                                className="grid w-full min-w-0 gap-1 rounded px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
-                                onMouseDown={(event) => {
-                                  event.preventDefault();
-                                  updateModel(
-                                    index,
-                                    upstreamModelPatch(
-                                      setting.options,
-                                      candidate.id,
-                                      model.capabilities,
-                                    ),
-                                  );
-                                  setOpenPickerIndex(null);
-                                }}
-                              >
-                                <span className="flex min-w-0 items-baseline gap-2">
-                                  <span className="truncate font-mono text-xs text-foreground">
-                                    {candidate.id}
-                                  </span>
-                                  {candidate.label && candidate.label !== candidate.id && (
-                                    <span className="truncate text-[11px] text-muted-foreground">
-                                      {candidate.label}
-                                    </span>
-                                  )}
-                                </span>
-                                <span className="truncate text-[11px] text-muted-foreground">
-                                  {modelContextText(candidate, t)}
-                                </span>
-                                <span className="truncate text-[11px] text-muted-foreground">
-                                  {inputCapabilityText(candidate.capabilities, t)}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                      <ModelIdCombobox
+                        value={model.upstreamModel ?? ""}
+                        options={pickerOptions}
+                        placeholder={t("model id (e.g. gpt-4o, claude-sonnet-4-6)")}
+                        onValueChange={(value) =>
+                          updateModel(
+                            index,
+                            upstreamModelPatch(
+                              setting.options,
+                              value,
+                              model.capabilities,
+                            ),
+                          )
+                        }
+                      />
                     </div>
                     <Button
                       type="button"
@@ -998,20 +950,6 @@ function bridgeModelOptions(
     options.unshift({ id: model, label: null });
   }
   return options;
-}
-
-function modelOptionSuggestions(options: ModelDef[], model: string): ModelDef[] {
-  const query = cleanModelId(model).toLowerCase();
-  const filtered = query
-    ? options.filter((option) => modelOptionMatches(option, query))
-    : options;
-  return filtered.slice(0, 8);
-}
-
-function modelOptionMatches(option: ModelDef, query: string): boolean {
-  return [option.id, option.label ?? "", ...(option.aliases ?? [])].some((value) =>
-    value.toLowerCase().includes(query),
-  );
 }
 
 function findModelOption(options: ModelDef[], model: string): ModelDef | null {

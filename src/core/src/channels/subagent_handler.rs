@@ -6,7 +6,7 @@
 
 use std::sync::{Arc, Weak};
 
-use agent_client_protocol::schema as acp;
+use agent_client_protocol::schema::v1 as acp;
 use tokio::sync::Mutex;
 
 use crate::agent::AgentClientHandler;

@@ -162,9 +162,9 @@ export function AgentLaunchBuilder({
   const [desktopAppEntries, setDesktopAppEntries] =
     useState<DesktopAppDetectionFile | null>(null);
   const [busy, setBusy] = useState(false);
-  const postLaunchSessionRefreshTimers = useRef<ReturnType<
-    typeof setTimeout
-  >[]>([]);
+  const postLaunchSessionRefreshTimers = useRef<
+    ReturnType<typeof setTimeout>[]
+  >([]);
 
   const enabledAgentKey = prefs?.enabledAgents.join("|") ?? "";
   const enabledAgents = useMemo(
@@ -216,7 +216,7 @@ export function AgentLaunchBuilder({
       ? prefs.selectedAgent
       : agents.some((agent) => agent.id === prefs.defaultAgent)
         ? prefs.defaultAgent
-      : (agents[0]?.id ?? "");
+        : (agents[0]?.id ?? "");
     setAgentId(preferredAgent);
   }, [agentId, agents, prefs]);
 
@@ -410,7 +410,11 @@ export function AgentLaunchBuilder({
     }
     let cancelled = false;
     setSessionsLoading(true);
-    void listLaunchSessions(agentId, currentAgentWorkspace, showArchivedSessions)
+    void listLaunchSessions(
+      agentId,
+      currentAgentWorkspace,
+      showArchivedSessions,
+    )
       .then((items) => {
         if (cancelled) return;
         setSessions(items);
@@ -478,7 +482,9 @@ export function AgentLaunchBuilder({
     sessionChoice,
     visibleSessions,
   );
-  const selectedSession = selectedAgentIsDirectOnly ? null : resolvedSelectedSession;
+  const selectedSession = selectedAgentIsDirectOnly
+    ? null
+    : resolvedSelectedSession;
   const selectionLaunchable = viewPrefs
     ? isSelectionLaunchable(profileChoice, selectedProfile, agentId, viewPrefs)
     : false;
@@ -536,10 +542,14 @@ export function AgentLaunchBuilder({
     }
   }
 
-  async function chooseProfileApiType(profile: ProfileSummary, apiType: string) {
+  async function chooseProfileApiType(
+    profile: ProfileSummary,
+    apiType: string,
+  ) {
     const connectionId = connectionAgentId(agentId);
     if (!viewPrefs || !connectionId) return;
-    const current = viewPrefs.profileConnections[profile.id]?.[connectionId] ?? {};
+    const current =
+      viewPrefs.profileConnections[profile.id]?.[connectionId] ?? {};
     onError(null);
     try {
       await setProfileConnection(profile.id, connectionId, {
@@ -695,8 +705,9 @@ export function AgentLaunchBuilder({
       copiedProfileId = copiedProfile.id;
       const sourceConnections = prefs.profileConnections[profile.id] ?? {};
       const connectionCopies = Object.entries(sourceConnections)
-        .filter((entry): entry is [ConnectionAgentId, ProfileConnectionPreference] =>
-          Boolean(entry[1]),
+        .filter(
+          (entry): entry is [ConnectionAgentId, ProfileConnectionPreference] =>
+            Boolean(entry[1]),
         )
         .map(([connectionAgentId, preference]) =>
           setProfileConnection(
@@ -874,7 +885,9 @@ export function AgentLaunchBuilder({
   const showLaunchControls = !selectedAgentIsDirectOnly;
   const desktopAppEntryForAgent = (targetAgentId: string) =>
     desktopAppEntries?.apps[targetAgentId]?.entry;
-  const desktopAppPathForAgent = (targetAgentId: string): string | undefined => {
+  const desktopAppPathForAgent = (
+    targetAgentId: string,
+  ): string | undefined => {
     const app = desktopAppEntries?.apps[targetAgentId];
     return app?.entry?.path ?? app?.launchCommand;
   };

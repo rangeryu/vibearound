@@ -15,7 +15,7 @@ mod ws_pty;
 
 use axum::body::Body;
 use axum::extract::DefaultBodyLimit;
-use axum::http::{HeaderValue, Method, StatusCode};
+use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, delete, get, post};
 use axum::Router;
@@ -137,9 +137,16 @@ async fn spa_fallback_handler(
 }
 
 fn is_dashboard_api_path(path: &str) -> bool {
-    ["/va/local-api/", "/local-api/", "/va/bridge/", "/bridge/"]
-        .into_iter()
-        .any(|prefix| path.starts_with(prefix))
+    [
+        "/va/local-api/",
+        "/local-api/",
+        "/va/local-agent/",
+        "/local-agent/",
+        "/va/bridge/",
+        "/bridge/",
+    ]
+    .into_iter()
+    .any(|prefix| path.starts_with(prefix))
 }
 
 /// Runs the Axum server (static files + WebSocket + session API). Binds to 127.0.0.1 (localhost only).
@@ -293,6 +300,22 @@ pub async fn run_web_server(
     // single source of truth: `common::previews::SHARE_TTL_SECS`).
     let bridge_routes = Router::new()
         .route(
+            "/local-agent/{agent_id}/{profile_id}/v1/responses",
+            post(api_bridge::local_agent_responses_handler),
+        )
+        .route(
+            "/local-agent/{agent_id}/{profile_id}/v1/chat/completions",
+            post(api_bridge::local_agent_chat_completions_handler),
+        )
+        .route(
+            "/local-agent/{agent_id}/{profile_id}/v1/messages",
+            post(api_bridge::local_agent_messages_handler),
+        )
+        .route(
+            "/local-agent/{agent_id}/{profile_id}/v1/models",
+            get(api_bridge::local_agent_models_handler),
+        )
+        .route(
             "/bridge/{profile_id}/{target_api_type}/v1/responses",
             post(api_bridge::legacy_responses_handler),
         )
@@ -386,32 +409,14 @@ pub async fn run_web_server(
     Ok(())
 }
 
-/// Build a tight CORS layer.
+/// Build an open CORS layer for the local daemon API.
 ///
-/// Allowed origins:
-/// - `http://127.0.0.1:{port}` / `http://localhost:{port}` — the SPA served
-///   from this same server, opened in a regular browser.
-/// - `tauri://localhost` / `http://tauri.localhost` — the Tauri webview
-///   on macOS/Linux and Windows respectively.
-/// - `http://localhost:5181` — the desktop-ui Vite dev server during
-///   development.
-///
-/// Everything else is rejected, so random websites the user visits cannot
-/// fetch from the loopback port.
-fn build_cors_layer(port: u16) -> tower_http::cors::CorsLayer {
-    let origins: Vec<HeaderValue> = [
-        format!("http://127.0.0.1:{port}"),
-        format!("http://localhost:{port}"),
-        "tauri://localhost".to_string(),
-        "http://tauri.localhost".to_string(),
-        "http://localhost:5181".to_string(),
-    ]
-    .into_iter()
-    .filter_map(|s| HeaderValue::from_str(&s).ok())
-    .collect();
-
+/// VibeAround intentionally exposes local API-compatible endpoints for tools,
+/// scripts, and browser clients running on the user's machine. Authentication
+/// still protects dashboard APIs; CORS should not be the capability boundary.
+fn build_cors_layer(_port: u16) -> tower_http::cors::CorsLayer {
     tower_http::cors::CorsLayer::new()
-        .allow_origin(origins)
+        .allow_origin(tower_http::cors::Any)
         .allow_methods([
             Method::GET,
             Method::POST,
@@ -419,13 +424,7 @@ fn build_cors_layer(port: u16) -> tower_http::cors::CorsLayer {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([
-            axum::http::header::AUTHORIZATION,
-            axum::http::header::CONTENT_TYPE,
-            axum::http::header::ACCEPT,
-            // `bypass-tunnel-reminder` is set by the SPA for loca.lt tunnels.
-            axum::http::HeaderName::from_static("bypass-tunnel-reminder"),
-        ])
+        .allow_headers(tower_http::cors::Any)
 }
 
 #[cfg(test)]
@@ -438,7 +437,13 @@ mod tests {
             "/va/local-api/deepseek/scope/extra/openai-chat/v1/responses"
         ));
         assert!(is_dashboard_api_path(
+            "/va/local-agent/claude/direct/v1/responses"
+        ));
+        assert!(is_dashboard_api_path(
             "/local-api/deepseek/scope/extra/openai-chat/v1/responses"
+        ));
+        assert!(is_dashboard_api_path(
+            "/local-agent/claude/direct/v1/responses"
         ));
         assert!(is_dashboard_api_path(
             "/va/bridge/profile/openai-chat/v1/responses"

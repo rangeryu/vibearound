@@ -56,6 +56,9 @@ export interface Settings {
       delay_seconds?: number;
     };
   };
+  local_agent_api?: {
+    enabled?: boolean;
+  };
   search_tool?: {
     stdio_path?: string;
     max_results?: number;
@@ -139,7 +142,12 @@ export type PluginInstallStatus =
   | "installed_not_discoverable"
   | "ready";
 
-export type AuthFlowStatus = "idle" | "generating" | "waiting" | "connected" | "error";
+export type AuthFlowStatus =
+  | "idle"
+  | "generating"
+  | "waiting"
+  | "connected"
+  | "error";
 
 export interface AuthFlowState {
   status: AuthFlowStatus;

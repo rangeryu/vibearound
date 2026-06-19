@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use agent_client_protocol::schema as acp;
+use agent_client_protocol::schema::v1 as acp;
 
 use crate::agent::launch::{normalize_launch_profile_id, DIRECT_PROFILE_ID};
 use crate::agent::AgentClientHandler;

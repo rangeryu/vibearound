@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use acp::schema;
+use acp::schema::v1 as schema;
 use agent_client_protocol as acp;
 
 use crate::proc_log;

@@ -85,7 +85,9 @@ export function SelectorTile({
           </span>
           {badges}
         </span>
-        <span className="block truncate text-[12px] font-semibold">{title}</span>
+        <span className="block truncate text-[12px] font-semibold">
+          {title}
+        </span>
         <span className="block truncate text-[10px] text-muted-foreground">
           {detail}
         </span>
@@ -386,53 +388,6 @@ export function ProfileActionsMenu({
         >
           <Trash2 className="h-3 w-3" />
           {t("Delete")}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-export function DirectProfileActionsMenu({
-  isDefault,
-  disabled,
-  onMakeDefault,
-}: {
-  isDefault: boolean;
-  disabled: boolean;
-  onMakeDefault: () => void;
-}) {
-  const { t } = useI18n();
-  if (isDefault) {
-    return (
-      <DisabledMoreButton reason={t("Direct profile cannot be edited or deleted")} />
-    );
-  }
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          size="icon-xs"
-          variant="ghost"
-          className="h-7 w-7 text-muted-foreground"
-          aria-label={t("More")}
-        >
-          <MoreVertical className="h-3.5 w-3.5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
-        <DropdownMenuItem
-          className="text-xs"
-          disabled={disabled}
-          onSelect={() => onMakeDefault()}
-        >
-          <Star className="h-3 w-3" />
-          {t("Set app default")}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-xs" disabled>
-          <Pencil className="h-3 w-3" />
-          {t("Direct profile is fixed")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

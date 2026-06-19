@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use serde_json::value::RawValue;
 
-use acp::schema;
+use acp::schema::v1 as schema;
 use agent_client_protocol as acp;
 
 use super::super::plugin_host::PluginHost;

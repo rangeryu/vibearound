@@ -51,7 +51,6 @@ import {
 import {
   DefaultBadge,
   DisabledMoreButton,
-  DirectProfileActionsMenu,
   DragHandle,
   ProfileActionsMenu,
   BridgeBadge,
@@ -243,21 +242,16 @@ export function ProfilePanel({
               {t("Use existing CLI login")}
             </div>
           </div>
-          <div
-            className="flex shrink-0 flex-wrap justify-end gap-2"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <DirectProfileActionsMenu
-              isDefault={directIsGlobalDefault}
-              disabled={busy}
-              onMakeDefault={() => void onMakeDefault({ kind: "direct" })}
-            />
-          </div>
         </SelectableItemCard>
 
         <DragDropProvider onDragEnd={handleProfileDragEnd}>
           {profiles.map((profile, index) => {
-            const availability = profileAvailability(profile, agentId, prefs, t);
+            const availability = profileAvailability(
+              profile,
+              agentId,
+              prefs,
+              t,
+            );
             return (
               <SortableItem
                 key={profile.id}
@@ -277,16 +271,17 @@ export function ProfilePanel({
                     profile.id,
                   );
                   const connectionId = connectionAgentId(agentId);
-                  const connection =
-                    connectionId
-                      ? resolveProfileConnection(
-                          profile,
-                          prefs.profileConnections,
-                          agentConnectionDef(agentId),
-                        )
-                      : null;
+                  const connection = connectionId
+                    ? resolveProfileConnection(
+                        profile,
+                        prefs.profileConnections,
+                        agentConnectionDef(agentId),
+                      )
+                    : null;
                   const profileApiOptions =
-                    connection?.clientApiTypes.filter((client) => client.native) ?? [];
+                    connection?.clientApiTypes.filter(
+                      (client) => client.native,
+                    ) ?? [];
                   const profileApiSelectValue = profileApiOptions.some(
                     (client) => client.apiType === connection?.selectedApiType,
                   )
@@ -305,7 +300,9 @@ export function ProfilePanel({
                         label={t("Reorder {{label}}", { label: profile.label })}
                         disabled={busy}
                         disabledReason={
-                          busy ? t("Reordering unavailable while launching") : undefined
+                          busy
+                            ? t("Reordering unavailable while launching")
+                            : undefined
                         }
                         dragHandleRef={dragHandleRef}
                       />
@@ -333,7 +330,11 @@ export function ProfilePanel({
                         )}
                         <div
                           className="truncate text-[11px] text-muted-foreground"
-                          title={availability.launchable ? summary.route : availability.reason}
+                          title={
+                            availability.launchable
+                              ? summary.route
+                              : availability.reason
+                          }
                         >
                           {availability.launchable
                             ? summary.route
@@ -348,27 +349,34 @@ export function ProfilePanel({
                           connection.agent.supportedApiTypes.length > 1 &&
                           profileApiOptions.length > 0 &&
                           profileApiSelectValue && (
-                          <Select
-                            value={profileApiSelectValue}
-                            disabled={busy}
-                            onValueChange={(apiType) => onSelectApiType(profile, apiType)}
-                          >
-                            <SelectTrigger size="sm" className="h-7 w-[clamp(8rem,20vw,160px)] text-[11px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {profileApiOptions.map((option) => (
-                                <SelectItem
-                                  key={option.apiType}
-                                  value={option.apiType}
-                                  className="text-xs"
-                                >
-                                  {apiTypeProtocolDisplayLabel(option.apiType)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
+                            <Select
+                              value={profileApiSelectValue}
+                              disabled={busy}
+                              onValueChange={(apiType) =>
+                                onSelectApiType(profile, apiType)
+                              }
+                            >
+                              <SelectTrigger
+                                size="sm"
+                                className="h-7 w-[clamp(8rem,20vw,160px)] text-[11px]"
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {profileApiOptions.map((option) => (
+                                  <SelectItem
+                                    key={option.apiType}
+                                    value={option.apiType}
+                                    className="text-xs"
+                                  >
+                                    {apiTypeProtocolDisplayLabel(
+                                      option.apiType,
+                                    )}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         <ProfileActionsMenu
                           profile={profile}
                           bridgeAvailable={isBridgeAgent(agentId)}
