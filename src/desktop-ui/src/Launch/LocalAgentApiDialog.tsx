@@ -160,12 +160,12 @@ export function LocalAgentApiDialog({
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="!flex max-h-[calc(100vh-64px)] w-[min(840px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(840px,calc(100vw-32px))]"
+        className="!flex max-h-[calc(100vh-64px)] w-[min(760px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(760px,calc(100vw-32px))]"
         onEscapeKeyDown={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
       >
-        <DialogHeader className="shrink-0 border-b border-border px-6 py-4 pr-12">
+        <DialogHeader className="shrink-0 border-b border-border px-5 py-3 pr-12">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Server className="h-4 w-4 text-primary" />
             {t("Local API")}
@@ -175,7 +175,7 @@ export function LocalAgentApiDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 py-4 [scrollbar-gutter:stable]">
+        <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-5 py-3 [scrollbar-gutter:stable]">
           <Tabs
             value={protocol}
             onValueChange={(value) => {
@@ -183,12 +183,12 @@ export function LocalAgentApiDialog({
               setTestResult(null);
             }}
           >
-            <TabsList className="h-8">
+            <TabsList className="h-7">
               {LOCAL_API_PROTOCOLS.map((item) => (
                 <TabsTrigger
                   key={item.id}
                   value={item.id}
-                  className="px-3 text-[12px]"
+                  className="px-2.5 text-[11px]"
                 >
                   {item.shortLabel}
                 </TabsTrigger>
@@ -196,23 +196,17 @@ export function LocalAgentApiDialog({
             </TabsList>
           </Tabs>
 
-          <section className="grid gap-3 rounded-md border border-border bg-card/60 p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-[13px] font-semibold">
+          <section className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-xs font-semibold">
                 {t("Manual configuration")}
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-[11px] text-muted-foreground">
                 {t("Click a value to copy.")}
               </div>
             </div>
             <ManualField
-              label={t("Base URL")}
-              value={baseUrl}
-              copied={copiedKey === "base"}
-              onCopy={() => copyValue("base", baseUrl)}
-            />
-            <ManualField
-              label={selectedProtocol.label}
+              label={t("API URL")}
               value={endpointUrl}
               copied={copiedKey === protocol}
               onCopy={() => copyValue(protocol, endpointUrl)}
@@ -225,7 +219,7 @@ export function LocalAgentApiDialog({
               tone="primary"
             />
             <ManualField
-              label={t("Models URL")}
+              label={t("Models API")}
               value={modelsUrl}
               copied={copiedKey === "models"}
               onCopy={() => copyValue("models", modelsUrl)}
@@ -243,10 +237,10 @@ export function LocalAgentApiDialog({
             )}
           </section>
 
-          <section className="grid gap-3 rounded-md border border-border bg-card p-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-[13px] font-semibold">
-                <MessageSquare className="h-4 w-4 text-primary" />
+          <section className="grid gap-2 rounded-md border border-border/70 bg-card p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-semibold">
+                <MessageSquare className="h-3.5 w-3.5 text-primary" />
                 {t("Test message")} · {selectedProtocol.shortLabel}
               </div>
             </div>
@@ -255,7 +249,7 @@ export function LocalAgentApiDialog({
                 <span>{t("Model")}</span>
                 {modelOptions.length > 0 ? (
                   <Select value={model} onValueChange={setModel}>
-                    <SelectTrigger size="sm" className="h-8 w-full font-mono text-xs">
+                    <SelectTrigger size="sm" className="h-7 w-full font-mono text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -270,7 +264,7 @@ export function LocalAgentApiDialog({
                   <Input
                     value={model}
                     onChange={(event) => setModel(event.currentTarget.value)}
-                    className="h-8 font-mono text-xs"
+                    className="h-7 font-mono text-xs"
                   />
                 )}
               </label>
@@ -279,7 +273,7 @@ export function LocalAgentApiDialog({
                 <Input
                   value={target.workspacePath}
                   readOnly
-                  className="h-8 font-mono text-xs"
+                  className="h-7 font-mono text-xs"
                 />
               </label>
             </div>
@@ -288,10 +282,10 @@ export function LocalAgentApiDialog({
               <textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.currentTarget.value)}
-                className="min-h-[88px] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="min-h-[72px] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
               />
             </label>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <div className="min-w-0 text-[11px] text-muted-foreground">
                 {t("Sessionless request · a fresh ACP turn is created for each test.")}
               </div>
@@ -356,14 +350,14 @@ function ManualField({
 }) {
   const { t } = useI18n();
   return (
-    <div className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-4">
-      <div className="min-w-0 text-[13px] text-muted-foreground">
+    <div className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-3">
+      <div className="min-w-0 text-xs text-muted-foreground">
         <span className="truncate">{label}</span>
       </div>
       <Button
         type="button"
         variant="ghost"
-        className={`h-8 w-full min-w-0 justify-start rounded-md px-2 font-mono text-sm ${
+        className={`h-7 w-full min-w-0 justify-start rounded-md px-2 font-mono text-xs ${
           tone === "primary"
             ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
             : "hover:bg-muted"
