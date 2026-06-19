@@ -54,7 +54,7 @@ export const zhCNLaunch: Record<string, string> = {
     "Claude Desktop 使用配置启动需要开启 Developer Mode：在 Claude Desktop 里打开 Help -> Troubleshooting -> Enable Developer Mode。",
   Direct: "直接",
   Default: "默认",
-  "Local API": "Local API",
+  "Local API": "本地 API",
   "Local API service": "本地 API 服务",
   Running: "运行中",
   "Local only": "仅本机",

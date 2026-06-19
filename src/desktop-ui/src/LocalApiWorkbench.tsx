@@ -192,83 +192,62 @@ export function LocalApiWorkbench({
   const probeErrorCount = probeValues.filter(
     (probe) => probe.status === "error",
   ).length;
-  const routeProbeKey = routes
-    .map(
-      (route) =>
-        `${route.id}:${route.enabled ? "1" : "0"}:${route.workspacePath}`,
-    )
-    .join("|");
+  const routeProbeKey = selectedRoute
+    ? `${selectedRoute.id}:${selectedRoute.enabled ? "1" : "0"}:${selectedRoute.workspacePath}`
+    : "";
 
   useEffect(() => {
-    const enabledRoutes = routes.filter((route) => route.enabled);
-    if (enabledRoutes.length === 0) {
-      setRouteProbes({});
+    if (!selectedRoute || !selectedRoute.enabled) {
       return;
     }
 
     const controller = new AbortController();
-    const activeIds = new Set(enabledRoutes.map((route) => route.id));
-    setRouteProbes((current) => {
-      const next: Record<string, RouteProbeState> = {};
-      for (const route of enabledRoutes) {
-        next[route.id] = current[route.id] ?? { status: "loading" };
-      }
-      return next;
-    });
-
-    for (const route of enabledRoutes) {
-      const startedAt = performance.now();
-      setRouteProbes((current) => ({
-        ...current,
-        [route.id]: { status: "loading" },
-      }));
-      void fetch(`${API_BASE}${localAgentBasePath(route.target)}/models`, {
-        headers: {
-          "x-vibearound-cwd": route.workspacePath,
-        },
-        signal: controller.signal,
+    const route = selectedRoute;
+    const startedAt = performance.now();
+    setRouteProbes((current) => ({
+      ...current,
+      [route.id]: { status: "loading" },
+    }));
+    void fetch(`${API_BASE}${localAgentBasePath(route.target)}/models`, {
+      headers: {
+        "x-vibearound-cwd": route.workspacePath,
+      },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const latencyMs = Math.max(
+          0,
+          Math.round(performance.now() - startedAt),
+        );
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json().catch(() => null);
+        const data =
+          payload && typeof payload === "object"
+            ? (payload as { data?: unknown }).data
+            : null;
+        const modelCount = Array.isArray(data) ? data.length : 0;
+        setRouteProbes((current) => ({
+          ...current,
+          [route.id]: { status: "ok", latencyMs, modelCount },
+        }));
       })
-        .then(async (response) => {
-          const latencyMs = Math.max(
-            0,
-            Math.round(performance.now() - startedAt),
-          );
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-          const payload = await response.json().catch(() => null);
-          const data =
-            payload && typeof payload === "object"
-              ? (payload as { data?: unknown }).data
-              : null;
-          const modelCount = Array.isArray(data) ? data.length : 0;
-          setRouteProbes((current) => {
-            if (!activeIds.has(route.id)) return current;
-            return {
-              ...current,
-              [route.id]: { status: "ok", latencyMs, modelCount },
-            };
-          });
-        })
-        .catch((err) => {
-          if (controller.signal.aborted) return;
-          const latencyMs = Math.max(
-            0,
-            Math.round(performance.now() - startedAt),
-          );
-          setRouteProbes((current) => {
-            if (!activeIds.has(route.id)) return current;
-            return {
-              ...current,
-              [route.id]: {
-                status: "error",
-                latencyMs,
-                error: err instanceof Error ? err.message : String(err),
-              },
-            };
-          });
-        });
-    }
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        const latencyMs = Math.max(
+          0,
+          Math.round(performance.now() - startedAt),
+        );
+        setRouteProbes((current) => ({
+          ...current,
+          [route.id]: {
+            status: "error",
+            latencyMs,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        }));
+      });
 
     return () => controller.abort();
   }, [routeProbeKey]);
@@ -606,7 +585,10 @@ function RouteProbeBadge({
       <span className="h-2 w-2 shrink-0 rounded-full border border-muted-foreground/50" />
     );
   }
-  if (!probe || probe.status === "loading") {
+  if (!probe) {
+    return <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />;
+  }
+  if (probe.status === "loading") {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-muted-foreground">
         <Loader2 className="h-3 w-3 animate-spin" />
