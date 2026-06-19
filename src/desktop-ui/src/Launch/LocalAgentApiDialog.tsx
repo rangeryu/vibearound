@@ -9,6 +9,7 @@ import {
 import {
   AlertCircle,
   Check,
+  FileUp,
   Loader2,
   MessageSquare,
   Paperclip,
@@ -423,27 +424,10 @@ export function LocalAgentApiDialog({
                     </div>
                   </div>
                 )}
-                <textarea
-                  value={prompt}
-                  aria-label={t("Message")}
-                  placeholder={t("Message")}
-                  onChange={(event) => {
-                    setPrompt(event.currentTarget.value);
-                    setTestResult(null);
-                  }}
-                  onKeyDown={handlePromptKeyDown}
-                  onCompositionStart={() => {
-                    isComposingRef.current = true;
-                  }}
-                  onCompositionEnd={() => {
-                    isComposingRef.current = false;
-                  }}
-                  className="min-h-[64px] w-full flex-1 resize-none border-0 bg-transparent px-1 py-1 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
-                />
                 {(attachments.length > 0 ||
                   attachmentLoading ||
                   attachmentError) && (
-                  <div className="space-y-1.5 px-1 pb-1 pt-0.5">
+                  <div className="space-y-1.5 px-1 pb-1">
                     <div className="flex flex-wrap gap-1.5">
                       {attachments.map((attachment) => (
                         <span
@@ -482,6 +466,23 @@ export function LocalAgentApiDialog({
                     )}
                   </div>
                 )}
+                <textarea
+                  value={prompt}
+                  aria-label={t("Message")}
+                  placeholder={t("Message")}
+                  onChange={(event) => {
+                    setPrompt(event.currentTarget.value);
+                    setTestResult(null);
+                  }}
+                  onKeyDown={handlePromptKeyDown}
+                  onCompositionStart={() => {
+                    isComposingRef.current = true;
+                  }}
+                  onCompositionEnd={() => {
+                    isComposingRef.current = false;
+                  }}
+                  className="min-h-[64px] w-full flex-1 resize-none border-0 bg-transparent px-1 py-1 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
+                />
                 <div className="flex shrink-0 items-center justify-between gap-2 pt-1">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <input
@@ -501,7 +502,7 @@ export function LocalAgentApiDialog({
                       title={t("Attach files")}
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      <Paperclip className="h-3.5 w-3.5" />
+                      <FileUp className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                   <Button
