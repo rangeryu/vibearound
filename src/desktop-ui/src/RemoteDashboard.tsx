@@ -52,49 +52,29 @@ import {
   tunnelPresentation,
 } from "./status-dashboard/presentation";
 import { ServiceIconBadge } from "./status-dashboard/serviceIcon";
-import type { StatusDashboardProps, Tone } from "./status-dashboard/types";
+import type { RuntimeStateProps, Tone } from "./status-dashboard/types";
+import {
+  configuredChannelIdsFromSettings,
+  defaultAppDefaultForm,
+  defaultChannelForm,
+  formForAppDefault,
+  formForChannel,
+  parseRemoteSettings,
+  resolvedProfileIdForChannel,
+  updateRemoteChannelForm,
+} from "./remote-dashboard/settings";
+import {
+  DIRECT_PROFILE,
+  FOLLOW_DEFAULT,
+  type AppDefaultForm,
+  type ChannelDefaultForm,
+  type Notice,
+  type RemoteSelection,
+} from "./remote-dashboard/types";
 
-const FOLLOW_DEFAULT = "__default__";
-const DIRECT_PROFILE = "direct";
-
-type RemoteSelection =
-  | { kind: "channel"; id: string }
-  | { kind: "tunnel"; id: string };
-
-type ChannelDefaultForm = {
-  agentId: string;
-  profileId: string;
-};
-
-type Notice = {
-  variant: "success" | "warning" | "error";
-  message: string;
-};
-
-type AppDefaultForm = {
-  agentId: string;
-  profileId: string;
-};
-
-type RemoteDashboardProps = StatusDashboardProps & {
+type RemoteDashboardProps = RuntimeStateProps & {
   onConfigureChannel: (channelId: string) => void;
   onDefaultsChanged?: () => void;
-};
-
-type RemoteChannelDefaults = {
-  agent_id?: string;
-  agentId?: string;
-  agent?: string;
-  profile_id?: string;
-  profileId?: string;
-  profile?: string;
-  workspace?: string;
-  workspace_path?: string;
-  workspacePath?: string;
-};
-
-type RemoteSettings = {
-  channels?: Record<string, RemoteChannelDefaults>;
 };
 
 export function RemoteDashboard({
@@ -122,10 +102,7 @@ export function RemoteDashboard({
   const configuredChannelIds = useMemo(() => {
     const ids = new Set<string>();
     channels.channels.forEach((channel) => ids.add(channel.kind));
-    if (isRecord(settings.channels)) {
-      Object.keys(settings.channels).forEach((id) => ids.add(id));
-    }
-    Object.keys(remoteSettings.channels ?? {}).forEach((id) => ids.add(id));
+    configuredChannelIdsFromSettings(settings, remoteSettings).forEach((id) => ids.add(id));
     return [...ids].sort((a, b) => channelDisplayName(a).localeCompare(channelDisplayName(b)));
   }, [channels.channels, remoteSettings.channels, settings.channels]);
 
@@ -1099,100 +1076,6 @@ function KeyValue({
   );
 }
 
-function parseRemoteSettings(settings: AppSettings): RemoteSettings {
-  const remote = isRecord(settings.remote) ? settings.remote : {};
-  const channels = isRecord(remote.channels) ? remote.channels : {};
-  const parsedChannels: Record<string, RemoteChannelDefaults> = {};
-  for (const [id, value] of Object.entries(channels)) {
-    if (isRecord(value)) parsedChannels[id] = value as RemoteChannelDefaults;
-  }
-  return { channels: parsedChannels };
-}
-
-function formForChannel(
-  remote: RemoteSettings,
-  channelId: string,
-): ChannelDefaultForm {
-  const entry = remote.channels?.[channelId] ?? {};
-  return {
-    agentId: stringValue(entry.agent_id ?? entry.agentId ?? entry.agent) ?? FOLLOW_DEFAULT,
-    profileId:
-      stringValue(entry.profile_id ?? entry.profileId ?? entry.profile) ?? FOLLOW_DEFAULT,
-  };
-}
-
-function formForAppDefault(
-  prefs: LauncherPreferences | null,
-  agents: AgentSummary[],
-): AppDefaultForm {
-  const agentId = prefs?.defaultAgent ?? agents[0]?.id ?? "codex";
-  return {
-    agentId,
-    profileId: prefs?.defaultProfileId ?? DIRECT_PROFILE,
-  };
-}
-
-function defaultChannelForm(): ChannelDefaultForm {
-  return {
-    agentId: FOLLOW_DEFAULT,
-    profileId: FOLLOW_DEFAULT,
-  };
-}
-
-function defaultAppDefaultForm(): AppDefaultForm {
-  return {
-    agentId: "codex",
-    profileId: DIRECT_PROFILE,
-  };
-}
-
-function updateRemoteChannelForm(
-  settings: AppSettings,
-  channelId: string,
-  form: ChannelDefaultForm,
-): AppSettings {
-  const result: AppSettings = { ...settings };
-  const remote = isRecord(settings.remote) ? { ...settings.remote } : {};
-  const existingChannels = isRecord(remote.channels) ? remote.channels : {};
-  const channels: Record<string, RemoteChannelDefaults> = {};
-  for (const [id, value] of Object.entries(existingChannels)) {
-    if (isRecord(value)) channels[id] = { ...(value as RemoteChannelDefaults) };
-  }
-
-  const entry: RemoteChannelDefaults = { ...(channels[channelId] ?? {}) };
-  for (const key of [
-    "agent",
-    "agentId",
-    "profile",
-    "profileId",
-    "workspace",
-    "workspace_path",
-    "workspacePath",
-  ] as const) {
-    delete entry[key];
-  }
-  if (form.agentId === FOLLOW_DEFAULT) delete entry.agent_id;
-  else entry.agent_id = form.agentId;
-  if (form.profileId === FOLLOW_DEFAULT) delete entry.profile_id;
-  else entry.profile_id = form.profileId;
-
-  if (Object.keys(entry).length > 0) channels[channelId] = entry;
-  else delete channels[channelId];
-
-  if (Object.keys(channels).length > 0) {
-    remote.channels = channels;
-  } else {
-    delete remote.channels;
-  }
-
-  if (Object.keys(remote).length > 0) {
-    result.remote = remote;
-  } else {
-    delete result.remote;
-  }
-  return result;
-}
-
 function channelDefaultSummary({
   form,
   prefs,
@@ -1210,12 +1093,7 @@ function channelDefaultSummary({
 }) {
   const agentId = form.agentId === FOLLOW_DEFAULT ? defaultAgent : form.agentId;
   const agent = agentDefs.find((item) => item.id === agentId);
-  const profileId =
-    form.profileId === FOLLOW_DEFAULT
-      ? prefs
-        ? agentProfileId(prefs, agentId)
-        : undefined
-      : form.profileId;
+  const profileId = resolvedProfileIdForChannel(form, prefs, agentId);
   const profile =
     profileId && profileId !== DIRECT_PROFILE
       ? profiles.find((item) => item.id === profileId)?.label ?? profileId
@@ -1253,14 +1131,6 @@ function toneBadgeClass(tone: Tone) {
     case "muted":
       return "border-border bg-muted/30 text-muted-foreground";
   }
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function capitalize(value: string): string {

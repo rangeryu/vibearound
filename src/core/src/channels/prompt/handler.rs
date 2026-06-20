@@ -24,6 +24,8 @@ use crate::workspace::WorkspaceThreadManager;
 
 use super::send_system_text;
 
+const SESSION_LIST_LIMIT: usize = 5;
+
 pub(crate) async fn handle_prompt(
     workspace_threads: &Arc<WorkspaceThreadManager>,
     plugin_host: &Arc<PluginHost>,
@@ -927,7 +929,7 @@ async fn list_sessions_for_state(
     crate::launch_sessions::list_for_agent_workspace_with_archived_async(
         &state.host_binding.agent_id,
         &state.workspace,
-        usize::MAX,
+        SESSION_LIST_LIMIT,
         false,
     )
     .await
