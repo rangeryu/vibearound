@@ -26,10 +26,12 @@ export function StepTunnel({
   cfHostname,
   onCfHostname,
   showProviderSelect = false,
+  compact = false,
   notice,
 }: StepTunnelProps) {
   const { t } = useI18n();
   const selectedTunnel = tunnels.find((tunnel) => tunnel.id === provider);
+  const inputClassName = compact ? "mt-1 h-8 text-xs" : "mt-1";
 
   if (!selectedTunnel && !showProviderSelect) return null;
 
@@ -122,7 +124,7 @@ export function StepTunnel({
               value={ngrokToken}
               onChange={(event) => onNgrokToken(event.target.value)}
               placeholder="2ljk…"
-              className="mt-1"
+              className={inputClassName}
             />
           </label>
           <label className="block">
@@ -132,7 +134,7 @@ export function StepTunnel({
               value={ngrokDomain}
               onChange={(event) => onNgrokDomain(event.target.value)}
               placeholder="myapp.ngrok-free.app"
-              className="mt-1"
+              className={inputClassName}
             />
           </label>
         </div>
@@ -147,7 +149,7 @@ export function StepTunnel({
               value={cfToken}
               onChange={(event) => onCfToken(event.target.value)}
               placeholder="eyJh…"
-              className="mt-1"
+              className={inputClassName}
             />
           </label>
           <label className="block">
@@ -157,7 +159,7 @@ export function StepTunnel({
               value={cfHostname}
               onChange={(event) => onCfHostname(event.target.value)}
               placeholder="vibe.yourdomain.com"
-              className="mt-1"
+              className={inputClassName}
             />
           </label>
         </div>

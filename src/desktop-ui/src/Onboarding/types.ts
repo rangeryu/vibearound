@@ -183,6 +183,7 @@ export interface StepChannelsProps {
   onStartAuth: (pluginId: string) => void;
   onCancelAuth: (pluginId: string) => void;
   switchSize?: "sm" | "default";
+  compact?: boolean;
   description?: ReactNode;
   focusPluginId?: string | null;
   notice?: ReactNode;
@@ -201,6 +202,7 @@ export interface StepTunnelProps {
   cfHostname: string;
   onCfHostname: (value: string) => void;
   showProviderSelect?: boolean;
+  compact?: boolean;
   notice?: ReactNode;
 }
 

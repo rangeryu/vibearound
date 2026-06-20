@@ -38,6 +38,7 @@ export function StepChannels({
   onStartAuth,
   onCancelAuth,
   switchSize = "default",
+  compact = false,
   description,
   focusPluginId,
   notice,
@@ -111,6 +112,7 @@ export function StepChannels({
               onInstall={() => onInstallPlugin(entry.id, entry.github)}
               onStartAuth={() => onStartAuth(entry.id)}
               onCancelAuth={() => onCancelAuth(entry.id)}
+              compact={compact}
             />
           </div>
         );
@@ -137,6 +139,7 @@ interface PluginCardProps {
   verbose: StepChannelsProps["channelVerbose"][string];
   authState?: StepChannelsProps["authStates"][string];
   switchSize: NonNullable<StepChannelsProps["switchSize"]>;
+  compact: boolean;
 
   onToggle: (enabled: boolean) => void;
   onConfigChange: (key: string, value: string) => void;
@@ -163,6 +166,7 @@ function PluginCard({
   verbose,
   authState,
   switchSize,
+  compact,
   onToggle,
   onConfigChange,
   onVerboseChange,
@@ -178,6 +182,7 @@ function PluginCard({
   const visibleFields = Object.entries(properties).filter(
     ([, prop]) => !prop.hidden
   );
+  const inputClassName = compact ? "mt-1 h-8 text-xs" : "mt-1";
 
   return (
     <section
@@ -250,7 +255,7 @@ function PluginCard({
                     value={config[key] ?? prop.default ?? ""}
                     onChange={(e) => onConfigChange(key, e.target.value)}
                     placeholder={prop.default ?? ""}
-                    className="mt-1"
+                    className={inputClassName}
                   />
                 </label>
               ))}

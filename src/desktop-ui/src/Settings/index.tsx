@@ -177,6 +177,10 @@ const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string }> = [
   { id: "brave", label: "Brave" },
 ];
 
+const SETTINGS_BUTTON_CLASS = "text-xs";
+const SETTINGS_INPUT_CLASS = "h-8 text-xs";
+const SETTINGS_SELECT_TRIGGER_CLASS = "h-8 text-xs";
+
 const SEARCH_CONTEXT_SIZE_OPTIONS: Array<{
   value: SearchContextSize;
   label: string;
@@ -1142,7 +1146,7 @@ export function SettingsDialog({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="self-end text-xs"
+                        className={`self-end ${SETTINGS_BUTTON_CLASS}`}
                         disabled={!canSubmit}
                         onClick={() => void chooseDefaultWorkspace()}
                       >
@@ -1154,7 +1158,7 @@ export function SettingsDialog({
                         {saving === "general" ? t("Saving…") : t("Choose")}
                       </Button>
                       <div
-                        className="w-full text-right text-xs leading-5 text-foreground"
+                        className="w-full whitespace-nowrap text-right text-xs leading-5 text-foreground"
                         title={defaultWorkspace}
                       >
                         {defaultWorkspace}
@@ -1168,7 +1172,7 @@ export function SettingsDialog({
                       <Button
                         type="button"
                         size="sm"
-                        className="text-xs"
+                        className={SETTINGS_BUTTON_CLASS}
                         disabled={saving !== "idle"}
                         onClick={() => void restartServices()}
                       >
@@ -1187,7 +1191,7 @@ export function SettingsDialog({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="text-xs"
+                        className={SETTINGS_BUTTON_CLASS}
                         disabled={saving !== "idle"}
                         onClick={() => window.location.replace("/onboarding")}
                       >
@@ -1226,6 +1230,7 @@ export function SettingsDialog({
                       onStartAuth={(pluginId) => void startAuth(pluginId)}
                       onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
                       switchSize="sm"
+                      compact
                       focusPluginId={focusedImPluginId}
                       notice={<SettingsNotice notice={notice} />}
                     />
@@ -1234,6 +1239,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void applyImSettings()}
                     >
@@ -1299,6 +1305,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void applyAgentSettings()}
                     >
@@ -1341,6 +1348,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit || !apiBridgeRetryFormKey}
                       onClick={() => void applyApiBridgeSettings()}
                     >
@@ -1389,6 +1397,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void applyWebSearchSettings()}
                     >
@@ -1426,6 +1435,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void applyProxySettings()}
                     >
@@ -1462,6 +1472,7 @@ export function SettingsDialog({
                       cfHostname={cfHostname}
                       onCfHostname={setCfHostname}
                       showProviderSelect
+                      compact
                       notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
@@ -1470,6 +1481,7 @@ export function SettingsDialog({
                       type="button"
                       variant="outline"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void saveTunnelSettings(false)}
                     >
@@ -1478,6 +1490,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void saveTunnelSettings(true)}
                     >
@@ -1617,7 +1630,7 @@ function PluginsSettingsPanel({
           type="button"
           variant="outline"
           size="sm"
-          className="text-xs"
+          className={SETTINGS_BUTTON_CLASS}
           disabled={checkingUpdates}
           onClick={onCheckUpdates}
         >
@@ -1804,8 +1817,7 @@ function PluginInventoryCard({
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              className="h-8 w-8"
+              size="icon-sm"
               asChild
             >
               <a
@@ -1823,7 +1835,7 @@ function PluginInventoryCard({
               type="button"
               variant="outline"
               size="sm"
-              className="text-xs"
+              className={SETTINGS_BUTTON_CLASS}
               onClick={onConfigureSearch}
             >
               <SlidersHorizontal className="h-3 w-3" />
@@ -1834,7 +1846,7 @@ function PluginInventoryCard({
             type="button"
             variant={item.status === "outdated" ? "default" : "outline"}
             size="sm"
-            className="min-w-20 text-xs"
+            className={`min-w-20 ${SETTINGS_BUTTON_CLASS}`}
             disabled={installing || !canRunAction}
             onClick={() => onInstallPlugin(item.category, item.id)}
           >
@@ -1972,7 +1984,7 @@ function AgentSettingsPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="text-xs"
+              className={SETTINGS_BUTTON_CLASS}
               disabled={saving !== "idle"}
               onClick={onUninstallMcp}
             >
@@ -1989,7 +2001,7 @@ function AgentSettingsPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="text-xs"
+              className={SETTINGS_BUTTON_CLASS}
               disabled={saving !== "idle"}
               onClick={onUninstallSkills}
             >
@@ -2058,7 +2070,7 @@ function ProxySettingsPanel({
               value={proxyHttp}
               onChange={(event) => onProxyHttpChange(event.currentTarget.value)}
               placeholder="http://127.0.0.1:7890"
-              className="mt-1"
+              className={`mt-1 ${SETTINGS_INPUT_CLASS}`}
             />
           </label>
         </div>
@@ -2072,7 +2084,7 @@ function ProxySettingsPanel({
               value={proxyNoProxy}
               onChange={(event) => onProxyNoProxyChange(event.currentTarget.value)}
               placeholder="localhost,127.0.0.1,::1"
-              className="mt-1"
+              className={`mt-1 ${SETTINGS_INPUT_CLASS}`}
             />
             <span className="mt-1 block text-[11px] text-muted-foreground/70">
               {t("Comma-separated hosts, domains, or IPs that should connect directly.")}
@@ -2116,13 +2128,6 @@ function SearchToolSettingsPanel({
   notice?: ReactNode;
 }) {
   const { t } = useI18n();
-  const enabledSourceCount = SEARCH_SOURCE_DEFS.filter(
-    (source) => sources[source.id]?.enabled,
-  ).length;
-  const parsedMaxResults = Number.parseInt(maxResults, 10);
-  const totalResultLimit = Number.isFinite(parsedMaxResults)
-    ? enabledSourceCount * clampSearchMaxResults(parsedMaxResults)
-    : null;
   return (
     <div className="space-y-5">
       <div>
@@ -2164,7 +2169,7 @@ function SearchToolSettingsPanel({
               onChange={(event) =>
                 onMaxResultsChange(event.currentTarget.value)
               }
-              className="mt-1"
+              className={`mt-1 ${SETTINGS_INPUT_CLASS}`}
             />
             <span className="mt-1 block text-[11px] text-muted-foreground/70">
               {t("Applied to each enabled source, not the combined total.")}
@@ -2180,7 +2185,10 @@ function SearchToolSettingsPanel({
                 onSearchContextSizeChange(value as SearchContextSize)
               }
             >
-              <SelectTrigger className="mt-1 w-full">
+              <SelectTrigger
+                size="sm"
+                className={`mt-1 w-full ${SETTINGS_SELECT_TRIGGER_CLASS}`}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -2196,14 +2204,6 @@ function SearchToolSettingsPanel({
             </span>
           </label>
         </div>
-        <p className="mt-3 text-[11px] text-muted-foreground/70">
-          {totalResultLimit === null
-            ? t("Total results sent to the model can be enabled sources multiplied by this value.")
-            : t("With {{count}} enabled source(s), up to {{total}} search results can be sent to the model.", {
-                count: enabledSourceCount,
-                total: totalResultLimit,
-              })}
-        </p>
       </div>
       <div className="rounded-md border border-border">
         {SEARCH_SOURCE_DEFS.map((source) => {
@@ -2228,7 +2228,7 @@ function SearchToolSettingsPanel({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs"
+                      className={SETTINGS_BUTTON_CLASS}
                       onClick={() => onOpenTestResult(source.id)}
                     >
                       <ExternalLink className="h-3 w-3" />
@@ -2239,7 +2239,7 @@ function SearchToolSettingsPanel({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs"
+                    className={SETTINGS_BUTTON_CLASS}
                     disabled={!canTest}
                     onClick={() => onTestSource(source.id)}
                   >
@@ -2273,7 +2273,7 @@ function SearchToolSettingsPanel({
                       apiKey: event.currentTarget.value,
                     })
                   }
-                  className="mt-1"
+                  className={`mt-1 ${SETTINGS_INPUT_CLASS}`}
                 />
               </label>
               {error && (
@@ -2392,15 +2392,21 @@ function SearchSourceTestResultDialog({
                         {item.title || item.url}
                       </div>
                     </div>
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label={t("Open result")}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      asChild
                     >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={t("Open result")}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </Button>
                   </div>
                   <div className="mt-2 break-all font-mono text-[11px] leading-5 text-muted-foreground">
                     {item.url}
@@ -2492,7 +2498,7 @@ function ApiBridgeRetrySettingsPanel({
               onChange={(event) =>
                 onRetry429MaxRetriesChange(event.currentTarget.value)
               }
-              className="h-8 w-24 text-right"
+              className={`w-24 text-right ${SETTINGS_INPUT_CLASS}`}
               disabled={controlsDisabled || retry429Unlimited}
               aria-label={t("Max retries")}
             />
@@ -2523,7 +2529,7 @@ function ApiBridgeRetrySettingsPanel({
             onChange={(event) =>
               onRetry429DelaySecondsChange(event.currentTarget.value)
             }
-            className="h-8 w-24 justify-self-end text-right"
+            className={`w-24 justify-self-end text-right ${SETTINGS_INPUT_CLASS}`}
             disabled={controlsDisabled}
             aria-label={t("Delay seconds")}
           />
