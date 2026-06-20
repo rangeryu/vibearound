@@ -1173,7 +1173,7 @@ export function SettingsDialog({
                     </div>
                     <div className="flex w-full items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 shadow-xs">
                       <div
-                        className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-right text-xs leading-5 text-foreground"
+                        className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-left text-xs leading-5 text-foreground"
                         title={defaultWorkspace}
                       >
                         {defaultWorkspace}
