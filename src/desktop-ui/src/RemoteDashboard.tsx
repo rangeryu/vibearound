@@ -37,18 +37,12 @@ import {
   getLauncherPreferences,
   type AgentSummary,
   listAgents,
-  listLauncherWorkspaces,
   listProfiles,
   type LauncherPreferences,
   setLauncherDefault,
-  type WorkspaceOption,
 } from "./Launch/api";
 import type { ProfileSummary } from "./Launch/types";
-import {
-  agentProfileId,
-  agentWorkspace,
-  profileSupportsAgent,
-} from "./Launch/launchModel";
+import { agentProfileId, profileSupportsAgent } from "./Launch/launchModel";
 import {
   basename,
   channelDisplayName,
@@ -70,7 +64,6 @@ type RemoteSelection =
 type ChannelDefaultForm = {
   agentId: string;
   profileId: string;
-  workspace: string;
 };
 
 type Notice = {
@@ -119,9 +112,6 @@ export function RemoteDashboard({
   const [appDefaultForm, setAppDefaultForm] = useState<AppDefaultForm>(() =>
     defaultAppDefaultForm(),
   );
-  const [channelWorkspaceOptions, setChannelWorkspaceOptions] = useState<
-    WorkspaceOption[]
-  >([]);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [savingChannel, setSavingChannel] = useState<string | null>(null);
   const [savingAppDefault, setSavingAppDefault] = useState(false);
@@ -231,7 +221,6 @@ export function RemoteDashboard({
   }, [selectedChannelId, settings]);
 
   const defaultAgent = prefs?.defaultAgent ?? agentDefs[0]?.id ?? "codex";
-  const defaultWorkspace = prefs ? agentWorkspace(prefs, defaultAgent) : "";
   const enabledAgents =
     prefs?.enabledAgents.length
       ? agentDefs.filter((agent) => prefs.enabledAgents.includes(agent.id))
@@ -246,33 +235,8 @@ export function RemoteDashboard({
         ? agentProfileId(prefs, selectedAgentId) ?? DIRECT_PROFILE
         : DIRECT_PROFILE
       : selectedChannelForm.profileId;
-  const selectedWorkspace =
-    selectedChannelForm.workspace === FOLLOW_DEFAULT
-      ? prefs
-        ? agentWorkspace(prefs, selectedAgentId)
-        : defaultWorkspace
-      : selectedChannelForm.workspace;
   const profileOptions = profiles.filter((profile) =>
     prefs ? profileSupportsAgent(profile, selectedAgentId, prefs) : true,
-  );
-  useEffect(() => {
-    if (!selectedAgentId) return;
-    let cancelled = false;
-    void listLauncherWorkspaces(selectedAgentId)
-      .then((options) => {
-        if (!cancelled) setChannelWorkspaceOptions(options);
-      })
-      .catch(() => {
-        if (!cancelled) setChannelWorkspaceOptions([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAgentId]);
-
-  const workspaceOptions = workspaceOptionsFor(
-    channelWorkspaceOptions,
-    selectedWorkspace,
   );
   const appDefaultAgentId = appDefaultForm.agentId || defaultAgent;
   const appDefaultAgentDef = agentDefs.find(
@@ -391,7 +355,6 @@ export function RemoteDashboard({
                       agentDefs,
                       profiles,
                       defaultAgent,
-                      defaultWorkspace,
                       t,
                     });
                     return (
@@ -468,9 +431,7 @@ export function RemoteDashboard({
                   enabledAgents={enabledAgents}
                   selectedAgentId={selectedAgentId}
                   selectedProfileId={selectedProfileId}
-                  selectedWorkspace={selectedWorkspace}
                   profileOptions={profileOptions}
-                  workspaceOptions={workspaceOptions}
                   activeAgents={activeAgentsForChannel}
                   pluginDir={selectedChannel?.plugin_dir ?? null}
                   saving={savingChannel === selectedChannelId}
@@ -479,9 +440,6 @@ export function RemoteDashboard({
                   }
                   onProfileChange={(profileId) =>
                     updateSelectedChannel({ profileId })
-                  }
-                  onWorkspaceChange={(workspace) =>
-                    updateSelectedChannel({ workspace })
                   }
                   onSave={() => void saveSelectedChannel()}
                   onConfigure={() => onConfigureChannel(selectedChannelId)}
@@ -642,15 +600,12 @@ function ChannelRemoteDetail({
   enabledAgents,
   selectedAgentId,
   selectedProfileId,
-  selectedWorkspace,
   profileOptions,
-  workspaceOptions,
   activeAgents,
   pluginDir,
   saving,
   onAgentChange,
   onProfileChange,
-  onWorkspaceChange,
   onSave,
   onConfigure,
   onStart,
@@ -663,15 +618,12 @@ function ChannelRemoteDetail({
   enabledAgents: AgentSummary[];
   selectedAgentId: string;
   selectedProfileId: string;
-  selectedWorkspace: string;
   profileOptions: ProfileSummary[];
-  workspaceOptions: WorkspaceOption[];
   activeAgents: AgentRuntime[];
   pluginDir: string | null;
   saving: boolean;
   onAgentChange: (agentId: string) => void;
   onProfileChange: (profileId: string) => void;
-  onWorkspaceChange: (workspace: string) => void;
   onSave: () => void;
   onConfigure: () => void;
   onStart: () => unknown;
@@ -706,15 +658,6 @@ function ChannelRemoteDetail({
       label: profile.label,
     })),
   ];
-  const workspaceDropdownOptions = [
-    { value: FOLLOW_DEFAULT, label: t("Follow agent default") },
-    ...workspaceOptions.map((workspace) => ({
-      value: workspace.path,
-      label: workspace.label,
-      detail: workspace.detail,
-    })),
-  ];
-
   return (
     <div className="grid gap-4">
       <section className="flex items-center justify-between gap-3">
@@ -806,7 +749,7 @@ function ChannelRemoteDetail({
             </Button>
           </div>
         </div>
-        <div className="grid gap-2 lg:grid-cols-3">
+        <div className="grid gap-2 lg:grid-cols-2">
           <SelectField label={t("Agent")}>
             <RemoteDropdownField
               label={t("Agent")}
@@ -821,14 +764,6 @@ function ChannelRemoteDetail({
               value={form.profileId}
               options={profileDropdownOptions}
               onValueChange={onProfileChange}
-            />
-          </SelectField>
-          <SelectField label={t("Workspace")}>
-            <RemoteDropdownField
-              label={t("Workspace")}
-              value={form.workspace}
-              options={workspaceDropdownOptions}
-              onValueChange={onWorkspaceChange}
             />
           </SelectField>
         </div>
@@ -850,7 +785,6 @@ function ChannelRemoteDetail({
           <div className="space-y-2">
             <KeyValue label={t("Agent")} value={selectedAgentId} />
             <KeyValue label={t("Profile")} value={selectedProfileId} />
-            <KeyValue label={t("Workspace")} value={selectedWorkspace || t("Default workspace")} />
             {channel?.reason && <KeyValue label={t("Reason")} value={channel.reason} danger />}
           </div>
         </section>
@@ -1184,9 +1118,6 @@ function formForChannel(
     agentId: stringValue(entry.agent_id ?? entry.agentId ?? entry.agent) ?? FOLLOW_DEFAULT,
     profileId:
       stringValue(entry.profile_id ?? entry.profileId ?? entry.profile) ?? FOLLOW_DEFAULT,
-    workspace:
-      stringValue(entry.workspace ?? entry.workspace_path ?? entry.workspacePath) ??
-      FOLLOW_DEFAULT,
   };
 }
 
@@ -1205,7 +1136,6 @@ function defaultChannelForm(): ChannelDefaultForm {
   return {
     agentId: FOLLOW_DEFAULT,
     profileId: FOLLOW_DEFAULT,
-    workspace: FOLLOW_DEFAULT,
   };
 }
 
@@ -1230,15 +1160,21 @@ function updateRemoteChannelForm(
   }
 
   const entry: RemoteChannelDefaults = { ...(channels[channelId] ?? {}) };
-  for (const key of ["agent", "agentId", "profile", "profileId", "workspacePath"] as const) {
+  for (const key of [
+    "agent",
+    "agentId",
+    "profile",
+    "profileId",
+    "workspace",
+    "workspace_path",
+    "workspacePath",
+  ] as const) {
     delete entry[key];
   }
   if (form.agentId === FOLLOW_DEFAULT) delete entry.agent_id;
   else entry.agent_id = form.agentId;
   if (form.profileId === FOLLOW_DEFAULT) delete entry.profile_id;
   else entry.profile_id = form.profileId;
-  if (form.workspace === FOLLOW_DEFAULT) delete entry.workspace;
-  else entry.workspace = form.workspace;
 
   if (Object.keys(entry).length > 0) channels[channelId] = entry;
   else delete channels[channelId];
@@ -1263,7 +1199,6 @@ function channelDefaultSummary({
   agentDefs,
   profiles,
   defaultAgent,
-  defaultWorkspace,
   t,
 }: {
   form: ChannelDefaultForm;
@@ -1271,7 +1206,6 @@ function channelDefaultSummary({
   agentDefs: AgentSummary[];
   profiles: ProfileSummary[];
   defaultAgent: string;
-  defaultWorkspace: string;
   t: ReturnType<typeof useI18n>["t"];
 }) {
   const agentId = form.agentId === FOLLOW_DEFAULT ? defaultAgent : form.agentId;
@@ -1286,32 +1220,7 @@ function channelDefaultSummary({
     profileId && profileId !== DIRECT_PROFILE
       ? profiles.find((item) => item.id === profileId)?.label ?? profileId
       : t("Direct");
-  const workspace =
-    form.workspace === FOLLOW_DEFAULT
-      ? prefs
-        ? agentWorkspace(prefs, agentId)
-        : defaultWorkspace
-      : form.workspace;
-  return `${agent?.display_name ?? agentId} · ${profile} · ${basename(workspace || t("Workspace"))}`;
-}
-
-function workspaceOptionsFor(
-  options: WorkspaceOption[],
-  selectedWorkspace: string,
-): WorkspaceOption[] {
-  if (!selectedWorkspace || options.some((option) => option.path === selectedWorkspace)) {
-    return options;
-  }
-  return [
-    ...options,
-    {
-      path: selectedWorkspace,
-      label: basename(selectedWorkspace),
-      detail: selectedWorkspace,
-      kind: "selected",
-      isDefault: false,
-    },
-  ];
+  return `${agent?.display_name ?? agentId} · ${profile}`;
 }
 
 function agentRuntimeTouchesChannel(agent: AgentRuntime, channelId: string) {
