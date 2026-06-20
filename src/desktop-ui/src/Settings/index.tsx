@@ -1138,12 +1138,6 @@ export function SettingsDialog({
                       </div>
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col items-end gap-2">
-                      <div
-                        className="max-w-full break-words text-right text-xs leading-5 text-foreground"
-                        title={defaultWorkspace}
-                      >
-                        {defaultWorkspace}
-                      </div>
                       <Button
                         type="button"
                         variant="outline"
@@ -1159,6 +1153,12 @@ export function SettingsDialog({
                         )}
                         {saving === "general" ? t("Saving…") : t("Choose")}
                       </Button>
+                      <div
+                        className="max-w-full text-right text-xs leading-5 text-foreground"
+                        title={defaultWorkspace}
+                      >
+                        {defaultWorkspace}
+                      </div>
                     </div>
                   </div>
                   <SettingsActionRow
