@@ -49,7 +49,6 @@ import {
   setLauncherAgentExecutablePath,
   setLauncherAgentProfile,
   setLauncherAgentLaunchArgs,
-  setLauncherDefault,
   setLauncherSelectedAgent,
   setLauncherTerminal,
   setLauncherWorkspace,
@@ -615,23 +614,6 @@ export function AgentLaunchBuilder({
     }
   }
 
-  async function makeDefault(choice: ProfileChoice) {
-    setBusy(true);
-    onError(null);
-    try {
-      await setLauncherDefault(
-        agentId,
-        choice.kind === "profile" ? choice.profileId : null,
-      );
-      await refreshPrefs();
-      onToast(t("VibeAround default updated"));
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function removeWorkspace(path: string, label: string) {
     if (!window.confirm(t('Remove workspace "{{label}}"?', { label }))) return;
     setBusy(true);
@@ -924,7 +906,6 @@ export function AgentLaunchBuilder({
                 key={agent.id}
                 agent={agent}
                 active={agent.id === agentId}
-                isDefault={viewPrefs.defaultAgent === agent.id}
                 onClick={() => void chooseAgent(agent.id)}
               />
             ))}
@@ -1192,7 +1173,6 @@ export function AgentLaunchBuilder({
                 onSelectApiType={(profile, apiType) =>
                   void chooseProfileApiType(profile, apiType)
                 }
-                onMakeDefault={makeDefault}
                 onEditProfile={onEditProfile}
                 onDuplicateProfile={(profile) => void duplicateProfile(profile)}
                 onConnectionSettings={onConnectionSettings}

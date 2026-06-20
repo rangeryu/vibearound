@@ -38,8 +38,6 @@ import {
   apiTypeProtocolDisplayLabel,
   canDeleteWorkspace,
   connectionAgentId,
-  isGlobalDefaultDirect,
-  isGlobalDefaultProfile,
   isBridgeAgent,
   isSortableWorkspace,
   profileAvailability,
@@ -152,7 +150,6 @@ export function ProfilePanel({
   profiles,
   onSelect,
   onSelectApiType,
-  onMakeDefault,
   onEditProfile,
   onDuplicateProfile,
   onConnectionSettings,
@@ -167,7 +164,6 @@ export function ProfilePanel({
   profiles: ProfileSummary[];
   onSelect: (choice: ProfileChoice) => void;
   onSelectApiType: (profile: ProfileSummary, apiType: string) => void;
-  onMakeDefault: (choice: ProfileChoice) => Promise<void>;
   onEditProfile: (profile: ProfileSummary) => void;
   onDuplicateProfile: (profile: ProfileSummary) => void;
   onConnectionSettings: (
@@ -180,7 +176,6 @@ export function ProfilePanel({
   busy: boolean;
 }) {
   const { t } = useI18n();
-  const directIsGlobalDefault = isGlobalDefaultDirect(prefs, agentId);
   const directActive = selected.kind === "direct";
 
   function handleProfileDragEnd(event: DragEndEvent) {
@@ -236,7 +231,6 @@ export function ProfilePanel({
               <span className="truncate text-[13px] font-semibold">
                 {t("Direct")}
               </span>
-              {directIsGlobalDefault && <DefaultBadge />}
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
               {t("Use existing CLI login")}
@@ -265,11 +259,6 @@ export function ProfilePanel({
                     availability.launchable &&
                     selected.kind === "profile" &&
                     selected.profileId === profile.id;
-                  const globalDefaultForProfile = isGlobalDefaultProfile(
-                    prefs,
-                    agentId,
-                    profile.id,
-                  );
                   const connectionId = connectionAgentId(agentId);
                   const connection = connectionId
                     ? resolveProfileConnection(
@@ -321,7 +310,6 @@ export function ProfilePanel({
                           <span className="truncate text-[13px] font-semibold">
                             {profile.label}
                           </span>
-                          {globalDefaultForProfile && <DefaultBadge />}
                         </div>
                         {summary.bridge && (
                           <div className="mt-0.5">
@@ -381,16 +369,6 @@ export function ProfilePanel({
                           profile={profile}
                           bridgeAvailable={isBridgeAgent(agentId)}
                           disabled={busy}
-                          onMakeDefault={
-                            globalDefaultForProfile
-                              ? undefined
-                              : () =>
-                                  void onMakeDefault({
-                                    kind: "profile",
-                                    profileId: profile.id,
-                                  })
-                          }
-                          makeDefaultDisabled={busy || !availability.launchable}
                           onConnectionSettings={(profile) => {
                             const connectionId = connectionAgentId(agentId);
                             if (connectionId) {

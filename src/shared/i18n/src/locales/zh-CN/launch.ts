@@ -31,7 +31,6 @@ export const zhCNLaunch: Record<string, string> = {
   "No launch agents enabled": "没有启用可启动的 Agent",
   "Loading launch settings": "正在读取启动设置",
   "Launch is already in progress": "正在启动中",
-  "VibeAround default updated": "已更新 VibeAround 默认项",
   Disabled: "已禁用",
   "None selected": "未选择",
   "Direct profile is fixed": "直接启动固定在顶部",
@@ -93,7 +92,6 @@ export const zhCNLaunch: Record<string, string> = {
   "{{agent}} → {{provider}} {{apiType}}":
     "{{agent}} → {{provider}} {{apiType}}",
   "Set default": "设为默认",
-  "Set app default": "设为应用默认",
   "Manual config": "手动配置",
   "API bridge settings": "API 转接设置",
   Record: "记录",
