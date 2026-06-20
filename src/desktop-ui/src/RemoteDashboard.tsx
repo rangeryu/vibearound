@@ -314,12 +314,12 @@ export function RemoteDashboard({
             variant="ghost"
             size="sm"
             className="h-7 shrink-0 gap-1.5 px-2 text-[11px] text-primary hover:text-primary"
-            title={t("Open Web Workbench")}
+            title={t("Open Web App")}
             onClick={() =>
               void openDashboardUrl(`http://127.0.0.1:${DAEMON_PORT}/va/`)
             }
           >
-            {t("Web Workbench")}
+            {t("Web App")}
             <ExternalLink className="h-3.5 w-3.5" />
           </Button>
         </div>
