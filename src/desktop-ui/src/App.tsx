@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Activity,
   RefreshCw,
   Settings,
   Eye,
   Rocket,
   Server,
+  Globe,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 import { useChannelsState } from "./hooks/useChannelsState";
@@ -24,8 +24,8 @@ import Onboarding from "./Onboarding";
 import { Previews } from "./Previews";
 import { Launch } from "./Launch";
 import { LocalApiWorkbench } from "./LocalApiWorkbench";
-import { StatusDashboard } from "./StatusDashboard";
-import { SettingsDialog } from "./Settings";
+import { RemoteDashboard } from "./RemoteDashboard";
+import { SettingsDialog, type SettingsDialogTarget } from "./Settings";
 import {
   checkSelectedLaunchEntry,
   getLauncherPreferences,
@@ -72,7 +72,7 @@ function App() {
   return <Dashboard />;
 }
 
-type DashboardPage = "launch" | "status" | "previews" | "localApi";
+type DashboardPage = "launch" | "remote" | "previews" | "localApi";
 
 function Dashboard() {
   const { t } = useI18n();
@@ -80,6 +80,8 @@ function Dashboard() {
     typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
   const [page, setPage] = useState<DashboardPage>("launch");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTarget, setSettingsTarget] =
+    useState<SettingsDialogTarget | null>(null);
   const [launcherPrefs, setLauncherPrefs] =
     useState<LauncherPreferences | null>(null);
   const [launcherPrefsLoaded, setLauncherPrefsLoaded] = useState(false);
@@ -117,6 +119,15 @@ function Dashboard() {
     setLaunchRefreshToken((token) => token + 1);
   }, [refreshAll]);
 
+  const openChannelSettings = useCallback((channelId: string) => {
+    setSettingsTarget({
+      tab: "im",
+      pluginId: channelId,
+      nonce: Date.now(),
+    });
+    setSettingsOpen(true);
+  }, []);
+
   const everHadData = useRef(false);
   const [startTime] = useState(() => Date.now());
   const [timedOut, setTimedOut] = useState(false);
@@ -130,7 +141,7 @@ function Dashboard() {
     : !launchEnabled
       ? t("No launch agents enabled")
       : null;
-  const effectivePage = !launchEnabled && page === "launch" ? "status" : page;
+  const effectivePage = !launchEnabled && page === "launch" ? "remote" : page;
 
   if (anyEverLoaded) everHadData.current = true;
 
@@ -140,7 +151,7 @@ function Dashboard() {
 
   useEffect(() => {
     if (launcherPrefsLoaded && !launchEnabled && page === "launch") {
-      setPage("status");
+      setPage("remote");
     }
   }, [launchEnabled, launcherPrefsLoaded, page]);
 
@@ -251,10 +262,10 @@ function Dashboard() {
                 )}
               </TooltipProvider>
               <TabsTrigger
-                value="status"
+                value="remote"
                 className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
               >
-                <Activity /> {t("Status")}
+                <Globe /> {t("Remote")}
               </TabsTrigger>
               <TabsTrigger
                 value="previews"
@@ -274,7 +285,10 @@ function Dashboard() {
         <div className="relative z-10 flex items-center gap-2">
           <LanguageMenu />
           <Button
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => {
+              setSettingsTarget(null);
+              setSettingsOpen(true);
+            }}
             variant="ghost"
             size="icon-xs"
             title={t("Settings")}
@@ -298,8 +312,12 @@ function Dashboard() {
 
       <SettingsDialog
         open={settingsOpen}
-        onOpenChange={setSettingsOpen}
+        onOpenChange={(open) => {
+          setSettingsOpen(open);
+          if (!open) setSettingsTarget(null);
+        }}
         onServicesRestarted={handleRuntimeSettingsChanged}
+        initialTarget={settingsTarget}
       />
 
       {firstError && (
@@ -321,10 +339,12 @@ function Dashboard() {
           <Launch refreshToken={launchRefreshToken} />
         </div>
       ) : (
-        <StatusDashboard
+        <RemoteDashboard
           channels={channels}
           tunnels={tunnels}
           agents={agents}
+          onConfigureChannel={openChannelSettings}
+          onDefaultsChanged={handleRuntimeSettingsChanged}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { formatErrorMessage } from "@va/client";
 import { apiFetch, authedWsUrl } from "../lib/api";
 
 const POLL_INTERVAL_MS = 5000;
@@ -41,7 +42,7 @@ export function useManagerState<T>(
       setError(null);
       setEverLoaded(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "fetch failed");
+      setError(formatErrorMessage(e, "fetch failed"));
     } finally {
       setLoading(false);
     }

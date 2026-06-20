@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { formatErrorMessage } from "@va/client";
 
 import type { AuthFlowState, DiscoveredChannelPlugin } from "../types";
 
@@ -98,7 +99,10 @@ export function useChannelAuth({
               ...prev,
               [pluginId]: {
                 status: "connected",
-                message: String(waitResult.message ?? "Connected successfully."),
+                message: formatErrorMessage(
+                  waitResult.message,
+                  "Connected successfully.",
+                ),
               },
             }));
             if (waitResult.botToken) onConfigChange(pluginId, "bot_token", String(waitResult.botToken));
@@ -108,7 +112,7 @@ export function useChannelAuth({
               ...prev,
               [pluginId]: {
                 status: "idle",
-                message: String(waitResult.message ?? "Not confirmed."),
+                message: formatErrorMessage(waitResult.message, "Not confirmed."),
               },
             }));
           }
@@ -123,7 +127,7 @@ export function useChannelAuth({
           ...prev,
           [pluginId]: {
             status: "error",
-            message: error instanceof Error ? error.message : String(error),
+            message: formatErrorMessage(error),
           },
         }));
       }

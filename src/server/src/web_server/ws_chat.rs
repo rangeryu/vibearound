@@ -25,6 +25,7 @@ use common::channels::{ChannelEnvelope, ChannelInput, ChannelOutput};
 use common::routing::{
     is_external_attachment_uri, is_safe_attachment_file_key, Attachment, RouteKey,
 };
+use common::workspace::manager::ExternalSessionAttachMode;
 use common::workspace::threads::HostBinding;
 use common::{agent_state, config};
 
@@ -570,22 +571,41 @@ async fn apply_web_launch_selection(
             send_web_system_text(state, route, &format!("❌ Unknown agent `{}`.", agent)).await;
             return;
         };
-        match state
-            .channel_hub
-            .workspace_thread_manager()
-            .resolve_route_runtime(route)
-            .await
-        {
-            Ok(runtime) => {
-                if let Err(error) = runtime
-                    .switch_host(HostBinding::new(agent_id.clone(), Some(profile)), false)
-                    .await
-                {
-                    send_web_system_text(state, route, &format!("❌ {}", error)).await;
-                } else {
+        let target = HostBinding::new(agent_id.clone(), Some(profile));
+        let workspace_threads = state.channel_hub.workspace_thread_manager();
+        match workspace_threads.active_route_runtime(route).await {
+            Ok(Some(runtime)) => {
+                if runtime.state().await.host_binding.agent_id == agent_id {
+                    if let Err(error) = runtime.switch_profile_preserving_session(target).await {
+                        send_web_system_text(state, route, &format!("❌ {}", error)).await;
+                        return;
+                    }
                     state.web_channel.set_route_agent(&route.chat_id, agent_id);
+                } else {
+                    match workspace_threads
+                        .create_thread_in_current_workspace_with_host(route, target)
+                        .await
+                    {
+                        Ok(_) => {
+                            state.web_channel.set_route_agent(&route.chat_id, agent_id);
+                        }
+                        Err(error) => {
+                            send_web_system_text(state, route, &format!("❌ {}", error)).await;
+                        }
+                    }
                 }
             }
+            Ok(None) => match workspace_threads
+                .create_thread_in_current_workspace_with_host(route, target)
+                .await
+            {
+                Ok(_) => {
+                    state.web_channel.set_route_agent(&route.chat_id, agent_id);
+                }
+                Err(error) => {
+                    send_web_system_text(state, route, &format!("❌ {}", error)).await;
+                }
+            },
             Err(error) => {
                 send_web_system_text(state, route, &format!("❌ {}", error)).await;
             }
@@ -619,6 +639,7 @@ async fn apply_web_session_resume(
             resume.profile,
             resume.session_id,
             std::path::PathBuf::from(resume.cwd),
+            ExternalSessionAttachMode::ReuseOpenThread,
         )
         .await
     {
@@ -652,6 +673,7 @@ async fn apply_web_session_resume_now(
             resume.profile,
             resume.session_id,
             std::path::PathBuf::from(resume.cwd),
+            ExternalSessionAttachMode::ReuseOpenThread,
         )
         .await
     {

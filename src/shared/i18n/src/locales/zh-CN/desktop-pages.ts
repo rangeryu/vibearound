@@ -20,10 +20,6 @@ export const zhCNDesktopPages: Record<string, string> = {
     "作用于每个已启用的搜索源，不是合计总数。",
   "Controls provider depth and how much result content is returned.":
     "控制服务商搜索深度，以及返回多少结果正文内容。",
-  "Total results sent to the model can be enabled sources multiplied by this value.":
-    "发送给模型的总结果数最多为已启用搜索源数量乘以此值。",
-  "With {{count}} enabled source(s), up to {{total}} search results can be sent to the model.":
-    "当前启用 {{count}} 个搜索源，最多会向模型发送 {{total}} 条搜索结果。",
   "Enable source": "启用搜索源",
   "Paste API key": "粘贴 API key",
   "API key is required.": "必须填写 API key。",
@@ -53,8 +49,8 @@ export const zhCNDesktopPages: Record<string, string> = {
   "Share key expired": "分享 key 已过期",
   "Close (kills dev server)": "关闭（会终止开发服务器）",
   Close: "关闭",
-  "Workspace folders where agents build projects. The built-in workspace is always the default.":
-    "Agent 构建项目时使用的工作区文件夹。内置工作区始终是默认工作区。",
+  "Workspace folders where agents build projects. The default workspace can be changed in Settings.":
+    "Agent 构建项目时使用的工作区文件夹。默认工作区可在设置中修改。",
   "Select Workspace Folder": "选择工作区文件夹",
   Selecting: "选择中",
   "Selecting…": "选择中…",

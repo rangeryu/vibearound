@@ -9,7 +9,7 @@ use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 use va_ai_api_bridge::{
-    DecodeState, EncodeState, ProviderBridgeAdapter, UniversalEvent, WireEvent,
+    ContentBlock, DecodeState, EncodeState, ProviderBridgeAdapter, UniversalEvent, WireEvent,
 };
 
 use super::super::bridge_recording::{ActiveBridgeRecord, PayloadCapture};
@@ -57,6 +57,7 @@ pub(super) fn translated_events_stream_response(
     record: Option<&ActiveBridgeRecord>,
 ) -> Response {
     apply_agent_model(&mut events, agent_model.as_deref());
+    normalize_events_for_agent_protocol(&mut events, agent_protocol);
     let mut encode_state = EncodeState::default();
     let wire_events = match agent_protocol.encode_agent_events(&events, &mut encode_state) {
         Ok(events) => events,
@@ -230,6 +231,7 @@ impl SseMapState {
         };
         self.provider_adapter.transform_upstream_events(&mut events);
         apply_agent_model(&mut events, self.agent_model.as_deref());
+        normalize_events_for_agent_protocol(&mut events, self.agent_protocol);
         let wire_events = match self
             .agent_protocol
             .encode_agent_events(&events, &mut self.encode_state)
@@ -280,6 +282,27 @@ fn apply_agent_model(events: &mut [UniversalEvent], agent_model: Option<&str>) {
     for event in events {
         if let UniversalEvent::ResponseStart { model, .. } = event {
             *model = Some(agent_model.to_string());
+        }
+    }
+}
+
+fn normalize_events_for_agent_protocol(
+    events: &mut [UniversalEvent],
+    agent_protocol: BridgeProtocol,
+) {
+    if agent_protocol != BridgeProtocol::AnthropicMessages {
+        return;
+    }
+
+    for event in events {
+        if let UniversalEvent::ContentStart {
+            block: ContentBlock::Reasoning { text, .. },
+            ..
+        } = event
+        {
+            if text.is_none() {
+                *text = Some(String::new());
+            }
         }
     }
 }
@@ -335,4 +358,55 @@ fn find_sse_frame_end(buffer: &[u8]) -> Option<usize> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fills_empty_reasoning_start_for_anthropic_streams() {
+        let mut events = vec![UniversalEvent::ContentStart {
+            index: 0,
+            block: ContentBlock::Reasoning {
+                text: None,
+                encrypted: None,
+                extensions: Default::default(),
+            },
+        }];
+
+        normalize_events_for_agent_protocol(&mut events, BridgeProtocol::AnthropicMessages);
+
+        let UniversalEvent::ContentStart {
+            block: ContentBlock::Reasoning { text, .. },
+            ..
+        } = &events[0]
+        else {
+            panic!("expected reasoning content start");
+        };
+        assert_eq!(text.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn leaves_reasoning_start_unchanged_for_non_anthropic_streams() {
+        let mut events = vec![UniversalEvent::ContentStart {
+            index: 0,
+            block: ContentBlock::Reasoning {
+                text: None,
+                encrypted: None,
+                extensions: Default::default(),
+            },
+        }];
+
+        normalize_events_for_agent_protocol(&mut events, BridgeProtocol::OpenAiChat);
+
+        let UniversalEvent::ContentStart {
+            block: ContentBlock::Reasoning { text, .. },
+            ..
+        } = &events[0]
+        else {
+            panic!("expected reasoning content start");
+        };
+        assert!(text.is_none());
+    }
 }

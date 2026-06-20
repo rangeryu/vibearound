@@ -116,6 +116,7 @@ impl AgentInfo {
 /// {
 ///   "kind": "telegram",
 ///   "version": "0.1.0",
+///   "plugin_dir": "/path/to/va-plugin-channel-telegram",
 ///   "status": "running",
 ///   "reason": null
 /// }
@@ -127,6 +128,7 @@ impl AgentInfo {
 pub struct ChannelRuntime {
     pub kind: String,
     pub version: Option<String>,
+    pub plugin_dir: Option<String>,
     pub status: &'static str,
     pub reason: Option<String>,
 }
@@ -208,8 +210,8 @@ pub struct WorkspaceItem {
 
 /// `GET /api/workspaces` response.
 ///
-/// `default_workspace` is retained for wire compatibility; it always points
-/// to the built-in workspace root.
+/// `default_workspace` is the workspace root used for new sessions when no
+/// more specific workspace has been selected.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspacesResponse {
     pub workspaces: Vec<WorkspaceItem>,

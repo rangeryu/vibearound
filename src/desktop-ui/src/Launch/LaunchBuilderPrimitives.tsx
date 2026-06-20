@@ -309,8 +309,6 @@ export function ProfileActionsMenu({
   profile,
   bridgeAvailable,
   disabled = false,
-  onMakeDefault,
-  makeDefaultDisabled = false,
   onConnectionSettings,
   onEditProfile,
   onDuplicateProfile,
@@ -319,8 +317,6 @@ export function ProfileActionsMenu({
   profile: ProfileSummary;
   bridgeAvailable: boolean;
   disabled?: boolean;
-  onMakeDefault?: () => void;
-  makeDefaultDisabled?: boolean;
   onConnectionSettings: (profile: ProfileSummary) => void;
   onEditProfile: (profile: ProfileSummary) => void;
   onDuplicateProfile: (profile: ProfileSummary) => void;
@@ -342,17 +338,6 @@ export function ProfileActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
-        {onMakeDefault && (
-          <DropdownMenuItem
-            className="text-xs"
-            disabled={disabled || makeDefaultDisabled}
-            onSelect={() => onMakeDefault()}
-          >
-            <Star className="h-3 w-3" />
-            {t("Set app default")}
-          </DropdownMenuItem>
-        )}
-        {onMakeDefault && <DropdownMenuSeparator />}
         {bridgeAvailable && (
           <DropdownMenuItem
             className="text-xs"
@@ -452,12 +437,10 @@ export function BridgeBadge({ label }: { label?: string }) {
 export function AgentRailButton({
   agent,
   active,
-  isDefault,
   onClick,
 }: {
   agent: AgentSummary;
   active: boolean;
-  isDefault: boolean;
   onClick: () => void;
 }) {
   return (
@@ -478,11 +461,6 @@ export function AgentRailButton({
         framed={false}
         className="h-12 w-12 rounded-[10px]"
       />
-      {isDefault && (
-        <span className="absolute -right-1 -top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-amber-500/40 bg-background text-amber-600 shadow-sm dark:text-amber-300">
-          <Star className="h-2.5 w-2.5" />
-        </span>
-      )}
       <span className="absolute -bottom-1 -right-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm">
         {agent.direct_only ? (
           <Monitor className="h-2.5 w-2.5" />

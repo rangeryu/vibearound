@@ -52,7 +52,6 @@ export function buildSettings(input: BuildSettingsInput): Settings {
   };
   if (configureAgents) {
     result.enabled_agents = Array.from(enabledAgents);
-    delete result.default_workspace;
     delete result.default_agent;
     delete result.default_profiles;
   }

@@ -277,14 +277,17 @@ fn load_plugins_from_dir(
             source: source.clone(),
         };
 
-        if let Some(previous) = discovered.insert(plugin_id.clone(), discovered_plugin) {
+        if let Some(previous) = discovered.get(&plugin_id) {
             tracing::info!(
-                "[plugins] plugin '{}' from {} overrides {}",
+                "[plugins] plugin '{}' from {} ignored; already loaded from {}",
                 plugin_id,
                 plugin_dir.display(),
                 previous.dir.display()
             );
+            continue;
         }
+
+        discovered.insert(plugin_id, discovered_plugin);
     }
 }
 

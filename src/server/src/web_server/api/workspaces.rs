@@ -4,26 +4,30 @@ use common::config;
 
 fn workspace_item(
     ws: &std::path::Path,
+    default_workspace: &std::path::Path,
     builtin: &std::path::Path,
 ) -> crate::api_types::WorkspaceItem {
-    let is_builtin = ws == builtin;
     crate::api_types::WorkspaceItem {
         path: ws.to_string_lossy().to_string(),
-        is_default: is_builtin,
-        is_builtin,
+        is_default: paths_equal(ws, default_workspace),
+        is_builtin: paths_equal(ws, builtin),
     }
 }
 
 fn workspaces_response() -> crate::api_types::WorkspacesResponse {
     let cfg = config::ensure_loaded();
     let builtin = config::builtin_workspaces_dir();
+    let default_workspace = cfg.resolve_workspace("");
     let all = cfg.all_workspaces();
 
-    let workspaces = all.iter().map(|ws| workspace_item(ws, &builtin)).collect();
+    let workspaces = all
+        .iter()
+        .map(|ws| workspace_item(ws, &default_workspace, &builtin))
+        .collect();
 
     crate::api_types::WorkspacesResponse {
         workspaces,
-        default_workspace: builtin.to_string_lossy().to_string(),
+        default_workspace: default_workspace.to_string_lossy().to_string(),
     }
 }
 
@@ -95,7 +99,9 @@ pub async fn create_workspace_handler(
 ) -> Result<Json<crate::api_types::CreateWorkspaceResponse>, (StatusCode, String)> {
     let name = validate_workspace_name(&body.name)?;
     let builtin = config::builtin_workspaces_dir();
-    let path = builtin.join(name);
+    let cfg = config::ensure_loaded();
+    let default_workspace = cfg.resolve_workspace("");
+    let path = default_workspace.join(name);
 
     if path.exists() && !path.is_dir() {
         return Err((
@@ -124,7 +130,7 @@ pub async fn create_workspace_handler(
 
     let response = workspaces_response();
     Ok(Json(crate::api_types::CreateWorkspaceResponse {
-        workspace: workspace_item(&path, &builtin),
+        workspace: workspace_item(&path, &default_workspace, &builtin),
         workspaces: response.workspaces,
         default_workspace: response.default_workspace,
     }))
@@ -136,6 +142,14 @@ pub async fn remove_workspace_handler(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let path = std::path::PathBuf::from(&body.path);
     let builtin = config::builtin_workspaces_dir();
+    let cfg = config::ensure_loaded();
+    let default_workspace = cfg.resolve_workspace("");
+    if paths_equal(&path, &default_workspace) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Cannot remove the default workspace".into(),
+        ));
+    }
     if paths_equal(&path, &builtin) {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -143,7 +157,6 @@ pub async fn remove_workspace_handler(
         ));
     }
 
-    let cfg = config::ensure_loaded();
     if !cfg
         .all_workspaces()
         .iter()

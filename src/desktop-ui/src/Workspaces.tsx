@@ -77,7 +77,7 @@ export function Workspaces() {
       <PageHeader
         icon={<FolderOpen className="w-4 h-4 text-primary" />}
         title={t("Workspaces")}
-        description={t("Workspace folders where agents build projects. The built-in workspace is always the default.")}
+        description={t("Workspace folders where agents build projects. The default workspace can be changed in Settings.")}
         actions={(
           <>
             <Button
@@ -137,7 +137,7 @@ export function Workspaces() {
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              {!ws.is_builtin && (
+              {!ws.is_builtin && !ws.is_default && (
                 <Button
                   type="button"
                   variant="ghost"

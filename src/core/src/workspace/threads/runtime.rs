@@ -313,6 +313,56 @@ impl ThreadRuntime {
         Ok(())
     }
 
+    pub async fn switch_profile_preserving_session(
+        &self,
+        host_binding: HostBinding,
+    ) -> acp::Result<()> {
+        self.mark_activity();
+        let _spawn_guard = self.spawn_lock.lock().await;
+        {
+            let thread = self.thread.lock().await;
+            if thread.host_binding.agent_id != host_binding.agent_id {
+                return Err(acp::Error::new(
+                    -32602,
+                    "profile switch cannot change agent",
+                ));
+            }
+        }
+
+        let preserved_session_id = self.session_id.lock().await.clone();
+        if let Some(agent) = self.agent.lock().await.take() {
+            agent.shutdown().await;
+        }
+        *self.host_client_handler.lock().await = None;
+        *self.initialize.lock().await = None;
+        *self.failed.lock().await = None;
+
+        let thread_id = self.thread.lock().await.id.clone();
+        let event = ThreadEvent::host_changed(thread_id.clone(), host_binding.clone(), false);
+        append_thread_event(&self.store, &event).await?;
+        self.apply_thread_event(&event).await?;
+
+        if let Some(session_id) = preserved_session_id.clone() {
+            let needs_session_ref = {
+                let thread = self.thread.lock().await;
+                !thread.has_agent_session(&host_binding, &session_id)
+            };
+            if needs_session_ref {
+                let event = ThreadEvent::agent_session_observed(
+                    thread_id,
+                    host_binding.agent_id,
+                    host_binding.profile_id,
+                    session_id.clone(),
+                );
+                append_thread_event(&self.store, &event).await?;
+                self.apply_thread_event(&event).await?;
+            }
+            *self.session_id.lock().await = Some(session_id);
+        }
+        self.notify_change();
+        Ok(())
+    }
+
     pub async fn initialize_multi_agent_turn(
         &self,
         turn: MultiAgentTurn,
@@ -739,19 +789,8 @@ impl ThreadRuntime {
             .profile_id
             .clone()
             .unwrap_or_else(|| "default".to_string());
-        let im_auto_continue_last_session = crate::config::ensure_loaded()
-            .im_agent
-            .auto_continue_last_session;
-        if !route_allows_startup_replay(route) && !im_auto_continue_last_session {
-            *self.session_id.lock().await = None;
-        }
         let runtime_session_id = self.session_id.lock().await.clone();
-        let startup_session = host_startup_session(
-            route,
-            runtime_session_id,
-            &thread,
-            im_auto_continue_last_session,
-        );
+        let startup_session = host_startup_session(route, runtime_session_id, &thread);
 
         std::fs::create_dir_all(&self.workspace).map_err(|error| {
             acp::Error::new(
@@ -1179,7 +1218,6 @@ fn host_startup_session(
     route: &RouteKey,
     runtime_session_id: Option<String>,
     thread: &WorkspaceThread,
-    im_auto_continue_last_session: bool,
 ) -> StartupSession {
     let Some(session_id) = runtime_session_id.or_else(|| latest_session_for_host(thread)) else {
         return StartupSession::Fresh;
@@ -1189,10 +1227,8 @@ fn host_startup_session(
             return StartupSession::ResumeOnly(session_id);
         }
         StartupSession::Load(session_id)
-    } else if im_auto_continue_last_session {
-        StartupSession::Resume(session_id)
     } else {
-        StartupSession::Fresh
+        StartupSession::Resume(session_id)
     }
 }
 
@@ -1468,7 +1504,7 @@ mod tests {
     fn web_routes_load_previous_host_session_for_playback() {
         let route = RouteKey::new("web", "chat-1");
 
-        let startup_session = host_startup_session(&route, None, &thread_with_sessions(), true);
+        let startup_session = host_startup_session(&route, None, &thread_with_sessions());
 
         assert_eq!(
             startup_session,
@@ -1481,7 +1517,7 @@ mod tests {
         let route = RouteKey::new("web", "chat-1");
         let thread = thread_with_host_session("gemini", None, "gemini-session");
 
-        let startup_session = host_startup_session(&route, None, &thread, true);
+        let startup_session = host_startup_session(&route, None, &thread);
 
         assert_eq!(
             startup_session,
@@ -1497,7 +1533,6 @@ mod tests {
             &route,
             Some("runtime-session".to_string()),
             &thread_with_sessions(),
-            true,
         );
 
         assert_eq!(
@@ -1507,15 +1542,22 @@ mod tests {
     }
 
     #[test]
-    fn im_routes_start_fresh_when_auto_continue_disabled() {
+    fn routes_without_known_session_start_fresh() {
         let route = RouteKey::new("slack", "dm-1");
+        let thread = WorkspaceThread {
+            id: WorkspaceThreadId::from("wt_a"),
+            workspace_id: WorkspaceId::from("ws_a"),
+            host_binding: HostBinding::new("codex", Some("direct".to_string())),
+            status: ThreadStatus::Open,
+            first_user_prompt: None,
+            agent_sessions: BTreeMap::new(),
+            agents: BTreeMap::new(),
+            multi_agent_turns: BTreeMap::new(),
+            created_at: "2026-01-01T00:00:00.000Z".to_string(),
+            updated_at: "2026-01-01T00:00:00.000Z".to_string(),
+        };
 
-        let startup_session = host_startup_session(
-            &route,
-            Some("runtime-session".to_string()),
-            &thread_with_sessions(),
-            false,
-        );
+        let startup_session = host_startup_session(&route, None, &thread);
 
         assert_eq!(startup_session, StartupSession::Fresh);
     }

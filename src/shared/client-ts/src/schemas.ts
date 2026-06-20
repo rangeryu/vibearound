@@ -233,6 +233,7 @@ export type ChannelStatus = z.infer<typeof ChannelStatusSchema>;
 export const ChannelRuntimeSchema = z.object({
   kind: z.string(),
   version: z.string().nullable().optional().default(null),
+  plugin_dir: z.string().nullable().optional().default(null),
   status: ChannelStatusSchema,
   reason: z.string().nullable(),
 });
@@ -397,7 +398,7 @@ export const ChatEventSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("error"),
-    error: z.string(),
+    error: z.unknown(),
   }),
 ]);
 export type ChatEvent = z.infer<typeof ChatEventSchema>;
