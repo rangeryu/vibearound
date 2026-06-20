@@ -3,6 +3,7 @@
 //! Plugins are disk-resident directories under either
 //! - `~/.vibearound/plugins/<plugin-slug>/` (user-installed), or
 //! - `<repo>/plugins/<plugin-slug>/` (project, dev-only),
+//! - or, in debug builds, sibling development checkouts next to this repo,
 //!
 //! each containing a `plugin.json` manifest describing the plugin.
 //! Channel plugins (`kind == "channel"`) cover IM integrations like Telegram /
@@ -161,6 +162,7 @@ pub fn discover_plugins() -> HashMap<String, DiscoveredPlugin> {
     if let Some(project_dir) = project_plugins_dir() {
         load_plugins_from_dir(&project_dir, PluginSource::Project, &mut discovered);
     }
+    load_dev_checkout_plugins(&mut discovered);
     load_plugins_from_dir(&user_plugins_dir(), PluginSource::User, &mut discovered);
 
     discovered
@@ -247,48 +249,82 @@ fn load_plugins_from_dir(
             continue;
         }
 
-        let manifest_path = plugin_dir.join(PLUGIN_MANIFEST_NAME);
-        let manifest = match read_plugin_manifest(&manifest_path) {
-            Some(manifest) => manifest,
-            None => continue,
-        };
-
-        let plugin_id = manifest.id.trim().to_string();
-        if plugin_id.is_empty() {
-            tracing::info!(
-                "[plugins] skipping plugin with empty id: {}",
-                manifest_path.display()
-            );
-            continue;
-        }
-
-        if manifest.kind.trim().is_empty() {
-            tracing::info!(
-                "[plugins] skipping plugin '{}' with empty kind: {}",
-                plugin_id,
-                manifest_path.display()
-            );
-            continue;
-        }
-
-        let discovered_plugin = DiscoveredPlugin {
-            manifest,
-            dir: plugin_dir.clone(),
-            source: source.clone(),
-        };
-
-        if let Some(previous) = discovered.get(&plugin_id) {
-            tracing::info!(
-                "[plugins] plugin '{}' from {} ignored; already loaded from {}",
-                plugin_id,
-                plugin_dir.display(),
-                previous.dir.display()
-            );
-            continue;
-        }
-
-        discovered.insert(plugin_id, discovered_plugin);
+        load_plugin_from_dir(&plugin_dir, source.clone(), discovered);
     }
+}
+
+fn load_dev_checkout_plugins(discovered: &mut HashMap<String, DiscoveredPlugin>) {
+    #[cfg(debug_assertions)]
+    {
+        let Some(parent_dir) = dev_checkout_parent_dir() else {
+            return;
+        };
+        for plugin in crate::resources::PLUGINS.iter() {
+            let plugin_dir = parent_dir.join(plugin.install_dir_name());
+            load_plugin_from_dir(&plugin_dir, PluginSource::Project, discovered);
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = discovered;
+    }
+}
+
+#[cfg(debug_assertions)]
+fn dev_checkout_parent_dir() -> Option<PathBuf> {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+}
+
+fn load_plugin_from_dir(
+    plugin_dir: &Path,
+    source: PluginSource,
+    discovered: &mut HashMap<String, DiscoveredPlugin>,
+) {
+    let manifest_path = plugin_dir.join(PLUGIN_MANIFEST_NAME);
+    let manifest = match read_plugin_manifest(&manifest_path) {
+        Some(manifest) => manifest,
+        None => return,
+    };
+
+    let plugin_id = manifest.id.trim().to_string();
+    if plugin_id.is_empty() {
+        tracing::info!(
+            "[plugins] skipping plugin with empty id: {}",
+            manifest_path.display()
+        );
+        return;
+    }
+
+    if manifest.kind.trim().is_empty() {
+        tracing::info!(
+            "[plugins] skipping plugin '{}' with empty kind: {}",
+            plugin_id,
+            manifest_path.display()
+        );
+        return;
+    }
+
+    let discovered_plugin = DiscoveredPlugin {
+        manifest,
+        dir: plugin_dir.to_path_buf(),
+        source,
+    };
+
+    if let Some(previous) = discovered.get(&plugin_id) {
+        tracing::info!(
+            "[plugins] plugin '{}' from {} ignored; already loaded from {}",
+            plugin_id,
+            plugin_dir.display(),
+            previous.dir.display()
+        );
+        return;
+    }
+
+    discovered.insert(plugin_id, discovered_plugin);
 }
 
 fn read_plugin_manifest(path: &Path) -> Option<PluginManifest> {
