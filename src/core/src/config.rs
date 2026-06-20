@@ -170,6 +170,8 @@ pub struct Config {
     pub local_agent_api: LocalAgentApiConfig,
     // --- Host-side web search fallback ---
     pub search_tool: SearchToolConfig,
+    // --- Remote/IM channel defaults ---
+    pub remote: RemoteConfig,
     // --- Raw channels JSON (for dynamic plugin config) ---
     raw_channels: serde_json::Value,
 }
@@ -229,6 +231,18 @@ pub struct SearchToolConfig {
     pub max_results: Option<usize>,
     pub search_context_size: Option<String>,
     pub sources: BTreeMap<String, SearchSourceConfig>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RemoteConfig {
+    pub channels: BTreeMap<String, RemoteChannelDefaults>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RemoteChannelDefaults {
+    pub agent_id: Option<String>,
+    pub profile_id: Option<String>,
+    pub workspace: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -376,6 +390,14 @@ impl Config {
             .get(agent_id)
             .cloned()
             .filter(|s| !s.trim().is_empty())
+    }
+
+    pub fn remote_channel_defaults(&self, channel_kind: &str) -> RemoteChannelDefaults {
+        self.remote
+            .channels
+            .get(channel_kind)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// All available workspaces: the built-in root + user-added paths.
@@ -584,6 +606,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
     let api_bridge = load_api_bridge_config(&root);
     let local_agent_api = load_local_agent_api_config(&root);
     let search_tool = load_search_tool_config(&root);
+    let remote = load_remote_config(&root);
 
     let proxy = root
         .get("proxy")
@@ -631,6 +654,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         api_bridge,
         local_agent_api,
         search_tool,
+        remote,
         raw_channels,
     }
 }
@@ -716,6 +740,50 @@ fn load_search_tool_config(root: &serde_json::Value) -> SearchToolConfig {
         max_results,
         search_context_size,
         sources,
+    }
+}
+
+fn load_remote_config(root: &serde_json::Value) -> RemoteConfig {
+    let channels = root
+        .get("remote")
+        .or_else(|| root.get("im_remote"))
+        .and_then(|value| value.get("channels"))
+        .and_then(|value| value.as_object())
+        .map(|channels| {
+            channels
+                .iter()
+                .filter_map(|(channel_kind, value)| {
+                    let channel_kind = channel_kind.trim();
+                    if channel_kind.is_empty() {
+                        return None;
+                    }
+                    let settings = value.as_object()?;
+                    Some((
+                        channel_kind.to_string(),
+                        load_remote_channel_defaults(settings),
+                    ))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+
+    RemoteConfig { channels }
+}
+
+fn load_remote_channel_defaults(
+    settings: &serde_json::Map<String, serde_json::Value>,
+) -> RemoteChannelDefaults {
+    let agent_id = string_setting(settings, &["agent_id", "agentId", "agent"])
+        .and_then(|agent| crate::resources::agent_by_alias(&agent).map(|def| def.id.clone()));
+    let profile_id = string_setting(settings, &["profile_id", "profileId", "profile"]);
+    let workspace = string_setting(settings, &["workspace", "workspace_path", "workspacePath"])
+        .map(|value| expand_home(&value))
+        .filter(|path| !path.as_os_str().is_empty());
+
+    RemoteChannelDefaults {
+        agent_id,
+        profile_id,
+        workspace,
     }
 }
 
@@ -974,6 +1042,7 @@ impl Default for Config {
             api_bridge: ApiBridgeConfig::default(),
             local_agent_api: LocalAgentApiConfig::default(),
             search_tool: SearchToolConfig::default(),
+            remote: RemoteConfig::default(),
             raw_channels: serde_json::Value::Object(serde_json::Map::new()),
         }
     }
@@ -1092,6 +1161,47 @@ mod tests {
             Some("http://127.0.0.1:7890")
         );
         assert!(!config.proxy.is_configured());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn remote_channel_defaults_are_loaded() {
+        let dir = unique_test_dir("remote-defaults");
+        fs::create_dir_all(&dir).unwrap();
+        let workspace = dir.join("remote-workspace");
+        let path = dir.join("settings.json");
+        fs::write(
+            &path,
+            serde_json::json!({
+                "remote": {
+                    "channels": {
+                        "feishu": {
+                            "agentId": "codex",
+                            "profileId": "direct",
+                            "workspace": workspace.to_string_lossy().to_string()
+                        },
+                        "slack": {
+                            "agent": "does-not-exist"
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let config = load_settings_from(&path);
+
+        let feishu = config.remote_channel_defaults("feishu");
+        assert_eq!(feishu.agent_id.as_deref(), Some("codex"));
+        assert_eq!(feishu.profile_id.as_deref(), Some("direct"));
+        assert_eq!(feishu.workspace.as_deref(), Some(workspace.as_path()));
+        let slack = config.remote_channel_defaults("slack");
+        assert_eq!(slack.agent_id, None);
+        assert_eq!(
+            config.remote_channel_defaults("unknown"),
+            RemoteChannelDefaults::default()
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 

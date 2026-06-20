@@ -10,6 +10,7 @@ use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use tokio::sync::{broadcast, Mutex};
 
+use crate::agent::launch::normalize_launch_profile_id;
 use crate::agent_state;
 use crate::routing::RouteKey;
 
@@ -81,12 +82,50 @@ impl WorkspaceThreadManager {
             return self.runtime_for_thread(&attached.thread_id).await;
         }
 
+        if route.uses_channel_default_threading() {
+            return self.resolve_channel_default_runtime(route).await;
+        }
+
         let workspace = self.ensure_general_workspace().await?;
         let thread = self
             .latest_open_thread(&workspace.id)
             .await?
             .unwrap_or_else(|| self.new_thread_record(workspace.id.clone()));
         self.ensure_thread_persisted(&thread).await?;
+        self.attach_route(route.clone(), workspace.id, thread.id.clone())
+            .await?;
+        self.runtime_from_thread(thread).await
+    }
+
+    async fn resolve_channel_default_runtime(
+        &self,
+        route: &RouteKey,
+    ) -> anyhow::Result<Arc<ThreadRuntime>> {
+        let default_route = RouteKey::channel_default_for(route);
+        let default_lock = self.route_lock(&default_route);
+        let _default_guard = default_lock.lock().await;
+
+        if let Some(attached) = self.current_attachment(route).await? {
+            return self.runtime_for_thread(&attached.thread_id).await;
+        }
+
+        if let Some(attached) = self.current_attachment(&default_route).await? {
+            self.attach_route(
+                route.clone(),
+                attached.workspace_id.clone(),
+                attached.thread_id.clone(),
+            )
+            .await?;
+            return self.runtime_for_thread(&attached.thread_id).await;
+        }
+
+        let (host_binding, workspace_path) =
+            default_channel_binding_and_workspace(&route.channel_kind);
+        let workspace = self.ensure_workspace_for_cwd(workspace_path).await?;
+        let thread = self.new_thread_record_with_host(workspace.id.clone(), host_binding);
+        self.ensure_thread_persisted(&thread).await?;
+        self.attach_route(default_route, workspace.id.clone(), thread.id.clone())
+            .await?;
         self.attach_route(route.clone(), workspace.id, thread.id.clone())
             .await?;
         self.runtime_from_thread(thread).await
@@ -393,6 +432,40 @@ impl WorkspaceThreadManager {
         self.runtime_from_thread(thread).await
     }
 
+    pub async fn ensure_route_override_thread(
+        &self,
+        route: &RouteKey,
+    ) -> anyhow::Result<Option<Arc<ThreadRuntime>>> {
+        if !route.uses_channel_default_threading() {
+            return Ok(None);
+        }
+        let Some(attached) = self.current_attachment(route).await? else {
+            return Ok(None);
+        };
+        let default_route = RouteKey::channel_default_for(route);
+        let Some(default_attached) = self.current_attachment(&default_route).await? else {
+            return Ok(None);
+        };
+        if default_attached.thread_id != attached.thread_id {
+            return Ok(None);
+        }
+
+        let thread = self
+            .thread(&attached.thread_id)
+            .await?
+            .ok_or_else(|| anyhow!("thread {} not found", attached.thread_id))?;
+        let next_thread =
+            self.new_thread_record_with_host(thread.workspace_id.clone(), thread.host_binding);
+        self.ensure_thread_persisted(&next_thread).await?;
+        self.attach_route(
+            route.clone(),
+            next_thread.workspace_id.clone(),
+            next_thread.id.clone(),
+        )
+        .await?;
+        self.runtime_from_thread(next_thread).await.map(Some)
+    }
+
     pub async fn current_attachment(
         &self,
         route: &RouteKey,
@@ -409,6 +482,7 @@ impl WorkspaceThreadManager {
             .await?
             .all()
             .filter(|attachment| &attachment.thread_id == thread_id)
+            .filter(|attachment| !attachment.route.is_channel_default())
             .map(|attachment| attachment.route.clone())
             .collect())
     }
@@ -428,7 +502,7 @@ impl WorkspaceThreadManager {
             return Ok(());
         }
 
-        for route in &routes {
+        for route in routes.iter().filter(|route| !route.is_channel_default()) {
             self.attachment_store
                 .append(&RouteAttachmentEvent::detached(route.clone()))
                 .await
@@ -436,7 +510,7 @@ impl WorkspaceThreadManager {
             self.pending_selections.remove(route);
         }
 
-        if let Some(route) = current_route {
+        if let Some(route) = current_route.filter(|route| !route.is_channel_default()) {
             let thread = self
                 .thread(thread_id)
                 .await?
@@ -492,9 +566,17 @@ impl WorkspaceThreadManager {
                 .cloned()
                 .unwrap_or_default();
             attached_routes.sort_by_key(|route| route.as_key());
+            let visible_routes = attached_routes
+                .iter()
+                .filter(|route| !route.is_channel_default())
+                .cloned()
+                .collect::<Vec<_>>();
             entries.push(WorkspaceThreadRuntimeEntry {
-                route: attached_routes.first().cloned(),
-                attached_routes,
+                route: visible_routes
+                    .first()
+                    .cloned()
+                    .or_else(|| attached_routes.first().cloned()),
+                attached_routes: visible_routes,
                 first_user_prompt: thread.first_user_prompt.clone(),
                 created_at: thread.created_at.clone(),
                 updated_at: thread.updated_at.clone(),
@@ -892,6 +974,36 @@ fn default_host_binding() -> HostBinding {
     HostBinding::new(agent_id, profile_id)
 }
 
+fn default_channel_binding_and_workspace(channel_kind: &str) -> (HostBinding, PathBuf) {
+    let cfg = crate::config::ensure_loaded();
+    let prefs = agent_state::read_prefs();
+    let defaults = cfg.remote_channel_defaults(channel_kind);
+    let agent_id = defaults
+        .agent_id
+        .filter(|agent| {
+            cfg.enabled_agents.is_empty()
+                || cfg
+                    .enabled_agents
+                    .iter()
+                    .any(|enabled_agent| enabled_agent == agent)
+        })
+        .unwrap_or_else(|| agent_state::resolve_default_agent(&prefs, &cfg));
+    let profile_id = defaults
+        .profile_id
+        .as_deref()
+        .map(|profile| normalize_launch_profile_id(Some(profile)))
+        .or_else(|| {
+            agent_state::resolve_default_profile(&prefs, &cfg, &agent_id)
+                .map(|profile| normalize_launch_profile_id(Some(&profile)))
+        })
+        .or_else(|| Some("direct".to_string()));
+    let workspace = defaults
+        .workspace
+        .unwrap_or_else(|| agent_state::resolve_agent_workspace(&prefs, &cfg, &agent_id));
+
+    (HostBinding::new(agent_id, profile_id), workspace)
+}
+
 pub fn normalize_workspace_cwd(cwd: impl AsRef<Path>) -> PathBuf {
     let path = cwd.as_ref();
     let absolute = if path.is_absolute() {
@@ -947,7 +1059,7 @@ mod tests {
     async fn route_resolves_to_stable_thread_attachment() {
         let (workspaces, threads, attachments) = temp_paths();
         let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
-        let route = RouteKey::new("feishu", "chat-a");
+        let route = RouteKey::new("web", "chat-a");
 
         let first = manager.resolve_route_runtime(&route).await.unwrap();
         let second = manager.resolve_route_runtime(&route).await.unwrap();
@@ -964,6 +1076,84 @@ mod tests {
                 .unwrap()
                 .workspace_id,
             WorkspaceId::general()
+        );
+    }
+
+    #[tokio::test]
+    async fn channel_routes_share_their_channel_default_thread() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let first_route = RouteKey::new("feishu", "chat-a");
+        let second_route = RouteKey::new("feishu", "chat-b");
+
+        let first = manager.resolve_route_runtime(&first_route).await.unwrap();
+        let second = manager.resolve_route_runtime(&second_route).await.unwrap();
+        let default_route = RouteKey::channel_default_for(&first_route);
+
+        assert_eq!(
+            first.state().await.thread_id,
+            second.state().await.thread_id
+        );
+        assert_eq!(
+            manager
+                .current_attachment(&default_route)
+                .await
+                .unwrap()
+                .unwrap()
+                .thread_id,
+            first.state().await.thread_id
+        );
+    }
+
+    #[tokio::test]
+    async fn different_channels_get_different_default_threads() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let feishu = RouteKey::new("feishu", "chat-a");
+        let slack = RouteKey::new("slack", "chat-a");
+
+        let feishu_runtime = manager.resolve_route_runtime(&feishu).await.unwrap();
+        let slack_runtime = manager.resolve_route_runtime(&slack).await.unwrap();
+
+        assert_ne!(
+            feishu_runtime.state().await.thread_id,
+            slack_runtime.state().await.thread_id
+        );
+    }
+
+    #[tokio::test]
+    async fn route_override_thread_keeps_channel_default_intact() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let route = RouteKey::new("feishu", "chat-a");
+        let default_runtime = manager.resolve_route_runtime(&route).await.unwrap();
+        let default_thread_id = default_runtime.state().await.thread_id;
+
+        let override_runtime = manager
+            .ensure_route_override_thread(&route)
+            .await
+            .unwrap()
+            .expect("route should leave the channel default thread");
+        let default_route = RouteKey::channel_default_for(&route);
+
+        assert_ne!(override_runtime.state().await.thread_id, default_thread_id);
+        assert_eq!(
+            manager
+                .current_attachment(&default_route)
+                .await
+                .unwrap()
+                .unwrap()
+                .thread_id,
+            default_thread_id
+        );
+        assert_eq!(
+            manager
+                .current_attachment(&route)
+                .await
+                .unwrap()
+                .unwrap()
+                .thread_id,
+            override_runtime.state().await.thread_id
         );
     }
 

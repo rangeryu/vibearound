@@ -306,6 +306,10 @@ async fn switch_host(
     profile: Option<String>,
 ) -> acp::Result<()> {
     let target = resolve_host_binding(agent, profile.as_deref()).map_err(invalid_params)?;
+    workspace_threads
+        .ensure_route_override_thread(route)
+        .await
+        .map_err(internal_error)?;
     let runtime = workspace_threads
         .resolve_route_runtime(route)
         .await
