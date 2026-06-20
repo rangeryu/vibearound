@@ -149,10 +149,16 @@ fn is_dashboard_api_path(path: &str) -> bool {
     .any(|prefix| path.starts_with(prefix))
 }
 
-/// Runs the Axum server (static files + WebSocket + session API). Binds to 127.0.0.1 (localhost only).
+pub(crate) async fn bind_web_listener(port: u16) -> std::io::Result<tokio::net::TcpListener> {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    tokio::net::TcpListener::bind(addr).await
+}
+
+/// Runs the Axum server (static files + WebSocket + session API). The listener is bound to
+/// 127.0.0.1 by ServerDaemon before startup returns.
 /// Call from desktop via tauri::async_runtime::spawn, or run standalone via the server binary.
 pub async fn run_web_server(
-    port: u16,
+    listener: tokio::net::TcpListener,
     dist_path: PathBuf,
     tunnels: Arc<TunnelManager>,
     pty_registry: Registry,
@@ -167,7 +173,7 @@ pub async fn run_web_server(
     let web_dist = dist_path
         .canonicalize()
         .map_err(|e| format!("Failed to resolve web dist path: {}", e))?;
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let port = listener.local_addr()?.port();
     println!(
         "[VibeAround] Web dashboard: http://127.0.0.1:{}/va/, serving from {:?}",
         port, web_dist
@@ -388,15 +394,6 @@ pub async fn run_web_server(
         .with_state(state)
         .layer(build_cors_layer(port));
 
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::AddrInUse {
-            tracing::info!(
-                "[VibeAround] ⚠️  Port {} is already in use — is another VibeAround instance running?",
-                port
-            );
-        }
-        e
-    })?;
     println!(
         "[VibeAround] Web server listening on http://127.0.0.1:{}",
         port
