@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Globe,
   Loader2,
+  Pencil,
   RotateCw,
   Save,
   SlidersHorizontal,
@@ -17,12 +18,13 @@ import { useI18n } from "@va/i18n";
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Collapsible,
   CollapsibleContent,
@@ -44,7 +46,6 @@ import {
   listProfiles,
   type LauncherPreferences,
   setLauncherDefault,
-  setLauncherWorkspace,
   type WorkspaceOption,
 } from "./Launch/api";
 import type { ProfileSummary } from "./Launch/types";
@@ -66,7 +67,6 @@ import type { StatusDashboardProps, Tone } from "./status-dashboard/types";
 
 const FOLLOW_DEFAULT = "__default__";
 const DIRECT_PROFILE = "direct";
-const UNSET_WORKSPACE = "__workspace_unset__";
 
 type RemoteSelection =
   | { kind: "channel"; id: string }
@@ -86,7 +86,6 @@ type Notice = {
 type AppDefaultForm = {
   agentId: string;
   profileId: string;
-  workspace: string;
 };
 
 type RemoteDashboardProps = StatusDashboardProps & {
@@ -125,9 +124,6 @@ export function RemoteDashboard({
   const [appDefaultForm, setAppDefaultForm] = useState<AppDefaultForm>(() =>
     defaultAppDefaultForm(),
   );
-  const [appWorkspaceOptions, setAppWorkspaceOptions] = useState<
-    WorkspaceOption[]
-  >([]);
   const [channelWorkspaceOptions, setChannelWorkspaceOptions] = useState<
     WorkspaceOption[]
   >([]);
@@ -223,21 +219,6 @@ export function RemoteDashboard({
     [selectedChannelId],
   );
 
-  useEffect(() => {
-    if (!appDefaultForm.agentId) return;
-    let cancelled = false;
-    void listLauncherWorkspaces(appDefaultForm.agentId)
-      .then((options) => {
-        if (!cancelled) setAppWorkspaceOptions(options);
-      })
-      .catch(() => {
-        if (!cancelled) setAppWorkspaceOptions([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [appDefaultForm.agentId]);
-
   const saveSelectedChannel = useCallback(async () => {
     if (!selectedChannelId) return;
     setSavingChannel(selectedChannelId);
@@ -310,10 +291,6 @@ export function RemoteDashboard({
   const appDefaultProfileOptions = profiles.filter((profile) =>
     prefs ? profileSupportsAgent(profile, appDefaultAgentId, prefs) : true,
   );
-  const appDefaultWorkspaceOptions = workspaceOptionsFor(
-    appWorkspaceOptions,
-    appDefaultForm.workspace,
-  );
   const activeAgentsForChannel = selectedChannelId
     ? agents.agents.filter((agent) => agentRuntimeTouchesChannel(agent, selectedChannelId))
     : [];
@@ -321,11 +298,10 @@ export function RemoteDashboard({
   const updateAppDefaultAgent = useCallback(
     (agentId: string) => {
       const profileId = prefs ? agentProfileId(prefs, agentId) ?? DIRECT_PROFILE : DIRECT_PROFILE;
-      const workspace = prefs ? agentWorkspace(prefs, agentId) : appDefaultForm.workspace;
-      setAppDefaultForm({ agentId, profileId, workspace });
+      setAppDefaultForm({ agentId, profileId });
       setNotice(null);
     },
-    [appDefaultForm.workspace, prefs],
+    [prefs],
   );
 
   const saveAppDefault = useCallback(async () => {
@@ -337,14 +313,11 @@ export function RemoteDashboard({
         appDefaultForm.agentId,
         appDefaultForm.profileId === DIRECT_PROFILE ? null : appDefaultForm.profileId,
       );
-      if (appDefaultForm.workspace) {
-        await setLauncherWorkspace(appDefaultForm.workspace, appDefaultForm.agentId);
-      }
       const nextPrefs = await getLauncherPreferences();
       setPrefs(nextPrefs);
       setAppDefaultForm(formForAppDefault(nextPrefs, agentDefs));
       onDefaultsChanged?.();
-      setNotice({ variant: "success", message: "App defaults saved." });
+      setNotice({ variant: "success", message: "Default agent saved." });
     } catch (error) {
       setNotice({ variant: "error", message: formatErrorMessage(error) });
     } finally {
@@ -391,18 +364,12 @@ export function RemoteDashboard({
               form={appDefaultForm}
               agentLabel={appDefaultAgentDef?.display_name ?? appDefaultAgentId}
               profileLabel={appDefaultProfileLabel}
-              defaultWorkspace={appDefaultForm.workspace}
               enabledAgents={enabledAgents}
               profileOptions={appDefaultProfileOptions}
-              workspaceOptions={appDefaultWorkspaceOptions}
               saving={savingAppDefault}
               onAgentChange={updateAppDefaultAgent}
               onProfileChange={(profileId) => {
                 setAppDefaultForm((form) => ({ ...form, profileId }));
-                setNotice(null);
-              }}
-              onWorkspaceChange={(workspace) => {
-                setAppDefaultForm((form) => ({ ...form, workspace }));
                 setNotice(null);
               }}
               onSave={() => void saveAppDefault()}
@@ -550,123 +517,97 @@ function AppDefaultEditor({
   form,
   agentLabel,
   profileLabel,
-  defaultWorkspace,
   enabledAgents,
   profileOptions,
-  workspaceOptions,
   saving,
   onAgentChange,
   onProfileChange,
-  onWorkspaceChange,
   onSave,
 }: {
   form: AppDefaultForm;
   agentLabel: string;
   profileLabel: string;
-  defaultWorkspace: string;
   enabledAgents: AgentSummary[];
   profileOptions: ProfileSummary[];
-  workspaceOptions: WorkspaceOption[];
   saving: boolean;
   onAgentChange: (agentId: string) => void;
   onProfileChange: (profileId: string) => void;
-  onWorkspaceChange: (workspace: string) => void;
   onSave: () => void;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const workspaceValue = form.workspace || UNSET_WORKSPACE;
+  const agentOptions = enabledAgents.map((agent) => ({
+    value: agent.id,
+    label: agent.display_name,
+    icon: (
+      <BrandIcon
+        kind="cli"
+        id={agent.id}
+        label={agent.display_name}
+        className="h-5 w-5"
+      />
+    ),
+  }));
+  const profileOptionsForDropdown = [
+    { value: DIRECT_PROFILE, label: t("Direct") },
+    ...profileOptions.map((profile) => ({
+      value: profile.id,
+      label: profile.label,
+    })),
+  ];
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="space-y-2">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 rounded-md px-1 py-1">
         <BrandIcon
           kind="cli"
           id={form.agentId}
           label={agentLabel}
-          className="h-5 w-5"
+          className="h-6 w-6"
         />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold">
+            {t("Default agent")}
+          </div>
+          <div className="truncate text-[11px] text-muted-foreground">
+            {agentLabel} · {profileLabel}
+          </div>
+        </div>
         <CollapsibleTrigger asChild>
-          <button
+          <Button
             type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            aria-expanded={open}
+            variant="ghost"
+            size="icon-xs"
+            className={cn(
+              "h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground",
+              open && "bg-accent text-accent-foreground",
+            )}
+            title={t("Edit default agent")}
+            aria-label={t("Edit default agent")}
           >
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold">
-                {t("App defaults")}
-              </span>
-              <span className="block truncate text-[11px] text-muted-foreground">
-                {agentLabel} · {profileLabel} ·{" "}
-                {defaultWorkspace || t("Default workspace")}
-              </span>
-            </span>
-            <ChevronDown
-              className={cn(
-                "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-                open && "rotate-180",
-              )}
-            />
-          </button>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
         </CollapsibleTrigger>
       </div>
 
       <CollapsibleContent className="space-y-2 pt-1">
         <div className="grid gap-2">
           <SelectField label={t("Agent")}>
-            <Select value={form.agentId} onValueChange={onAgentChange}>
-              <SelectTrigger className="h-8 w-full bg-background text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {enabledAgents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    {agent.display_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <RemoteDropdownField
+              label={t("Agent")}
+              value={form.agentId}
+              options={agentOptions}
+              onValueChange={onAgentChange}
+            />
           </SelectField>
 
           <SelectField label={t("Profile")}>
-            <Select value={form.profileId} onValueChange={onProfileChange}>
-              <SelectTrigger className="h-8 w-full bg-background text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={DIRECT_PROFILE}>{t("Direct")}</SelectItem>
-                {profileOptions.map((profile) => (
-                  <SelectItem key={profile.id} value={profile.id}>
-                    {profile.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </SelectField>
-
-          <SelectField label={t("Workspace")}>
-            <Select
-              value={workspaceValue}
-              onValueChange={(workspace) => {
-                if (workspace !== UNSET_WORKSPACE) onWorkspaceChange(workspace);
-              }}
-            >
-              <SelectTrigger className="h-8 w-full bg-background text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {!form.workspace && (
-                  <SelectItem value={UNSET_WORKSPACE} disabled>
-                    {t("Default workspace")}
-                  </SelectItem>
-                )}
-                {workspaceOptions.map((workspace) => (
-                  <SelectItem key={workspace.path} value={workspace.path}>
-                    {workspace.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <RemoteDropdownField
+              label={t("Profile")}
+              value={form.profileId}
+              options={profileOptionsForDropdown}
+              onValueChange={onProfileChange}
+            />
           </SelectField>
         </div>
 
@@ -740,12 +681,43 @@ function ChannelRemoteDetail({
     ? channelPresentation(channel.status, t)
     : { label: t("Configured"), tone: "muted" as Tone };
   const running = channel?.status === "running" || channel?.status === "spawning";
+  const agentOptions = [
+    { value: FOLLOW_DEFAULT, label: t("Follow app default") },
+    ...enabledAgents.map((agent) => ({
+      value: agent.id,
+      label: agent.display_name,
+      icon: (
+        <BrandIcon
+          kind="cli"
+          id={agent.id}
+          label={agent.display_name}
+          className="h-5 w-5"
+        />
+      ),
+    })),
+  ];
+  const profileDropdownOptions = [
+    { value: FOLLOW_DEFAULT, label: t("Follow agent default") },
+    { value: DIRECT_PROFILE, label: t("Direct") },
+    ...profileOptions.map((profile) => ({
+      value: profile.id,
+      label: profile.label,
+    })),
+  ];
+  const workspaceDropdownOptions = [
+    { value: FOLLOW_DEFAULT, label: t("Follow agent default") },
+    ...workspaceOptions.map((workspace) => ({
+      value: workspace.path,
+      label: workspace.label,
+      detail: workspace.detail,
+    })),
+  ];
 
   return (
     <div className="grid gap-4">
-      <section className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-card">
+      <section className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card">
             <ServiceIconBadge
               id={channelId}
               kind="channel"
@@ -754,8 +726,8 @@ function ChannelRemoteDetail({
             />
           </span>
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-xl font-semibold">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <h1 className="truncate text-lg font-semibold leading-tight">
                 {channelDisplayName(channelId)}
               </h1>
               <span
@@ -767,12 +739,23 @@ function ChannelRemoteDetail({
                 {presentation.label}
               </span>
             </div>
-            <div className="mt-1 text-xs text-muted-foreground">
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
               {channel?.version ? `v${channel.version}` : t("Plugin status")}
             </div>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-xs"
+            className="h-7 w-7"
+            title={t("Configure")}
+            aria-label={t("Configure")}
+            onClick={onConfigure}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+          </Button>
           <span className="font-medium text-primary">
             {running ? t("Enabled") : t("Disabled")}
           </span>
@@ -792,19 +775,9 @@ function ChannelRemoteDetail({
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2 text-xs font-semibold">
             <Bot className="h-3.5 w-3.5 text-primary" />
-            {t("This channel's default session")}
+            {t("Agent configuration")}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 px-2 text-[11px]"
-              onClick={onConfigure}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              {t("Configure")}
-            </Button>
             <Button
               type="button"
               variant="outline"
@@ -833,50 +806,28 @@ function ChannelRemoteDetail({
         </div>
         <div className="grid gap-2 lg:grid-cols-3">
           <SelectField label={t("Agent")}>
-            <Select value={form.agentId} onValueChange={onAgentChange}>
-              <SelectTrigger className="h-8 w-full bg-background text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={FOLLOW_DEFAULT}>{t("Follow app default")}</SelectItem>
-                {enabledAgents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    {agent.display_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <RemoteDropdownField
+              label={t("Agent")}
+              value={form.agentId}
+              options={agentOptions}
+              onValueChange={onAgentChange}
+            />
           </SelectField>
           <SelectField label={t("Profile")}>
-            <Select value={form.profileId} onValueChange={onProfileChange}>
-              <SelectTrigger className="h-8 w-full bg-background text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={FOLLOW_DEFAULT}>{t("Follow agent default")}</SelectItem>
-                <SelectItem value={DIRECT_PROFILE}>{t("Direct")}</SelectItem>
-                {profileOptions.map((profile) => (
-                  <SelectItem key={profile.id} value={profile.id}>
-                    {profile.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <RemoteDropdownField
+              label={t("Profile")}
+              value={form.profileId}
+              options={profileDropdownOptions}
+              onValueChange={onProfileChange}
+            />
           </SelectField>
           <SelectField label={t("Workspace")}>
-            <Select value={form.workspace} onValueChange={onWorkspaceChange}>
-              <SelectTrigger className="h-8 w-full bg-background text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={FOLLOW_DEFAULT}>{t("Follow agent default")}</SelectItem>
-                {workspaceOptions.map((workspace) => (
-                  <SelectItem key={workspace.path} value={workspace.path}>
-                    {workspace.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <RemoteDropdownField
+              label={t("Workspace")}
+              value={form.workspace}
+              options={workspaceDropdownOptions}
+              onValueChange={onWorkspaceChange}
+            />
           </SelectField>
         </div>
         <div className="mt-3 border-t border-border/70 pt-2.5">
@@ -1098,6 +1049,84 @@ function EmptySidebarItem({ label }: { label: string }) {
   );
 }
 
+type RemoteDropdownOption = {
+  value: string;
+  label: string;
+  detail?: string;
+  icon?: ReactNode;
+  disabled?: boolean;
+};
+
+function RemoteDropdownField({
+  label,
+  value,
+  options,
+  onValueChange,
+}: {
+  label: string;
+  value: string;
+  options: RemoteDropdownOption[];
+  onValueChange: (value: string) => void;
+}) {
+  const selected = options.find((option) => option.value === value) ?? options[0];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 w-full min-w-0 justify-start gap-1.5 px-2 text-xs font-normal"
+          title={selected?.detail ?? selected?.label}
+        >
+          {selected?.icon && (
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+              {selected.icon}
+            </span>
+          )}
+          <span className="min-w-0 flex-1 truncate text-left">
+            {selected?.label ?? label}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] min-w-56"
+      >
+        <DropdownMenuLabel className="px-2 py-1.5 text-[10px] font-medium uppercase text-muted-foreground/60">
+          {label}
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={value} onValueChange={onValueChange}>
+          {options.map((option) => (
+            <DropdownMenuRadioItem
+              key={option.value}
+              value={option.value}
+              disabled={option.disabled}
+              className="items-start text-xs"
+            >
+              {option.icon && (
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                  {option.icon}
+                </span>
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{option.label}</span>
+                {option.detail && (
+                  <span className="block truncate text-[10px] text-muted-foreground/60">
+                    {option.detail}
+                  </span>
+                )}
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function SelectField({
   label,
   children,
@@ -1167,7 +1196,6 @@ function formForAppDefault(
   return {
     agentId,
     profileId: prefs?.defaultProfileId ?? DIRECT_PROFILE,
-    workspace: prefs ? agentWorkspace(prefs, agentId) : "",
   };
 }
 
@@ -1183,7 +1211,6 @@ function defaultAppDefaultForm(): AppDefaultForm {
   return {
     agentId: "codex",
     profileId: DIRECT_PROFILE,
-    workspace: "",
   };
 }
 

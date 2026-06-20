@@ -37,13 +37,17 @@ export const zhCNDesktopDashboard: Record<string, string> = {
   "App defaults": "应用默认",
   "App default Agent": "应用默认 Agent",
   "App defaults saved.": "应用默认已保存。",
+  "Default agent": "默认智能体",
+  "Edit default agent": "修改默认智能体",
+  "Default agent saved.": "默认智能体已保存。",
   "Unspecified channels follow this agent and workspace.":
     "未单独指定的渠道会跟随这个 Agent 和工作区。",
   "Default": "默认",
   "Default workspace": "默认工作区",
-  "Follow app default": "跟随应用默认",
+  "Follow app default": "跟随默认智能体",
   "Follow agent default": "跟随 Agent 默认",
   "This channel's default session": "此渠道的默认会话",
+  "Agent configuration": "Agent 配置",
   "Current setting": "当前设置",
   "Active sessions": "活跃会话",
   "No active agent session for this channel.":
