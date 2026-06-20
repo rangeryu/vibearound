@@ -1129,35 +1129,37 @@ export function SettingsDialog({
                 </div>
                 <div className="rounded-md border border-border">
                   <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-4">
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-48 shrink-0">
                       <div className="text-sm font-medium">
                         {t("Default System Workspace")}
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {t("New launch and IM workspaces are created under this folder.")}
                       </div>
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col items-end gap-2">
                       <div
-                        className="mt-2 break-words text-xs leading-5 text-foreground"
+                        className="max-w-full break-words text-right text-xs leading-5 text-foreground"
                         title={defaultWorkspace}
                       >
                         {defaultWorkspace}
                       </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 text-xs"
+                        disabled={!canSubmit}
+                        onClick={() => void chooseDefaultWorkspace()}
+                      >
+                        {saving === "general" ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <FolderOpen className="h-3 w-3" />
+                        )}
+                        {saving === "general" ? t("Saving…") : t("Choose")}
+                      </Button>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 text-xs"
-                      disabled={!canSubmit}
-                      onClick={() => void chooseDefaultWorkspace()}
-                    >
-                      {saving === "general" ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <FolderOpen className="h-3 w-3" />
-                      )}
-                      {saving === "general" ? t("Saving…") : t("Choose")}
-                    </Button>
                   </div>
                   <SettingsActionRow
                     label={t("Restart Services")}
