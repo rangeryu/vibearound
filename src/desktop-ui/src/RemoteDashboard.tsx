@@ -558,18 +558,20 @@ function AppDefaultEditor({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="space-y-2">
-      <div className="flex items-center gap-2 rounded-md px-1 py-1">
-        <BrandIcon
-          kind="cli"
-          id={form.agentId}
-          label={agentLabel}
-          className="h-6 w-6"
-        />
+      <div className="flex items-center gap-2.5 rounded-md py-0.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card">
+          <BrandIcon
+            kind="cli"
+            id={form.agentId}
+            label={agentLabel}
+            className="h-7 w-7"
+          />
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">
+          <div className="truncate text-lg font-semibold leading-tight">
             {t("Default agent")}
           </div>
-          <div className="truncate text-[11px] text-muted-foreground">
+          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
             {agentLabel} · {profileLabel}
           </div>
         </div>
