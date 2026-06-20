@@ -6,7 +6,6 @@ import {
   ExternalLink,
   Globe,
   Loader2,
-  Pencil,
   RotateCw,
   Save,
   SlidersHorizontal,
@@ -23,13 +22,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
 import { StatusBanner } from "@/components/page";
 import { apiFetch, DAEMON_PORT, openDashboardUrl } from "@/lib/api";
@@ -335,18 +330,35 @@ export function RemoteDashboard({
             {t("Configure messaging apps and remote access.")}
           </span>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 shrink-0 gap-1.5 px-2 text-[11px] text-primary hover:text-primary"
-          onClick={() =>
-            void openDashboardUrl(`http://127.0.0.1:${DAEMON_PORT}/va/`)
-          }
-        >
-          {t("Open Web Dashboard")}
-          <ExternalLink className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <DefaultAgentMenu
+            form={appDefaultForm}
+            agentLabel={appDefaultAgentDef?.display_name ?? appDefaultAgentId}
+            profileLabel={appDefaultProfileLabel}
+            enabledAgents={enabledAgents}
+            profileOptions={appDefaultProfileOptions}
+            saving={savingAppDefault}
+            onAgentChange={updateAppDefaultAgent}
+            onProfileChange={(profileId) => {
+              setAppDefaultForm((form) => ({ ...form, profileId }));
+              setNotice(null);
+            }}
+            onSave={() => void saveAppDefault()}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 gap-1.5 px-2 text-[11px] text-primary hover:text-primary"
+            title={t("Open Web Workbench")}
+            onClick={() =>
+              void openDashboardUrl(`http://127.0.0.1:${DAEMON_PORT}/va/`)
+            }
+          >
+            {t("Web Workbench")}
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </header>
 
       {notice && (
@@ -359,23 +371,6 @@ export function RemoteDashboard({
 
       <div className="grid min-h-0 flex-1 grid-cols-[272px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-border bg-background/70">
-          <div className="shrink-0 border-b border-border px-3 py-2.5">
-            <AppDefaultEditor
-              form={appDefaultForm}
-              agentLabel={appDefaultAgentDef?.display_name ?? appDefaultAgentId}
-              profileLabel={appDefaultProfileLabel}
-              enabledAgents={enabledAgents}
-              profileOptions={appDefaultProfileOptions}
-              saving={savingAppDefault}
-              onAgentChange={updateAppDefaultAgent}
-              onProfileChange={(profileId) => {
-                setAppDefaultForm((form) => ({ ...form, profileId }));
-                setNotice(null);
-              }}
-              onSave={() => void saveAppDefault()}
-            />
-          </div>
-
           <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5 [scrollbar-gutter:stable]">
               <RemoteSidebarSection
                 title={t("Messaging apps")}
@@ -513,7 +508,7 @@ export function RemoteDashboard({
   );
 }
 
-function AppDefaultEditor({
+function DefaultAgentMenu({
   form,
   agentLabel,
   profileLabel,
@@ -535,7 +530,6 @@ function AppDefaultEditor({
   onSave: () => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
   const agentOptions = enabledAgents.map((agent) => ({
     value: agent.id,
     label: agent.display_name,
@@ -557,66 +551,72 @@ function AppDefaultEditor({
   ];
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="space-y-2">
-      <div className="flex items-center gap-2.5 rounded-md py-0.5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 max-w-[250px] justify-start gap-1.5 px-2 text-[11px] font-normal"
+          title={`${t("Default agent")}: ${agentLabel} · ${profileLabel}`}
+        >
           <BrandIcon
             kind="cli"
             id={form.agentId}
             label={agentLabel}
-            className="h-7 w-7"
+            className="h-4 w-4"
           />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-lg font-semibold leading-tight">
+          <span className="shrink-0 font-medium text-foreground">
             {t("Default agent")}
-          </div>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          </span>
+          <span className="min-w-0 truncate text-muted-foreground">
             {agentLabel} · {profileLabel}
-          </div>
-        </div>
-        <CollapsibleTrigger asChild>
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuLabel className="px-2 py-1.5 text-[10px] font-medium uppercase text-muted-foreground/60">
+          {t("Default agent")}
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={form.agentId} onValueChange={onAgentChange}>
+          {agentOptions.map((option) => (
+            <DropdownMenuRadioItem
+              key={option.value}
+              value={option.value}
+              className="items-center text-xs"
+              onSelect={(event) => event.preventDefault()}
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                {option.icon}
+              </span>
+              <span className="min-w-0 truncate">{option.label}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="px-2 py-1.5 text-[10px] font-medium uppercase text-muted-foreground/60">
+          {t("Profile")}
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={form.profileId}
+          onValueChange={onProfileChange}
+        >
+          {profileOptionsForDropdown.map((option) => (
+            <DropdownMenuRadioItem
+              key={option.value}
+              value={option.value}
+              className="text-xs"
+              onSelect={(event) => event.preventDefault()}
+            >
+              <span className="min-w-0 truncate">{option.label}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <div className="flex justify-end px-1 py-1">
           <Button
             type="button"
-            variant="ghost"
-            size="icon-xs"
-            className={cn(
-              "h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground",
-              open && "bg-accent text-accent-foreground",
-            )}
-            title={t("Edit default agent")}
-            aria-label={t("Edit default agent")}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        </CollapsibleTrigger>
-      </div>
-
-      <CollapsibleContent className="space-y-2 pt-1">
-        <div className="grid gap-2">
-          <SelectField label={t("Agent")}>
-            <RemoteDropdownField
-              label={t("Agent")}
-              value={form.agentId}
-              options={agentOptions}
-              onValueChange={onAgentChange}
-            />
-          </SelectField>
-
-          <SelectField label={t("Profile")}>
-            <RemoteDropdownField
-              label={t("Profile")}
-              value={form.profileId}
-              options={profileOptionsForDropdown}
-              onValueChange={onProfileChange}
-            />
-          </SelectField>
-        </div>
-
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
             size="sm"
             className="h-7 shrink-0 gap-1.5 px-2 text-[11px]"
             disabled={saving}
@@ -630,8 +630,8 @@ function AppDefaultEditor({
             {saving ? t("Saving…") : t("Save")}
           </Button>
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

@@ -31,6 +31,8 @@ export const zhCNDesktopDashboard: Record<string, string> = {
   Retry: "重试",
   "Open Config Wizard": "打开配置向导",
   "Open Web Dashboard": "打开 Web 控制台",
+  "Open Web Workbench": "打开 Web 工作台",
+  "Web Workbench": "Web 工作台",
   "Configure messaging apps and remote access.": "配置 Message Apps 和远程访问。",
   "Messaging apps keep their own default agent, workspace, and thread unless a chat picks up or switches sessions.":
     "每个聊天工具都有自己的默认 Agent、工作区和 thread；除非某个聊天手动 pickup 或 switch。",
