@@ -397,7 +397,7 @@ export const ChatEventSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("error"),
-    error: z.string(),
+    error: z.unknown(),
   }),
 ]);
 export type ChatEvent = z.infer<typeof ChatEventSchema>;
