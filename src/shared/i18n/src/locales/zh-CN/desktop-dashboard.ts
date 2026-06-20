@@ -79,6 +79,9 @@ export const zhCNDesktopDashboard: Record<string, string> = {
   "IM Channel": "通讯工具",
   Sessions: "会话",
   Proxy: "代理",
+  "Default System Workspace": "默认系统工作目录",
+  "New launch and IM workspaces are created under this folder.":
+    "新的启动和 IM 工作目录会创建在这个目录下。",
   "Restart Services": "重启服务",
   Restart: "重启",
   "Rerun Onboarding": "重新运行配置向导",

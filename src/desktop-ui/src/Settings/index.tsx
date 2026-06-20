@@ -1129,12 +1129,12 @@ export function SettingsDialog({
                 </div>
                 <div className="rounded-md border border-border">
                   <SettingsActionRow
-                    label={t("Default Workspace")}
+                    label={t("Default System Workspace")}
                     description={t("New launch and IM workspaces are created under this folder.")}
                     action={
-                      <div className="flex min-w-0 items-center justify-end gap-3">
+                      <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
                         <span
-                          className="min-w-0 max-w-96 truncate text-right text-xs text-foreground"
+                          className="min-w-0 flex-1 whitespace-normal break-all text-right text-xs leading-5 text-foreground"
                           title={defaultWorkspace}
                         >
                           {defaultWorkspace}
