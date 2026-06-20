@@ -34,6 +34,7 @@ import {
 import { LanguageMenu } from "./components/LanguageMenu";
 import { cn } from "./lib/utils";
 import { UpdateIndicator } from "./UpdateIndicator";
+import { PluginUpdateIndicator } from "./PluginUpdateIndicator";
 
 // ---------------------------------------------------------------------------
 // Routing + Dashboard
@@ -128,6 +129,14 @@ function Dashboard() {
     setSettingsOpen(true);
   }, []);
 
+  const openPluginSettings = useCallback(() => {
+    setSettingsTarget({
+      tab: "plugins",
+      nonce: Date.now(),
+    });
+    setSettingsOpen(true);
+  }, []);
+
   const everHadData = useRef(false);
   const [startTime] = useState(() => Date.now());
   const [timedOut, setTimedOut] = useState(false);
@@ -216,6 +225,7 @@ function Dashboard() {
             @{__APP_VERSION_LABEL__}
           </span>
           <UpdateIndicator />
+          <PluginUpdateIndicator onOpenPlugins={openPluginSettings} />
         </div>
         <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
           <Tabs

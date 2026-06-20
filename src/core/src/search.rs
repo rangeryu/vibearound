@@ -325,16 +325,33 @@ struct SearchToolLaunch {
     args: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchToolLaunchSource {
+    Configured,
+    Env,
+    InstalledPlugin,
+    DevCheckout,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SearchToolLaunchInfo {
+    source: SearchToolLaunchSource,
+    path: PathBuf,
+}
+
 fn search_tool_launch(config: &SearchToolConfig) -> Option<SearchToolLaunch> {
+    search_tool_launch_info(config).map(|info| launch_from_path(info.path))
+}
+
+fn search_tool_launch_info(config: &SearchToolConfig) -> Option<SearchToolLaunchInfo> {
     configured_search_tool_path(config)
-        .or_else(|| {
-            env::var_os(SEARCH_TOOL_ENV)
-                .map(PathBuf::from)
-                .filter(|path| path.exists())
+        .map(|path| SearchToolLaunchInfo {
+            source: SearchToolLaunchSource::Configured,
+            path,
         })
-        .map(launch_from_path)
-        .or_else(installed_search_tool_launch)
-        .or_else(dev_search_tool_launch)
+        .or_else(env_search_tool_launch_info)
+        .or_else(installed_search_tool_launch_info)
+        .or_else(dev_search_tool_launch_info)
 }
 
 fn configured_search_tool_path(config: &SearchToolConfig) -> Option<PathBuf> {
@@ -414,7 +431,17 @@ fn well_known_api_key_env(source: &str) -> Option<&'static str> {
     }
 }
 
-fn installed_search_tool_launch() -> Option<SearchToolLaunch> {
+fn env_search_tool_launch_info() -> Option<SearchToolLaunchInfo> {
+    env::var_os(SEARCH_TOOL_ENV)
+        .map(PathBuf::from)
+        .filter(|path| path.exists())
+        .map(|path| SearchToolLaunchInfo {
+            source: SearchToolLaunchSource::Env,
+            path,
+        })
+}
+
+fn installed_search_tool_launch_info() -> Option<SearchToolLaunchInfo> {
     let plugin = crate::plugins::find(SEARCH_TOOL_PLUGIN_ID)?;
     if plugin.manifest.kind != "search" {
         tracing::warn!(
@@ -432,13 +459,19 @@ fn installed_search_tool_launch() -> Option<SearchToolLaunch> {
         );
         return None;
     }
-    Some(launch_from_path(entry))
+    Some(SearchToolLaunchInfo {
+        source: SearchToolLaunchSource::InstalledPlugin,
+        path: entry,
+    })
 }
 
-fn dev_search_tool_launch() -> Option<SearchToolLaunch> {
+fn dev_search_tool_launch_info() -> Option<SearchToolLaunchInfo> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let script = manifest_dir.join("../../../va-search-tool/dist/main.js");
-    script.exists().then(|| launch_node_script(script))
+    script.exists().then(|| SearchToolLaunchInfo {
+        source: SearchToolLaunchSource::DevCheckout,
+        path: script,
+    })
 }
 
 fn launch_from_path(path: PathBuf) -> SearchToolLaunch {
@@ -469,6 +502,7 @@ fn is_node_script(path: &std::path::Path) -> bool {
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, HashMap};
+    use std::fs;
 
     use crate::config::{SearchSourceConfig, SearchToolConfig};
 
@@ -564,5 +598,21 @@ mod tests {
                 "stdio".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn configured_search_tool_path_reports_launch_info() {
+        let path = std::env::temp_dir().join(format!("va-search-tool-test-{}", std::process::id()));
+        fs::write(&path, "").expect("write fake search tool");
+        let config = SearchToolConfig {
+            stdio_path: Some(path.clone()),
+            ..SearchToolConfig::default()
+        };
+
+        let info = search_tool_launch_info(&config).expect("search tool launch info");
+
+        assert_eq!(info.source, SearchToolLaunchSource::Configured);
+        assert_eq!(info.path, path);
+        let _ = fs::remove_file(info.path);
     }
 }
