@@ -53,8 +53,8 @@ export const zhCNDesktopPages: Record<string, string> = {
   "Share key expired": "分享 key 已过期",
   "Close (kills dev server)": "关闭（会终止开发服务器）",
   Close: "关闭",
-  "Workspace folders where agents build projects. The built-in workspace is always the default.":
-    "Agent 构建项目时使用的工作区文件夹。内置工作区始终是默认工作区。",
+  "Workspace folders where agents build projects. The default workspace can be changed in Settings.":
+    "Agent 构建项目时使用的工作区文件夹。默认工作区可在设置中修改。",
   "Select Workspace Folder": "选择工作区文件夹",
   Selecting: "选择中",
   "Selecting…": "选择中…",
