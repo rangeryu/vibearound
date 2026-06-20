@@ -851,6 +851,7 @@ impl WorkspaceThreadManager {
                 "recovered interrupted subagents"
             );
         }
+        self.notify_change();
         Ok(runtime)
     }
 
