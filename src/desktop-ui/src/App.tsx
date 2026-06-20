@@ -25,7 +25,7 @@ import { Previews } from "./Previews";
 import { Launch } from "./Launch";
 import { LocalApiWorkbench } from "./LocalApiWorkbench";
 import { RemoteDashboard } from "./RemoteDashboard";
-import { SettingsDialog } from "./Settings";
+import { SettingsDialog, type SettingsDialogTarget } from "./Settings";
 import {
   checkSelectedLaunchEntry,
   getLauncherPreferences,
@@ -80,6 +80,8 @@ function Dashboard() {
     typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
   const [page, setPage] = useState<DashboardPage>("launch");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTarget, setSettingsTarget] =
+    useState<SettingsDialogTarget | null>(null);
   const [launcherPrefs, setLauncherPrefs] =
     useState<LauncherPreferences | null>(null);
   const [launcherPrefsLoaded, setLauncherPrefsLoaded] = useState(false);
@@ -116,6 +118,15 @@ function Dashboard() {
     refreshAll();
     setLaunchRefreshToken((token) => token + 1);
   }, [refreshAll]);
+
+  const openChannelSettings = useCallback((channelId: string) => {
+    setSettingsTarget({
+      tab: "im",
+      pluginId: channelId,
+      nonce: Date.now(),
+    });
+    setSettingsOpen(true);
+  }, []);
 
   const everHadData = useRef(false);
   const [startTime] = useState(() => Date.now());
@@ -274,7 +285,10 @@ function Dashboard() {
         <div className="relative z-10 flex items-center gap-2">
           <LanguageMenu />
           <Button
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => {
+              setSettingsTarget(null);
+              setSettingsOpen(true);
+            }}
             variant="ghost"
             size="icon-xs"
             title={t("Settings")}
@@ -298,8 +312,12 @@ function Dashboard() {
 
       <SettingsDialog
         open={settingsOpen}
-        onOpenChange={setSettingsOpen}
+        onOpenChange={(open) => {
+          setSettingsOpen(open);
+          if (!open) setSettingsTarget(null);
+        }}
         onServicesRestarted={handleRuntimeSettingsChanged}
+        initialTarget={settingsTarget}
       />
 
       {firstError && (
@@ -325,6 +343,7 @@ function Dashboard() {
           channels={channels}
           tunnels={tunnels}
           agents={agents}
+          onConfigureChannel={openChannelSettings}
         />
       )}
     </div>

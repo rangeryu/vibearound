@@ -26,6 +26,7 @@ export const zhCNDesktopDashboard: Record<string, string> = {
   Start: "启动",
   Stop: "停止",
   Open: "打开",
+  Configure: "配置",
   "Server failed to start": "服务器启动失败",
   Retry: "重试",
   "Open Config Wizard": "打开配置向导",

@@ -67,7 +67,14 @@ interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onServicesRestarted?: () => void;
+  initialTarget?: SettingsDialogTarget | null;
 }
+
+export type SettingsDialogTarget = {
+  tab: string;
+  pluginId?: string | null;
+  nonce?: number;
+};
 
 type Notice = {
   variant: "success" | "warning" | "error";
@@ -181,6 +188,7 @@ export function SettingsDialog({
   open,
   onOpenChange,
   onServicesRestarted,
+  initialTarget,
 }: SettingsDialogProps) {
   const { locale, t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({});
@@ -255,6 +263,7 @@ export function SettingsDialog({
   const [saving, setSaving] = useState<SaveState>("idle");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [settingsTab, setSettingsTab] = useState("general");
+  const [focusedImPluginId, setFocusedImPluginId] = useState<string | null>(null);
   const pluginUpdatesAutoCheckedRef = useRef(false);
   const apiBridgeRetryForm = useMemo<ApiBridgeRetryFormState>(
     () => ({
@@ -493,6 +502,20 @@ export function SettingsDialog({
     setSettingsTab(value);
     setNotice(null);
   }, []);
+
+  useEffect(() => {
+    if (!open || !initialTarget) return;
+    changeSettingsTab(initialTarget.tab);
+    setFocusedImPluginId(
+      initialTarget.tab === "im" ? initialTarget.pluginId ?? null : null,
+    );
+  }, [
+    changeSettingsTab,
+    initialTarget?.nonce,
+    initialTarget?.pluginId,
+    initialTarget?.tab,
+    open,
+  ]);
 
   const updateChannelConfig = useCallback(
     (pluginId: string, key: string, value: string) => {
@@ -1161,6 +1184,7 @@ export function SettingsDialog({
                       onStartAuth={(pluginId) => void startAuth(pluginId)}
                       onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
                       switchSize="sm"
+                      focusPluginId={focusedImPluginId}
                       notice={<SettingsNotice notice={notice} />}
                     />
                   </div>

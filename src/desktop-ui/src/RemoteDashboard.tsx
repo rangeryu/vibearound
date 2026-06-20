@@ -7,6 +7,7 @@ import {
   Loader2,
   RotateCw,
   Save,
+  SlidersHorizontal,
   Square,
 } from "lucide-react";
 import { formatErrorMessage } from "@va/client";
@@ -88,11 +89,16 @@ type RemoteSettings = {
   channels?: Record<string, RemoteChannelDefaults>;
 };
 
+type RemoteDashboardProps = StatusDashboardProps & {
+  onConfigureChannel: (channelId: string) => void;
+};
+
 export function RemoteDashboard({
   channels,
   tunnels,
   agents,
-}: StatusDashboardProps) {
+  onConfigureChannel,
+}: RemoteDashboardProps) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({});
   const [agentDefs, setAgentDefs] = useState<AgentSummary[]>([]);
@@ -408,6 +414,7 @@ export function RemoteDashboard({
                     updateSelectedChannel({ workspace })
                   }
                   onSave={() => void saveSelectedChannel()}
+                  onConfigure={() => onConfigureChannel(selectedChannelId)}
                   onStart={() => channels.start(selectedChannelId)}
                   onStop={() => channels.stop(selectedChannelId)}
                   onRestart={() => channels.restart(selectedChannelId)}
@@ -447,6 +454,7 @@ function ChannelRemoteDetail({
   onProfileChange,
   onWorkspaceChange,
   onSave,
+  onConfigure,
   onStart,
   onStop,
   onRestart,
@@ -466,6 +474,7 @@ function ChannelRemoteDetail({
   onProfileChange: (profileId: string) => void;
   onWorkspaceChange: (workspace: string) => void;
   onSave: () => void;
+  onConfigure: () => void;
   onStart: () => unknown;
   onStop: () => unknown;
   onRestart: () => unknown;
@@ -530,6 +539,16 @@ function ChannelRemoteDetail({
             {t("This channel's default session")}
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-[11px]"
+              onClick={onConfigure}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {t("Configure")}
+            </Button>
             <Button
               type="button"
               variant="outline"

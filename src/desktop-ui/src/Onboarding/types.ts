@@ -187,6 +187,7 @@ export interface StepChannelsProps {
   onCancelAuth: (pluginId: string) => void;
   switchSize?: "sm" | "default";
   description?: ReactNode;
+  focusPluginId?: string | null;
   notice?: ReactNode;
 }
 

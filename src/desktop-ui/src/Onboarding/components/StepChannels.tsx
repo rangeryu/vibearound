@@ -1,4 +1,5 @@
 import { MessageSquare, Download, ExternalLink, Loader2 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useI18n } from "@va/i18n";
 
@@ -38,10 +39,23 @@ export function StepChannels({
   onCancelAuth,
   switchSize = "default",
   description,
+  focusPluginId,
   notice,
 }: StepChannelsProps) {
   const { t } = useI18n();
   const discoveredMap = new Map(discoveredPlugins.map((p) => [p.id, p]));
+  const pluginRefs = useRef(new Map<string, HTMLElement>());
+
+  useEffect(() => {
+    if (!focusPluginId) return;
+    const frame = window.requestAnimationFrame(() => {
+      pluginRefs.current.get(focusPluginId)?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusPluginId, pluginRegistry.length, discoveredPlugins.length]);
 
   return (
     <div className="space-y-5">
@@ -69,28 +83,36 @@ export function StepChannels({
         };
         const authState = authStates[entry.id];
         return (
-          <PluginCard
+          <div
             key={entry.id}
-            pluginId={entry.id}
-            name={entry.name}
-            description={entry.description}
-            githubUrl={entry.github}
-            isReady={isReady}
-            installing={installing}
-            enabled={enabled}
-            discovered={discovered}
-            config={config}
-            verbose={verbose}
-            authState={authState}
-            switchSize={switchSize}
-
-            onToggle={(v) => onToggleChannel(entry.id, v)}
-            onConfigChange={(k, v) => onConfigChange(entry.id, k, v)}
-            onVerboseChange={(k, v) => onVerboseChange(entry.id, k, v)}
-            onInstall={() => onInstallPlugin(entry.id, entry.github)}
-            onStartAuth={() => onStartAuth(entry.id)}
-            onCancelAuth={() => onCancelAuth(entry.id)}
-          />
+            ref={(node) => {
+              if (node) pluginRefs.current.set(entry.id, node);
+              else pluginRefs.current.delete(entry.id);
+            }}
+            className="scroll-mt-4"
+          >
+            <PluginCard
+              pluginId={entry.id}
+              name={entry.name}
+              description={entry.description}
+              githubUrl={entry.github}
+              isReady={isReady}
+              installing={installing}
+              enabled={enabled}
+              highlighted={focusPluginId === entry.id}
+              discovered={discovered}
+              config={config}
+              verbose={verbose}
+              authState={authState}
+              switchSize={switchSize}
+              onToggle={(v) => onToggleChannel(entry.id, v)}
+              onConfigChange={(k, v) => onConfigChange(entry.id, k, v)}
+              onVerboseChange={(k, v) => onVerboseChange(entry.id, k, v)}
+              onInstall={() => onInstallPlugin(entry.id, entry.github)}
+              onStartAuth={() => onStartAuth(entry.id)}
+              onCancelAuth={() => onCancelAuth(entry.id)}
+            />
+          </div>
         );
       })}
     </div>
@@ -109,6 +131,7 @@ interface PluginCardProps {
   isReady: boolean;
   installing: boolean;
   enabled: boolean;
+  highlighted: boolean;
   discovered?: StepChannelsProps["discoveredPlugins"][number];
   config: Record<string, string>;
   verbose: StepChannelsProps["channelVerbose"][string];
@@ -134,6 +157,7 @@ function PluginCard({
   isReady,
   installing,
   enabled,
+  highlighted,
   discovered,
   config,
   verbose,
@@ -156,7 +180,11 @@ function PluginCard({
   );
 
   return (
-    <section className="rounded-md border border-border bg-card overflow-hidden scroll-mt-4">
+    <section
+      className={`overflow-hidden rounded-md border bg-card scroll-mt-4 ${
+        highlighted ? "border-primary/60 shadow-[0_0_0_1px_hsl(var(--primary)/0.25)]" : "border-border"
+      }`}
+    >
       <div className="flex items-start justify-between gap-4 px-4 py-4">
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-2">
