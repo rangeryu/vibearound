@@ -59,6 +59,16 @@ export interface Settings {
   local_agent_api?: {
     enabled?: boolean;
   };
+  remote?: {
+    channels?: Record<
+      string,
+      {
+        agent_id?: string;
+        profile_id?: string;
+        workspace?: string;
+      }
+    >;
+  };
   search_tool?: {
     stdio_path?: string;
     max_results?: number;
