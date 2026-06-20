@@ -116,6 +116,7 @@ impl AgentInfo {
 /// {
 ///   "kind": "telegram",
 ///   "version": "0.1.0",
+///   "plugin_dir": "/path/to/va-plugin-channel-telegram",
 ///   "status": "running",
 ///   "reason": null
 /// }
@@ -127,6 +128,7 @@ impl AgentInfo {
 pub struct ChannelRuntime {
     pub kind: String,
     pub version: Option<String>,
+    pub plugin_dir: Option<String>,
     pub status: &'static str,
     pub reason: Option<String>,
 }

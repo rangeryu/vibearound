@@ -19,6 +19,7 @@
 //!
 //! [`StateSource::subscribe_changes`]: crate::state::StateSource::subscribe_changes
 
+use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -85,6 +86,7 @@ impl ChannelRunStatus {
 pub struct ChannelStatusSnapshot {
     pub kind: String,
     pub version: Option<String>,
+    pub plugin_dir: Option<PathBuf>,
     pub status: ChannelRunStatus,
     pub reason: String,
 }
@@ -97,6 +99,7 @@ pub struct ChannelMonitor {
     supervisor: Arc<Supervisor>,
     kinds: DashMap<String, ProcessId>,
     versions: DashMap<String, String>,
+    plugin_dirs: DashMap<String, PathBuf>,
     workspace_thread_manager: Arc<WorkspaceThreadManager>,
     input_tx: mpsc::UnboundedSender<ChannelInput>,
     plugin_host: Arc<PluginHost>,
@@ -127,6 +130,7 @@ impl ChannelMonitor {
             supervisor,
             kinds: DashMap::new(),
             versions: DashMap::new(),
+            plugin_dirs: DashMap::new(),
             workspace_thread_manager,
             input_tx,
             plugin_host,
@@ -141,6 +145,7 @@ impl ChannelMonitor {
     pub fn register(self: &Arc<Self>, manifest: ChannelPluginManifest) {
         let kind = manifest.channel_kind.clone();
         let version = manifest.version.clone();
+        let plugin_dir = manifest.plugin_dir.clone();
 
         let spec = SpawnSpec::new("node")
             .arg(manifest.entry_path.to_string_lossy().to_string())
@@ -164,7 +169,8 @@ impl ChannelMonitor {
             factory,
         );
         self.kinds.insert(kind.clone(), id);
-        self.versions.insert(kind, version);
+        self.versions.insert(kind.clone(), version);
+        self.plugin_dirs.insert(kind, plugin_dir);
     }
 
     /// Bump the liveness timestamp — called on every `_va/heartbeat`
@@ -210,6 +216,10 @@ impl ChannelMonitor {
             .map(|p| ChannelStatusSnapshot {
                 version: self
                     .versions
+                    .get(&p.label)
+                    .map(|entry| entry.value().clone()),
+                plugin_dir: self
+                    .plugin_dirs
                     .get(&p.label)
                     .map(|entry| entry.value().clone()),
                 kind: p.label,

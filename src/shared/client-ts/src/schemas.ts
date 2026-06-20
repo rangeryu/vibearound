@@ -233,6 +233,7 @@ export type ChannelStatus = z.infer<typeof ChannelStatusSchema>;
 export const ChannelRuntimeSchema = z.object({
   kind: z.string(),
   version: z.string().nullable().optional().default(null),
+  plugin_dir: z.string().nullable().optional().default(null),
   status: ChannelStatusSchema,
   reason: z.string().nullable(),
 });
