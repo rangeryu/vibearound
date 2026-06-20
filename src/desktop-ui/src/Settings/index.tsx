@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Bot,
   CheckCircle2,
+  Copy,
   Download,
   ExternalLink,
   FolderOpen,
@@ -1181,12 +1182,14 @@ export function SettingsDialog({
                       <Button
                         type="button"
                         variant="ghost"
-                        size="xs"
-                        className="h-5 shrink-0 px-1 text-[11px] text-muted-foreground hover:text-foreground"
+                        size="icon-xs"
+                        className="h-5 w-5 text-muted-foreground hover:text-foreground"
                         disabled={!defaultWorkspace}
+                        aria-label={t("Copy")}
+                        title={t("Copy")}
                         onClick={() => void copyDefaultWorkspace()}
                       >
-                        {t("Copy")}
+                        <Copy className="h-3 w-3" />
                       </Button>
                     </div>
                   </div>
