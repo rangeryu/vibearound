@@ -25,6 +25,7 @@ use common::channels::{ChannelEnvelope, ChannelInput, ChannelOutput};
 use common::routing::{
     is_external_attachment_uri, is_safe_attachment_file_key, Attachment, RouteKey,
 };
+use common::workspace::manager::ExternalSessionAttachMode;
 use common::workspace::threads::HostBinding;
 use common::{agent_state, config};
 
@@ -638,6 +639,7 @@ async fn apply_web_session_resume(
             resume.profile,
             resume.session_id,
             std::path::PathBuf::from(resume.cwd),
+            ExternalSessionAttachMode::ReuseOpenThread,
         )
         .await
     {
@@ -671,6 +673,7 @@ async fn apply_web_session_resume_now(
             resume.profile,
             resume.session_id,
             std::path::PathBuf::from(resume.cwd),
+            ExternalSessionAttachMode::ReuseOpenThread,
         )
         .await
     {

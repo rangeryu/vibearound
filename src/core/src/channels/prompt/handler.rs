@@ -15,6 +15,7 @@ use crate::channels::types::{
 };
 use crate::profiles::{self, connections};
 use crate::routing::RouteKey;
+use crate::workspace::manager::ExternalSessionAttachMode;
 use crate::workspace::threads::runtime::{
     route_allows_startup_replay, ThreadRuntime, ThreadRuntimeState,
 };
@@ -106,6 +107,7 @@ async fn handle_command(
                     handoff.profile_id,
                     handoff.session_id,
                     std::path::PathBuf::from(handoff.cwd),
+                    ExternalSessionAttachMode::ReuseOpenThread,
                 )
                 .await
             {
@@ -384,6 +386,7 @@ async fn switch_session(
             state.host_binding.profile_id.clone(),
             session.session_id.clone(),
             PathBuf::from(&session.workspace),
+            ExternalSessionAttachMode::NewThread,
         )
         .await
     {

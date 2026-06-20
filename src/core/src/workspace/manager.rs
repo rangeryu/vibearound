@@ -29,6 +29,12 @@ use super::threads::store::{
 pub const AGENT_HOST_IDLE_SHUTDOWN_DELAY: Duration = Duration::from_secs(10 * 60);
 const LEGACY_CHANNEL_DEFAULT_CHAT_ID: &str = "__channel_default__";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalSessionAttachMode {
+    ReuseOpenThread,
+    NewThread,
+}
+
 pub struct WorkspaceThreadManager {
     workspace_store: WorkspaceEventStore,
     thread_store: ThreadEventStore,
@@ -277,6 +283,7 @@ impl WorkspaceThreadManager {
         profile_id: Option<String>,
         session_id: String,
         cwd: PathBuf,
+        mode: ExternalSessionAttachMode,
     ) -> anyhow::Result<Arc<ThreadRuntime>> {
         let profile_id = Some(crate::agent::launch::normalize_launch_profile_id(
             profile_id.as_deref(),
@@ -292,15 +299,19 @@ impl WorkspaceThreadManager {
                     .flatten()
                     .any(|session| session.agent_id == agent_id && session.session_id == session_id)
             });
-        let thread = projection
-            .for_workspace(&workspace.id, false)
-            .find(|thread| {
-                thread.status != ThreadStatus::Closed
-                    && thread.agent_sessions.values().flatten().any(|session| {
-                        session.agent_id == agent_id && session.session_id == session_id
-                    })
-            })
-            .cloned();
+        let thread = if mode == ExternalSessionAttachMode::ReuseOpenThread {
+            projection
+                .for_workspace(&workspace.id, false)
+                .find(|thread| {
+                    thread.status != ThreadStatus::Closed
+                        && thread.agent_sessions.values().flatten().any(|session| {
+                            session.agent_id == agent_id && session.session_id == session_id
+                        })
+                })
+                .cloned()
+        } else {
+            None
+        };
         let thread = if let Some(thread) = thread {
             thread
         } else {
@@ -1304,6 +1315,7 @@ mod tests {
                 Some("direct".to_string()),
                 "session-1".to_string(),
                 root.join("."),
+                ExternalSessionAttachMode::ReuseOpenThread,
             )
             .await
             .unwrap();
@@ -1345,6 +1357,7 @@ mod tests {
                 None,
                 "external-session".to_string(),
                 root,
+                ExternalSessionAttachMode::ReuseOpenThread,
             )
             .await
             .unwrap();
@@ -1372,6 +1385,7 @@ mod tests {
                 Some("direct".to_string()),
                 "missing-session".to_string(),
                 root,
+                ExternalSessionAttachMode::NewThread,
             )
             .await
         {
@@ -1409,6 +1423,7 @@ mod tests {
                 Some("direct".to_string()),
                 "session-picked-up".to_string(),
                 root,
+                ExternalSessionAttachMode::ReuseOpenThread,
             )
             .await
             .unwrap();
@@ -1420,6 +1435,61 @@ mod tests {
             .unwrap();
         routes.sort_by_key(|route| route.as_key());
         assert_eq!(routes, vec![im_route, web_route]);
+    }
+
+    #[tokio::test]
+    async fn attach_external_session_new_thread_mode_does_not_reuse_open_thread() {
+        let (workspaces, threads, attachments) = temp_paths();
+        let manager = WorkspaceThreadManager::with_paths(workspaces, threads, attachments);
+        let root = std::env::temp_dir().join(format!("vibearound-ws-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let existing_route = RouteKey::new("web", "chat-a");
+        let switch_route = RouteKey::new("feishu", "chat-a");
+        let existing_thread_id = seed_session_thread(
+            &manager,
+            root.clone(),
+            "codex",
+            Some("direct"),
+            "session-switch",
+            false,
+        )
+        .await;
+        manager
+            .attach_thread(&existing_route, &existing_thread_id)
+            .await
+            .unwrap();
+
+        let runtime = manager
+            .attach_external_session(
+                &switch_route,
+                "codex".to_string(),
+                Some("direct".to_string()),
+                "session-switch".to_string(),
+                root,
+                ExternalSessionAttachMode::NewThread,
+            )
+            .await
+            .unwrap();
+
+        assert_ne!(runtime.state().await.thread_id, existing_thread_id);
+        assert_eq!(
+            manager
+                .current_attachment(&existing_route)
+                .await
+                .unwrap()
+                .unwrap()
+                .thread_id,
+            existing_thread_id
+        );
+        assert_eq!(
+            manager
+                .current_attachment(&switch_route)
+                .await
+                .unwrap()
+                .unwrap()
+                .thread_id,
+            runtime.state().await.thread_id
+        );
     }
 
     #[tokio::test]
@@ -1446,6 +1516,7 @@ mod tests {
                 Some("direct".to_string()),
                 "session-closed".to_string(),
                 root,
+                ExternalSessionAttachMode::ReuseOpenThread,
             )
             .await
             .unwrap();
