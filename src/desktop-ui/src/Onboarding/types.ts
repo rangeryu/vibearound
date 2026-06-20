@@ -32,15 +32,13 @@ export interface PluginRegistryEntry {
 export interface Settings {
   onboarded?: boolean;
   workspaces?: string[];
+  default_workspace?: string;
   default_agent?: string;
   default_profiles?: Record<string, string>;
   enabled_agents?: string[];
   integrations?: {
     mcp_auto_install?: boolean;
     skill_auto_install?: boolean;
-  };
-  im_agent?: {
-    auto_continue_last_session?: boolean;
   };
   proxy?: {
     enabled?: boolean;
@@ -65,7 +63,6 @@ export interface Settings {
       {
         agent_id?: string;
         profile_id?: string;
-        workspace?: string;
       }
     >;
   };

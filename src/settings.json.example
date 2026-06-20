@@ -1,4 +1,5 @@
 {
+  "default_workspace": "~/.vibearound/workspaces",
   "workspaces": [],
   "enabled_agents": ["claude", "gemini", "opencode", "codex"],
   "integrations": {

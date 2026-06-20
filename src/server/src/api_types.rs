@@ -210,8 +210,8 @@ pub struct WorkspaceItem {
 
 /// `GET /api/workspaces` response.
 ///
-/// `default_workspace` is retained for wire compatibility; it always points
-/// to the built-in workspace root.
+/// `default_workspace` is the workspace root used for new sessions when no
+/// more specific workspace has been selected.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspacesResponse {
     pub workspaces: Vec<WorkspaceItem>,

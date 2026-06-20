@@ -7,14 +7,16 @@ import {
   type ReactNode,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDirectoryDialog } from "@tauri-apps/plugin-dialog";
+import { WorkspacesResponseSchema } from "@va/client";
 import {
   AlertCircle,
   Bot,
   CheckCircle2,
   Download,
   ExternalLink,
+  FolderOpen,
   Globe,
-  History,
   Loader2,
   MessageSquare,
   Network,
@@ -87,8 +89,8 @@ type SaveState =
   | "api-bridge"
   | "web-search"
   | "proxy"
+  | "general"
   | "im"
-  | "sessions"
   | "tunnel"
   | "tunnel-restart"
   | "uninstall-mcp"
@@ -204,8 +206,7 @@ export function SettingsDialog({
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(
     () => new Set(),
   );
-  const [imAutoContinueLastSession, setImAutoContinueLastSession] =
-    useState(true);
+  const [defaultWorkspace, setDefaultWorkspace] = useState("");
   const [mcpAutoInstall, setMcpAutoInstall] = useState(true);
   const [skillAutoInstall, setSkillAutoInstall] = useState(true);
   const [channelConfigs, setChannelConfigs] = useState<
@@ -420,18 +421,15 @@ export function SettingsDialog({
     setSkillAutoInstall(integrations?.skill_auto_install ?? true);
   }, []);
 
-  const hydrateImAgent = useCallback((loadedSettings: AppSettings) => {
-    let imAgent: Record<string, unknown> = {};
-    if (isRecord(loadedSettings.im_agent)) {
-      imAgent = loadedSettings.im_agent;
-    } else {
-      const im = isRecord(loadedSettings.im) ? loadedSettings.im : {};
-      if (isRecord(im.agent)) imAgent = im.agent;
-    }
-    setImAutoContinueLastSession(
-      typeof imAgent.auto_continue_last_session === "boolean"
-        ? imAgent.auto_continue_last_session
-        : true,
+  const hydrateGeneral = useCallback((
+    loadedSettings: AppSettings,
+    effectiveDefaultWorkspace: string,
+  ) => {
+    setDefaultWorkspace(
+      typeof loadedSettings.default_workspace === "string" &&
+        loadedSettings.default_workspace.trim()
+        ? loadedSettings.default_workspace.trim()
+        : effectiveDefaultWorkspace,
     );
   }, []);
 
@@ -450,6 +448,7 @@ export function SettingsDialog({
         discovered,
         tunnelDefs,
         managedPluginDefs,
+        workspaceResponse,
       ] =
         await Promise.all([
           invoke<AppSettings>("get_settings"),
@@ -458,6 +457,10 @@ export function SettingsDialog({
           invoke<DiscoveredChannelPlugin[]>("list_channel_plugins"),
           invoke<TunnelSummary[]>("list_tunnels"),
           invoke<ManagedPluginSummary[]>("list_managed_plugins"),
+          apiFetch("/api/workspaces").then(async (response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return WorkspacesResponseSchema.parse(await response.json());
+          }),
         ]);
       const orderedAgents = orderAgents(agentDefs);
       setSettings(loadedSettings);
@@ -473,7 +476,7 @@ export function SettingsDialog({
       hydrateApiBridge(loadedSettings);
       hydrateSearchTool(loadedSettings);
       hydrateIntegrations(loadedSettings);
-      hydrateImAgent(loadedSettings);
+      hydrateGeneral(loadedSettings, workspaceResponse.default_workspace);
       setSettingsLoaded(true);
     } catch (error) {
       setNotice({
@@ -487,8 +490,8 @@ export function SettingsDialog({
     hydrateAgents,
     hydrateApiBridge,
     hydrateChannels,
+    hydrateGeneral,
     hydrateIntegrations,
-    hydrateImAgent,
     hydrateProxy,
     hydrateSearchTool,
     hydrateTunnel,
@@ -950,20 +953,31 @@ export function SettingsDialog({
     onServicesRestarted,
   ]);
 
-  const applySessionSettings = useCallback(async () => {
-    setSaving("sessions");
+  const chooseDefaultWorkspace = useCallback(async () => {
+    const selected = await openDirectoryDialog({
+      directory: true,
+      multiple: false,
+      title: t("Choose Default Workspace"),
+    });
+    if (!selected) return;
+    const path = typeof selected === "string" ? selected : selected[0];
+    if (path) setDefaultWorkspace(path);
+  }, [t]);
+
+  const applyGeneralSettings = useCallback(async () => {
+    setSaving("general");
     setNotice(null);
     try {
-      const nextSettings = buildSessionSettings({
+      const nextSettings = buildGeneralSettings({
         settings,
-        imAutoContinueLastSession,
+        defaultWorkspace,
       });
       await invoke("save_settings", { settings: nextSettings });
       setSettings(nextSettings);
       const response = await apiFetch("/api/settings/reload", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       onServicesRestarted?.();
-      setNotice({ variant: "success", message: "Session settings applied." });
+      setNotice({ variant: "success", message: "General settings applied." });
     } catch (error) {
       setNotice({
         variant: "error",
@@ -974,7 +988,7 @@ export function SettingsDialog({
     }
   }, [
     settings,
-    imAutoContinueLastSession,
+    defaultWorkspace,
     onServicesRestarted,
   ]);
 
@@ -1079,13 +1093,6 @@ export function SettingsDialog({
                 {t("IM Channel")}
               </TabsTrigger>
               <TabsTrigger
-                value="sessions"
-                className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
-              >
-                <History className="h-3 w-3" />
-                {t("Sessions")}
-              </TabsTrigger>
-              <TabsTrigger
                 value="tunnel"
                 className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
               >
@@ -1119,6 +1126,40 @@ export function SettingsDialog({
                   <SettingsNotice notice={notice} />
                 </div>
                 <div className="rounded-md border border-border">
+                  <SettingsActionRow
+                    label={t("Default Workspace")}
+                    description={t("New launch and IM workspaces are created under this folder.")}
+                    action={
+                      <div className="flex min-w-0 flex-wrap justify-end gap-2">
+                        <Input
+                          value={defaultWorkspace}
+                          readOnly
+                          className="h-8 w-72 max-w-full font-mono text-xs"
+                          aria-label={t("Default Workspace")}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-xs"
+                          disabled={saving !== "idle"}
+                          onClick={() => void chooseDefaultWorkspace()}
+                        >
+                          <FolderOpen className="h-3 w-3" />
+                          {t("Choose")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="text-xs"
+                          disabled={!canSubmit || !defaultWorkspace.trim()}
+                          onClick={() => void applyGeneralSettings()}
+                        >
+                          {saving === "general" ? t("Applying…") : t("Apply")}
+                        </Button>
+                      </div>
+                    }
+                  />
                   <SettingsActionRow
                     label={t("Restart Services")}
                     description={t("Restart VibeAround runtime services after local changes.")}
@@ -1225,41 +1266,6 @@ export function SettingsDialog({
                     notice={<SettingsNotice notice={notice} />}
                   />
                 </div>
-              )}
-            </TabsContent>
-
-            <TabsContent
-              value="sessions"
-              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-            >
-              {loading ? (
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
-                  <LoadingBlock />
-                </div>
-              ) : (
-                <>
-                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
-                    <SessionSettingsPanel
-                      imAutoContinueLastSession={imAutoContinueLastSession}
-                      onImAutoContinueLastSessionChange={
-                        setImAutoContinueLastSession
-                      }
-                      notice={<SettingsNotice notice={notice} />}
-                    />
-                  </div>
-                  <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!canSubmit}
-                      onClick={() => void applySessionSettings()}
-                    >
-                      {saving === "sessions"
-                        ? t("Applying…")
-                        : t("Apply Session Settings")}
-                    </Button>
-                  </div>
-                </>
               )}
             </TabsContent>
 
@@ -2526,48 +2532,6 @@ function ApiBridgeRetrySettingsPanel({
   );
 }
 
-function SessionSettingsPanel({
-  imAutoContinueLastSession,
-  onImAutoContinueLastSessionChange,
-  notice,
-}: {
-  imAutoContinueLastSession: boolean;
-  onImAutoContinueLastSessionChange: (value: boolean) => void;
-  notice?: ReactNode;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="flex items-center gap-2 text-base font-semibold">
-          <History className="h-4 w-4 text-primary" />
-          {t("Sessions")}
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("Configure how VibeAround restores active conversations.")}
-        </p>
-        {notice}
-      </div>
-      <div className="rounded-md border border-border">
-        <SettingsActionRow
-          label={t("Auto-continue IM Channel sessions")}
-          description={t(
-            "When an IM Channel message attaches to a thread, continue that thread's latest agent session without replaying old output.",
-          )}
-          action={
-            <Switch
-              checked={imAutoContinueLastSession}
-              onCheckedChange={onImAutoContinueLastSessionChange}
-              aria-label={t("Auto-continue IM Channel sessions")}
-              size="sm"
-            />
-          }
-        />
-      </div>
-    </div>
-  );
-}
-
 function SettingsNotice({ notice }: { notice: Notice | null }) {
   const { t } = useI18n();
   if (!notice) return null;
@@ -2609,6 +2573,23 @@ function LoadingBlock() {
       {t("Loading…")}
     </p>
   );
+}
+
+function buildGeneralSettings({
+  settings,
+  defaultWorkspace,
+}: {
+  settings: AppSettings;
+  defaultWorkspace: string;
+}): AppSettings {
+  const result: AppSettings = { ...settings };
+  const workspace = defaultWorkspace.trim();
+  if (workspace) {
+    result.default_workspace = workspace;
+  } else {
+    delete result.default_workspace;
+  }
+  return result;
 }
 
 function buildAgentSettings({
@@ -2841,32 +2822,6 @@ function buildChannelSettings({
     result.channels = channels;
   } else {
     delete result.channels;
-  }
-
-  return result;
-}
-
-function buildSessionSettings({
-  settings,
-  imAutoContinueLastSession,
-}: {
-  settings: AppSettings;
-  imAutoContinueLastSession: boolean;
-}): AppSettings {
-  const result: AppSettings = { ...settings };
-  const imAgent = isRecord(settings.im_agent) ? { ...settings.im_agent } : {};
-  if (imAutoContinueLastSession) {
-    delete imAgent.auto_continue_last_session;
-    if (Object.keys(imAgent).length > 0) {
-      result.im_agent = imAgent as AppSettings["im_agent"];
-    } else {
-      delete result.im_agent;
-    }
-  } else {
-    result.im_agent = {
-      ...imAgent,
-      auto_continue_last_session: false,
-    };
   }
 
   return result;

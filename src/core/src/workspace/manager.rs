@@ -997,11 +997,25 @@ fn default_channel_binding_and_workspace(channel_kind: &str) -> (HostBinding, Pa
                 .map(|profile| normalize_launch_profile_id(Some(&profile)))
         })
         .or_else(|| Some("direct".to_string()));
-    let workspace = defaults
-        .workspace
-        .unwrap_or_else(|| agent_state::resolve_agent_workspace(&prefs, &cfg, &agent_id));
+    let workspace = im_workspace_for_channel(&cfg, channel_kind);
 
     (HostBinding::new(agent_id, profile_id), workspace)
+}
+
+fn im_workspace_for_channel(cfg: &crate::config::Config, channel_kind: &str) -> PathBuf {
+    cfg.resolve_workspace("")
+        .join("im")
+        .join(channel_workspace_segment(channel_kind))
+}
+
+fn channel_workspace_segment(channel_kind: &str) -> String {
+    channel_kind
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' => '_',
+            ch => ch,
+        })
+        .collect()
 }
 
 pub fn normalize_workspace_cwd(cwd: impl AsRef<Path>) -> PathBuf {
