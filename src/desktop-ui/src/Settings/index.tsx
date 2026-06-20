@@ -1158,7 +1158,7 @@ export function SettingsDialog({
                         {saving === "general" ? t("Saving…") : t("Choose")}
                       </Button>
                       <div
-                        className="w-full whitespace-nowrap text-right text-xs leading-5 text-foreground"
+                        className="w-full overflow-x-auto whitespace-nowrap rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-right text-xs leading-5 text-foreground shadow-xs"
                         title={defaultWorkspace}
                       >
                         {defaultWorkspace}
