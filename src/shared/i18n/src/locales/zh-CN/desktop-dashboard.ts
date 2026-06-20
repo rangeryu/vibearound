@@ -31,9 +31,12 @@ export const zhCNDesktopDashboard: Record<string, string> = {
   Retry: "重试",
   "Open Config Wizard": "打开配置向导",
   "Open Web Dashboard": "打开 Web 控制台",
+  "Configure messaging apps and remote access.": "配置 Message Apps 和远程访问。",
   "Messaging apps keep their own default agent, workspace, and thread unless a chat picks up or switches sessions.":
     "每个聊天工具都有自己的默认 Agent、工作区和 thread；除非某个聊天手动 pickup 或 switch。",
+  "App defaults": "应用默认",
   "App default Agent": "应用默认 Agent",
+  "App defaults saved.": "应用默认已保存。",
   "Unspecified channels follow this agent and workspace.":
     "未单独指定的渠道会跟随这个 Agent 和工作区。",
   "Default": "默认",
@@ -53,6 +56,7 @@ export const zhCNDesktopDashboard: Record<string, string> = {
   "Disabled": "未启用",
   "Toggle channel": "切换渠道",
   "Resolved": "实际使用",
+  "Plugin directory": "插件目录",
   "Direct": "直连",
   "Tunnel information": "隧道信息",
   "Public URL": "公网地址",

@@ -344,6 +344,7 @@ function Dashboard() {
           tunnels={tunnels}
           agents={agents}
           onConfigureChannel={openChannelSettings}
+          onDefaultsChanged={handleRuntimeSettingsChanged}
         />
       )}
     </div>

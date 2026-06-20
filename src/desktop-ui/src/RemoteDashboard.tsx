@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { invoke } from "@tauri-apps/api/core";
 import {
   Bot,
+  ChevronDown,
   ExternalLink,
   Globe,
   Loader2,
@@ -22,6 +23,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
 import { StatusBanner } from "@/components/page";
 import { apiFetch, DAEMON_PORT, openDashboardUrl } from "@/lib/api";
@@ -34,8 +40,11 @@ import {
   getLauncherPreferences,
   type AgentSummary,
   listAgents,
+  listLauncherWorkspaces,
   listProfiles,
   type LauncherPreferences,
+  setLauncherDefault,
+  setLauncherWorkspace,
   type WorkspaceOption,
 } from "./Launch/api";
 import type { ProfileSummary } from "./Launch/types";
@@ -57,6 +66,7 @@ import type { StatusDashboardProps, Tone } from "./status-dashboard/types";
 
 const FOLLOW_DEFAULT = "__default__";
 const DIRECT_PROFILE = "direct";
+const UNSET_WORKSPACE = "__workspace_unset__";
 
 type RemoteSelection =
   | { kind: "channel"; id: string }
@@ -71,6 +81,17 @@ type ChannelDefaultForm = {
 type Notice = {
   variant: "success" | "warning" | "error";
   message: string;
+};
+
+type AppDefaultForm = {
+  agentId: string;
+  profileId: string;
+  workspace: string;
+};
+
+type RemoteDashboardProps = StatusDashboardProps & {
+  onConfigureChannel: (channelId: string) => void;
+  onDefaultsChanged?: () => void;
 };
 
 type RemoteChannelDefaults = {
@@ -89,23 +110,30 @@ type RemoteSettings = {
   channels?: Record<string, RemoteChannelDefaults>;
 };
 
-type RemoteDashboardProps = StatusDashboardProps & {
-  onConfigureChannel: (channelId: string) => void;
-};
-
 export function RemoteDashboard({
   channels,
   tunnels,
   agents,
   onConfigureChannel,
+  onDefaultsChanged,
 }: RemoteDashboardProps) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({});
   const [agentDefs, setAgentDefs] = useState<AgentSummary[]>([]);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [prefs, setPrefs] = useState<LauncherPreferences | null>(null);
+  const [appDefaultForm, setAppDefaultForm] = useState<AppDefaultForm>(() =>
+    defaultAppDefaultForm(),
+  );
+  const [appWorkspaceOptions, setAppWorkspaceOptions] = useState<
+    WorkspaceOption[]
+  >([]);
+  const [channelWorkspaceOptions, setChannelWorkspaceOptions] = useState<
+    WorkspaceOption[]
+  >([]);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [savingChannel, setSavingChannel] = useState<string | null>(null);
+  const [savingAppDefault, setSavingAppDefault] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [selection, setSelection] = useState<RemoteSelection | null>(null);
 
@@ -141,10 +169,12 @@ export function RemoteDashboard({
     ])
       .then(([loadedSettings, loadedAgents, loadedProfiles, loadedPrefs]) => {
         if (cancelled) return;
+        const orderedAgents = orderAgents(loadedAgents);
         setSettings(loadedSettings);
-        setAgentDefs(orderAgents(loadedAgents));
+        setAgentDefs(orderedAgents);
         setProfiles(loadedProfiles);
         setPrefs(loadedPrefs);
+        setAppDefaultForm(formForAppDefault(loadedPrefs, orderedAgents));
       })
       .catch((error) => {
         if (!cancelled) {
@@ -193,6 +223,21 @@ export function RemoteDashboard({
     [selectedChannelId],
   );
 
+  useEffect(() => {
+    if (!appDefaultForm.agentId) return;
+    let cancelled = false;
+    void listLauncherWorkspaces(appDefaultForm.agentId)
+      .then((options) => {
+        if (!cancelled) setAppWorkspaceOptions(options);
+      })
+      .catch(() => {
+        if (!cancelled) setAppWorkspaceOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [appDefaultForm.agentId]);
+
   const saveSelectedChannel = useCallback(async () => {
     if (!selectedChannelId) return;
     setSavingChannel(selectedChannelId);
@@ -210,12 +255,7 @@ export function RemoteDashboard({
   }, [selectedChannelId, settings]);
 
   const defaultAgent = prefs?.defaultAgent ?? agentDefs[0]?.id ?? "codex";
-  const defaultProfileId = prefs ? agentProfileId(prefs, defaultAgent) : undefined;
   const defaultWorkspace = prefs ? agentWorkspace(prefs, defaultAgent) : "";
-  const defaultAgentDef = agentDefs.find((agent) => agent.id === defaultAgent);
-  const defaultProfileLabel = defaultProfileId
-    ? profiles.find((profile) => profile.id === defaultProfileId)?.label ?? defaultProfileId
-    : t("Direct");
   const enabledAgents =
     prefs?.enabledAgents.length
       ? agentDefs.filter((agent) => prefs.enabledAgents.includes(agent.id))
@@ -239,10 +279,78 @@ export function RemoteDashboard({
   const profileOptions = profiles.filter((profile) =>
     prefs ? profileSupportsAgent(profile, selectedAgentId, prefs) : true,
   );
-  const workspaceOptions = workspaceOptionsFor(prefs, selectedWorkspace);
+  useEffect(() => {
+    if (!selectedAgentId) return;
+    let cancelled = false;
+    void listLauncherWorkspaces(selectedAgentId)
+      .then((options) => {
+        if (!cancelled) setChannelWorkspaceOptions(options);
+      })
+      .catch(() => {
+        if (!cancelled) setChannelWorkspaceOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAgentId]);
+
+  const workspaceOptions = workspaceOptionsFor(
+    channelWorkspaceOptions,
+    selectedWorkspace,
+  );
+  const appDefaultAgentId = appDefaultForm.agentId || defaultAgent;
+  const appDefaultAgentDef = agentDefs.find(
+    (agent) => agent.id === appDefaultAgentId,
+  );
+  const appDefaultProfileLabel =
+    appDefaultForm.profileId === DIRECT_PROFILE
+      ? t("Direct")
+      : profiles.find((profile) => profile.id === appDefaultForm.profileId)?.label ??
+        appDefaultForm.profileId;
+  const appDefaultProfileOptions = profiles.filter((profile) =>
+    prefs ? profileSupportsAgent(profile, appDefaultAgentId, prefs) : true,
+  );
+  const appDefaultWorkspaceOptions = workspaceOptionsFor(
+    appWorkspaceOptions,
+    appDefaultForm.workspace,
+  );
   const activeAgentsForChannel = selectedChannelId
     ? agents.agents.filter((agent) => agentRuntimeTouchesChannel(agent, selectedChannelId))
     : [];
+
+  const updateAppDefaultAgent = useCallback(
+    (agentId: string) => {
+      const profileId = prefs ? agentProfileId(prefs, agentId) ?? DIRECT_PROFILE : DIRECT_PROFILE;
+      const workspace = prefs ? agentWorkspace(prefs, agentId) : appDefaultForm.workspace;
+      setAppDefaultForm({ agentId, profileId, workspace });
+      setNotice(null);
+    },
+    [appDefaultForm.workspace, prefs],
+  );
+
+  const saveAppDefault = useCallback(async () => {
+    if (!appDefaultForm.agentId) return;
+    setSavingAppDefault(true);
+    setNotice(null);
+    try {
+      await setLauncherDefault(
+        appDefaultForm.agentId,
+        appDefaultForm.profileId === DIRECT_PROFILE ? null : appDefaultForm.profileId,
+      );
+      if (appDefaultForm.workspace) {
+        await setLauncherWorkspace(appDefaultForm.workspace, appDefaultForm.agentId);
+      }
+      const nextPrefs = await getLauncherPreferences();
+      setPrefs(nextPrefs);
+      setAppDefaultForm(formForAppDefault(nextPrefs, agentDefs));
+      onDefaultsChanged?.();
+      setNotice({ variant: "success", message: "App defaults saved." });
+    } catch (error) {
+      setNotice({ variant: "error", message: formatErrorMessage(error) });
+    } finally {
+      setSavingAppDefault(false);
+    }
+  }, [agentDefs, appDefaultForm, onDefaultsChanged]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-muted/15">
@@ -251,9 +359,7 @@ export function RemoteDashboard({
           <Globe className="h-4 w-4 shrink-0 text-primary" />
           <span className="shrink-0 font-semibold">{t("Remote Access")}</span>
           <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-            {t(
-              "Messaging apps keep their own default agent, workspace, and thread unless a chat picks up or switches sessions.",
-            )}
+            {t("Configure messaging apps and remote access.")}
           </span>
         </div>
         <Button
@@ -278,29 +384,32 @@ export function RemoteDashboard({
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-[272px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-border bg-background/70">
-          <div className="shrink-0 border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2">
-              <BrandIcon
-                kind="cli"
-                id={defaultAgent}
-                label={defaultAgentDef?.display_name ?? defaultAgent}
-                className="h-5 w-5"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">
-                  {defaultAgentDef?.display_name ?? defaultAgent}
-                </div>
-                <div className="truncate text-[11px] text-muted-foreground">
-                  {t("App default Agent")} · {defaultProfileLabel} ·{" "}
-                  {defaultWorkspace || t("Default workspace")}
-                </div>
-              </div>
-            </div>
+          <div className="shrink-0 border-b border-border px-3 py-2.5">
+            <AppDefaultEditor
+              form={appDefaultForm}
+              agentLabel={appDefaultAgentDef?.display_name ?? appDefaultAgentId}
+              profileLabel={appDefaultProfileLabel}
+              defaultWorkspace={appDefaultForm.workspace}
+              enabledAgents={enabledAgents}
+              profileOptions={appDefaultProfileOptions}
+              workspaceOptions={appDefaultWorkspaceOptions}
+              saving={savingAppDefault}
+              onAgentChange={updateAppDefaultAgent}
+              onProfileChange={(profileId) => {
+                setAppDefaultForm((form) => ({ ...form, profileId }));
+                setNotice(null);
+              }}
+              onWorkspaceChange={(workspace) => {
+                setAppDefaultForm((form) => ({ ...form, workspace }));
+                setNotice(null);
+              }}
+              onSave={() => void saveAppDefault()}
+            />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 [scrollbar-gutter:stable]">
+          <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5 [scrollbar-gutter:stable]">
               <RemoteSidebarSection
                 title={t("Messaging apps")}
                 count={configuredChannelIds.length}
@@ -336,7 +445,6 @@ export function RemoteDashboard({
                         }
                         title={channelDisplayName(id)}
                         detail={summary}
-                        meta={presentation.label}
                         onClick={() => setSelection({ kind: "channel", id })}
                       />
                     );
@@ -372,7 +480,6 @@ export function RemoteDashboard({
                           provider: capitalize(tunnel.provider),
                         })}
                         detail={tunnel.url ?? tunnelDetail(tunnel.status) ?? ""}
-                        meta={presentation.label}
                         onClick={() =>
                           setSelection({ kind: "tunnel", id: tunnel.provider })
                         }
@@ -403,6 +510,7 @@ export function RemoteDashboard({
                   profileOptions={profileOptions}
                   workspaceOptions={workspaceOptions}
                   activeAgents={activeAgentsForChannel}
+                  pluginDir={selectedChannel?.plugin_dir ?? null}
                   saving={savingChannel === selectedChannelId}
                   onAgentChange={(agentId) =>
                     updateSelectedChannel({ agentId, profileId: FOLLOW_DEFAULT })
@@ -438,6 +546,152 @@ export function RemoteDashboard({
   );
 }
 
+function AppDefaultEditor({
+  form,
+  agentLabel,
+  profileLabel,
+  defaultWorkspace,
+  enabledAgents,
+  profileOptions,
+  workspaceOptions,
+  saving,
+  onAgentChange,
+  onProfileChange,
+  onWorkspaceChange,
+  onSave,
+}: {
+  form: AppDefaultForm;
+  agentLabel: string;
+  profileLabel: string;
+  defaultWorkspace: string;
+  enabledAgents: AgentSummary[];
+  profileOptions: ProfileSummary[];
+  workspaceOptions: WorkspaceOption[];
+  saving: boolean;
+  onAgentChange: (agentId: string) => void;
+  onProfileChange: (profileId: string) => void;
+  onWorkspaceChange: (workspace: string) => void;
+  onSave: () => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const workspaceValue = form.workspace || UNSET_WORKSPACE;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="space-y-2">
+      <div className="flex items-center gap-2">
+        <BrandIcon
+          kind="cli"
+          id={form.agentId}
+          label={agentLabel}
+          className="h-5 w-5"
+        />
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            aria-expanded={open}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold">
+                {t("App defaults")}
+              </span>
+              <span className="block truncate text-[11px] text-muted-foreground">
+                {agentLabel} · {profileLabel} ·{" "}
+                {defaultWorkspace || t("Default workspace")}
+              </span>
+            </span>
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                open && "rotate-180",
+              )}
+            />
+          </button>
+        </CollapsibleTrigger>
+      </div>
+
+      <CollapsibleContent className="space-y-2 pt-1">
+        <div className="grid gap-2">
+          <SelectField label={t("Agent")}>
+            <Select value={form.agentId} onValueChange={onAgentChange}>
+              <SelectTrigger className="h-8 w-full bg-background text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {enabledAgents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SelectField>
+
+          <SelectField label={t("Profile")}>
+            <Select value={form.profileId} onValueChange={onProfileChange}>
+              <SelectTrigger className="h-8 w-full bg-background text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={DIRECT_PROFILE}>{t("Direct")}</SelectItem>
+                {profileOptions.map((profile) => (
+                  <SelectItem key={profile.id} value={profile.id}>
+                    {profile.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SelectField>
+
+          <SelectField label={t("Workspace")}>
+            <Select
+              value={workspaceValue}
+              onValueChange={(workspace) => {
+                if (workspace !== UNSET_WORKSPACE) onWorkspaceChange(workspace);
+              }}
+            >
+              <SelectTrigger className="h-8 w-full bg-background text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {!form.workspace && (
+                  <SelectItem value={UNSET_WORKSPACE} disabled>
+                    {t("Default workspace")}
+                  </SelectItem>
+                )}
+                {workspaceOptions.map((workspace) => (
+                  <SelectItem key={workspace.path} value={workspace.path}>
+                    {workspace.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SelectField>
+        </div>
+
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 gap-1.5 px-2 text-[11px]"
+            disabled={saving}
+            onClick={onSave}
+          >
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
+            {saving ? t("Saving…") : t("Save")}
+          </Button>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 function ChannelRemoteDetail({
   channelId,
   channel,
@@ -449,6 +703,7 @@ function ChannelRemoteDetail({
   profileOptions,
   workspaceOptions,
   activeAgents,
+  pluginDir,
   saving,
   onAgentChange,
   onProfileChange,
@@ -469,6 +724,7 @@ function ChannelRemoteDetail({
   profileOptions: ProfileSummary[];
   workspaceOptions: WorkspaceOption[];
   activeAgents: AgentRuntime[];
+  pluginDir: string | null;
   saving: boolean;
   onAgentChange: (agentId: string) => void;
   onProfileChange: (profileId: string) => void;
@@ -624,11 +880,12 @@ function ChannelRemoteDetail({
           </SelectField>
         </div>
         <div className="mt-3 border-t border-border/70 pt-2.5">
-          <div className="grid gap-x-3 gap-y-1 text-[11px] text-muted-foreground sm:grid-cols-[auto_auto_minmax(0,1fr)]">
-            <span className="font-medium text-foreground">{t("Resolved")}</span>
-            <span className="font-mono text-foreground">{selectedAgentId}</span>
-            <span className="min-w-0 truncate">
-              {selectedProfileId} · {selectedWorkspace || t("Default workspace")}
+          <div className="grid gap-x-3 gap-y-1 text-[11px] text-muted-foreground sm:grid-cols-[auto_minmax(0,1fr)]">
+            <span className="font-medium text-foreground">
+              {t("Plugin directory")}
+            </span>
+            <span className="min-w-0 truncate font-mono text-foreground">
+              {pluginDir ?? t("Unavailable")}
             </span>
           </div>
         </div>
@@ -801,14 +1058,12 @@ function SidebarButton({
   icon,
   title,
   detail,
-  meta,
   onClick,
 }: {
   active: boolean;
   icon: ReactNode;
   title: string;
   detail: string;
-  meta: string;
   onClick: () => void;
 }) {
   return (
@@ -824,9 +1079,8 @@ function SidebarButton({
     >
       {icon}
       <span className="min-w-0 flex-1">
-        <span className="flex items-center justify-between gap-2">
+        <span className="block">
           <span className="truncate text-xs font-semibold">{title}</span>
-          <span className="shrink-0 text-[11px] text-muted-foreground">{meta}</span>
         </span>
         <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
           {detail}
@@ -905,11 +1159,31 @@ function formForChannel(
   };
 }
 
+function formForAppDefault(
+  prefs: LauncherPreferences | null,
+  agents: AgentSummary[],
+): AppDefaultForm {
+  const agentId = prefs?.defaultAgent ?? agents[0]?.id ?? "codex";
+  return {
+    agentId,
+    profileId: prefs?.defaultProfileId ?? DIRECT_PROFILE,
+    workspace: prefs ? agentWorkspace(prefs, agentId) : "",
+  };
+}
+
 function defaultChannelForm(): ChannelDefaultForm {
   return {
     agentId: FOLLOW_DEFAULT,
     profileId: FOLLOW_DEFAULT,
     workspace: FOLLOW_DEFAULT,
+  };
+}
+
+function defaultAppDefaultForm(): AppDefaultForm {
+  return {
+    agentId: "codex",
+    profileId: DIRECT_PROFILE,
+    workspace: "",
   };
 }
 
@@ -993,10 +1267,9 @@ function channelDefaultSummary({
 }
 
 function workspaceOptionsFor(
-  prefs: LauncherPreferences | null,
+  options: WorkspaceOption[],
   selectedWorkspace: string,
 ): WorkspaceOption[] {
-  const options = prefs?.workspaceOptions ?? [];
   if (!selectedWorkspace || options.some((option) => option.path === selectedWorkspace)) {
     return options;
   }
