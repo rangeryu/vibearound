@@ -953,29 +953,21 @@ export function SettingsDialog({
     onServicesRestarted,
   ]);
 
-  const chooseDefaultWorkspace = useCallback(async () => {
-    const selected = await openDirectoryDialog({
-      directory: true,
-      multiple: false,
-      title: t("Choose Default Workspace"),
-    });
-    if (!selected) return;
-    const path = typeof selected === "string" ? selected : selected[0];
-    if (path) setDefaultWorkspace(path);
-  }, [t]);
-
-  const applyGeneralSettings = useCallback(async () => {
+  const saveDefaultWorkspace = useCallback(async (workspacePath: string) => {
+    const workspace = workspacePath.trim();
+    if (!workspace) return;
     setSaving("general");
     setNotice(null);
     try {
       const nextSettings = buildGeneralSettings({
         settings,
-        defaultWorkspace,
+        defaultWorkspace: workspace,
       });
       await invoke("save_settings", { settings: nextSettings });
       setSettings(nextSettings);
       const response = await apiFetch("/api/settings/reload", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setDefaultWorkspace(workspace);
       onServicesRestarted?.();
       setNotice({ variant: "success", message: "General settings applied." });
     } catch (error) {
@@ -988,9 +980,19 @@ export function SettingsDialog({
     }
   }, [
     settings,
-    defaultWorkspace,
     onServicesRestarted,
   ]);
+
+  const chooseDefaultWorkspace = useCallback(async () => {
+    const selected = await openDirectoryDialog({
+      directory: true,
+      multiple: false,
+      title: t("Choose Default Workspace"),
+    });
+    if (!selected) return;
+    const path = typeof selected === "string" ? selected : selected[0];
+    if (path) await saveDefaultWorkspace(path);
+  }, [saveDefaultWorkspace, t]);
 
   const saveTunnelSettings = useCallback(
     async (restart: boolean) => {
@@ -1130,32 +1132,27 @@ export function SettingsDialog({
                     label={t("Default Workspace")}
                     description={t("New launch and IM workspaces are created under this folder.")}
                     action={
-                      <div className="flex min-w-0 flex-wrap justify-end gap-2">
-                        <Input
-                          value={defaultWorkspace}
-                          readOnly
-                          className="h-8 w-72 max-w-full font-mono text-xs"
-                          aria-label={t("Default Workspace")}
-                        />
+                      <div className="flex min-w-0 items-center justify-end gap-3">
+                        <span
+                          className="min-w-0 max-w-96 truncate text-right text-xs text-foreground"
+                          title={defaultWorkspace}
+                        >
+                          {defaultWorkspace}
+                        </span>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           className="text-xs"
-                          disabled={saving !== "idle"}
+                          disabled={!canSubmit}
                           onClick={() => void chooseDefaultWorkspace()}
                         >
-                          <FolderOpen className="h-3 w-3" />
-                          {t("Choose")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="text-xs"
-                          disabled={!canSubmit || !defaultWorkspace.trim()}
-                          onClick={() => void applyGeneralSettings()}
-                        >
-                          {saving === "general" ? t("Applying…") : t("Apply")}
+                          {saving === "general" ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <FolderOpen className="h-3 w-3" />
+                          )}
+                          {saving === "general" ? t("Saving…") : t("Choose")}
                         </Button>
                       </div>
                     }
