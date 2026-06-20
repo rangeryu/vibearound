@@ -1137,12 +1137,12 @@ export function SettingsDialog({
                         {t("New launch and IM workspaces are created under this folder.")}
                       </div>
                     </div>
-                    <div className="flex min-w-0 flex-1 flex-col items-end gap-2">
+                    <div className="flex min-w-0 flex-1 flex-col items-stretch gap-2">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="shrink-0 text-xs"
+                        className="self-end text-xs"
                         disabled={!canSubmit}
                         onClick={() => void chooseDefaultWorkspace()}
                       >
@@ -1154,7 +1154,7 @@ export function SettingsDialog({
                         {saving === "general" ? t("Saving…") : t("Choose")}
                       </Button>
                       <div
-                        className="max-w-full text-right text-xs leading-5 text-foreground"
+                        className="w-full text-right text-xs leading-5 text-foreground"
                         title={defaultWorkspace}
                       >
                         {defaultWorkspace}
