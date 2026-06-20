@@ -244,19 +244,22 @@ pub(super) async fn mcp_prepare_handover(
         }
     }
 
-    // Validate cwd is a known workspace.
-    // Built-in workspaces under ~/.vibearound/workspaces/ are always accepted.
+    // Validate cwd is a known workspace. Paths under the configured default
+    // workspace are accepted so generated IM/web workspaces can hand over.
     let config = common::config::ensure_loaded();
     let cwd_path = common::workspace::normalize_workspace_cwd(std::path::PathBuf::from(cwd));
+    let default_dir =
+        common::workspace::normalize_workspace_cwd(config.resolve_workspace(agent_kind_str));
     let builtin_dir =
         common::workspace::normalize_workspace_cwd(common::config::builtin_workspaces_dir());
+    let is_default = cwd_path.starts_with(&default_dir);
     let is_builtin = cwd_path.starts_with(&builtin_dir);
     let is_registered = config
         .all_workspaces()
         .iter()
         .any(|ws| common::workspace::normalize_workspace_cwd(ws) == cwd_path);
 
-    if !is_builtin && !is_registered {
+    if !is_default && !is_builtin && !is_registered {
         return mcp_error_text(
             id,
             &format!(

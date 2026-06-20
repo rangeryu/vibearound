@@ -26,8 +26,6 @@ pub type RuntimeId = String;
 /// Logical turn identifier on a route.
 pub type TurnId = String;
 
-const CHANNEL_DEFAULT_CHAT_ID: &str = "__channel_default__";
-
 /// Stable route key for a conversation path through a channel.
 ///
 /// The triple `(channel_kind, bot_id, chat_id)` uniquely identifies a bot
@@ -67,22 +65,6 @@ impl RouteKey {
             bot_id: bot_id.into(),
             chat_id: chat_id.into(),
         }
-    }
-
-    pub fn channel_default_for(route: &RouteKey) -> Self {
-        Self {
-            channel_kind: route.channel_kind.clone(),
-            bot_id: route.bot_id.clone(),
-            chat_id: CHANNEL_DEFAULT_CHAT_ID.to_string(),
-        }
-    }
-
-    pub fn is_channel_default(&self) -> bool {
-        self.chat_id == CHANNEL_DEFAULT_CHAT_ID
-    }
-
-    pub fn uses_channel_default_threading(&self) -> bool {
-        self.channel_kind != "web" && !self.is_channel_default()
     }
 
     /// Serialized form: `channel_kind:chat_id` (backward compat).

@@ -313,6 +313,56 @@ impl ThreadRuntime {
         Ok(())
     }
 
+    pub async fn switch_profile_preserving_session(
+        &self,
+        host_binding: HostBinding,
+    ) -> acp::Result<()> {
+        self.mark_activity();
+        let _spawn_guard = self.spawn_lock.lock().await;
+        {
+            let thread = self.thread.lock().await;
+            if thread.host_binding.agent_id != host_binding.agent_id {
+                return Err(acp::Error::new(
+                    -32602,
+                    "profile switch cannot change agent",
+                ));
+            }
+        }
+
+        let preserved_session_id = self.session_id.lock().await.clone();
+        if let Some(agent) = self.agent.lock().await.take() {
+            agent.shutdown().await;
+        }
+        *self.host_client_handler.lock().await = None;
+        *self.initialize.lock().await = None;
+        *self.failed.lock().await = None;
+
+        let thread_id = self.thread.lock().await.id.clone();
+        let event = ThreadEvent::host_changed(thread_id.clone(), host_binding.clone(), false);
+        append_thread_event(&self.store, &event).await?;
+        self.apply_thread_event(&event).await?;
+
+        if let Some(session_id) = preserved_session_id.clone() {
+            let needs_session_ref = {
+                let thread = self.thread.lock().await;
+                !thread.has_agent_session(&host_binding, &session_id)
+            };
+            if needs_session_ref {
+                let event = ThreadEvent::agent_session_observed(
+                    thread_id,
+                    host_binding.agent_id,
+                    host_binding.profile_id,
+                    session_id.clone(),
+                );
+                append_thread_event(&self.store, &event).await?;
+                self.apply_thread_event(&event).await?;
+            }
+            *self.session_id.lock().await = Some(session_id);
+        }
+        self.notify_change();
+        Ok(())
+    }
+
     pub async fn initialize_multi_agent_turn(
         &self,
         turn: MultiAgentTurn,
