@@ -998,6 +998,19 @@ export function SettingsDialog({
     if (path) await saveDefaultWorkspace(path);
   }, [saveDefaultWorkspace, t]);
 
+  const copyDefaultWorkspace = useCallback(async () => {
+    if (!defaultWorkspace) return;
+    try {
+      await navigator.clipboard.writeText(defaultWorkspace);
+      setNotice({ variant: "success", message: "Copied" });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [defaultWorkspace]);
+
   const saveTunnelSettings = useCallback(
     async (restart: boolean) => {
       setSaving(restart ? "tunnel-restart" : "tunnel");
@@ -1132,16 +1145,16 @@ export function SettingsDialog({
                   <SettingsNotice notice={notice} />
                 </div>
                 <div className="rounded-md border border-border">
-                  <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-4">
-                    <div className="min-w-48 shrink-0">
-                      <div className="text-sm font-medium">
-                        {t("Default System Workspace")}
+                  <div className="space-y-3 border-b border-border px-4 py-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">
+                          {t("Default System Workspace")}
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {t("New launch and IM workspaces are created under this folder.")}
+                        </div>
                       </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        {t("New launch and IM workspaces are created under this folder.")}
-                      </div>
-                    </div>
-                    <div className="flex min-w-0 flex-1 flex-col items-stretch gap-2">
                       <Button
                         type="button"
                         variant="outline"
@@ -1157,12 +1170,24 @@ export function SettingsDialog({
                         )}
                         {saving === "general" ? t("Saving…") : t("Choose")}
                       </Button>
+                    </div>
+                    <div className="flex w-full items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 shadow-xs">
                       <div
-                        className="w-full overflow-x-auto whitespace-nowrap rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-right text-xs leading-5 text-foreground shadow-xs"
+                        className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-right text-xs leading-5 text-foreground"
                         title={defaultWorkspace}
                       >
                         {defaultWorkspace}
                       </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        className="h-5 shrink-0 px-1 text-[11px] text-muted-foreground hover:text-foreground"
+                        disabled={!defaultWorkspace}
+                        onClick={() => void copyDefaultWorkspace()}
+                      >
+                        {t("Copy")}
+                      </Button>
                     </div>
                   </div>
                   <SettingsActionRow
