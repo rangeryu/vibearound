@@ -513,9 +513,9 @@ function DefaultAgentMenu({
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className="h-7 max-w-[250px] justify-start gap-1.5 px-2 text-[11px] font-normal"
+          className="h-7 w-auto justify-start gap-1.5 px-2 text-[11px] font-normal"
           title={`${t("Default agent")}: ${agentLabel} · ${profileLabel}`}
         >
           <BrandIcon
@@ -527,7 +527,7 @@ function DefaultAgentMenu({
           <span className="shrink-0 font-medium text-foreground">
             {t("Default agent")}
           </span>
-          <span className="min-w-0 truncate text-muted-foreground">
+          <span className="whitespace-nowrap text-muted-foreground">
             {agentLabel} · {profileLabel}
           </span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
