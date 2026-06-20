@@ -1128,35 +1128,37 @@ export function SettingsDialog({
                   <SettingsNotice notice={notice} />
                 </div>
                 <div className="rounded-md border border-border">
-                  <SettingsActionRow
-                    label={t("Default System Workspace")}
-                    description={t("New launch and IM workspaces are created under this folder.")}
-                    action={
-                      <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
-                        <span
-                          className="min-w-0 flex-1 whitespace-normal break-all text-right text-xs leading-5 text-foreground"
-                          title={defaultWorkspace}
-                        >
-                          {defaultWorkspace}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="text-xs"
-                          disabled={!canSubmit}
-                          onClick={() => void chooseDefaultWorkspace()}
-                        >
-                          {saving === "general" ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <FolderOpen className="h-3 w-3" />
-                          )}
-                          {saving === "general" ? t("Saving…") : t("Choose")}
-                        </Button>
+                  <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium">
+                        {t("Default System Workspace")}
                       </div>
-                    }
-                  />
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {t("New launch and IM workspaces are created under this folder.")}
+                      </div>
+                      <div
+                        className="mt-2 break-words text-xs leading-5 text-foreground"
+                        title={defaultWorkspace}
+                      >
+                        {defaultWorkspace}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 text-xs"
+                      disabled={!canSubmit}
+                      onClick={() => void chooseDefaultWorkspace()}
+                    >
+                      {saving === "general" ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <FolderOpen className="h-3 w-3" />
+                      )}
+                      {saving === "general" ? t("Saving…") : t("Choose")}
+                    </Button>
+                  </div>
                   <SettingsActionRow
                     label={t("Restart Services")}
                     description={t("Restart VibeAround runtime services after local changes.")}
