@@ -473,14 +473,24 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
                     scan_policy: crate::agent_availability::AgentScanPolicy::RefreshIfMissing,
                     toolchain_mode: config.toolchain_mode.as_str(),
                     candidate_preference:
-                        crate::agent_availability::AgentCandidatePreference::SystemToolchain,
-                    include_configured_version: false,
+                        crate::agent_availability::AgentCandidatePreference::ToolchainMode,
+                    include_configured_version: true,
                 },
             )
             .await
             .ok()
             .and_then(|availability| availability.selected);
-            if detected.is_some() || is_program_available(&agent_def.acp.program) {
+            if detected.is_some() {
+                continue;
+            }
+            if config.toolchain_mode.is_managed() {
+                tracing::info!(
+                    "[agent] skipping native install for {} in managed toolchain mode",
+                    agent_id
+                );
+                continue;
+            }
+            if is_program_available(&agent_def.acp.program) {
                 continue;
             }
             if let Err(e) = auto_install_agent_cmd(&install_cmd, agent_id).await {

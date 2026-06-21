@@ -112,7 +112,7 @@ pub(in crate::startkit) async fn scan_agent_cli_item(
             toolchain_mode: &choices.toolchain_mode,
             candidate_preference:
                 common::agent_availability::AgentCandidatePreference::ToolchainMode,
-            include_configured_version: true,
+            include_configured_version: false,
         },
     )
     .await
