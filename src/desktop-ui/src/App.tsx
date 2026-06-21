@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   RefreshCw,
   Settings,
@@ -20,12 +27,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Splash } from "./Splash";
-import Onboarding from "./Onboarding";
-import { Previews } from "./Previews";
-import { Launch } from "./Launch";
-import { LocalApiWorkbench } from "./LocalApiWorkbench";
-import { RemoteDashboard } from "./RemoteDashboard";
-import { SettingsDialog, type SettingsDialogTarget } from "./Settings";
+import type { SettingsDialogTarget } from "./Settings";
 import {
   checkSelectedLaunchEntry,
   getLauncherPreferences,
@@ -35,6 +37,27 @@ import { LanguageMenu } from "./components/LanguageMenu";
 import { cn } from "./lib/utils";
 import { UpdateIndicator } from "./UpdateIndicator";
 import { PluginUpdateIndicator } from "./PluginUpdateIndicator";
+
+const Onboarding = lazy(() => import("./Onboarding"));
+const Previews = lazy(() =>
+  import("./Previews").then((module) => ({ default: module.Previews })),
+);
+const Launch = lazy(() =>
+  import("./Launch").then((module) => ({ default: module.Launch })),
+);
+const LocalApiWorkbench = lazy(() =>
+  import("./LocalApiWorkbench").then((module) => ({
+    default: module.LocalApiWorkbench,
+  })),
+);
+const RemoteDashboard = lazy(() =>
+  import("./RemoteDashboard").then((module) => ({
+    default: module.RemoteDashboard,
+  })),
+);
+const SettingsDialog = lazy(() =>
+  import("./Settings").then((module) => ({ default: module.SettingsDialog })),
+);
 
 // ---------------------------------------------------------------------------
 // Routing + Dashboard
@@ -67,7 +90,11 @@ function App() {
   }
 
   if (route === "/onboarding") {
-    return <Onboarding />;
+    return (
+      <Suspense fallback={<Splash visible />}>
+        <Onboarding />
+      </Suspense>
+    );
   }
 
   return <Dashboard />;
@@ -320,15 +347,19 @@ function Dashboard() {
         </div>
       </header>
 
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={(open) => {
-          setSettingsOpen(open);
-          if (!open) setSettingsTarget(null);
-        }}
-        onServicesRestarted={handleRuntimeSettingsChanged}
-        initialTarget={settingsTarget}
-      />
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsDialog
+            open={settingsOpen}
+            onOpenChange={(open) => {
+              setSettingsOpen(open);
+              if (!open) setSettingsTarget(null);
+            }}
+            onServicesRestarted={handleRuntimeSettingsChanged}
+            initialTarget={settingsTarget}
+          />
+        </Suspense>
+      )}
 
       {firstError && (
         <div className="px-3 py-1 bg-destructive/10 text-destructive text-xs">
@@ -336,32 +367,42 @@ function Dashboard() {
         </div>
       )}
 
-      {effectivePage === "previews" ? (
-        <div className="flex-1 overflow-y-auto">
-          <Previews />
-        </div>
-      ) : effectivePage === "localApi" ? (
-        <div className="flex-1 min-h-0">
-          <LocalApiWorkbench refreshToken={launchRefreshToken} />
-        </div>
-      ) : effectivePage === "launch" ? (
-        <div className="flex-1 min-h-0">
-          <Launch refreshToken={launchRefreshToken} />
-        </div>
-      ) : (
-        <RemoteDashboard
-          channels={channels}
-          tunnels={tunnels}
-          agents={agents}
-          onConfigureChannel={openChannelSettings}
-          onDefaultsChanged={handleRuntimeSettingsChanged}
-        />
-      )}
+      <Suspense fallback={<PageFallback />}>
+        {effectivePage === "previews" ? (
+          <div className="flex-1 overflow-y-auto">
+            <Previews />
+          </div>
+        ) : effectivePage === "localApi" ? (
+          <div className="flex-1 min-h-0">
+            <LocalApiWorkbench refreshToken={launchRefreshToken} />
+          </div>
+        ) : effectivePage === "launch" ? (
+          <div className="flex-1 min-h-0">
+            <Launch refreshToken={launchRefreshToken} />
+          </div>
+        ) : (
+          <RemoteDashboard
+            channels={channels}
+            tunnels={tunnels}
+            agents={agents}
+            onConfigureChannel={openChannelSettings}
+            onDefaultsChanged={handleRuntimeSettingsChanged}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }
 
 export default App;
+
+function PageFallback() {
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground/50" />
+    </div>
+  );
+}
 
 function VibeAroundMark() {
   return (
