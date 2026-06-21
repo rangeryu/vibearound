@@ -7,6 +7,11 @@ export const zhCNDesktopPages: Record<string, string> = {
   "Apply API Bridge Settings": "应用 API 转接设置",
   "Apply & Restart Services": "应用并重启服务",
   "Restarting services…": "正在重启服务…",
+  "Agent Toolchain": "Agent 工具链",
+  "Choose where VibeAround looks for agent CLIs when no manual executable path is set.":
+    "没有手动指定可执行文件路径时，选择 VibeAround 查找 Agent CLI 的位置。",
+  "VibeAround managed": "VibeAround 托管",
+  System: "系统",
   "Web Search": "Web 搜索",
   "Web search": "Web 搜索",
   "Host-side web search is available when at least one search source is enabled.":

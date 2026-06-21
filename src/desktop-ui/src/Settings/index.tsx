@@ -41,6 +41,7 @@ import type {
   DiscoveredChannelPlugin,
   PluginRegistryEntry,
   Settings as AppSettings,
+  ToolchainMode,
   TunnelSummary,
 } from "../Onboarding/types";
 import { apiFetch } from "../lib/api";
@@ -225,6 +226,7 @@ export function SettingsDialog({
   const [proxyEnabled, setProxyEnabled] = useState(false);
   const [proxyHttp, setProxyHttp] = useState("");
   const [proxyNoProxy, setProxyNoProxy] = useState("");
+  const [toolchainMode, setToolchainMode] = useState<ToolchainMode>("system");
   const [retry429Enabled, setRetry429Enabled] = useState(true);
   const [retry429MaxRetries, setRetry429MaxRetries] = useState("10");
   const [retry429Unlimited, setRetry429Unlimited] = useState(false);
@@ -435,6 +437,11 @@ export function SettingsDialog({
         loadedSettings.default_workspace.trim()
         ? loadedSettings.default_workspace.trim()
         : effectiveDefaultWorkspace,
+    );
+    setToolchainMode(
+      loadedSettings.startkit?.toolchain_mode === "managed"
+        ? "managed"
+        : "system",
     );
   }, []);
 
@@ -967,6 +974,7 @@ export function SettingsDialog({
       const nextSettings = buildGeneralSettings({
         settings,
         defaultWorkspace: workspace,
+        toolchainMode,
       });
       await invoke("save_settings", { settings: nextSettings });
       setSettings(nextSettings);
@@ -985,6 +993,37 @@ export function SettingsDialog({
     }
   }, [
     settings,
+    toolchainMode,
+    onServicesRestarted,
+  ]);
+
+  const saveToolchainMode = useCallback(async (mode: ToolchainMode) => {
+    setToolchainMode(mode);
+    setSaving("general");
+    setNotice(null);
+    try {
+      const nextSettings = buildGeneralSettings({
+        settings,
+        defaultWorkspace,
+        toolchainMode: mode,
+      });
+      await invoke("save_settings", { settings: nextSettings });
+      setSettings(nextSettings);
+      const response = await apiFetch("/api/settings/reload", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "General settings applied." });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving("idle");
+    }
+  }, [
+    settings,
+    defaultWorkspace,
     onServicesRestarted,
   ]);
 
@@ -1193,6 +1232,29 @@ export function SettingsDialog({
                       </Button>
                     </div>
                   </div>
+                  <SettingsActionRow
+                    label={t("Agent Toolchain")}
+                    description={t("Choose where VibeAround looks for agent CLIs when no manual executable path is set.")}
+                    action={
+                      <Select
+                        value={toolchainMode}
+                        onValueChange={(value) =>
+                          void saveToolchainMode(value as ToolchainMode)
+                        }
+                        disabled={saving !== "idle"}
+                      >
+                        <SelectTrigger className="h-8 w-48 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="system">{t("System")}</SelectItem>
+                          <SelectItem value="managed">
+                            {t("VibeAround managed")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    }
+                  />
                   <SettingsActionRow
                     label={t("Restart Services")}
                     description={t("Restart VibeAround runtime services after local changes.")}
@@ -2613,9 +2675,11 @@ function LoadingBlock() {
 function buildGeneralSettings({
   settings,
   defaultWorkspace,
+  toolchainMode,
 }: {
   settings: AppSettings;
   defaultWorkspace: string;
+  toolchainMode: ToolchainMode;
 }): AppSettings {
   const result: AppSettings = { ...settings };
   const workspace = defaultWorkspace.trim();
@@ -2624,6 +2688,10 @@ function buildGeneralSettings({
   } else {
     delete result.default_workspace;
   }
+  result.startkit = {
+    ...(isRecord(settings.startkit) ? settings.startkit : {}),
+    toolchain_mode: toolchainMode,
+  };
   return result;
 }
 
