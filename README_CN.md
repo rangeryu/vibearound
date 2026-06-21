@@ -217,9 +217,9 @@ VibeAround 默认把 AI 编程工作留在你自己的电脑上。
 
 | 平台 | 推荐下载 |
 |---|---|
-| macOS Apple Silicon | [VibeAround_0.7.7_aarch64.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround_0.7.7_aarch64.dmg) |
-| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround_0.7.7_x64-setup.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround_0.7.7_x64_en-US.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround-win-0.7.7-portable.zip) |
-| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround_0.7.7_amd64.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround_0.7.7_amd64.deb) |
+| macOS Apple Silicon | [VibeAround-macOS-arm64-0.7.7.dmg](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround-macOS-arm64-0.7.7.dmg) |
+| Windows x64 | [Setup EXE](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround-Windows-x64-Setup-0.7.7.exe)、[MSI](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround-Windows-x64-MSI-0.7.7.msi) 或 [免安装 ZIP](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround-Windows-x64-Portable-0.7.7.zip) |
+| Linux x64 | [AppImage](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround-Linux-x64-AppImage-0.7.7.AppImage) 或 [deb](https://github.com/jazzenchen/VibeAround/releases/download/v0.7.7/VibeAround-Linux-x64-DEB-0.7.7.deb) |
 
 Windows 和 Linux 包由 GitHub Actions 构建。macOS 当前只提供 Apple Silicon 版本。
 
