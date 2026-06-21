@@ -20,6 +20,10 @@ export interface RuntimeStateProps {
   };
   agents: {
     agents: AgentRuntime[];
+    error: string | null;
+    loading: boolean;
+    everLoaded: boolean;
+    refresh: () => unknown;
     kill: (routeKey: string) => unknown;
   };
 }

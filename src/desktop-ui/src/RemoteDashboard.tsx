@@ -231,6 +231,11 @@ export function RemoteDashboard({
     ? agents.agents.filter((agent) => agentRuntimeTouchesChannel(agent, selectedChannelId))
     : [];
 
+  useEffect(() => {
+    if (!selectedChannelId) return;
+    void agents.refresh();
+  }, [selectedChannelId, agents.refresh]);
+
   const updateAppDefaultAgent = useCallback(
     (agentId: string) => {
       const profileId = prefs ? agentProfileId(prefs, agentId) ?? DIRECT_PROFILE : DIRECT_PROFILE;
@@ -410,6 +415,9 @@ export function RemoteDashboard({
                   selectedProfileId={selectedProfileId}
                   profileOptions={profileOptions}
                   activeAgents={activeAgentsForChannel}
+                  agentsLoading={agents.loading}
+                  agentsEverLoaded={agents.everLoaded}
+                  agentsError={agents.error}
                   pluginDir={selectedChannel?.plugin_dir ?? null}
                   saving={savingChannel === selectedChannelId}
                   onAgentChange={(agentId) =>
@@ -420,6 +428,7 @@ export function RemoteDashboard({
                   }
                   onSave={() => void saveSelectedChannel()}
                   onConfigure={() => onConfigureChannel(selectedChannelId)}
+                  onRefreshAgents={() => void agents.refresh()}
                   onStart={() => channels.start(selectedChannelId)}
                   onStop={() => channels.stop(selectedChannelId)}
                   onRestart={() => channels.restart(selectedChannelId)}
@@ -579,12 +588,16 @@ function ChannelRemoteDetail({
   selectedProfileId,
   profileOptions,
   activeAgents,
+  agentsLoading,
+  agentsEverLoaded,
+  agentsError,
   pluginDir,
   saving,
   onAgentChange,
   onProfileChange,
   onSave,
   onConfigure,
+  onRefreshAgents,
   onStart,
   onStop,
   onRestart,
@@ -597,12 +610,16 @@ function ChannelRemoteDetail({
   selectedProfileId: string;
   profileOptions: ProfileSummary[];
   activeAgents: AgentRuntime[];
+  agentsLoading: boolean;
+  agentsEverLoaded: boolean;
+  agentsError: string | null;
   pluginDir: string | null;
   saving: boolean;
   onAgentChange: (agentId: string) => void;
   onProfileChange: (profileId: string) => void;
   onSave: () => void;
   onConfigure: () => void;
+  onRefreshAgents: () => unknown;
   onStart: () => unknown;
   onStop: () => unknown;
   onRestart: () => unknown;
@@ -767,8 +784,31 @@ function ChannelRemoteDetail({
         </section>
 
         <section className="rounded-md border border-border bg-card px-3 py-3">
-          <div className="mb-2 text-xs font-semibold">{t("Active sessions")}</div>
-          {activeAgents.length === 0 ? (
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-xs font-semibold">{t("Active sessions")}</div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="h-6 w-6"
+              title={t("Refresh")}
+              aria-label={t("Refresh")}
+              onClick={() => void onRefreshAgents()}
+            >
+              <RotateCw
+                className={cn("h-3.5 w-3.5", agentsLoading && "animate-spin")}
+              />
+            </Button>
+          </div>
+          {!agentsEverLoaded && agentsLoading ? (
+            <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+              {t("Loading…")}
+            </div>
+          ) : agentsError && activeAgents.length === 0 ? (
+            <div className="rounded-md border border-dashed border-destructive/40 px-3 py-6 text-center text-xs text-destructive">
+              {agentsError}
+            </div>
+          ) : activeAgents.length === 0 ? (
             <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
               {t("No active agent session for this channel.")}
             </div>

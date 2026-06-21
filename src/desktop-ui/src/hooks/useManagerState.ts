@@ -4,6 +4,7 @@ import { formatErrorMessage } from "@va/client";
 import { apiFetch, authedWsUrl } from "../lib/api";
 
 const POLL_INTERVAL_MS = 5000;
+const RECONCILE_INTERVAL_MS = 15000;
 const WS_RECONNECT_DELAY_MS = 3000;
 
 /**
@@ -11,8 +12,9 @@ const WS_RECONNECT_DELAY_MS = 3000;
  * (`useChannelsState`, `useTunnelsState`, `useAgentsRuntime`, ...).
  *
  * On mount it opens a WebSocket at `wsPath`; the server immediately
- * pushes the current list, then re-pushes on every change. While the
- * WS is open, no HTTP polling happens. If the WS drops (server
+ * pushes the current list, then re-pushes on every change. We also do
+ * a light HTTP reconciliation while connected so a dropped/missed WS
+ * frame cannot leave the UI permanently stale. If the WS drops (server
  * restart, network blip), we fall back to polling `httpPath` every
  * 5 s and attempt reconnection in the background.
  *
@@ -31,7 +33,9 @@ export function useManagerState<T>(
   const [everLoaded, setEverLoaded] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconcileRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(false);
 
   const fetchOnce = useCallback(async () => {
     try {
@@ -61,20 +65,57 @@ export function useManagerState<T>(
     }
   }, []);
 
+  const startReconcile = useCallback(() => {
+    if (reconcileRef.current) return;
+    reconcileRef.current = setInterval(
+      () => void fetchOnce(),
+      RECONCILE_INTERVAL_MS,
+    );
+  }, [fetchOnce]);
+
+  const stopReconcile = useCallback(() => {
+    if (reconcileRef.current) {
+      clearInterval(reconcileRef.current);
+      reconcileRef.current = null;
+    }
+  }, []);
+
   const connectWs = useCallback(async () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (!mountedRef.current) return;
+    const current = wsRef.current;
+    if (
+      current &&
+      current.readyState !== WebSocket.CLOSED &&
+      current.readyState !== WebSocket.CLOSING
+    ) {
+      return;
+    }
 
     const url = await authedWsUrl(wsPath);
+    if (!mountedRef.current) return;
+    const latest = wsRef.current;
+    if (
+      latest &&
+      latest.readyState !== WebSocket.CLOSED &&
+      latest.readyState !== WebSocket.CLOSING
+    ) {
+      return;
+    }
+
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) return;
       setConnected(true);
       setError(null);
       stopPolling();
+      void fetchOnce();
+      startReconcile();
     };
 
     ws.onmessage = (event) => {
+      if (wsRef.current !== ws) return;
       try {
         const parsed = schema.parse(JSON.parse(event.data));
         setData(parsed);
@@ -87,6 +128,8 @@ export function useManagerState<T>(
     };
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return;
+      stopReconcile();
       setConnected(false);
       wsRef.current = null;
       startPolling();
@@ -102,12 +145,23 @@ export function useManagerState<T>(
     ws.onerror = () => {
       // onclose fires after this; no extra handling needed
     };
-  }, [wsPath, schema, startPolling, stopPolling]);
+  }, [
+    wsPath,
+    schema,
+    fetchOnce,
+    startPolling,
+    stopPolling,
+    startReconcile,
+    stopReconcile,
+  ]);
 
   useEffect(() => {
+    mountedRef.current = true;
     void connectWs();
     return () => {
+      mountedRef.current = false;
       stopPolling();
+      stopReconcile();
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;

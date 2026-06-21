@@ -17,7 +17,8 @@
 //! a global singleton so that:
 //!
 //! - `kill_all()` (called from `RunningDaemon::stop` and Tauri `RunEvent::Exit`)
-//!   synchronously fires `start_kill()` on every child before the tokio
+//!   synchronously kills each registered child plus any helper descendants,
+//!   then fires `start_kill()` on the registered `Child` before the tokio
 //!   runtime shuts down, guaranteeing SIGKILL regardless of task-poll order.
 //!
 //! - `orphan_sweep()` runs at daemon startup and kills any leftover
@@ -30,6 +31,7 @@
 //! task authors still `remove()` cleanly on the normal shutdown path.
 //! This is a safety net, not the primary drop path.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use dashmap::DashMap;
@@ -151,6 +153,20 @@ impl ChildRegistry {
         for id in ids {
             if let Some((_, mut entry)) = self.entries.remove(&id) {
                 let pid = entry.child.id();
+                if let Some(pid) = pid {
+                    let descendant_count =
+                        kill_registered_descendants(pid, entry.kind, &entry.label);
+                    if descendant_count > 0 {
+                        tracing::info!(
+                            "[child-registry] killed {} descendant(s) for id={} kind={:?} label={} pid={}",
+                            descendant_count,
+                            id,
+                            entry.kind,
+                            entry.label,
+                            pid
+                        );
+                    }
+                }
                 match entry.child.start_kill() {
                     Ok(()) => tracing::info!(
                         "[child-registry] killed id={} kind={:?} label={} pid={:?}",
@@ -171,13 +187,83 @@ impl ChildRegistry {
     }
 }
 
+fn kill_registered_descendants(root_pid: u32, kind: ProcessKind, label: &str) -> usize {
+    use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+
+    let mut sys = System::new_with_specifics(
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
+    );
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    let descendants = process_descendants(root_pid, &sys);
+    let mut killed = 0usize;
+    for pid in descendants.into_iter().rev() {
+        if pid == std::process::id() {
+            continue;
+        }
+
+        let Some(proc_) = sys.process(Pid::from_u32(pid)) else {
+            continue;
+        };
+
+        tracing::info!(
+            "[child-registry] killing descendant root_pid={} kind={:?} label={} pid={} name={}",
+            root_pid,
+            kind,
+            label,
+            pid,
+            proc_.name().to_string_lossy()
+        );
+
+        if proc_.kill() {
+            killed += 1;
+        } else {
+            tracing::info!(
+                "[child-registry] failed to kill descendant root_pid={} pid={}",
+                root_pid,
+                pid
+            );
+        }
+    }
+
+    killed
+}
+
+fn process_descendants(root_pid: u32, sys: &sysinfo::System) -> Vec<u32> {
+    let mut by_parent: HashMap<u32, Vec<u32>> = HashMap::new();
+    for (pid, proc_) in sys.processes() {
+        if let Some(parent) = proc_.parent() {
+            by_parent
+                .entry(parent.as_u32())
+                .or_default()
+                .push(pid.as_u32());
+        }
+    }
+
+    let mut descendants = Vec::new();
+    let mut seen = HashSet::new();
+    let mut stack = by_parent.remove(&root_pid).unwrap_or_default();
+    while let Some(pid) = stack.pop() {
+        if !seen.insert(pid) {
+            continue;
+        }
+
+        descendants.push(pid);
+        if let Some(children) = by_parent.remove(&pid) {
+            stack.extend(children);
+        }
+    }
+
+    descendants
+}
+
 /// Sweep stale child processes left over from a previous crash.
 ///
-/// Matches any `node` process whose command line contains either
-/// `/.vibearound/plugins/` (channel plugins) or a known ACP package name
-/// (`@agentclientprotocol/`, `@zed-industries/claude-code-acp`, etc.), AND
-/// whose parent process is either init (PID 1) or no longer alive. Kills
-/// them via SIGKILL.
+/// Matches VibeAround plugin and ACP agent subprocesses, including helper
+/// descendants, when the owning daemon is gone. This is intentionally
+/// broader than `node`: Windows can leave helper executables such as
+/// `codex-acp.exe` alive after their parent `node.exe` process is orphaned,
+/// and those descendants can continue holding inherited daemon handles.
 ///
 /// Called at daemon startup BEFORE spawning any new children, so we don't
 /// compete with our own fresh processes.
@@ -196,67 +282,45 @@ pub fn orphan_sweep() {
     let my_pid = std::process::id();
     let mut killed = 0usize;
 
-    for (pid, proc_) in sys.processes() {
+    let candidates: Vec<(Pid, &'static str, String)> = sys
+        .processes()
+        .iter()
+        .filter_map(|(pid, proc_)| {
+            if pid.as_u32() == my_pid {
+                return None;
+            }
+
+            let name = proc_.name().to_string_lossy();
+            let cmdline = process_cmdline(proc_);
+            let kind = vibearound_child_kind(&name, &cmdline)?;
+            Some((*pid, kind, cmdline))
+        })
+        .collect();
+
+    let candidate_pids: HashSet<u32> = candidates.iter().map(|(pid, _, _)| pid.as_u32()).collect();
+    let mut orphan_memo = HashMap::new();
+
+    for (pid, kind, cmdline) in candidates {
         if pid.as_u32() == my_pid {
             continue;
         }
 
-        // Only consider `node` processes — VibeAround's subprocesses are all
-        // node right now. Tighten if we ever spawn other runtimes.
-        let name = proc_.name().to_string_lossy().to_lowercase();
-        if !name.contains("node") {
+        // Candidate selection already matched VibeAround-owned processes;
+        // now ensure their daemon-owned process tree is actually orphaned.
+        if !has_orphaned_candidate_ancestor(pid.as_u32(), &sys, &candidate_pids, &mut orphan_memo) {
             continue;
         }
 
-        // Build full command line for pattern matching.
-        let cmdline: String = proc_
-            .cmd()
-            .iter()
-            .map(|s| s.to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        let is_plugin = cmdline.contains("/.vibearound/plugins/")
-            || cmdline.contains("\\.vibearound\\plugins\\");
-        let is_agent_acp = cmdline.contains("@agentclientprotocol/")
-            || cmdline.contains("@zed-industries/claude-code-acp")
-            || cmdline.contains("claude-agent-acp")
-            || cmdline.contains("gemini-acp")
-            || cmdline.contains("qwen-code-acp");
-
-        if !is_plugin && !is_agent_acp {
-            continue;
-        }
-
-        // Orphan criterion:
-        //   Unix: parent == 1 (reparented to init) OR parent missing
-        //   Windows: parent missing from the process table
-        let is_orphan = match proc_.parent() {
-            None => true,
-            Some(ppid) => {
-                let ppid_u32 = ppid.as_u32();
-                if cfg!(unix) && ppid_u32 == 1 {
-                    true
-                } else {
-                    // Parent still listed? not orphan.
-                    sys.process(Pid::from_u32(ppid_u32)).is_none()
-                }
-            }
-        };
-
-        if !is_orphan {
-            continue;
-        }
-
+        let parent = sys.process(pid).and_then(|proc_| proc_.parent());
         tracing::info!(
             "[child-registry] orphan_sweep: killing pid={} ppid={:?} kind={} cmd={}",
             pid.as_u32(),
-            proc_.parent().map(|p| p.as_u32()),
-            if is_plugin { "plugin" } else { "agent-acp" },
+            parent.map(|p| p.as_u32()),
+            kind,
             cmdline
         );
 
-        if proc_.kill() {
+        if sys.process(pid).is_some_and(|proc_| proc_.kill()) {
             killed += 1;
         } else {
             tracing::info!(
@@ -269,4 +333,74 @@ pub fn orphan_sweep() {
     if killed > 0 {
         tracing::info!("[child-registry] orphan_sweep: killed {} orphan(s)", killed);
     }
+}
+
+fn process_cmdline(proc_: &sysinfo::Process) -> String {
+    proc_
+        .cmd()
+        .iter()
+        .map(|s| s.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn vibearound_child_kind(name: &str, cmdline: &str) -> Option<&'static str> {
+    let name = name.to_lowercase();
+    let cmdline = cmdline.to_lowercase();
+
+    let in_plugins =
+        cmdline.contains("/.vibearound/plugins/") || cmdline.contains("\\.vibearound\\plugins\\");
+    let known_acp = cmdline.contains("@agentclientprotocol/")
+        || cmdline.contains("@agentclientprotocol\\")
+        || cmdline.contains("@zed-industries/claude-code-acp")
+        || cmdline.contains("@zed-industries\\claude-code-acp")
+        || cmdline.contains("@zed-industries/codex-acp")
+        || cmdline.contains("@zed-industries\\codex-acp")
+        || cmdline.contains("claude-agent-acp")
+        || cmdline.contains("gemini-acp")
+        || cmdline.contains("qwen-code-acp")
+        || name.contains("codex-acp")
+        || name.ends_with("-acp")
+        || name.ends_with("-acp.exe");
+
+    if known_acp {
+        Some("agent-acp")
+    } else if in_plugins {
+        Some("plugin")
+    } else {
+        None
+    }
+}
+
+fn has_orphaned_candidate_ancestor(
+    pid: u32,
+    sys: &sysinfo::System,
+    candidate_pids: &HashSet<u32>,
+    memo: &mut HashMap<u32, bool>,
+) -> bool {
+    if let Some(result) = memo.get(&pid) {
+        return *result;
+    }
+
+    let result = match sys.process(sysinfo::Pid::from_u32(pid)) {
+        None => true,
+        Some(proc_) => match proc_.parent() {
+            None => true,
+            Some(ppid) => {
+                let ppid = ppid.as_u32();
+                if cfg!(unix) && ppid == 1 {
+                    true
+                } else if sys.process(sysinfo::Pid::from_u32(ppid)).is_none() {
+                    true
+                } else if candidate_pids.contains(&ppid) {
+                    has_orphaned_candidate_ancestor(ppid, sys, candidate_pids, memo)
+                } else {
+                    false
+                }
+            }
+        },
+    };
+
+    memo.insert(pid, result);
+    result
 }
