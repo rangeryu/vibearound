@@ -9,6 +9,7 @@ export const zhCNDesktopPages: Record<string, string> = {
   "Restarting services…": "正在重启服务…",
   "Agent Toolchain": "Agent 工具链",
   "Agent path not found": "未找到 Agent 路径",
+  "Choose Default Workspace": "选择默认工作区",
   "Choose where VibeAround looks for agent CLIs when no manual executable path is set.":
     "没有手动指定可执行文件路径时，选择 VibeAround 查找 Agent CLI 的位置。",
   "VibeAround managed": "VibeAround 托管",
@@ -46,8 +47,14 @@ export const zhCNDesktopPages: Record<string, string> = {
   "Refresh status": "刷新状态",
   "Plugin status has not been refreshed yet.": "插件状态还没有刷新。",
   "No plugins in this view.": "当前视图没有插件。",
+  "Plugin update": "插件更新",
+  "Plugin updates {{count}}": "{{count}} 个插件更新",
+  "Plugin updates available: {{plugins}}": "插件有可用更新：{{plugins}}",
   "Configure bridge-wide request behavior for provider API calls.":
     "配置 API 转接中所有服务商请求的通用行为。",
+  "Payload actions": "Payload 操作",
+  "No wrap": "不换行",
+  Wrap: "换行",
   Local: "本地",
   "Tunnel · owner": "隧道 · owner",
   "Tunnel · share": "隧道 · 分享",
