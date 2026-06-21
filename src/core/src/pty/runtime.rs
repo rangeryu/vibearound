@@ -87,12 +87,18 @@ fn tool_exec_argv(tool: PtyTool, tmux_session: Option<&str>) -> String {
     };
     crate::resources::agent_by_id(agent_id)
         .map(|agent| {
-            crate::agent_detection::resolve_agent_command(
+            crate::agent_detection::resolve_agent_command_strict(
                 agent_id,
                 agent.pty_command_for_current_platform(),
             )
+            .unwrap_or_else(|error| error_exec_argv(&error.to_string()))
         })
         .unwrap_or_else(|| agent_id.to_string())
+}
+
+fn error_exec_argv(message: &str) -> String {
+    let script = format!("printf '%s\\n' {}; exit 127", shell_quote(message));
+    format!("bash -lc {}", shell_quote(&script))
 }
 
 fn command_for_tool(

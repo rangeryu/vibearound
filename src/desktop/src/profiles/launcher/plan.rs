@@ -136,7 +136,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                     agent_id,
                     &agent,
                     agent.pty_command_for_current_platform(),
-                ),
+                )?,
                 args: terminal_launch_args_for_agent(agent_id),
                 cleanup_paths: Vec::new(),
                 window_label: format!("{} (direct)", agent.display_name),
@@ -152,7 +152,7 @@ impl<'a> LaunchPlanBuilder<'a> {
         args.extend(resume_args);
         Ok(LaunchPlan {
             env: Vec::new(),
-            command: direct_launch_command_for_agent(agent_id, &agent, &command),
+            command: direct_launch_command_for_agent(agent_id, &agent, &command)?,
             args,
             cleanup_paths: Vec::new(),
             window_label: format!("{} (resume)", agent.display_name),
@@ -190,7 +190,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                     agent_id,
                     &agent,
                     agent.pty_command_for_current_platform(),
-                ),
+                )?,
                 args,
                 cleanup_paths: Vec::new(),
                 window_label: profile.label.clone(),
@@ -212,7 +212,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                     agent_id,
                     &agent,
                     agent.pty_command_for_current_platform(),
-                ),
+                )?,
                 args: Vec::new(),
                 cleanup_paths: Vec::new(),
                 window_label: profile.label.clone(),
@@ -230,7 +230,7 @@ impl<'a> LaunchPlanBuilder<'a> {
 
         Ok(LaunchPlan {
             env,
-            command: launch_command_for_agent(agent_id, agent.pty_command_for_current_platform()),
+            command: launch_command_for_agent(agent_id, agent.pty_command_for_current_platform())?,
             args: command_args,
             cleanup_paths,
             window_label: profile.label.clone(),
@@ -263,7 +263,7 @@ impl<'a> LaunchPlanBuilder<'a> {
 
         Ok(LaunchPlan {
             env,
-            command: launch_command_for_agent(agent_id, &command),
+            command: launch_command_for_agent(agent_id, &command)?,
             args,
             cleanup_paths,
             window_label: format!("{} (resume)", profile.label),
@@ -317,10 +317,10 @@ fn direct_launch_command_for_agent(
     agent_id: &str,
     agent: &resources::AgentDef,
     fallback_command: &str,
-) -> String {
+) -> anyhow::Result<String> {
     if agent.direct_only {
         if let Some(command) = macos_configured_app_launch_command(agent_id) {
-            return command;
+            return Ok(command);
         }
     }
     launch_command_for_agent(agent_id, fallback_command)
@@ -377,13 +377,13 @@ fn start_process_name(command: &str) -> Option<String> {
 }
 
 #[cfg(not(test))]
-fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> String {
-    ::common::agent_detection::resolve_agent_command(agent_id, fallback_command)
+fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> anyhow::Result<String> {
+    ::common::agent_detection::resolve_agent_command_strict(agent_id, fallback_command)
 }
 
 #[cfg(test)]
-fn launch_command_for_agent(_agent_id: &str, fallback_command: &str) -> String {
-    fallback_command.to_string()
+fn launch_command_for_agent(_agent_id: &str, fallback_command: &str) -> anyhow::Result<String> {
+    Ok(fallback_command.to_string())
 }
 
 fn materialized_profile_env(

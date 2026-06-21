@@ -323,7 +323,10 @@ async fn resolve_agent_program(agent_id: &str) -> anyhow::Result<(String, Vec<St
     let selected_candidate =
         resolve_agent_candidate(agent_id, config.toolchain_mode.as_str()).await;
     if config.toolchain_mode.is_managed() && selected_candidate.is_none() {
-        anyhow::bail!("{}", managed_agent_missing_message(agent_id));
+        anyhow::bail!(
+            "{}",
+            crate::agent_detection::managed_agent_missing_message(agent_id)
+        );
     }
 
     // 1. npm-based agents → `node <resolved_entry>`
@@ -380,15 +383,6 @@ async fn resolve_agent_candidate(
     .await
     .ok()
     .and_then(|availability| availability.selected)
-}
-
-fn managed_agent_missing_message(agent_id: &str) -> String {
-    let label = crate::resources::agent_by_id(agent_id)
-        .map(|agent| agent.display_name.as_str())
-        .unwrap_or(agent_id);
-    format!(
-        "{label} is not installed in the VibeAround managed toolchain. Install it with Startkit, or switch Settings > General > Agent Toolchain to System to use a local installation."
-    )
 }
 
 fn selected_agent_path_env(agent_id: &str) -> Option<String> {

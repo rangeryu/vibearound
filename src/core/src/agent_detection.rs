@@ -234,16 +234,31 @@ pub fn resolve_agent_command_for_mode(
     fallback_command: &str,
     toolchain_mode: &str,
 ) -> String {
+    resolve_agent_command_for_mode_strict(agent_id, fallback_command, toolchain_mode)
+        .unwrap_or_else(|_| fallback_command.to_string())
+}
+
+pub fn resolve_agent_command_for_mode_strict(
+    agent_id: &str,
+    fallback_command: &str,
+    toolchain_mode: &str,
+) -> anyhow::Result<String> {
     if crate::resources::agent_by_id(agent_id)
         .map(|agent| agent.direct_only)
         .unwrap_or(false)
     {
-        return fallback_command.to_string();
+        return Ok(fallback_command.to_string());
     }
 
-    selected_candidate_for_mode(agent_id, toolchain_mode)
-        .map(|candidate| replace_command_program(fallback_command, &candidate.path))
-        .unwrap_or_else(|| fallback_command.to_string())
+    if let Some(candidate) = selected_candidate_for_mode(agent_id, toolchain_mode) {
+        return Ok(replace_command_program(fallback_command, &candidate.path));
+    }
+
+    if is_managed_toolchain_mode(toolchain_mode) {
+        anyhow::bail!("{}", managed_agent_missing_message(agent_id));
+    }
+
+    Ok(fallback_command.to_string())
 }
 
 pub fn resolve_agent_command(agent_id: &str, fallback_command: &str) -> String {
@@ -251,17 +266,38 @@ pub fn resolve_agent_command(agent_id: &str, fallback_command: &str) -> String {
     resolve_agent_command_for_mode(agent_id, fallback_command, mode)
 }
 
+pub fn resolve_agent_command_strict(
+    agent_id: &str,
+    fallback_command: &str,
+) -> anyhow::Result<String> {
+    let mode = crate::config::ensure_loaded().toolchain_mode.as_str();
+    resolve_agent_command_for_mode_strict(agent_id, fallback_command, mode)
+}
+
 pub fn preferred_startkit_candidate(
     agent_id: &str,
     detection: &AgentDetection,
     toolchain_mode: &str,
 ) -> Option<AgentCandidate> {
-    if toolchain_mode == "managed" {
+    if is_managed_toolchain_mode(toolchain_mode) {
         return agent_uses_npm_install(agent_id)
             .then(|| detection.managed_selected_candidate())
             .flatten();
     }
     detection.system_selected_candidate()
+}
+
+pub fn managed_agent_missing_message(agent_id: &str) -> String {
+    let label = crate::resources::agent_by_id(agent_id)
+        .map(|agent| agent.display_name.as_str())
+        .unwrap_or(agent_id);
+    format!(
+        "{label} is not installed in the VibeAround managed toolchain. Install it with Startkit, or switch Settings > General > Agent Toolchain to System to use a local installation."
+    )
+}
+
+fn is_managed_toolchain_mode(toolchain_mode: &str) -> bool {
+    toolchain_mode.trim().eq_ignore_ascii_case("managed")
 }
 
 fn manual_candidate_from_path(path: PathBuf, source_label: String) -> AgentCandidate {
