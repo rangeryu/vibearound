@@ -4,30 +4,27 @@
 
 # VibeAround
 
-**Your AI coding agents, always around.**
-
-Run AI coding agents side by side on your computer. Control them from anywhere, continue previous sessions, and preview what they build.
+**An all-in-one hub for AI coding agents, keeping your vibe flow around.**
 
 [Download](https://github.com/jazzenchen/VibeAround/releases/latest) | [Demo](https://youtu.be/6kxNKTMz-AM) | [Wiki](https://github.com/jazzenchen/VibeAround/wiki) | [Discord](https://discord.gg/KsJWkY64GN) | [WeChat](#community) | [简体中文](README_CN.md)
 
 </div>
 
-VibeAround is a unified AI Agent workspace.
-
-Launch Claude Code, Codex CLI, Gemini CLI, Pi, OpenCode, Claude Desktop, Codex Desktop and more directly or with 3rd party AI APIs. Start or continue previous sessions from the command line, browser, mobile messaging apps, or a Web Terminal. Preview what agents build, from dev servers to Markdown, HTML, and generated artifacts.
-
 <p align="center">
-  <img src="assets/marketing/screenshots/en/cover-web-dashboard.png" alt="VibeAround web dashboard cover" width="92%" />
+  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.7.7/readme/launch.webp" alt="VibeAround Launch screen with agent profile and workspace selection" width="92%" />
 </p>
 
 ## Why VibeAround
 
-AI coding work is split across agents, model APIs, terminals, messaging apps, browsers, and preview URLs. VibeAround keeps the work together while the agents still run on your computer.
+VibeAround keeps AI coding work together without making you rebuild the environment you already have.
 
-- Start the right agent with the right model profile, without editing each agent's config files.
-- Keep Claude Code, Codex CLI, Gemini CLI, Pi, OpenCode and more reachable from one workspace.
-- Continue the same sessions from desktop, web, mobile, messaging apps, or a Web Terminal.
-- Preview local dev servers, Markdown, HTML, and generated artifacts without moving execution to a cloud server.
+- Work with the coding agents you already use, including Claude Code, Codex CLI, Gemini CLI, Pi, OpenCode, Claude Desktop, Codex Desktop, and more.
+- Launch agents directly or through third-party AI APIs, without hand-editing each agent's config files back and forth.
+- Bridge different AI API protocols so agents and model providers can work together even when their native APIs do not match.
+- Continue the same sessions across desktop, CLI, messaging apps, mobile browsers, web browsers, and a Web Terminal.
+- Preview dev servers, Markdown, and HTML remotely while execution stays on your own computer.
+- Provide host-side tools like web search when the selected model provider does not offer them natively.
+- Add these capabilities around your existing configs, project permissions, and workflows while keeping them as untouched as possible.
 
 ## Agent Launch
 
@@ -35,16 +32,36 @@ Launch the right agent with the right model.
 
 Pick an AI agent, model profile or API endpoint, and workspace. VibeAround launches Claude Code, Codex CLI, Gemini CLI, Pi, OpenCode, Claude Desktop, Codex Desktop and more with 3rd party AI APIs, without changing each agent's own config files, skills, MCP servers, workflow, or project context.
 
-<p align="center">
-  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.6.5/current-app/app-launch-en.webp" alt="VibeAround desktop agent launch screen" width="88%" />
-</p>
-
 - Launch AI coding agents and desktop apps like Claude and Codex from one desktop UI.
 - Choose agent, model profile, API endpoint, workspace, terminal, and session before launch.
 - Start new sessions or continue previous sessions.
 - Use direct launch or profile-based launch, including profile overlays for Claude Desktop and Codex Desktop.
+- Record and inspect launch-scoped API traffic, including original request, bridge request, raw response, bridge response, and search tool contents.
 - Keep each agent's own config files, workflow, and project context.
-- VibeAround does not modify original CLI config files. If you use tools such as cc-switch, manually remove conflicting profile fields such as `env` in `~/.claude/settings.json`.
+- VibeAround does not modify original CLI config files. If you use tools such as CC Switch, manually remove conflicting profile fields such as `env` in `~/.claude/settings.json`.
+
+<p align="center">
+  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.7.7/readme/api-inspector.webp" alt="VibeAround Bridge recorder showing requests, responses, and search details" width="88%" />
+</p>
+
+### VibeAround vs CC Switch
+
+| Area | VibeAround | [CC Switch](https://github.com/farion1231/cc-switch) |
+|---|---|---|
+| Agents | ✅ Claude Code, Codex CLI, Gemini CLI, Pi, OpenCode, Claude Desktop, Codex Desktop, Cursor CLI, Kiro CLI, Qwen Code, Trae (coming soon) | ✅ Claude Code, Claude Desktop, Codex, Gemini CLI, OpenCode, OpenClaw, and Hermes |
+| Agent launch | ✅ One-click launch for both CLI and desktop agents, with selected profile, API endpoint, workspace, terminal, and session | ⚠️ Only supports launch on macOS |
+| Run multiple providers at once | ✅ Run the same agent with different API profiles across sessions | ❌ Must switch profiles / active configs |
+| API bridge | ✅ OpenAI Responses, Chat Completions, Anthropic Messages, and Gemini Generate Content | ✅ OpenAI Responses, Chat Completions, Anthropic Messages, and Gemini Generate Content |
+| Live request inspect | ✅ Original request, bridge request, raw response, bridge response, and search tool contents | ❌ Not currently supported |
+| Session resume | ✅ Resume and launch both CLI and desktop agents on macOS, Windows, and Linux | ⚠️ macOS terminal resume; Windows and Linux copy the command to clipboard |
+| Workspace selection | ✅ Launch agents from a specified directory | ⚠️ Only supports OpenClaw workspace |
+| IM Chat | ✅ [Remote Messaging & Session Continuity](#remote-messaging--session-continuity) through Feishu/Lark, Discord, Slack, and more | ❌ Not currently supported |
+| Web Terminal | ✅ [Web Terminal](#web-terminal) for remote CLI control | ❌ Not currently supported |
+| Web Hub | ✅ [Web Hub](#web-hub) for browser-based launch, sessions, and chat | ❌ Not currently supported |
+| Remote preview | ✅ [Live Preview](#live-preview) for dev server / Markdown / HTML links | ❌ Not currently supported |
+| Host-side web search | ✅ [Host-side Web Search](#host-side-web-search) via `va-search-tool` when providers do not expose native search | ❌ Not currently supported |
+| MCP and Skills | ❌ Not currently supported | ✅ Unified MCP and Skills management across supported apps |
+| Usage and cost tracking | 🚧 Roadmap | ✅ Built-in usage dashboard |
 
 ## API Profiles & Bridge
 
@@ -61,6 +78,10 @@ Agent-facing API shapes             VibeAround API Bridge               Provider
 ```
 
 The bridge is powered by [va-ai-api-bridge](https://github.com/jazzenchen/va-ai-api-bridge), the standalone VAAAB project behind VibeAround's API translation.
+
+<p align="center">
+  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.7.7/readme/api-bridge.webp" alt="VibeAround API Bridge connection settings" width="88%" />
+</p>
 
 | API shape | Common endpoint |
 |---|---|
@@ -79,54 +100,131 @@ Built-in provider presets include DeepSeek, Alibaba DashScope, Moonshot / Kimi, 
 
 Give agents web search even when the selected model provider does not expose native server-side search.
 
-VibeAround can replace provider-native `web_search` with a local search runtime, then feed normalized results back into the model through the bridge. Search sources are configured in Settings and run through a git-installed `va-search-tool` plugin.
+VibeAround can replace provider-native `web_search` with a local search runtime, then feed normalized results back into the model through the bridge. Search sources are configured in Settings and run through the [va-search-tool](https://github.com/jazzenchen/va-search-tool) project. The same search SDK/runtime can also run standalone from the command line for local smoke tests or custom integrations.
+
+### va-search-tool
+
+[va-search-tool](https://github.com/jazzenchen/va-search-tool) is the standalone search runtime behind VibeAround host-side web search. It can run as a supervised VibeAround plugin over stdio, as a CLI for one-off searches, or as a small local HTTP service with `/v1/search`. It currently supports Exa, Tavily, Grok / xAI, and Brave Search.
 
 - Use Exa, Tavily, Grok / xAI, and Brave Search as host-side sources.
+- Run standalone CLI checks with [`va-search-tool`](https://github.com/jazzenchen/va-search-tool) `search ...` or expose a local `/v1/search` service when you want the search runtime outside VibeAround.
 - Test search settings before saving from the Web Search settings page.
 - Inspect search requests and source-separated results in the Bridge recorder.
 - Keep API keys in local settings while the AI provider only receives normalized search results.
 
-## Unified Workspace
+## Agent as API
 
-One workspace for every AI agent.
+Use local AI coding agents as API endpoints for development and local testing.
 
-Coordinate agents and sessions from a single workspace. Run agents side by side, or as a team.
+VibeAround can expose enabled local agents as OpenAI / Anthropic-compatible APIs, so you can test app integrations against Claude Code, Codex CLI, Gemini CLI, OpenCode, and other local agents without deploying a production gateway.
 
 <p align="center">
-  <img src="assets/marketing/screenshots/en/desktop-status.png" alt="VibeAround runtime status across messaging, remote access, and coding agents" width="88%" />
+  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.7.7/readme/agent-as-api.webp" alt="VibeAround Local API Workbench for testing coding agents as APIs" width="88%" />
 </p>
 
-- Manage agents and sessions from a single place.
-- Switch between workspaces and agents.
-- Continue, archive, and hand over sessions.
-- Coordinate agents in parallel, team, and roundtable modes. (coming soon)
-- View status for agents, channels, tunnels, and runtime health.
-- Access the same workspace from desktop, web, mobile, messaging, or terminal.
+| API shape | Local agent endpoint |
+|---|---|
+| OpenAI Responses | `/local-agent/{agent_id}/{profile_id}/v1/responses` |
+| OpenAI Chat Completions | `/local-agent/{agent_id}/{profile_id}/v1/chat/completions` |
+| Anthropic Messages | `/local-agent/{agent_id}/{profile_id}/v1/messages` |
+| Models | `/local-agent/{agent_id}/{profile_id}/v1/models` |
 
-## Remote Messaging & Web Terminal
+- Test local agents from the Local API Workbench before wiring them into your app.
+- Select the agent and profile through VibeAround, then call the matching local endpoint.
+- Pass `x-vibearound-cwd` to run the request in a specific workspace directory.
+- Use streaming or non-streaming requests with the supported API shapes.
+- Keep this for dev and local test usage; VibeAround is not trying to be a hosted production API gateway.
 
-Step away, stay in control.
+## Remote Messaging & Session Continuity
 
-Continue your latest session from messaging apps, desktop browsers, or mobile browsers. Switch workspaces and agents with `/switch`, and preview results remotely when an agent finishes a task. You can also control AI agents directly through a Web Terminal.
+Hand over a running coding session, then pick it up from anywhere.
+
+VibeAround can prepare a `/pickup` command for the current desktop or CLI session. Paste that command into any connected IM channel to continue the same session with the same agent; the pickup is not tied to the channel where it was created.
+
+IM integrations are built through the [VibeAround Channel SDK](https://github.com/jazzenchen/va-plugin-channel-sdk) and plugin system, so each messaging platform can run as a managed plugin around the same session and command model instead of being hard-coded into the core app.
+
+### VibeAround Channel SDK
+
+[VibeAround Channel SDK](https://github.com/jazzenchen/va-plugin-channel-sdk) is the SDK for building IM channel plugins. It handles the VibeAround agent/session lifecycle and command bridge, while each plugin focuses on the platform-specific transport and rendering, such as Feishu/Lark, Telegram, Slack, Discord, DingTalk, WeCom, or QQ Bot.
+
+<p align="center">
+  <img src="https://pub-806a1b8456464ce7a6c110f84946697e.r2.dev/documents/v0.7.7/readme/im-remote.webp" alt="VibeAround Remote Access settings for messaging apps and Cloudflare tunnel" width="88%" />
+</p>
+
+- Hand over the current session from desktop, CLI, or Web Hub.
+- Pick it up from Feishu/Lark, Discord, Slack, or another configured messaging channel.
+- Add or update messaging channels through SDK-based plugins.
+- Continue the same agent session remotely without losing context.
+- Chat directly with AI agents from messaging apps after pickup.
+- Switch workspaces and agents with `/switch`.
+- Open preview links from the same conversation.
+
+### VibeAround vs cc-connect
+
+| Area | VibeAround | [cc-connect](https://github.com/chenhg5/cc-connect) |
+|---|---|---|
+| Handover / pickup | ✅ Generate a `/pickup` command from the current session and resume it in any connected IM channel | ❌ Not currently supported |
+| Chat platforms | ✅ Feishu/Lark, Discord, Slack, Telegram, WeChat, DingTalk, WeCom, QQ Bot | ✅ Feishu/Lark, WPS Xiezuo, DingTalk, Telegram, Slack, Discord, LINE, WeCom, Weibo, Weixin, QQ, QQ Bot, Matrix |
+| Agent connection | ✅ Works with VibeAround-launched agents and their selected profiles/workspaces | ✅ Works with 10+ agents and ACP-compatible agents |
+| Session commands | ✅ `/session --list`, `/session --switch`, `/new`, and `/pickup` | ✅ `/new`, `/list`, `/switch`, and `/current` |
+| Agent / profile switch | ✅ `/switch`, `/agent --switch`, and `/profile --switch` | ❌ Not currently supported |
+| Workspace commands | ✅ `/workspace --list` and `/workspace --switch` | ✅ `/dir` and `/cd` |
+| Remote preview | ✅ Sends Live Preview links for dev servers, Markdown, and HTML | ❌ Not currently supported |
+| IM file attachments | ⚠️ Send-only; receiving files from IM is not currently supported | ✅ Send and receive files/images on supported platforms |
+| Web Terminal | ✅ Browser terminal for controlling local AI agent CLIs remotely | ❌ Not currently supported |
+| Web Hub | ✅ Browser launch, session continuation, and chat | ⚠️ Web admin/config dashboard; service runs separately |
+| Scheduling and rich IM commands | ❌ Not currently supported | ✅ `/timer`, `/cron`, `/cancel`, `/ps`, provider/model/mode commands |
+
+## Web Terminal
+
+Control local AI agents from desktop or mobile browsers.
+
+VibeAround exposes local terminal sessions through the web dashboard so you can drive AI agent CLIs from desktop or mobile browsers while execution stays on your computer.
+
+<p align="center">
+  <img src="assets/marketing/screenshots/en/web-terminal.png" alt="VibeAround Web Terminal for remote agent control" width="88%" />
+</p>
+
+- Access local AI agent CLIs through Web Terminal from desktop or mobile browsers.
+- Use tunnels for remote access while the daemon stays local.
+- Keep local project permissions and terminal environment in control.
+
+## Web Hub
+
+Launch and continue sessions from desktop or mobile browsers.
+
+VibeAround Web Hub gives you a browser interface for choosing agents, API profiles, workspaces, and sessions, then continuing the same work across devices.
 
 <table>
   <tr>
+    <td width="72%" align="center"><img src="assets/marketing/screenshots/en/cover-web-dashboard.png" alt="VibeAround web dashboard cover" width="92%" /></td>
     <td width="28%" align="center"><img src="assets/marketing/screenshots/en/web-dashboard-mobile.png" alt="VibeAround mobile web dashboard" width="220" /></td>
-    <td width="72%"><img src="assets/marketing/screenshots/en/web-terminal.png" alt="VibeAround Web Terminal for remote agent control" /></td>
   </tr>
 </table>
 
-- Chat directly with AI agents from messaging apps such as Feishu/Lark, Discord, and Slack.
-- Continue the same session remotely without losing context.
-- Quickly switch between workspaces and agents.
-- Access local AI agent through a Web Terminal.
-- Use tunnels for remote access while execution stays on your own computer, without using any cloud server.
+- Start new browser sessions or continue existing ones.
+- Pick agents, API profiles, workspaces, and sessions from the browser.
+- Use desktop and mobile browsers without moving execution to a cloud server.
+
+## Remote Tunnels
+
+Expose VibeAround's local web surfaces only when you choose to.
+
+Remote tunnels are used by Web Hub, Web Terminal, Live Preview, and Markdown preview links. VibeAround keeps the daemon local, starts the selected tunnel provider, and requires browser pairing for public tunnel URLs.
+
+| Tunnel option | Status | Notes |
+|---|---|---|
+| Local only | ✅ Supported | No public tunnel; the daemon listens on loopback. |
+| Localtunnel | ✅ Supported | Quick public URL through the managed `localtunnel` npm package or system `npx`. |
+| Cloudflare Tunnel | ✅ Supported | Named tunnel via `cloudflared`, tunnel token, and configured hostname. |
+| ngrok | ✅ Supported | Uses the ngrok SDK with auth token and optional reserved/static domain. |
+| Tailscale Funnel | 🚧 Roadmap | Planned for users who already keep machines connected through Tailscale. |
 
 ## Live Preview
 
 Preview what AI agents are building.
 
-VibeAround turns dev servers, Markdown files, HTML files, and generated artifacts into previewable links you can open from desktop browsers, mobile browsers, or messaging apps.
+VibeAround turns dev servers, Markdown files, and HTML files into previewable links you can open from desktop browsers, mobile browsers, or messaging apps.
 
 <p align="center">
   <img src="assets/marketing/screenshots/en/preview-in-a-row.png" alt="Ask for previews from messaging apps, pair a browser, and open web or Markdown previews" width="92%" />
@@ -174,7 +272,7 @@ Preset profiles cover common official and compatible providers. Custom endpoints
 
 ## Messaging Channels
 
-Channel plugins are installed and managed by VibeAround.
+Channel plugins are built with the [VibeAround Channel SDK](https://github.com/jazzenchen/va-plugin-channel-sdk), then installed and managed by VibeAround.
 
 | Channel | Setup style | Typical use |
 |---|---|---|
@@ -206,7 +304,7 @@ VibeAround keeps AI coding work on your computer by default.
 3. Enable the agent CLIs you use.
 4. Add API profiles if you want VibeAround to route model traffic.
 5. Pick an agent, model profile, terminal, workspace, and session from Launch.
-6. Continue from desktop, Web Chat, Web Terminal, or a configured messaging channel.
+6. Continue from desktop, Web Hub, Web Terminal, or a configured messaging channel.
 
 Detailed guides live in the [Wiki](https://github.com/jazzenchen/VibeAround/wiki).
 
@@ -295,7 +393,17 @@ bun run dev
 
 Prerequisites: Rust 1.82+, Bun 1.3+, and Node.js 24 LTS recommended. macOS also needs Xcode command line tools; Linux needs the WebKitGTK/Tauri system dependencies for your distribution.
 
+## Known Issue
+
+### Why do I see `Unable to connect to API (ConnectionRefused)`?
+
+This usually means the agent is still reading API settings written by CC Switch or another config-switching tool. Those settings can point the agent to a local proxy that is no longer running, so the agent refuses the connection before VibeAround can route the request.
+
+Remove the conflicting fields from the corresponding agent config file, then launch the agent again from VibeAround. For Claude Code, check `~/.claude/settings.json` and remove stale provider fields such as an `env` block that sets a base URL, API key, or proxy endpoint. If you also have project-level Claude config files, check those as well.
+
 ## Documentation
+
+Documentation is still under construction and may lag behind fast-moving features.
 
 - [Setup Guide](https://github.com/jazzenchen/VibeAround/wiki/Setup-Guide)
 - [Launch, Profiles, And Models](https://github.com/jazzenchen/VibeAround/wiki/Model-Profiles-and-Agent-Launch)
@@ -309,7 +417,7 @@ Prerequisites: Rust 1.82+, Bun 1.3+, and Node.js 24 LTS recommended. macOS also 
 
 ## Community
 
-Ask questions, share workflows, or which agent/provider/channel should be smoother next.
+VibeAround is still early, moving fast, and mostly one-person work. My goal is to build an all-in-one agent hub that helps more people embrace AI with less friction and more clarity. Some edges are still rough, from test coverage to interaction details, and I sincerely hope VibeAround can be shaped together with the community. Discussions, code contributions, ideas, shared workflows, and bug reports are always welcome.
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20VibeAround-5865F2?logo=discord&logoColor=white)](https://discord.gg/KsJWkY64GN)
 [![Product Hunt](https://img.shields.io/badge/Product%20Hunt-Follow%20VibeAround-DA552F?logo=producthunt&logoColor=white)](https://www.producthunt.com/products/vibearound)
@@ -318,9 +426,9 @@ Friendly community: [LINUX DO](https://linux.do)
 
 WeChat group for Chinese-language discussion:
 
-<img src="assets/community/wechat-group-qr-2026-06-19.webp" width="180" alt="VibeAround WeChat group QR code, valid until June 19, 2026" />
+<img src="assets/community/wechat-group-qr-2026-06-28.webp" width="180" alt="VibeAround WeChat group QR code, valid until June 28, 2026" />
 
-This WeChat QR code is valid until June 19, 2026. Use Discord or GitHub Issues to ask for the latest one if it has expired.
+This WeChat QR code is valid until June 28, 2026. Use Discord or GitHub Issues to ask for the latest one if it has expired.
 
 ## License
 
