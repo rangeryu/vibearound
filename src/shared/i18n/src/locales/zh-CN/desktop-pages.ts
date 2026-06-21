@@ -8,6 +8,7 @@ export const zhCNDesktopPages: Record<string, string> = {
   "Apply & Restart Services": "应用并重启服务",
   "Restarting services…": "正在重启服务…",
   "Agent Toolchain": "Agent 工具链",
+  "Agent path not found": "未找到 Agent 路径",
   "Choose where VibeAround looks for agent CLIs when no manual executable path is set.":
     "没有手动指定可执行文件路径时，选择 VibeAround 查找 Agent CLI 的位置。",
   "VibeAround managed": "VibeAround 托管",
