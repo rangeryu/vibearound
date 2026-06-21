@@ -95,12 +95,47 @@ jobs:
           prerelease: false
           args: ${{ steps.release.outputs.args }}
 
+      - name: Rename release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          rename_asset() {
+            local from="$1"
+            local to="$2"
+            local api_url
+            api_url="$(gh release view "${{ steps.release.outputs.tag }}" \
+              --json assets \
+              --jq ".assets[] | select(.name == \"${from}\") | .apiUrl" || true)"
+            if [ -z "${api_url}" ]; then
+              echo "Asset not found, skipping: ${from}"
+              return 0
+            fi
+            gh api \
+              --method PATCH \
+              -H "Accept: application/vnd.github+json" \
+              "${api_url}" \
+              -f "name=${to}" >/dev/null
+            echo "Renamed ${from} -> ${to}"
+          }
+
+          version="${{ steps.release.outputs.version }}"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            rename_asset "VibeAround_${version}_x64-setup.exe" "VibeAround-Windows-x64-Setup-${version}.exe"
+            rename_asset "VibeAround_${version}_x64_en-US.msi" "VibeAround-Windows-x64-MSI-${version}.msi"
+          elif [ "${RUNNER_OS}" = "Linux" ]; then
+            rename_asset "VibeAround_${version}_amd64.AppImage" "VibeAround-Linux-x64-AppImage-${version}.AppImage"
+            rename_asset "VibeAround_${version}_amd64.deb" "VibeAround-Linux-x64-DEB-${version}.deb"
+          fi
+
       - name: Package Windows portable ZIP
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $version = "${{ steps.release.outputs.version }}"
-          $dist = "VibeAround-win-$version-portable"
+          $dist = "VibeAround-Windows-x64-Portable-$version"
           $zip = "$dist.zip"
 
           Remove-Item -Recurse -Force $dist -ErrorAction SilentlyContinue
@@ -124,5 +159,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ steps.release.outputs.tag }}" \
-            "VibeAround-win-${{ steps.release.outputs.version }}-portable.zip" \
+            "VibeAround-Windows-x64-Portable-${{ steps.release.outputs.version }}.zip" \
             --clobber
