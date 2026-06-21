@@ -27,6 +27,19 @@ const LOCAL_BRIDGE_PROXY_ENV_KEYS: &[&str] = &[
 ];
 const VIBEAROUND_LAUNCH_ID_ENV: &str = "VIBEAROUND_LAUNCH_ID";
 const VIBEAROUND_LAUNCH_TARGET_ENV: &str = "VIBEAROUND_LAUNCH_TARGET";
+const CLAUDE_USER_SETTING_SOURCES_WITHOUT_USER: &str = "project,local";
+const CLAUDE_PROFILE_ENV_KEYS: &[&str] = &[
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+    "CLAUDE_CODE_SUBAGENT_MODEL",
+    "CLAUDE_CODE_EFFORT_LEVEL",
+];
 
 enum LaunchTarget<'a> {
     Profile {
@@ -125,6 +138,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                     agent.pty_command_for_current_platform(),
                 ),
                 args: terminal_launch_args_for_agent(agent_id),
+                cleanup_paths: Vec::new(),
                 window_label: format!("{} (direct)", agent.display_name),
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(agent_id, &agent),
@@ -140,6 +154,7 @@ impl<'a> LaunchPlanBuilder<'a> {
             env: Vec::new(),
             command: direct_launch_command_for_agent(agent_id, &agent, &command),
             args,
+            cleanup_paths: Vec::new(),
             window_label: format!("{} (resume)", agent.display_name),
             workspace,
             macos_app_probe: macos_app_probe_for_direct_agent(agent_id, &agent),
@@ -177,6 +192,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                     agent.pty_command_for_current_platform(),
                 ),
                 args,
+                cleanup_paths: Vec::new(),
                 window_label: profile.label.clone(),
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(agent_id, &agent),
@@ -198,6 +214,7 @@ impl<'a> LaunchPlanBuilder<'a> {
                     agent.pty_command_for_current_platform(),
                 ),
                 args: Vec::new(),
+                cleanup_paths: Vec::new(),
                 window_label: profile.label.clone(),
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(agent_id, &agent),
@@ -207,12 +224,15 @@ impl<'a> LaunchPlanBuilder<'a> {
         }
         let mut command_args = rendered.command_args.clone();
         command_args.extend(terminal_launch_args_for_agent(agent_id));
+        let mut cleanup_paths = Vec::new();
+        append_claude_sanitized_user_settings_args(agent_id, &mut command_args, &mut cleanup_paths);
         let env = materialized_profile_env(profile, launch_target, &self.launch_id, rendered)?;
 
         Ok(LaunchPlan {
             env,
             command: launch_command_for_agent(agent_id, agent.pty_command_for_current_platform()),
             args: command_args,
+            cleanup_paths,
             window_label: profile.label.clone(),
             workspace,
             macos_app_probe: None,
@@ -238,11 +258,14 @@ impl<'a> LaunchPlanBuilder<'a> {
         let mut args = rendered.command_args.clone();
         args.extend(terminal_launch_args_for_agent(agent_id));
         args.extend(resume_args);
+        let mut cleanup_paths = Vec::new();
+        append_claude_sanitized_user_settings_args(agent_id, &mut args, &mut cleanup_paths);
 
         Ok(LaunchPlan {
             env,
             command: launch_command_for_agent(agent_id, &command),
             args,
+            cleanup_paths,
             window_label: format!("{} (resume)", profile.label),
             workspace,
             macos_app_probe: None,
@@ -432,6 +455,94 @@ fn append_local_bridge_proxy_bypass_env(env: &mut Vec<(String, String)>) {
     ]);
 }
 
+fn append_claude_sanitized_user_settings_args(
+    agent_id: &str,
+    args: &mut Vec<String>,
+    cleanup_paths: &mut Vec<std::path::PathBuf>,
+) {
+    if agent_id != "claude" {
+        return;
+    }
+    let Some(settings_path) = write_sanitized_claude_user_settings() else {
+        return;
+    };
+    args.push("--setting-sources".to_string());
+    args.push(CLAUDE_USER_SETTING_SOURCES_WITHOUT_USER.to_string());
+    args.push("--settings".to_string());
+    args.push(settings_path.to_string_lossy().to_string());
+    cleanup_paths.push(settings_path);
+}
+
+fn write_sanitized_claude_user_settings() -> Option<std::path::PathBuf> {
+    let path = claude_user_settings_path();
+    let contents = std::fs::read_to_string(&path).ok()?;
+    let mut settings = serde_json::from_str::<serde_json::Value>(&contents).ok()?;
+    sanitize_claude_user_settings(&mut settings);
+    let settings_json = serde_json::to_vec(&settings).ok()?;
+    let path = std::env::temp_dir().join(format!(
+        "vibearound-claude-settings-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(&path, settings_json).ok()?;
+    set_owner_only_permissions(&path);
+    Some(path)
+}
+
+#[cfg(unix)]
+fn set_owner_only_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(unix))]
+fn set_owner_only_permissions(_path: &std::path::Path) {}
+
+fn sanitize_claude_user_settings(settings: &mut serde_json::Value) {
+    let Some(root) = settings.as_object_mut() else {
+        return;
+    };
+    let Some(env) = root
+        .get_mut("env")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    for key in CLAUDE_PROFILE_ENV_KEYS {
+        env.remove(*key);
+    }
+    if env.is_empty() {
+        root.remove("env");
+    }
+}
+
+#[cfg(not(test))]
+fn claude_user_settings_path() -> std::path::PathBuf {
+    ::common::config::home_dir()
+        .join(".claude")
+        .join("settings.json")
+}
+
+#[cfg(test)]
+fn claude_user_settings_path() -> std::path::PathBuf {
+    test_claude_user_settings_path()
+        .lock()
+        .expect("test claude user settings path")
+        .clone()
+        .unwrap_or_else(|| {
+            ::common::config::home_dir()
+                .join(".claude")
+                .join("settings.json")
+        })
+}
+
+#[cfg(test)]
+fn test_claude_user_settings_path() -> &'static std::sync::Mutex<Option<std::path::PathBuf>> {
+    static PATH: std::sync::OnceLock<std::sync::Mutex<Option<std::path::PathBuf>>> =
+        std::sync::OnceLock::new();
+    PATH.get_or_init(|| std::sync::Mutex::new(None))
+}
+
 fn codex_desktop_local_bridge_args() -> Vec<String> {
     if cfg!(target_os = "macos") {
         vec!["--args".to_string(), "--no-proxy-server".to_string()]
@@ -463,6 +574,9 @@ type TestLaunchArgs = std::sync::Mutex<std::collections::BTreeMap<String, Vec<St
 type TestLaunchArgsIsolation = std::sync::Mutex<()>;
 
 #[cfg(test)]
+type TestClaudeUserSettingsPathIsolation = std::sync::Mutex<()>;
+
+#[cfg(test)]
 fn test_terminal_launch_args() -> &'static TestLaunchArgs {
     static ARGS: std::sync::OnceLock<TestLaunchArgs> = std::sync::OnceLock::new();
     ARGS.get_or_init(|| std::sync::Mutex::new(std::collections::BTreeMap::new()))
@@ -471,6 +585,13 @@ fn test_terminal_launch_args() -> &'static TestLaunchArgs {
 #[cfg(test)]
 fn test_terminal_launch_args_isolation() -> &'static TestLaunchArgsIsolation {
     static LOCK: std::sync::OnceLock<TestLaunchArgsIsolation> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
+#[cfg(test)]
+fn test_claude_user_settings_path_isolation() -> &'static TestClaudeUserSettingsPathIsolation {
+    static LOCK: std::sync::OnceLock<TestClaudeUserSettingsPathIsolation> =
+        std::sync::OnceLock::new();
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
 }
 
@@ -545,12 +666,26 @@ mod tests {
         _lock: std::sync::MutexGuard<'static, ()>,
     }
 
+    struct TestClaudeSettingsPathGuard {
+        _dir: std::path::PathBuf,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
     impl Drop for TestLaunchArgsGuard {
         fn drop(&mut self) {
             test_terminal_launch_args()
                 .lock()
                 .expect("test launch args")
                 .remove(&self.agent_id);
+        }
+    }
+
+    impl Drop for TestClaudeSettingsPathGuard {
+        fn drop(&mut self) {
+            *test_claude_user_settings_path()
+                .lock()
+                .expect("test claude user settings path") = None;
+            let _ = std::fs::remove_dir_all(&self._dir);
         }
     }
 
@@ -567,6 +702,27 @@ mod tests {
             );
         TestLaunchArgsGuard {
             agent_id: agent_id.to_string(),
+            _lock: lock,
+        }
+    }
+
+    fn set_claude_user_settings(contents: &str) -> TestClaudeSettingsPathGuard {
+        let lock = test_claude_user_settings_path_isolation()
+            .lock()
+            .expect("test claude user settings path isolation");
+        let root = std::env::temp_dir().join(format!(
+            "vibearound-claude-settings-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let path = root.join(".claude").join("settings.json");
+        std::fs::create_dir_all(path.parent().expect("settings parent"))
+            .expect("create settings dir");
+        std::fs::write(&path, contents).expect("write claude settings");
+        *test_claude_user_settings_path()
+            .lock()
+            .expect("test claude user settings path") = Some(path);
+        TestClaudeSettingsPathGuard {
+            _dir: root,
             _lock: lock,
         }
     }
@@ -751,6 +907,64 @@ mod tests {
         assert!(plan
             .env
             .contains(&("VIBEAROUND_LAUNCH_TARGET".to_string(), "claude".to_string())));
+    }
+
+    #[test]
+    fn claude_profile_launch_filters_connection_env_from_user_settings() {
+        let _settings = set_claude_user_settings(
+            r#"{
+              "env": {
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:15721",
+                "ANTHROPIC_API_KEY": "cc-switch-key",
+                "KEEP_ME": "yes"
+              },
+              "permissions": { "allow": ["Bash(git status)"] },
+              "hooks": { "PostToolUse": [] }
+            }"#,
+        );
+        let profile = minimax_anthropic_profile();
+        let plan = LaunchPlanBuilder::with_launch_id("launch-123")
+            .profile(&profile, "claude")
+            .build()
+            .expect("profile plan");
+
+        let settings_arg = plan
+            .args
+            .windows(2)
+            .find_map(|pair| (pair[0] == "--settings").then_some(pair[1].as_str()))
+            .expect("settings arg");
+        let settings_path = std::path::Path::new(settings_arg);
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(settings_path).expect("read settings"))
+                .expect("settings file is json");
+
+        assert_eq!(
+            plan.args
+                .windows(2)
+                .find_map(|pair| (pair[0] == "--setting-sources").then_some(pair[1].as_str())),
+            Some("project,local")
+        );
+        assert_eq!(plan.cleanup_paths, vec![settings_path.to_path_buf()]);
+        assert_eq!(settings["env"]["KEEP_ME"], "yes");
+        assert!(settings["env"].get("ANTHROPIC_BASE_URL").is_none());
+        assert!(settings["env"].get("ANTHROPIC_API_KEY").is_none());
+        assert_eq!(settings["permissions"]["allow"][0], "Bash(git status)");
+        assert!(settings.get("hooks").is_some());
+        let _ = std::fs::remove_file(settings_path);
+    }
+
+    #[test]
+    fn claude_direct_launch_does_not_filter_user_settings() {
+        let _settings = set_claude_user_settings(
+            r#"{ "env": { "ANTHROPIC_BASE_URL": "http://127.0.0.1:15721" } }"#,
+        );
+        let plan = LaunchPlanBuilder::with_launch_id("launch-123")
+            .direct("claude")
+            .build()
+            .expect("direct plan");
+
+        assert!(!plan.args.iter().any(|arg| arg == "--settings"));
+        assert!(!plan.args.iter().any(|arg| arg == "--setting-sources"));
     }
 
     #[test]

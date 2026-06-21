@@ -74,6 +74,7 @@ fn build_powershell_script(plan: &LaunchPlan, command: &str, args: &[String]) ->
     if let Some(process_name) = &plan.windows_process_probe {
         append_windows_process_probe(&mut out, process_name);
     }
+    append_powershell_cleanup_paths(&mut out, &plan.cleanup_paths);
     out.push_str("if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {\n");
     out.push_str("  Write-Host \"`nCommand exited with code $LASTEXITCODE\"\n");
     out.push_str("}\n");
@@ -100,6 +101,15 @@ fn append_windows_process_probe(out: &mut String, process_name: &str) {
     out.push_str(&templates::windows_process_probe_script(
         &powershell_single_quoted(process_name),
     ));
+}
+
+fn append_powershell_cleanup_paths(out: &mut String, paths: &[PathBuf]) {
+    for path in paths {
+        out.push_str(&format!(
+            "Remove-Item -LiteralPath {} -Force -ErrorAction SilentlyContinue\n",
+            powershell_single_quoted(&path.to_string_lossy())
+        ));
+    }
 }
 
 fn normalize_windows_claude_profile_launch(
@@ -578,6 +588,7 @@ mod tests {
             env: Vec::new(),
             command: command.to_string(),
             args,
+            cleanup_paths: Vec::new(),
             window_label: "Codex Test".to_string(),
             workspace: PathBuf::from(r"C:\Users\tester\project"),
             macos_app_probe: None,
@@ -611,6 +622,19 @@ mod tests {
         assert!(script.contains("Start-Sleep -Milliseconds 500"));
         assert!(script.contains("$attempt -ge 4"));
         assert!(script.contains("Get-Process -Name 'Codex'"));
+    }
+
+    #[test]
+    fn powershell_script_cleans_paths() {
+        let mut plan = plan("claude", Vec::new());
+        plan.cleanup_paths = vec![PathBuf::from(
+            r"C:\Users\tester\AppData\Local\Temp\va settings.json",
+        )];
+        let script = build_powershell_script(&plan, &plan.command, &plan.args);
+
+        assert!(script.contains(
+            "Remove-Item -LiteralPath 'C:\\Users\\tester\\AppData\\Local\\Temp\\va settings.json' -Force -ErrorAction SilentlyContinue\n"
+        ));
     }
 
     #[test]

@@ -9,6 +9,7 @@ pub(super) struct LaunchPlan {
     pub env: Vec<(String, String)>,
     pub command: String,
     pub args: Vec<String>,
+    pub cleanup_paths: Vec<PathBuf>,
     pub window_label: String,
     pub workspace: PathBuf,
     pub macos_app_probe: Option<String>,
@@ -91,10 +92,23 @@ pub(super) fn build_bash_script(plan: &LaunchPlan) -> String {
     let command = command_with_unix_args(&plan.command, &plan.args);
     if let Some(app_name) = &plan.macos_app_probe {
         append_macos_app_launch(&mut out, &command, app_name, &plan.env);
+    } else if !plan.cleanup_paths.is_empty() {
+        out.push_str(&format!("{command}\n"));
+        out.push_str("status=$?\n");
+        append_cleanup_paths(&mut out, &plan.cleanup_paths);
+        out.push_str("exit \"$status\"\n");
     } else {
         out.push_str(&format!("exec {command}\n"));
     }
     out
+}
+
+fn append_cleanup_paths(out: &mut String, paths: &[PathBuf]) {
+    for path in paths {
+        let path = path.to_string_lossy();
+        let escaped = shell_escape::unix::escape(Cow::Borrowed(path.as_ref()));
+        out.push_str(&format!("rm -f -- {escaped}\n"));
+    }
 }
 
 fn append_macos_app_launch(
@@ -172,6 +186,7 @@ mod tests {
             env,
             command: command.to_string(),
             args,
+            cleanup_paths: Vec::new(),
             window_label: "Test".to_string(),
             workspace: Path::new("/tmp/work dir").to_path_buf(),
             macos_app_probe: None,
@@ -235,6 +250,19 @@ mod tests {
 
         assert!(script.contains("exec codex -c 'model_catalog_json="));
         assert!(script.contains("/tmp/VibeAround Catalog/codex.json"));
+    }
+
+    #[test]
+    fn build_bash_script_cleans_paths_without_exec() {
+        let mut plan = plan(Vec::new(), "claude", Vec::new());
+        plan.cleanup_paths =
+            vec![Path::new("/tmp/VibeAround Settings/settings.json").to_path_buf()];
+        let script = build_bash_script(&plan);
+
+        assert!(script.contains("claude\nstatus=$?\n"));
+        assert!(script.contains("rm -f -- '/tmp/VibeAround Settings/settings.json'\n"));
+        assert!(script.contains("exit \"$status\"\n"));
+        assert!(!script.contains("exec claude"));
     }
 
     #[test]
