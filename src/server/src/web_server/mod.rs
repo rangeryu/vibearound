@@ -151,7 +151,27 @@ fn is_dashboard_api_path(path: &str) -> bool {
 
 pub(crate) async fn bind_web_listener(port: u16) -> std::io::Result<tokio::net::TcpListener> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    tokio::net::TcpListener::bind(addr).await
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    clear_inherit_flag(&listener)?;
+    Ok(listener)
+}
+
+#[cfg(windows)]
+fn clear_inherit_flag(listener: &tokio::net::TcpListener) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawSocket;
+    use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE, HANDLE_FLAG_INHERIT};
+
+    let handle = listener.as_raw_socket() as usize as HANDLE;
+    let ok = unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn clear_inherit_flag(_: &tokio::net::TcpListener) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// Runs the Axum server (static files + WebSocket + session API). The listener is bound to

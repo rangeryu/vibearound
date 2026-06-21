@@ -214,13 +214,13 @@ impl ServerDaemon {
     }
 
     pub async fn start_background(&self, dist_path: PathBuf) -> anyhow::Result<RunningDaemon> {
-        let web_listener = bind_web_listener(self.port).await?;
-
-        // Self-heal: kill any leftover plugin/agent-ACP node processes from
+        // Self-heal: kill any leftover plugin/agent-ACP child processes from
         // a previous crashed run BEFORE we spawn our own. Cheap on the happy
         // path (no matches) and prevents phantom children from hogging ports
         // or auth sockets.
         child_registry::orphan_sweep();
+
+        let web_listener = bind_web_listener(self.port).await?;
 
         // Force a fresh config read on every daemon start — ensures the
         // in-memory cache reflects the latest settings.json (which may have

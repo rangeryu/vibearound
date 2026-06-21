@@ -27,3 +27,6 @@ agent-client-protocol = { version = "=0.15.0", features = ["unstable_end_turn_to
 async-trait = "0.1"
 anyhow = "1"
 tracing = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation"] }
