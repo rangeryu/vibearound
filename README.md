@@ -44,6 +44,7 @@ Pick an AI agent, model profile or API endpoint, and workspace. VibeAround launc
 - Start new sessions or continue previous sessions.
 - Use direct launch or profile-based launch, including profile overlays for Claude Desktop and Codex Desktop.
 - Keep each agent's own config files, workflow, and project context.
+- VibeAround does not modify original CLI config files. If you use tools such as cc-switch, manually remove conflicting profile fields such as `env` in `~/.claude/settings.json`.
 
 ## API Profiles & Bridge
 

@@ -319,6 +319,15 @@ impl Agent {
 async fn resolve_agent_program(agent_id: &str) -> anyhow::Result<(String, Vec<String>)> {
     let agent_def = crate::resources::agent_by_id(agent_id)
         .ok_or_else(|| anyhow!("No resource definition for agent '{}'", agent_id))?;
+    let config = crate::config::ensure_loaded();
+    let selected_candidate =
+        resolve_agent_candidate(agent_id, config.toolchain_mode.as_str()).await;
+    if config.toolchain_mode.is_managed() && selected_candidate.is_none() {
+        anyhow::bail!(
+            "{}",
+            crate::agent_detection::managed_agent_missing_message(agent_id)
+        );
+    }
 
     // 1. npm-based agents → `node <resolved_entry>`
     // 2. binary-download agents → install via install_cmd, run from PATH
@@ -341,7 +350,7 @@ async fn resolve_agent_program(agent_id: &str) -> anyhow::Result<(String, Vec<St
             vec![entry.to_string_lossy().to_string()],
         ))
     } else if let Some(install_cmd) = &agent_def.acp.install_cmd {
-        if let Some(candidate) = resolve_native_agent_candidate(agent_id).await {
+        if let Some(candidate) = selected_candidate {
             return Ok((candidate.path, agent_def.acp.args.clone()));
         }
         if !super::install::is_program_available(&agent_def.acp.program) {
@@ -350,25 +359,25 @@ async fn resolve_agent_program(agent_id: &str) -> anyhow::Result<(String, Vec<St
         }
         Ok((agent_def.acp.program.clone(), agent_def.acp.args.clone()))
     } else {
-        if let Some(candidate) = resolve_native_agent_candidate(agent_id).await {
+        if let Some(candidate) = selected_candidate {
             return Ok((candidate.path, agent_def.acp.args.clone()));
         }
         Ok((agent_def.acp.program.clone(), agent_def.acp.args.clone()))
     }
 }
 
-async fn resolve_native_agent_candidate(
+async fn resolve_agent_candidate(
     agent_id: &str,
+    toolchain_mode: &str,
 ) -> Option<crate::agent_detection::AgentCandidate> {
-    let config = crate::config::ensure_loaded();
     crate::agent_availability::resolve_agent_availability(
         agent_id,
         crate::agent_availability::AgentAvailabilityRequest {
             scan_policy: crate::agent_availability::AgentScanPolicy::RefreshIfMissing,
-            toolchain_mode: config.toolchain_mode.as_str(),
+            toolchain_mode,
             candidate_preference:
-                crate::agent_availability::AgentCandidatePreference::SystemToolchain,
-            include_configured_version: false,
+                crate::agent_availability::AgentCandidatePreference::ToolchainMode,
+            include_configured_version: true,
         },
     )
     .await

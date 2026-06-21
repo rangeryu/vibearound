@@ -290,7 +290,13 @@ export function AgentLaunchBuilder({
   useEffect(() => {
     setAgentExecutable(null);
     setAgentExecutableLoading(false);
-  }, [agentId]);
+    if (
+      agentId &&
+      !agents.find((agent) => agent.id === agentId)?.direct_only
+    ) {
+      void refreshAgentExecutable(agentId, false);
+    }
+  }, [agentId, agents, refreshAgentExecutable]);
 
   useEffect(() => {
     if (!prefs || !agentId) {
@@ -888,11 +894,17 @@ export function AgentLaunchBuilder({
     selectedAgentPreference?.executablePath ??
     (selectedAgentIsDirectOnly
       ? desktopAppPathForAgent(agentId)
-      : currentAgentExecutable?.selected?.path) ??
-    selectedAgent.pty_command;
-  const selectedExecutableLabel = selectedAgentIsDirectOnly
-    ? desktopAppLaunchTargetLabel(agentId, selectedExecutablePath)
-    : selectedExecutablePath;
+      : currentAgentExecutable?.selected?.path);
+  const selectedExecutableLabel = selectedExecutablePath
+    ? selectedAgentIsDirectOnly
+      ? desktopAppLaunchTargetLabel(agentId, selectedExecutablePath)
+      : executableDirectoryLabel(selectedExecutablePath)
+    : t("Agent path not found");
+  const selectedExecutableTitle = selectedExecutablePath
+    ? selectedAgentIsDirectOnly
+      ? selectedExecutableLabel
+      : selectedExecutablePath
+    : t("Agent path not found");
   const showClaudeDesktopDeveloperModeHint =
     agentId === "claude-desktop" && profileChoice.kind === "profile";
 
@@ -982,7 +994,7 @@ export function AgentLaunchBuilder({
                         )}
                         <span
                           className="min-w-0 truncate font-mono [font-variant-ligatures:none]"
-                          title={selectedExecutableLabel}
+                          title={selectedExecutableTitle}
                         >
                           {!selectedAgentIsDirectOnly && agentExecutableLoading
                             ? t("Checking path")
@@ -1238,4 +1250,15 @@ export function AgentLaunchBuilder({
       />
     </TooltipProvider>
   );
+}
+
+function executableDirectoryLabel(path: string): string {
+  const normalized = path.trim();
+  if (!normalized) return path;
+  const lastSlash = Math.max(
+    normalized.lastIndexOf("/"),
+    normalized.lastIndexOf("\\"),
+  );
+  if (lastSlash <= 0) return normalized;
+  return normalized.slice(0, lastSlash);
 }
