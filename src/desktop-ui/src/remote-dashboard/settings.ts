@@ -10,6 +10,8 @@ import {
   type RemoteSettings,
 } from "./types";
 
+const INTERNAL_CHANNEL_IDS = new Set(["web"]);
+
 export function parseRemoteSettings(settings: AppSettings): RemoteSettings {
   const remote = isRecord(settings.remote) ? settings.remote : {};
   const channels = isRecord(remote.channels) ? remote.channels : {};
@@ -26,10 +28,18 @@ export function configuredChannelIdsFromSettings(
 ): string[] {
   const ids = new Set<string>();
   if (isRecord(settings.channels)) {
-    Object.keys(settings.channels).forEach((id) => ids.add(id));
+    Object.keys(settings.channels)
+      .filter(isUserFacingChannel)
+      .forEach((id) => ids.add(id));
   }
-  Object.keys(remote.channels ?? {}).forEach((id) => ids.add(id));
+  Object.keys(remote.channels ?? {})
+    .filter(isUserFacingChannel)
+    .forEach((id) => ids.add(id));
   return [...ids];
+}
+
+function isUserFacingChannel(id: string): boolean {
+  return !INTERNAL_CHANNEL_IDS.has(id);
 }
 
 export function formForChannel(

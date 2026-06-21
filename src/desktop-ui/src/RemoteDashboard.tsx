@@ -103,7 +103,9 @@ export function RemoteDashboard({
     const ids = new Set<string>();
     channels.channels.forEach((channel) => ids.add(channel.kind));
     configuredChannelIdsFromSettings(settings, remoteSettings).forEach((id) => ids.add(id));
-    return [...ids].sort((a, b) => channelDisplayName(a).localeCompare(channelDisplayName(b)));
+    return [...ids]
+      .filter((id) => id !== "web")
+      .sort((a, b) => channelDisplayName(a).localeCompare(channelDisplayName(b)));
   }, [channels.channels, remoteSettings.channels, settings.channels]);
 
   const channelById = useMemo(

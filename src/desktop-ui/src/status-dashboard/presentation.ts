@@ -52,6 +52,7 @@ export function channelDisplayName(kind: string) {
     dingtalk: "DingTalk",
     discord: "Discord",
     feishu: "Feishu",
+    qqbot: "QQ Bot",
     slack: "Slack",
     telegram: "Telegram",
     wechat: "WeChat",
