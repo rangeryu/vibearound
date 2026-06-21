@@ -9,6 +9,15 @@ const packageJson = JSON.parse(
 ) as { version?: string };
 const packageVersion = packageJson.version ?? "0.0.0";
 
+function manualChunks(id: string) {
+  if (!id.includes("node_modules")) return undefined;
+  if (id.includes("radix-ui") || id.includes("lucide-react")) return "vendor-ui";
+  if (id.includes("react") || id.includes("scheduler")) return "vendor-react";
+  if (id.includes("@tauri-apps")) return "vendor-tauri";
+  if (id.includes("zod")) return "vendor-zod";
+  return undefined;
+}
+
 export default defineConfig(({ mode }) => {
   const versionLabel =
     mode === "production" ? packageVersion : `${packageVersion} dev`;
@@ -18,6 +27,13 @@ export default defineConfig(({ mode }) => {
       __APP_VERSION_LABEL__: JSON.stringify(versionLabel),
     },
     plugins: [react(), tailwindcss()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks,
+        },
+      },
+    },
     resolve: {
       alias: [
         { find: "@va/ui/button", replacement: path.resolve(__dirname, "../shared/ui/src/button.tsx") },

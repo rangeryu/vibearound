@@ -45,6 +45,15 @@
     "install_steps": ["git_clone", "npm_install", "npm_build"]
   },
   {
+    "id": "whatsapp",
+    "kind": "channel",
+    "slug": "va-plugin-channel-whatsapp",
+    "name": "WhatsApp",
+    "description": "Connect WhatsApp via QR code login.",
+    "github": "https://github.com/jazzenchen/va-plugin-channel-whatsapp",
+    "install_steps": ["git_clone", "npm_install", "npm_build"]
+  },
+  {
     "id": "dingtalk",
     "kind": "channel",
     "slug": "va-plugin-channel-dingtalk",

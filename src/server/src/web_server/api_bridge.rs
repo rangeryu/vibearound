@@ -15,6 +15,7 @@ use va_ai_api_bridge::{
 mod completion;
 mod content_policy;
 mod google_code_assist;
+mod local_agent;
 mod model_mapping;
 mod normalization;
 mod passthrough;
@@ -29,6 +30,10 @@ use completion::{
     translated_completion_response, UpstreamResponseTransform,
 };
 use content_policy::{sanitize_request_content_with_capabilities, ContentSanitization};
+pub use local_agent::{
+    local_agent_chat_completions_handler, local_agent_messages_handler, local_agent_models_handler,
+    local_agent_responses_handler,
+};
 use model_mapping::{bridge_model_mapping, bridge_route_preference};
 use normalization::normalize_target_request;
 use passthrough::{buffered_passthrough_response, passthrough_response};
@@ -762,17 +767,23 @@ pub(super) async fn models_handler(
             if metadata.file_input {
                 input_modalities.push("file");
             }
+            let context_window = metadata.context_window;
             json!({
                 "id": model.agent_model.as_str(),
+                "model": model.agent_model.as_str(),
                 "type": "model",
                 "object": "model",
                 "display_name": model.agent_model.as_str(),
+                "displayName": model.agent_model.as_str(),
                 "owned_by": upstream.profile.provider.as_str(),
                 "created": 0,
                 "created_at": null,
-                "context_window": metadata.context_window,
-                "max_context_window": metadata.context_window,
-                "input_modalities": input_modalities,
+                "context_window": context_window,
+                "contextWindow": context_window,
+                "max_context_window": context_window,
+                "maxContextWindow": context_window,
+                "input_modalities": input_modalities.clone(),
+                "inputModalities": input_modalities,
                 "capabilities": {
                     "image_input": metadata.image_input,
                     "file_input": metadata.file_input,

@@ -31,7 +31,7 @@ pub mod types;
 
 use std::sync::{Arc, Mutex as StdMutex};
 
-use agent_client_protocol::schema as acp;
+use agent_client_protocol::schema::v1 as acp;
 use serde::Serialize;
 use tokio::sync::mpsc;
 

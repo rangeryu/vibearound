@@ -9,6 +9,7 @@ pub(super) struct LaunchPlan {
     pub env: Vec<(String, String)>,
     pub command: String,
     pub args: Vec<String>,
+    pub cleanup_paths: Vec<PathBuf>,
     pub window_label: String,
     pub workspace: PathBuf,
     pub macos_app_probe: Option<String>,
@@ -18,14 +19,12 @@ pub(super) struct LaunchPlan {
     pub windows_executable_path: Option<PathBuf>,
 }
 
-#[cfg(any(target_os = "windows", test))]
 pub(super) fn command_words_with_args(command: &str, args: &[String]) -> Vec<String> {
     let mut words = split_command_words(command);
     words.extend(args.iter().cloned());
     words
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn split_command_words(command: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();
@@ -93,10 +92,23 @@ pub(super) fn build_bash_script(plan: &LaunchPlan) -> String {
     let command = command_with_unix_args(&plan.command, &plan.args);
     if let Some(app_name) = &plan.macos_app_probe {
         append_macos_app_launch(&mut out, &command, app_name, &plan.env);
+    } else if !plan.cleanup_paths.is_empty() {
+        out.push_str(&format!("{command}\n"));
+        out.push_str("status=$?\n");
+        append_cleanup_paths(&mut out, &plan.cleanup_paths);
+        out.push_str("exit \"$status\"\n");
     } else {
         out.push_str(&format!("exec {command}\n"));
     }
     out
+}
+
+fn append_cleanup_paths(out: &mut String, paths: &[PathBuf]) {
+    for path in paths {
+        let path = path.to_string_lossy();
+        let escaped = shell_escape::unix::escape(Cow::Borrowed(path.as_ref()));
+        out.push_str(&format!("rm -f -- {escaped}\n"));
+    }
 }
 
 fn append_macos_app_launch(
@@ -148,18 +160,11 @@ fn is_valid_env_key(key: &str) -> bool {
 }
 
 fn command_with_unix_args(command: &str, args: &[String]) -> String {
-    if args.is_empty() {
-        return command.to_string();
-    }
-
-    let mut out = command.to_string();
-    for arg in args {
-        out.push(' ');
-        out.push_str(&shell_escape::unix::escape(std::borrow::Cow::Borrowed(
-            arg.as_str(),
-        )));
-    }
-    out
+    command_words_with_args(command, args)
+        .iter()
+        .map(|word| shell_escape::unix::escape(std::borrow::Cow::Borrowed(word.as_str())))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn append_bash_color_env(out: &mut String) {
@@ -181,6 +186,7 @@ mod tests {
             env,
             command: command.to_string(),
             args,
+            cleanup_paths: Vec::new(),
             window_label: "Test".to_string(),
             workspace: Path::new("/tmp/work dir").to_path_buf(),
             macos_app_probe: None,
@@ -244,6 +250,44 @@ mod tests {
 
         assert!(script.contains("exec codex -c 'model_catalog_json="));
         assert!(script.contains("/tmp/VibeAround Catalog/codex.json"));
+    }
+
+    #[test]
+    fn build_bash_script_cleans_paths_without_exec() {
+        let mut plan = plan(Vec::new(), "claude", Vec::new());
+        plan.cleanup_paths =
+            vec![Path::new("/tmp/VibeAround Settings/settings.json").to_path_buf()];
+        let script = build_bash_script(&plan);
+
+        assert!(script.contains("claude\nstatus=$?\n"));
+        assert!(script.contains("rm -f -- '/tmp/VibeAround Settings/settings.json'\n"));
+        assert!(script.contains("exit \"$status\"\n"));
+        assert!(!script.contains("exec claude"));
+    }
+
+    #[test]
+    fn build_bash_script_escapes_command_program_with_spaces() {
+        let script = build_bash_script(&plan(
+            Vec::new(),
+            "\"/Applications/Codex CLI.app/Contents/MacOS/Codex CLI\"",
+            vec!["--resume".to_string(), "session 1".to_string()],
+        ));
+
+        assert!(script.contains(
+            "exec '/Applications/Codex CLI.app/Contents/MacOS/Codex CLI' --resume 'session 1'\n"
+        ));
+    }
+
+    #[test]
+    fn build_bash_script_escapes_command_program_payload() {
+        let script = build_bash_script(&plan(
+            Vec::new(),
+            "\"/tmp/tool $(touch /tmp/pwned)\"",
+            Vec::new(),
+        ));
+
+        assert!(script.contains("exec '/tmp/tool $(touch /tmp/pwned)'\n"));
+        assert!(!script.contains("$(touch /tmp/pwned)\n"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 import type { WebVerboseSettings } from "@va/client";
 import { useI18n } from "@va/i18n";
@@ -6,7 +6,6 @@ import { useI18n } from "@va/i18n";
 import { AppHeader } from "@/components/AppHeader";
 import { ChatView } from "@/components/chat";
 import { TabBar } from "@/components/TabBar";
-import { TerminalWorkspace } from "@/components/TerminalWorkspace";
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/hooks/useSessions";
 import { useTmux } from "@/hooks/useTmux";
@@ -21,6 +20,12 @@ function workspacePaneClass(active: boolean) {
     active ? "z-10 opacity-100 pointer-events-auto" : "z-0 opacity-0 pointer-events-none",
   );
 }
+
+const TerminalWorkspace = lazy(() =>
+  import("@/components/TerminalWorkspace").then((module) => ({
+    default: module.TerminalWorkspace,
+  })),
+);
 
 const WEB_SETTINGS_STORAGE_KEY = "vibearound.web.settings";
 const LEGACY_WEB_SETTINGS_STORAGE_KEY = "vibearound.web.transcriptSettings";
@@ -71,6 +76,7 @@ function App() {
   const [theme, setTheme] = useState<Theme>(() => getResolvedTheme());
   const [webSettings, setWebSettings] = useState<WebVerboseSettings>(readStoredWebSettings);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [terminalMounted, setTerminalMounted] = useState(false);
 
   const tmux = useTmux();
   const {
@@ -101,6 +107,10 @@ function App() {
     setActiveTabId(sessionId);
     clearMaximized();
   };
+
+  useEffect(() => {
+    if (page === "terminal") setTerminalMounted(true);
+  }, [page]);
 
   const handleWebSettingsChange = useCallback(
     (patch: Partial<WebVerboseSettings>) => {
@@ -185,23 +195,27 @@ function App() {
               aria-hidden={page !== "terminal"}
               inert={page !== "terminal"}
             >
-              <TerminalWorkspace
-                isActive={page === "terminal"}
-                groups={groups}
-                activeTabId={activeTabId}
-                maximizedSession={maximizedSession}
-                sessionsLoading={sessionsLoading}
-                viewMode={viewMode}
-                tmuxAvailable={tmux.available}
-                tmuxSessions={tmux.sessions}
-                onAddCli={addCli}
-                onAddProfileCli={addProfileCli}
-                onAttachTmux={attachTmux}
-                onRefreshTmux={tmux.refresh}
-                onToggleMaximize={toggleMaximize}
-                onCloseSession={closeSession}
-                onSessionState={setSessionState}
-              />
+              {terminalMounted ? (
+                <Suspense fallback={<WorkspaceFallback label={t("Loading sessions")} />}>
+                  <TerminalWorkspace
+                    isActive={page === "terminal"}
+                    groups={groups}
+                    activeTabId={activeTabId}
+                    maximizedSession={maximizedSession}
+                    sessionsLoading={sessionsLoading}
+                    viewMode={viewMode}
+                    tmuxAvailable={tmux.available}
+                    tmuxSessions={tmux.sessions}
+                    onAddCli={addCli}
+                    onAddProfileCli={addProfileCli}
+                    onAttachTmux={attachTmux}
+                    onRefreshTmux={tmux.refresh}
+                    onToggleMaximize={toggleMaximize}
+                    onCloseSession={closeSession}
+                    onSessionState={setSessionState}
+                  />
+                </Suspense>
+              ) : null}
             </section>
           </main>
         </div>
@@ -211,3 +225,11 @@ function App() {
 }
 
 export default App;
+
+function WorkspaceFallback({ label }: { label: string }) {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <p className="font-mono text-sm text-muted-foreground/40">{label}</p>
+    </div>
+  );
+}

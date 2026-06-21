@@ -1,51 +1,12 @@
 export const zhCNOnboarding: Record<string, string> = {
-  Goals: "目标",
-  Welcome: "欢迎",
   "Quick Launch": "快速启动",
-  "Welcome to VibeAround": "欢迎使用 VibeAround",
-  "Let's set things up so you can vibe code from anywhere. This will only take a minute — configure your agents, messaging channels, and tunnel.":
-    "先完成几个简单设置，以后就能从桌面、手机或远程入口继续写代码。",
-  "How will you use VibeAround?": "你打算如何使用 VibeAround？",
-  "Choose what you want to set up now. You can change this later at any time, so skip anything you're unsure about.":
-    "选择现在要配置的部分。之后可以随时修改，不确定的内容先跳过也没关系。",
-  "Coding agent launch": "Coding Agent",
-  "Launch Claude, Codex, and other CLIs quickly":
-    "快速启动 Claude、Codex 等工具",
-  "Use multiple provider profiles": "保存多套 API 配置",
-  "Route clients through the local API bridge":
-    "通过本机服务转接请求",
   "IM integration": "消息接入",
   "Connect messaging platforms and bot plugins": "连接常用聊天工具和机器人插件",
-  "Start and continue coding sessions from your phone":
-    "从手机开始或继续会话",
-  "Use QR login and plugin-specific settings": "支持扫码登录和独立设置",
-  "Expose local webhooks and remote access when needed":
-    "需要时开放本机服务",
-  "Use Cloudflare, ngrok, or localtunnel":
-    "支持 Cloudflare、ngrok、localtunnel",
-  "Skip this when you only work locally": "只在本机使用时可以跳过",
-  "Step {{current}} of {{total}} — {{step}}":
-    "第 {{current}} / {{total}} 步 — {{step}}",
-  "Continue Anyway": "仍然继续",
-  "Open VibeAround": "打开 VibeAround",
   "Check again": "重新检测",
-  "Confirming…": "确认中…",
-  "Pick the CLI VibeAround should start from Launch and IM messages.":
-    "选择启动页和消息里默认使用的 Coding Agent。",
-  "Best recommended": "推荐选择",
-  "Other CLIs": "其他工具",
-  "API profiles": "API 配置",
-  "Optional. Save API keys now; choose launch defaults later in Launch.":
-    "可选。现在可以先保存 API Key，稍后再选择默认启动项。",
-  "Add API profile": "添加 API 配置",
-  "No API profiles yet. You can add one now or skip this step.":
-    "还没有 API 配置。你可以现在添加，也可以跳过这一步。",
   "Default workspace": "默认工作区",
   "IM Channel": "消息渠道",
   "Connect messaging apps to vibe code from your phone. Install plugins from the registry, then configure and enable them.":
     "连接聊天工具后，就能在手机上继续使用 VibeAround。先安装插件，再完成配置并启用。",
-  "Connect messaging bots to vibe code from your phone. Install plugins from the registry, then configure and enable them.":
-    "连接聊天机器人后，就能在手机上继续使用 VibeAround。先安装插件，再完成配置并启用。",
   "IM message detail": "消息显示",
   "Message detail": "消息显示",
   "Show thinking": "显示思考过程",
@@ -63,27 +24,12 @@ export const zhCNOnboarding: Record<string, string> = {
   "QR code": "二维码",
   "Scan with the app and confirm on your phone.":
     "用 App 扫码，并在手机上确认。",
-  "Expose your local server to the internet for IM webhooks and remote access. Skip if you only use it locally.":
-    "将本地服务暴露到互联网，用于 IM webhook 和远程访问。如果只本地使用，可以跳过。",
   Recommended: "推荐",
   "Auth Token": "认证 Token",
   "Domain (optional)": "域名（可选）",
   "Tunnel Token": "隧道 Token",
   "Hostname (optional)": "访问域名（可选）",
-  "Ready to Launch": "准备启动",
-  "Review your configuration. You can always change these in settings.json later.":
-    "确认一下配置。之后也可以在设置里修改。",
-  "None configured": "未填写",
-  "VibeAround will add an MCP server entry to your coding agents' global settings and install a handover skill for session transfer between devices. Your existing agent settings will not be overwritten.":
-    "VibeAround 会向 Coding Agent 的全局设置添加 MCP 服务，并安装用于在不同设备间交接会话的技能。已有设置不会被覆盖。",
-  "Installation Cancelled": "安装已取消",
-  "Installation Completed with Errors": "安装完成，但有问题",
-  "Installation Complete": "安装完成",
   "Installing VibeAround": "正在安装 VibeAround",
-  "Review the results below.": "查看下面的结果。",
-  "Setting up your agents and plugins...": "正在设置 Coding Agent 和插件...",
-  "Collapse install log": "收起安装日志",
-  "Expand install log": "展开安装日志",
   "Delete {{label}}": "删除 {{label}}",
   "Toggle {{name}}": "启用/停用 {{name}}",
   "Already authenticated.": "已完成认证。",
@@ -93,25 +39,14 @@ export const zhCNOnboarding: Record<string, string> = {
   "Connection lost. Try again.": "连接丢失，请重试。",
   "Cancelled.": "已取消。",
   Cancelled: "已取消",
-  "Already installed": "已安装",
-  "Install complete": "安装完成",
-  "Installing MCP config…": "正在安装 MCP 配置…",
-  "MCP config installed": "MCP 配置已安装",
-  "Skill file installed": "技能文件已安装",
-  "Plugin not found in registry": "插件列表中未找到这个插件",
-  "Running: git clone + npm install + build":
-    "正在运行：下载代码、安装依赖并构建",
   "MCP config": "MCP 配置",
   "Skill file": "技能文件",
-  "CLI install": "命令行工具安装",
   "Plugin install": "插件安装",
   Agents: "Coding Agent",
   IM: "消息",
   Remote: "远程",
   Config: "配置",
   "Start with your coding agents.": "选择 Coding Agent。",
-  "Choose the coding agents VibeAround should prepare for this computer.":
-    "选择要在这台电脑上使用的 Coding Agent。",
   "Claude Code and Codex CLI are recommended for daily vibe coding and vibe coding jobs.":
     "推荐使用 Claude Code 和 Codex CLI 进行氛围编程与氛围办公。",
   "Choose your messaging apps.": "选择聊天工具。",
@@ -120,7 +55,6 @@ export const zhCNOnboarding: Record<string, string> = {
   "Configure remote access.": "配置远程访问。",
   "Skip for local-only use.": "仅本机使用时，可跳过此步骤。",
   "Install Components.": "安装组件。",
-  "Only missing items will be installed.": "仅安装缺失项。",
   "Complete the configuration.": "完成配置。",
   "Fill in API keys and other required details for your selected options.":
     "填写所选选项的 API 密钥及其他必要信息。",
@@ -159,6 +93,22 @@ export const zhCNOnboarding: Record<string, string> = {
   "No channel plugins are available.": "暂时没有可安装的消息插件。",
   "Remote access": "远程访问",
   "Allow external access to this computer.": "允许从外部访问这台电脑。",
+  "Choose how VibeAround exposes this computer for remote access.":
+    "选择 VibeAround 如何开放这台电脑的远程访问。",
+  "Cloudflare Tunnel is recommended for stable remote access.":
+    "推荐使用 Cloudflare Tunnel 获得稳定的远程访问。",
+  "Stable remote access through a Cloudflare Tunnel token.":
+    "通过 Cloudflare Tunnel token 提供稳定远程访问。",
+  "Remote access through an Ngrok account token.":
+    "通过 Ngrok 账号 token 提供远程访问。",
+  "Quick public URL through localtunnel, with no API key.":
+    "通过 localtunnel 快速生成公网 URL，不需要 API key。",
+  "Local access only; no public tunnel is started.":
+    "仅本机访问，不启动公网隧道。",
+  "LocalTunnel does not require credentials. Save and restart services to apply this provider.":
+    "LocalTunnel 不需要凭据。保存并重启服务后生效。",
+  "Remote access is disabled. VibeAround stays available on this computer only.":
+    "远程访问已关闭。VibeAround 只在这台电脑上可用。",
   "Stable named tunnel with a public hostname.":
     "适合长期使用，会提供一个固定访问地址。",
   "Useful when you already have an ngrok account and domain.":
@@ -212,13 +162,7 @@ export const zhCNOnboarding: Record<string, string> = {
   "Global source": "默认源",
   Global: "默认源",
   "China mirror": "国内镜像",
-  "Agent API profiles": "API 配置",
-  "Optional. You can add or edit profiles from Launch later.":
-    "可选。之后也可以在启动页里新增或编辑。",
   "Add profile": "添加",
-  "No API profiles yet.": "还没有 API 配置。",
-  "Finish credentials and QR login for selected IM plugins.":
-    "填写聊天工具需要的 token、密钥或扫码登录。",
   "Finish credentials and QR login for selected messaging apps.":
     "填写所选聊天工具需要的 token、密钥或扫码登录。",
   "Remote access configuration": "远程访问配置",
@@ -226,15 +170,10 @@ export const zhCNOnboarding: Record<string, string> = {
     "如果选择了远程访问，在这里填写 Cloudflare 或 ngrok 信息。",
   "No extra configuration": "没有额外配置",
   "The selected setup can launch now.": "现在可以启动 VibeAround。",
-  "Node/npm source": "Node/npm 下载源",
   "npm registry": "npm 源",
   Toolchain: "工具链",
   "VibeAround managed": "VibeAround 托管",
   System: "系统",
-  "Use the user's global toolchain when available.":
-    "优先使用用户系统全局工具链。",
-  "Plugins always install under .vibearound/plugins.":
-    "插件始终安装到 .vibearound/plugins。",
   "Installing...": "安装中...",
   "Checking...": "检测中...",
   "Install selected": "开始安装",

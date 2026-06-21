@@ -7,6 +7,13 @@ export const zhCNDesktopPages: Record<string, string> = {
   "Apply API Bridge Settings": "应用 API 转接设置",
   "Apply & Restart Services": "应用并重启服务",
   "Restarting services…": "正在重启服务…",
+  "Agent Toolchain": "Agent 工具链",
+  "Agent path not found": "未找到 Agent 路径",
+  "Choose Default Workspace": "选择默认工作区",
+  "Choose where VibeAround looks for agent CLIs when no manual executable path is set.":
+    "没有手动指定可执行文件路径时，选择 VibeAround 查找 Agent CLI 的位置。",
+  "VibeAround managed": "VibeAround 托管",
+  System: "系统",
   "Web Search": "Web 搜索",
   "Web search": "Web 搜索",
   "Host-side web search is available when at least one search source is enabled.":
@@ -20,10 +27,6 @@ export const zhCNDesktopPages: Record<string, string> = {
     "作用于每个已启用的搜索源，不是合计总数。",
   "Controls provider depth and how much result content is returned.":
     "控制服务商搜索深度，以及返回多少结果正文内容。",
-  "Total results sent to the model can be enabled sources multiplied by this value.":
-    "发送给模型的总结果数最多为已启用搜索源数量乘以此值。",
-  "With {{count}} enabled source(s), up to {{total}} search results can be sent to the model.":
-    "当前启用 {{count}} 个搜索源，最多会向模型发送 {{total}} 条搜索结果。",
   "Enable source": "启用搜索源",
   "Paste API key": "粘贴 API key",
   "API key is required.": "必须填写 API key。",
@@ -44,8 +47,14 @@ export const zhCNDesktopPages: Record<string, string> = {
   "Refresh status": "刷新状态",
   "Plugin status has not been refreshed yet.": "插件状态还没有刷新。",
   "No plugins in this view.": "当前视图没有插件。",
+  "Plugin update": "插件更新",
+  "Plugin updates {{count}}": "{{count}} 个插件更新",
+  "Plugin updates available: {{plugins}}": "插件有可用更新：{{plugins}}",
   "Configure bridge-wide request behavior for provider API calls.":
     "配置 API 转接中所有服务商请求的通用行为。",
+  "Payload actions": "Payload 操作",
+  "No wrap": "不换行",
+  Wrap: "换行",
   Local: "本地",
   "Tunnel · owner": "隧道 · owner",
   "Tunnel · share": "隧道 · 分享",
@@ -53,8 +62,8 @@ export const zhCNDesktopPages: Record<string, string> = {
   "Share key expired": "分享 key 已过期",
   "Close (kills dev server)": "关闭（会终止开发服务器）",
   Close: "关闭",
-  "Workspace folders where agents build projects. The built-in workspace is always the default.":
-    "Agent 构建项目时使用的工作区文件夹。内置工作区始终是默认工作区。",
+  "Workspace folders where agents build projects. The default workspace can be changed in Settings.":
+    "Agent 构建项目时使用的工作区文件夹。默认工作区可在设置中修改。",
   "Select Workspace Folder": "选择工作区文件夹",
   Selecting: "选择中",
   "Selecting…": "选择中…",

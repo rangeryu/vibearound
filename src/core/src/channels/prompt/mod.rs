@@ -16,7 +16,7 @@ mod handler;
 
 use std::sync::Arc;
 
-use agent_client_protocol::schema as acp;
+use agent_client_protocol::schema::v1 as acp;
 
 use crate::routing::{
     is_external_attachment_uri, is_safe_attachment_file_key, Attachment, RouteKey,

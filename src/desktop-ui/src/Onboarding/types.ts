@@ -32,15 +32,13 @@ export interface PluginRegistryEntry {
 export interface Settings {
   onboarded?: boolean;
   workspaces?: string[];
+  default_workspace?: string;
   default_agent?: string;
   default_profiles?: Record<string, string>;
   enabled_agents?: string[];
   integrations?: {
     mcp_auto_install?: boolean;
     skill_auto_install?: boolean;
-  };
-  im_agent?: {
-    auto_continue_last_session?: boolean;
   };
   proxy?: {
     enabled?: boolean;
@@ -55,6 +53,18 @@ export interface Settings {
       max_retries?: number | null;
       delay_seconds?: number;
     };
+  };
+  local_agent_api?: {
+    enabled?: boolean;
+  };
+  remote?: {
+    channels?: Record<
+      string,
+      {
+        agent_id?: string;
+        profile_id?: string;
+      }
+    >;
   };
   search_tool?: {
     stdio_path?: string;
@@ -139,7 +149,12 @@ export type PluginInstallStatus =
   | "installed_not_discoverable"
   | "ready";
 
-export type AuthFlowStatus = "idle" | "generating" | "waiting" | "connected" | "error";
+export type AuthFlowStatus =
+  | "idle"
+  | "generating"
+  | "waiting"
+  | "connected"
+  | "error";
 
 export interface AuthFlowState {
   status: AuthFlowStatus;
@@ -168,7 +183,9 @@ export interface StepChannelsProps {
   onStartAuth: (pluginId: string) => void;
   onCancelAuth: (pluginId: string) => void;
   switchSize?: "sm" | "default";
+  compact?: boolean;
   description?: ReactNode;
+  focusPluginId?: string | null;
   notice?: ReactNode;
 }
 
@@ -185,6 +202,7 @@ export interface StepTunnelProps {
   cfHostname: string;
   onCfHostname: (value: string) => void;
   showProviderSelect?: boolean;
+  compact?: boolean;
   notice?: ReactNode;
 }
 
@@ -272,6 +290,7 @@ export interface StartkitScanReport {
 }
 
 export interface StartkitProgressEvent {
+  runId?: string;
   id: string;
   label: string;
   status: StartkitStatus;
@@ -280,5 +299,6 @@ export interface StartkitProgressEvent {
 }
 
 export interface StartkitCompleteEvent {
+  runId: string;
   status: string;
 }

@@ -145,6 +145,7 @@ where
     F: FnMut(String),
     C: Fn() -> bool,
 {
+    ensure_managed_node_for_npm(&mut on_log, &is_cancelled).await?;
     std::fs::create_dir_all(package_dir).with_context(|| format!("creating {:?}", package_dir))?;
 
     let pkg_json = package_dir.join("package.json");
@@ -235,63 +236,9 @@ fn npm_install_args(args: &[&str]) -> Vec<String> {
     out
 }
 
-async fn npm_process(
-    args: &[String],
-    cwd: &std::path::Path,
-) -> std::io::Result<tokio::process::Command> {
-    let node_info = crate::process::env::command("node")
-        .args(["-p", "process.execPath"])
-        .output()
-        .await?;
-    let node_exec = String::from_utf8_lossy(&node_info.stdout)
-        .trim()
-        .to_string();
-    let node_dir = std::path::Path::new(&node_exec).parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "cannot determine node install directory",
-        )
-    })?;
-
-    let candidates = [
-        node_dir
-            .join("node_modules")
-            .join("npm")
-            .join("bin")
-            .join("npm-cli.js"),
-        node_dir.join("../lib/node_modules/npm/bin/npm-cli.js"),
-        std::path::PathBuf::from("/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js"),
-        std::path::PathBuf::from("/usr/local/lib/node_modules/npm/bin/npm-cli.js"),
-    ];
-    let npm_cli = candidates
-        .iter()
-        .find(|p| p.exists())
-        .cloned()
-        .ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!(
-                    "npm-cli.js not found in any of: {:?} — is npm installed with Node.js?",
-                    candidates
-                ),
-            )
-        })?;
-
-    let mut node_args: Vec<String> = vec![npm_cli.to_string_lossy().to_string()];
-    node_args.extend(args.iter().cloned());
-
-    let mut command = crate::process::env::command("node");
-    command
-        .args(&node_args)
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    Ok(command)
-}
-
 async fn npm_global_bin_dir(cwd: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
     let args = vec!["prefix".to_string(), "-g".to_string()];
-    let output = npm_process(&args, cwd)
+    let output = crate::process::env::npm_process(&args, cwd)
         .await?
         .output()
         .await
@@ -325,9 +272,10 @@ async fn npm_command_streaming<F>(
 where
     F: FnMut(String),
 {
-    let mut child = npm_process(args, cwd).await?.spawn()?;
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
+    let mut command = crate::process::env::npm_process(args, cwd).await?;
+    let mut child = crate::process::spawn_tree_killable(&mut command)?;
+    let stdout = child.take_stdout();
+    let stderr = child.take_stderr();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(&'static str, String)>();
 
     if let Some(stdout) = stdout {
@@ -357,7 +305,7 @@ where
         tokio::select! {
             _ = cancel_tick.tick() => {
                 if is_cancelled() {
-                    let _ = child.start_kill();
+                    let _ = child.terminate_tree().await;
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Interrupted,
                         "install cancelled",
@@ -400,6 +348,28 @@ where
     })
 }
 
+async fn ensure_managed_node_for_npm<F, C>(on_log: &mut F, is_cancelled: &C) -> anyhow::Result<()>
+where
+    F: FnMut(String),
+    C: Fn() -> bool,
+{
+    if !crate::config::ensure_loaded().toolchain_mode.is_managed() {
+        return Ok(());
+    }
+    let status = crate::toolchain::managed_node_status(None).await;
+    if status.ready {
+        return Ok(());
+    }
+    on_log("Installing VibeAround-managed Node.js".to_string());
+    crate::toolchain::ensure_node_lts(
+        &crate::toolchain::NodeSource::default(),
+        on_log,
+        is_cancelled,
+    )
+    .await
+    .map(|_| ())
+}
+
 /// Install a native agent CLI by running its official install command.
 pub async fn auto_install_agent_cmd(install_cmd: &str, agent: &str) -> anyhow::Result<()> {
     auto_install_agent_cmd_with_output(install_cmd, agent)
@@ -414,8 +384,9 @@ pub async fn auto_install_agent_cmd_with_output(
 ) -> anyhow::Result<InstallOutput> {
     tracing::info!("[agent] running install for {}: {}", agent, install_cmd);
 
-    let output = crate::process::env::command("sh")
-        .args(["-c", install_cmd])
+    let (program, args) = install_command_invocation(install_cmd);
+    let output = crate::process::env::command(program)
+        .args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .output()
@@ -431,6 +402,23 @@ pub async fn auto_install_agent_cmd_with_output(
 
     tracing::info!("[agent] installed {}", agent);
     Ok(InstallOutput { stdout, stderr })
+}
+
+fn install_command_invocation(install_cmd: &str) -> (&'static str, Vec<String>) {
+    if cfg!(windows) {
+        (
+            "powershell.exe",
+            vec![
+                "-NoProfile".to_string(),
+                "-ExecutionPolicy".to_string(),
+                "Bypass".to_string(),
+                "-Command".to_string(),
+                install_cmd.to_string(),
+            ],
+        )
+    } else {
+        ("sh", vec!["-lc".to_string(), install_cmd.to_string()])
+    }
 }
 
 /// Check if a program is available in PATH.
@@ -477,24 +465,44 @@ pub async fn install_acp_agents(settings: &serde_json::Value) {
             }
         }
         // Native binary agents with install command (Cursor, Kiro)
-        else if let Some(install_cmd) = &agent_def.acp.install_cmd {
-            let detected =
-                if let Some(candidate) = crate::agent_detection::selected_candidate(agent_id) {
-                    Some(candidate)
-                } else {
-                    crate::agent_detection::scan_agent_and_persist(agent_id)
-                        .await
-                        .ok()
-                        .and_then(|detection| detection.system_selected_candidate())
-                };
-            if detected.is_some() || is_program_available(&agent_def.acp.program) {
+        else if let Some(install_cmd) = native_agent_install_command(agent_id, agent_def) {
+            let config = crate::config::ensure_loaded();
+            let detected = crate::agent_availability::resolve_agent_availability(
+                agent_id,
+                crate::agent_availability::AgentAvailabilityRequest {
+                    scan_policy: crate::agent_availability::AgentScanPolicy::RefreshIfMissing,
+                    toolchain_mode: config.toolchain_mode.as_str(),
+                    candidate_preference:
+                        crate::agent_availability::AgentCandidatePreference::ToolchainMode,
+                    include_configured_version: true,
+                },
+            )
+            .await
+            .ok()
+            .and_then(|availability| availability.selected);
+            if detected.is_some() {
                 continue;
             }
-            if let Err(e) = auto_install_agent_cmd(install_cmd, agent_id).await {
+            if config.toolchain_mode.is_managed() {
+                tracing::info!(
+                    "[agent] skipping native install for {} in managed toolchain mode",
+                    agent_id
+                );
+                continue;
+            }
+            if is_program_available(&agent_def.acp.program) {
+                continue;
+            }
+            if let Err(e) = auto_install_agent_cmd(&install_cmd, agent_id).await {
                 tracing::info!("[agent] install {} error: {}", agent_id, e);
             }
         }
     }
+}
+
+fn native_agent_install_command(agent_id: &str, agent_def: &resources::AgentDef) -> Option<String> {
+    crate::agent_detection::source_command_template(agent_id, "native", "install")
+        .or_else(|| agent_def.acp.install_cmd.clone())
 }
 
 fn has_enabled_channels(settings: &serde_json::Value) -> bool {
@@ -508,23 +516,25 @@ fn has_enabled_channels(settings: &serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        npm_global_install_target, npm_package_bin_name, npm_package_spec, NpmPackageSpec,
+        install_command_invocation, native_agent_install_command, npm_global_install_target,
+        npm_package_bin_name, npm_package_spec, NpmPackageSpec,
     };
+    use crate::resources;
 
     #[test]
     fn parses_scoped_npm_package_specs() {
         assert_eq!(
-            npm_package_spec("@zed-industries/codex-acp@0.14.0"),
+            npm_package_spec("@zed-industries/codex-acp@0.16.0"),
             NpmPackageSpec {
                 package_name: "@zed-industries/codex-acp",
-                requested_version: Some("0.14.0"),
+                requested_version: Some("0.16.0"),
             }
         );
         assert_eq!(
-            npm_package_spec("@agentclientprotocol/claude-agent-acp"),
+            npm_package_spec("@agentclientprotocol/claude-agent-acp@0.48.0"),
             NpmPackageSpec {
                 package_name: "@agentclientprotocol/claude-agent-acp",
-                requested_version: None,
+                requested_version: Some("0.48.0"),
             }
         );
     }
@@ -532,7 +542,7 @@ mod tests {
     #[test]
     fn derives_default_bin_name_from_package_name() {
         assert_eq!(
-            npm_package_bin_name("@zed-industries/codex-acp@0.14.0"),
+            npm_package_bin_name("@zed-industries/codex-acp@0.16.0"),
             "codex-acp"
         );
         assert_eq!(npm_package_bin_name("plain-agent@1.2.3"), "plain-agent");
@@ -548,5 +558,30 @@ mod tests {
             npm_global_install_target("@openai/codex@1.2.3"),
             "@openai/codex@1.2.3"
         );
+    }
+
+    #[test]
+    fn native_install_invocation_uses_platform_shell() {
+        let (program, args) = install_command_invocation("echo hello");
+        if cfg!(windows) {
+            assert_eq!(program, "powershell.exe");
+            assert!(args.contains(&"-Command".to_string()));
+            assert_eq!(args.last().map(String::as_str), Some("echo hello"));
+        } else {
+            assert_eq!(program, "sh");
+            assert_eq!(args, vec!["-lc".to_string(), "echo hello".to_string()]);
+        }
+    }
+
+    #[test]
+    fn native_agent_install_command_prefers_source_catalog() {
+        let cursor = resources::agent_by_id("cursor").expect("cursor agent");
+        let command = native_agent_install_command("cursor", cursor).expect("install command");
+        if cfg!(windows) {
+            assert!(command.contains("install.ps1"));
+            assert!(!command.contains("| bash"));
+        } else {
+            assert!(command.contains("cursor.com/install"));
+        }
     }
 }

@@ -33,6 +33,16 @@ const backendProxy = {
   },
 };
 
+function manualChunks(id: string) {
+  if (!id.includes("node_modules")) return undefined;
+  if (id.includes("shiki") || id.includes("@shikijs")) return undefined;
+  if (id.includes("radix-ui") || id.includes("lucide-react")) return "vendor-ui";
+  if (id.includes("react") || id.includes("scheduler")) return "vendor-react";
+  if (id.includes("@agentclientprotocol")) return "vendor-acp";
+  if (id.includes("zod")) return "vendor-zod";
+  return undefined;
+}
+
 export default defineConfig(({ mode }) => {
   const versionLabel =
     mode === "production" ? packageVersion : `${packageVersion} dev`;
@@ -43,6 +53,17 @@ export default defineConfig(({ mode }) => {
       __APP_VERSION_LABEL__: JSON.stringify(versionLabel),
     },
     plugins: [react(), tailwindcss()],
+    build: {
+      // Shiki keeps full language grammars in lazy chunks. A few grammars are
+      // larger than Vite's 500KB default, but they are fetched only when a
+      // matching code block is rendered.
+      chunkSizeWarningLimit: 800,
+      rollupOptions: {
+        output: {
+          manualChunks,
+        },
+      },
+    },
     resolve: {
       alias: [
         { find: "@va/ui/button", replacement: path.resolve(__dirname, "../shared/ui/src/button.tsx") },

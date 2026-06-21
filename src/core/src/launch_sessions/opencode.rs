@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
 
 use rusqlite::{params, Connection, OpenFlags};
 use serde_json::Value;
@@ -74,7 +73,7 @@ fn sessions_from_db(workspaces: &[PathBuf]) -> Option<Vec<LaunchSession>> {
 }
 
 fn sessions_from_cli(workspaces: &[PathBuf]) -> Vec<LaunchSession> {
-    let Ok(output) = Command::new("opencode")
+    let Ok(output) = crate::process::env::std_command("opencode")
         .args(["session", "list", "--format", "json"])
         .output()
     else {

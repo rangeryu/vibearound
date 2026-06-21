@@ -10,6 +10,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import {
   ChatEventSchema,
+  formatErrorMessage,
   type AgentInfo,
   type LaunchSessionInfo,
   type MultiAgentTurn,
@@ -463,7 +464,7 @@ export function useWebChatConnection({
           break;
         }
         case "error": {
-          appendErrorToStream(parsed.error);
+          appendErrorToStream(formatErrorMessage(parsed.error));
           setStreaming(false);
           promptInFlightRef.current = false;
           finishResumeReplay();

@@ -146,10 +146,15 @@ export interface AgentExecutableLatest {
 
 export function getAgentExecutableResolution(
   agentId: string,
+  options?: { scan?: boolean },
 ): Promise<AgentExecutableResolution> {
-  return invoke<AgentExecutableResolution>("launcher_agent_executable_resolution", {
-    agentId,
-  });
+  return invoke<AgentExecutableResolution>(
+    "launcher_agent_executable_resolution",
+    {
+      agentId,
+      scan: options?.scan ?? false,
+    },
+  );
 }
 
 export function getAgentExecutableLatest(
@@ -195,6 +200,21 @@ export function getDesktopAppEntries(): Promise<DesktopAppDetectionFile | null> 
   return invoke<DesktopAppDetectionFile | null>("get_desktop_app_entries");
 }
 
+export async function getDesktopAppEntriesForAgents(
+  agents: Pick<AgentSummary, "id" | "direct_only">[],
+): Promise<DesktopAppDetectionFile | null> {
+  const cached = await getDesktopAppEntries().catch(() => null);
+  const needsScan =
+    !cached ||
+    agents.some((agent) => agent.direct_only && !(agent.id in cached.apps));
+  if (!needsScan) return cached;
+  return rescanDesktopAppEntries().catch(() => cached);
+}
+
+export function checkSelectedLaunchEntry(): Promise<boolean> {
+  return invoke<boolean>("check_selected_launch_entry");
+}
+
 export interface TerminalOption {
   id: string;
   label: string;
@@ -213,6 +233,7 @@ export interface LauncherPreferences {
   enabledAgents: string[];
   defaultProfiles: Record<string, string>;
   compatibilityBridge: CompatibilityBridgeMode;
+  localAgentApiEnabled: boolean;
   profileConnections: ProfileConnections;
 }
 
@@ -242,7 +263,9 @@ export function getSettings(): Promise<Settings> {
   return invoke<Settings>("get_settings");
 }
 
-export function listLauncherWorkspaces(agentId?: string): Promise<WorkspaceOption[]> {
+export function listLauncherWorkspaces(
+  agentId?: string,
+): Promise<WorkspaceOption[]> {
   return invoke<WorkspaceOption[]>("launcher_list_workspaces", {
     agentId: agentId ?? null,
   });
@@ -288,6 +311,12 @@ export function setLauncherCompatibilityBridge(
   mode: CompatibilityBridgeMode,
 ): Promise<void> {
   return invoke<void>("launcher_set_compatibility_bridge", { mode });
+}
+
+export function setLauncherLocalAgentApiEnabled(
+  enabled: boolean,
+): Promise<void> {
+  return invoke<void>("launcher_set_local_agent_api_enabled", { enabled });
 }
 
 export function setProfileConnection(

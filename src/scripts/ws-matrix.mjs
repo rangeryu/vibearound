@@ -15,7 +15,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 
-const SERVER_PORT = 12358;
+const SERVER_PORT = parsePort(
+  process.env.VIBEAROUND_MATRIX_PORT ?? process.env.VIBEAROUND_PORT ?? "12358",
+  "VIBEAROUND_MATRIX_PORT",
+);
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REAL_HOME = homedir();
 const MATRIX_TIMEOUT_MS = Number(process.env.VIBEAROUND_MATRIX_TIMEOUT_MS ?? 45_000);
@@ -53,8 +56,8 @@ const PROVIDER_TARGETS = [
     profile: "matrix-minimax",
     label: "Matrix MiniMax",
     targets: [
-      { api: "anthropic", model: "MiniMax-M2.7", endpointId: "global" },
-      { api: "openai-chat", model: "MiniMax-M2.7", endpointId: "global" },
+      { api: "anthropic", model: "MiniMax-M2.7", endpointId: "api-global" },
+      { api: "openai-chat", model: "MiniMax-M2.7", endpointId: "api-global" },
     ],
   },
   {
@@ -255,6 +258,14 @@ function apiSlug(apiType) {
   }
 }
 
+function parsePort(value, label) {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error(`${label} must be a TCP port between 1 and 65535`);
+  }
+  return port;
+}
+
 async function main() {
   if (typeof WebSocket === "undefined") {
     throw new Error("This script requires a runtime with global WebSocket. Run it with Bun.");
@@ -273,8 +284,8 @@ async function main() {
   let server = null;
 
   try {
-    await writeMatrixHome(home, workspace, upstream.url);
     await writeFakeAgents(home);
+    await writeMatrixHome(home, workspace, upstream.url);
 
     server = startVibeAroundServer(home);
     const token = await waitForAuthToken(home);
@@ -841,6 +852,7 @@ async function writeMatrixHome(home, workspace, upstreamUrl) {
     },
   });
   await writeJson(path.join(dataDir, "agents.json"), {
+    agents: fakeAgentPreferences(home),
     profileConnections: Object.fromEntries(
       PROVIDER_TARGETS.map((providerDef) => [providerDef.profile, launchPreferences(providerDef)]),
     ),
@@ -869,6 +881,37 @@ async function writeMatrixHome(home, workspace, upstreamUrl) {
 
   for (const item of profiles) {
     await writeJson(path.join(profilesDir, `${item.id}.json`), item);
+  }
+}
+
+function fakeAgentPreferences(home) {
+  const bin = path.join(home, ".vibearound", "plugins", "node_modules", ".bin");
+  return Object.fromEntries(
+    ["codex", "claude", "pi", "gemini", "opencode"].map((agent) => [
+      agent,
+      {
+        executable: {
+          path: path.join(bin, agentBinName(agent)),
+          version: "matrix-fake 0.0.1",
+          source: "manual_path",
+          sourceLabel: "Matrix fake ACP agent",
+          rank: 0,
+        },
+      },
+    ]),
+  );
+}
+
+function agentBinName(agent) {
+  switch (agent) {
+    case "codex":
+      return "codex-acp";
+    case "claude":
+      return "claude-agent-acp";
+    case "pi":
+      return "pi-acp";
+    default:
+      return agent;
   }
 }
 
@@ -959,6 +1002,7 @@ function startVibeAroundServer(home) {
       PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
       CARGO_HOME: process.env.CARGO_HOME ?? path.join(REAL_HOME, ".cargo"),
       RUSTUP_HOME: process.env.RUSTUP_HOME ?? path.join(REAL_HOME, ".rustup"),
+      VIBEAROUND_PORT: String(SERVER_PORT),
       VIBEAROUND_MATRIX_BASE_URL: `http://127.0.0.1:${SERVER_PORT}`,
     },
     stdio: ["ignore", "pipe", "pipe"],

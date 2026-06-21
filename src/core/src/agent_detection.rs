@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,6 +19,22 @@ const NATIVE_RANK_BASE: u32 = 3_000;
 const GENERIC_PATH_RANK_BASE: u32 = 4_000;
 const MANAGED_RANK_BASE: u32 = 10_000;
 const APP_BUNDLED_RANK_BASE: u32 = 20_000;
+
+#[derive(Debug, Clone, Default)]
+struct PackageManagerCandidateDirs {
+    dirs: Vec<PathBuf>,
+}
+
+impl PackageManagerCandidateDirs {
+    fn candidate_paths(&self, program: &str) -> Vec<PathBuf> {
+        let paths = self
+            .dirs
+            .iter()
+            .flat_map(|dir| program_candidates_in_dir(dir.clone(), program))
+            .collect();
+        dedupe_paths(paths)
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentSourceCatalog {
@@ -199,7 +216,12 @@ pub async fn manual_candidate_with_version(
 }
 
 pub fn selected_candidate_for_mode(agent_id: &str, toolchain_mode: &str) -> Option<AgentCandidate> {
-    configured_candidate(agent_id).or_else(|| startkit_candidate_for_mode(agent_id, toolchain_mode))
+    crate::agent_availability::resolve_cached_agent_availability(
+        agent_id,
+        toolchain_mode,
+        crate::agent_availability::AgentCandidatePreference::ToolchainMode,
+    )
+    .selected
 }
 
 pub fn selected_candidate(agent_id: &str) -> Option<AgentCandidate> {
@@ -212,16 +234,31 @@ pub fn resolve_agent_command_for_mode(
     fallback_command: &str,
     toolchain_mode: &str,
 ) -> String {
+    resolve_agent_command_for_mode_strict(agent_id, fallback_command, toolchain_mode)
+        .unwrap_or_else(|_| fallback_command.to_string())
+}
+
+pub fn resolve_agent_command_for_mode_strict(
+    agent_id: &str,
+    fallback_command: &str,
+    toolchain_mode: &str,
+) -> anyhow::Result<String> {
     if crate::resources::agent_by_id(agent_id)
         .map(|agent| agent.direct_only)
         .unwrap_or(false)
     {
-        return fallback_command.to_string();
+        return Ok(fallback_command.to_string());
     }
 
-    selected_candidate_for_mode(agent_id, toolchain_mode)
-        .map(|candidate| replace_command_program(fallback_command, &candidate.path))
-        .unwrap_or_else(|| fallback_command.to_string())
+    if let Some(candidate) = selected_candidate_for_mode(agent_id, toolchain_mode) {
+        return Ok(replace_command_program(fallback_command, &candidate.path));
+    }
+
+    if is_managed_toolchain_mode(toolchain_mode) {
+        anyhow::bail!("{}", managed_agent_missing_message(agent_id));
+    }
+
+    Ok(fallback_command.to_string())
 }
 
 pub fn resolve_agent_command(agent_id: &str, fallback_command: &str) -> String {
@@ -229,17 +266,38 @@ pub fn resolve_agent_command(agent_id: &str, fallback_command: &str) -> String {
     resolve_agent_command_for_mode(agent_id, fallback_command, mode)
 }
 
+pub fn resolve_agent_command_strict(
+    agent_id: &str,
+    fallback_command: &str,
+) -> anyhow::Result<String> {
+    let mode = crate::config::ensure_loaded().toolchain_mode.as_str();
+    resolve_agent_command_for_mode_strict(agent_id, fallback_command, mode)
+}
+
 pub fn preferred_startkit_candidate(
     agent_id: &str,
     detection: &AgentDetection,
     toolchain_mode: &str,
 ) -> Option<AgentCandidate> {
-    if toolchain_mode == "managed" {
+    if is_managed_toolchain_mode(toolchain_mode) {
         return agent_uses_npm_install(agent_id)
             .then(|| detection.managed_selected_candidate())
             .flatten();
     }
     detection.system_selected_candidate()
+}
+
+pub fn managed_agent_missing_message(agent_id: &str) -> String {
+    let label = crate::resources::agent_by_id(agent_id)
+        .map(|agent| agent.display_name.as_str())
+        .unwrap_or(agent_id);
+    format!(
+        "{label} is not installed in the VibeAround managed toolchain. Install it with Startkit, or switch Settings > General > Agent Toolchain to System to use a local installation."
+    )
+}
+
+fn is_managed_toolchain_mode(toolchain_mode: &str) -> bool {
+    toolchain_mode.trim().eq_ignore_ascii_case("managed")
 }
 
 fn manual_candidate_from_path(path: PathBuf, source_label: String) -> AgentCandidate {
@@ -388,7 +446,8 @@ pub async fn scan_and_persist() -> anyhow::Result<AgentDetectionFile> {
 pub async fn scan_agent_and_persist(agent_id: &str) -> anyhow::Result<AgentDetection> {
     let catalog = source_catalog()?;
     let spec = agent_command_spec(&catalog, agent_id)?;
-    let detection = scan_agent(agent_id, &spec).await;
+    let package_manager_dirs = package_manager_candidate_dirs().await;
+    let detection = scan_agent(agent_id, &spec, &package_manager_dirs).await;
     let mut detected = read_detected_agents().unwrap_or_else(|| AgentDetectionFile {
         schema_version: DETECTION_SCHEMA_VERSION,
         platform: current_platform().to_string(),
@@ -406,15 +465,21 @@ pub async fn scan_agent_and_persist(agent_id: &str) -> anyhow::Result<AgentDetec
 }
 
 pub async fn scan_agents(catalog: &AgentSourceCatalog) -> anyhow::Result<AgentDetectionFile> {
-    let mut tasks = JoinSet::new();
+    let mut scan_specs = Vec::new();
     for agent in crate::resources::AGENTS.iter() {
         if agent.direct_only || !agent.supports_current_platform() {
             continue;
         }
         let spec = agent_command_spec(catalog, &agent.id)?;
-        let agent_id = agent.id.clone();
+        scan_specs.push((agent.id.clone(), spec));
+    }
+
+    let package_manager_dirs = package_manager_candidate_dirs().await;
+    let mut tasks = JoinSet::new();
+    for (agent_id, spec) in scan_specs {
+        let package_manager_dirs = package_manager_dirs.clone();
         tasks.spawn(async move {
-            let detection = scan_agent(&agent_id, &spec).await;
+            let detection = scan_agent(&agent_id, &spec, &package_manager_dirs).await;
             (agent_id, detection)
         });
     }
@@ -450,7 +515,11 @@ fn agent_command_spec(
     })
 }
 
-async fn scan_agent(agent_id: &str, spec: &AgentCommandSpec) -> AgentDetection {
+async fn scan_agent(
+    agent_id: &str,
+    spec: &AgentCommandSpec,
+    package_manager_dirs: &PackageManagerCandidateDirs,
+) -> AgentDetection {
     let mut paths = Vec::new();
     let mut seen = BTreeSet::new();
 
@@ -460,7 +529,7 @@ async fn scan_agent(agent_id: &str, spec: &AgentCommandSpec) -> AgentDetection {
         }
     }
 
-    for path in package_manager_candidate_paths(&spec.program).await {
+    for path in package_manager_dirs.candidate_paths(&spec.program) {
         if seen.insert(normalize_path_key(&path)) {
             paths.push((path, false));
         }
@@ -534,7 +603,7 @@ fn write_detected_agents(detected: &AgentDetectionFile) -> anyhow::Result<()> {
 
 async fn user_shell_paths(program: &str) -> Vec<PathBuf> {
     if cfg!(windows) {
-        return windows_where_paths(program).await;
+        return windows_path_env_paths(program);
     }
     unix_shell_paths(program).await
 }
@@ -562,30 +631,40 @@ while [ -n "$path_dirs" ]; do
 done"#,
         escaped_program
     );
-    let mut command = Command::new(shell);
+    let mut command = crate::process::env::command(shell);
     command.args(["-lic", &script]);
     output_lines(command, Duration::from_secs(6)).await
 }
 
-async fn windows_where_paths(program: &str) -> Vec<PathBuf> {
-    let mut command = Command::new("where.exe");
-    command.arg(program);
-    output_lines(command, Duration::from_secs(6)).await
-}
-
-async fn package_manager_candidate_paths(program: &str) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    paths.extend(npm_candidate_paths(program).await);
-    paths.extend(global_bin_command_candidate_paths("bun", &["pm", "bin", "-g"], program).await);
-    paths.extend(global_bin_command_candidate_paths("pnpm", &["bin", "-g"], program).await);
-    paths.extend(global_bin_command_candidate_paths("yarn", &["global", "bin"], program).await);
-    paths.extend(homebrew_candidate_paths(program).await);
-    paths.extend(windows_package_manager_candidate_paths(program));
+fn windows_path_env_paths(program: &str) -> Vec<PathBuf> {
+    let env = crate::process::env::enriched_env();
+    let Some(path_value) = crate::process::env::path_value(env) else {
+        return Vec::new();
+    };
+    let paths = std::env::split_paths(&path_value)
+        .flat_map(|dir| program_candidates_in_dir(dir, program))
+        .collect();
     dedupe_paths(paths)
 }
 
-async fn npm_candidate_paths(program: &str) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
+async fn package_manager_candidate_dirs() -> PackageManagerCandidateDirs {
+    let mut dirs = Vec::new();
+    if cfg!(windows) {
+        dirs.extend(windows_package_manager_candidate_dirs());
+    } else {
+        dirs.extend(npm_candidate_dirs().await);
+        dirs.extend(global_bin_command_candidate_dirs("bun", &["pm", "bin", "-g"]).await);
+        dirs.extend(global_bin_command_candidate_dirs("pnpm", &["bin", "-g"]).await);
+        dirs.extend(global_bin_command_candidate_dirs("yarn", &["global", "bin"]).await);
+        dirs.extend(homebrew_candidate_dirs().await);
+    }
+    PackageManagerCandidateDirs {
+        dirs: dedupe_paths(dirs),
+    }
+}
+
+async fn npm_candidate_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
     for prefix in command_stdout_lines("npm", &["prefix", "-g"], Duration::from_secs(4)).await {
         let prefix = PathBuf::from(prefix);
         let bin_dir = if cfg!(windows) {
@@ -593,7 +672,7 @@ async fn npm_candidate_paths(program: &str) -> Vec<PathBuf> {
         } else {
             prefix.join("bin")
         };
-        paths.extend(program_candidates_in_dir(bin_dir, program));
+        dirs.push(bin_dir);
     }
     for root in command_stdout_lines("npm", &["root", "-g"], Duration::from_secs(4)).await {
         let root = PathBuf::from(root);
@@ -604,39 +683,35 @@ async fn npm_candidate_paths(program: &str) -> Vec<PathBuf> {
                 prefix.join("bin")
             }
         }) {
-            paths.extend(program_candidates_in_dir(bin_dir, program));
+            dirs.push(bin_dir);
         }
     }
-    paths
+    dirs
 }
 
-async fn homebrew_candidate_paths(program: &str) -> Vec<PathBuf> {
+async fn homebrew_candidate_dirs() -> Vec<PathBuf> {
     if !cfg!(target_os = "macos") {
         return Vec::new();
     }
-    let mut paths = Vec::new();
+    let mut dirs = Vec::new();
     for prefix in command_stdout_lines("brew", &["--prefix"], Duration::from_secs(4)).await {
         let prefix = PathBuf::from(prefix);
-        paths.extend(program_candidates_in_dir(prefix.join("bin"), program));
-        paths.extend(program_candidates_in_dir(prefix.join("sbin"), program));
+        dirs.push(prefix.join("bin"));
+        dirs.push(prefix.join("sbin"));
     }
-    paths
+    dirs
 }
 
-async fn global_bin_command_candidate_paths(
-    command: &str,
-    args: &[&str],
-    program: &str,
-) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    for dir in command_stdout_lines(command, args, Duration::from_secs(4)).await {
-        paths.extend(program_candidates_in_dir(PathBuf::from(dir), program));
-    }
-    paths
+async fn global_bin_command_candidate_dirs(command: &str, args: &[&str]) -> Vec<PathBuf> {
+    command_stdout_lines(command, args, Duration::from_secs(4))
+        .await
+        .into_iter()
+        .map(PathBuf::from)
+        .collect()
 }
 
 async fn command_stdout_lines(command: &str, args: &[&str], max_duration: Duration) -> Vec<String> {
-    let mut command = Command::new(command);
+    let mut command = crate::process::env::command(command);
     command.args(args);
     output_lines(command, max_duration)
         .await
@@ -673,30 +748,21 @@ fn managed_candidate_paths(program: &str) -> Vec<PathBuf> {
     program_candidates_in_dir(crate::process::env::managed_npm_bin_dir(), program)
 }
 
-fn windows_package_manager_candidate_paths(program: &str) -> Vec<PathBuf> {
+fn windows_package_manager_candidate_dirs() -> Vec<PathBuf> {
     if !cfg!(windows) {
         return Vec::new();
     }
-    let mut paths = Vec::new();
+    let mut dirs = Vec::new();
     if let Ok(chocolatey) = std::env::var("ChocolateyInstall") {
-        paths.extend(program_candidates_in_dir(
-            Path::new(&chocolatey).join("bin"),
-            program,
-        ));
+        dirs.push(Path::new(&chocolatey).join("bin"));
     }
     if let Ok(scoop) = std::env::var("SCOOP") {
-        paths.extend(program_candidates_in_dir(
-            Path::new(&scoop).join("shims"),
-            program,
-        ));
+        dirs.push(Path::new(&scoop).join("shims"));
     }
     if let Ok(scoop_global) = std::env::var("SCOOP_GLOBAL") {
-        paths.extend(program_candidates_in_dir(
-            Path::new(&scoop_global).join("shims"),
-            program,
-        ));
+        dirs.push(Path::new(&scoop_global).join("shims"));
     }
-    paths
+    dirs
 }
 
 fn windows_known_candidate_paths(program: &str) -> Vec<PathBuf> {
@@ -786,7 +852,7 @@ async fn command_stdout_text(
     args: &[&str],
     max_duration: Duration,
 ) -> Option<String> {
-    let mut command = Command::new(command);
+    let mut command = crate::process::env::command(command);
     command.args(args);
     let output = tokio::time::timeout(max_duration, command.output())
         .await
@@ -882,12 +948,12 @@ fn command_for_version_check(path: &Path, version_arg: &str) -> Command {
             .and_then(|value| value.to_str())
             .map(|value| value.to_ascii_lowercase());
         if matches!(ext.as_deref(), Some("cmd" | "bat")) {
-            let mut command = Command::new("cmd.exe");
+            let mut command = crate::process::env::command("cmd.exe");
             command.arg("/C").arg(path).arg(version_arg);
             return command;
         }
         if ext.as_deref() == Some("ps1") {
-            let mut command = Command::new("powershell.exe");
+            let mut command = crate::process::env::command("powershell.exe");
             command
                 .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
                 .arg(path)
@@ -895,7 +961,7 @@ fn command_for_version_check(path: &Path, version_arg: &str) -> Command {
             return command;
         }
     }
-    let mut command = Command::new(path);
+    let mut command = crate::process::env::command(path);
     command.arg(version_arg);
     command
 }
@@ -1147,17 +1213,22 @@ fn program_from_command(command: &str) -> Option<String> {
 fn replace_command_program(command: &str, program: &str) -> String {
     let trimmed = command.trim_start();
     let Some(first) = program_from_command(trimmed) else {
-        return program.to_string();
+        return shell_command_word(program);
     };
     let rest = trimmed
         .strip_prefix(&first)
         .map(str::trim_start)
         .unwrap_or_default();
+    let program = shell_command_word(program);
     if rest.is_empty() {
-        program.to_string()
+        program
     } else {
         format!("{program} {rest}")
     }
+}
+
+fn shell_command_word(value: &str) -> String {
+    shell_escape::unix::escape(Cow::Borrowed(value)).to_string()
 }
 
 fn comparable_version(value: &str) -> Option<String> {
@@ -1256,6 +1327,25 @@ mod tests {
         assert_eq!(
             source_package("codex", "app_bundled").as_deref(),
             Some("@openai/codex")
+        );
+    }
+
+    #[test]
+    fn replace_command_program_quotes_selected_paths_with_spaces() {
+        assert_eq!(
+            replace_command_program(
+                "claude code --permission-mode acceptEdits",
+                "/Applications/Claude CLI/bin/claude"
+            ),
+            "'/Applications/Claude CLI/bin/claude' code --permission-mode acceptEdits"
+        );
+    }
+
+    #[test]
+    fn replace_command_program_quotes_empty_fallback() {
+        assert_eq!(
+            replace_command_program("", "/tmp/Codex CLI"),
+            "'/tmp/Codex CLI'"
         );
     }
 

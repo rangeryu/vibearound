@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Activity,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import {
   RefreshCw,
   Settings,
   Eye,
   Rocket,
+  Server,
+  Globe,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 import { useChannelsState } from "./hooks/useChannelsState";
@@ -19,20 +27,37 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Splash } from "./Splash";
-import Onboarding from "./Onboarding";
-import { Previews } from "./Previews";
-import { Launch } from "./Launch";
-import { StatusDashboard } from "./StatusDashboard";
-import { SettingsDialog } from "./Settings";
+import type { SettingsDialogTarget } from "./Settings";
 import {
+  checkSelectedLaunchEntry,
   getLauncherPreferences,
-  rescanAgentEntries,
-  rescanDesktopAppEntries,
   type LauncherPreferences,
 } from "./Launch/api";
 import { LanguageMenu } from "./components/LanguageMenu";
 import { cn } from "./lib/utils";
 import { UpdateIndicator } from "./UpdateIndicator";
+import { PluginUpdateIndicator } from "./PluginUpdateIndicator";
+
+const Onboarding = lazy(() => import("./Onboarding"));
+const Previews = lazy(() =>
+  import("./Previews").then((module) => ({ default: module.Previews })),
+);
+const Launch = lazy(() =>
+  import("./Launch").then((module) => ({ default: module.Launch })),
+);
+const LocalApiWorkbench = lazy(() =>
+  import("./LocalApiWorkbench").then((module) => ({
+    default: module.LocalApiWorkbench,
+  })),
+);
+const RemoteDashboard = lazy(() =>
+  import("./RemoteDashboard").then((module) => ({
+    default: module.RemoteDashboard,
+  })),
+);
+const SettingsDialog = lazy(() =>
+  import("./Settings").then((module) => ({ default: module.SettingsDialog })),
+);
 
 // ---------------------------------------------------------------------------
 // Routing + Dashboard
@@ -50,11 +75,11 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.allSettled([rescanAgentEntries(), rescanDesktopAppEntries()]).then(
-      () => {
+    void checkSelectedLaunchEntry()
+      .catch(() => null)
+      .then(() => {
         if (!cancelled) setStartupScanDone(true);
-      },
-    );
+      });
     return () => {
       cancelled = true;
     };
@@ -65,13 +90,17 @@ function App() {
   }
 
   if (route === "/onboarding") {
-    return <Onboarding />;
+    return (
+      <Suspense fallback={<Splash visible />}>
+        <Onboarding />
+      </Suspense>
+    );
   }
 
   return <Dashboard />;
 }
 
-type DashboardPage = "launch" | "status" | "previews";
+type DashboardPage = "launch" | "remote" | "previews" | "localApi";
 
 function Dashboard() {
   const { t } = useI18n();
@@ -79,6 +108,8 @@ function Dashboard() {
     typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
   const [page, setPage] = useState<DashboardPage>("launch");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTarget, setSettingsTarget] =
+    useState<SettingsDialogTarget | null>(null);
   const [launcherPrefs, setLauncherPrefs] =
     useState<LauncherPreferences | null>(null);
   const [launcherPrefsLoaded, setLauncherPrefsLoaded] = useState(false);
@@ -116,6 +147,23 @@ function Dashboard() {
     setLaunchRefreshToken((token) => token + 1);
   }, [refreshAll]);
 
+  const openChannelSettings = useCallback((channelId: string) => {
+    setSettingsTarget({
+      tab: "im",
+      pluginId: channelId,
+      nonce: Date.now(),
+    });
+    setSettingsOpen(true);
+  }, []);
+
+  const openPluginSettings = useCallback(() => {
+    setSettingsTarget({
+      tab: "plugins",
+      nonce: Date.now(),
+    });
+    setSettingsOpen(true);
+  }, []);
+
   const everHadData = useRef(false);
   const [startTime] = useState(() => Date.now());
   const [timedOut, setTimedOut] = useState(false);
@@ -129,7 +177,7 @@ function Dashboard() {
     : !launchEnabled
       ? t("No launch agents enabled")
       : null;
-  const effectivePage = !launchEnabled && page === "launch" ? "status" : page;
+  const effectivePage = !launchEnabled && page === "launch" ? "remote" : page;
 
   if (anyEverLoaded) everHadData.current = true;
 
@@ -139,7 +187,7 @@ function Dashboard() {
 
   useEffect(() => {
     if (launcherPrefsLoaded && !launchEnabled && page === "launch") {
-      setPage("status");
+      setPage("remote");
     }
   }, [launchEnabled, launcherPrefsLoaded, page]);
 
@@ -204,6 +252,7 @@ function Dashboard() {
             @{__APP_VERSION_LABEL__}
           </span>
           <UpdateIndicator />
+          <PluginUpdateIndicator onOpenPlugins={openPluginSettings} />
         </div>
         <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
           <Tabs
@@ -250,10 +299,10 @@ function Dashboard() {
                 )}
               </TooltipProvider>
               <TabsTrigger
-                value="status"
+                value="remote"
                 className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
               >
-                <Activity /> {t("Status")}
+                <Globe /> {t("Remote")}
               </TabsTrigger>
               <TabsTrigger
                 value="previews"
@@ -261,13 +310,22 @@ function Dashboard() {
               >
                 <Eye /> {t("Previews")}
               </TabsTrigger>
+              <TabsTrigger
+                value="localApi"
+                className="!h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:!size-3.5"
+              >
+                <Server /> {t("Local API")}
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
         <div className="relative z-10 flex items-center gap-2">
           <LanguageMenu />
           <Button
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => {
+              setSettingsTarget(null);
+              setSettingsOpen(true);
+            }}
             variant="ghost"
             size="icon-xs"
             title={t("Settings")}
@@ -289,11 +347,19 @@ function Dashboard() {
         </div>
       </header>
 
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onServicesRestarted={handleRuntimeSettingsChanged}
-      />
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsDialog
+            open={settingsOpen}
+            onOpenChange={(open) => {
+              setSettingsOpen(open);
+              if (!open) setSettingsTarget(null);
+            }}
+            onServicesRestarted={handleRuntimeSettingsChanged}
+            initialTarget={settingsTarget}
+          />
+        </Suspense>
+      )}
 
       {firstError && (
         <div className="px-3 py-1 bg-destructive/10 text-destructive text-xs">
@@ -301,26 +367,42 @@ function Dashboard() {
         </div>
       )}
 
-      {effectivePage === "previews" ? (
-        <div className="flex-1 overflow-y-auto">
-          <Previews />
-        </div>
-      ) : effectivePage === "launch" ? (
-        <div className="flex-1 min-h-0">
-          <Launch refreshToken={launchRefreshToken} />
-        </div>
-      ) : (
-        <StatusDashboard
-          channels={channels}
-          tunnels={tunnels}
-          agents={agents}
-        />
-      )}
+      <Suspense fallback={<PageFallback />}>
+        {effectivePage === "previews" ? (
+          <div className="flex-1 overflow-y-auto">
+            <Previews />
+          </div>
+        ) : effectivePage === "localApi" ? (
+          <div className="flex-1 min-h-0">
+            <LocalApiWorkbench refreshToken={launchRefreshToken} />
+          </div>
+        ) : effectivePage === "launch" ? (
+          <div className="flex-1 min-h-0">
+            <Launch refreshToken={launchRefreshToken} />
+          </div>
+        ) : (
+          <RemoteDashboard
+            channels={channels}
+            tunnels={tunnels}
+            agents={agents}
+            onConfigureChannel={openChannelSettings}
+            onDefaultsChanged={handleRuntimeSettingsChanged}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }
 
 export default App;
+
+function PageFallback() {
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground/50" />
+    </div>
+  );
+}
 
 function VibeAroundMark() {
   return (

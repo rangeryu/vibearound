@@ -5,7 +5,7 @@ import { useI18n } from "@va/i18n";
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import {
-  getDesktopAppEntries,
+  getDesktopAppEntriesForAgents,
   listAgents,
   type AgentSummary,
 } from "./api";
@@ -61,11 +61,9 @@ export function DirectCards({
   );
 
   useEffect(() => {
-    void Promise.all([
-      listAgents(),
-      getDesktopAppEntries().catch(() => null),
-    ])
-      .then(([items, desktopApps]) => {
+    void listAgents()
+      .then(async (items) => {
+        const desktopApps = await getDesktopAppEntriesForAgents(items);
         const rank = new Map(AGENT_DISPLAY_ORDER.map((id, index) => [id, index]));
         const installedDesktopAgents = new Set(
           Object.entries(desktopApps?.apps ?? {})
@@ -78,7 +76,11 @@ export function DirectCards({
           }
           return enabledAgentSet ? enabledAgentSet.has(agent.id) : true;
         });
-        setAgents([...visible].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999)));
+        setAgents(
+          [...visible].sort(
+            (a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999),
+          ),
+        );
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [enabledAgentSet]);

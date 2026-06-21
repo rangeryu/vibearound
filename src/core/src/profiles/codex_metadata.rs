@@ -1,9 +1,9 @@
 //! Codex model metadata bridge for provider models that Codex does not bundle.
 
-use std::process::Command;
 use std::sync::LazyLock;
 
 use serde_json::{json, Value};
+use toml_edit::{Array as TomlArray, InlineTable, Value as TomlValue};
 
 use super::catalog::ContentCapabilities;
 
@@ -31,8 +31,14 @@ fn model_catalog_entry(spec: &CodexModelCatalogSpec<'_>) -> Option<Value> {
         .unwrap_or_else(fallback_model_template);
     let object = model.as_object_mut()?;
     object.insert("slug".to_string(), Value::String(spec.model.to_string()));
+    object.insert("model".to_string(), Value::String(spec.model.to_string()));
+    object.insert("id".to_string(), Value::String(spec.model.to_string()));
     object.insert(
         "display_name".to_string(),
+        Value::String(spec.model.to_string()),
+    );
+    object.insert(
+        "displayName".to_string(),
         Value::String(spec.model.to_string()),
     );
     object.insert(
@@ -51,13 +57,59 @@ fn model_catalog_entry(spec: &CodexModelCatalogSpec<'_>) -> Option<Value> {
         .map(|value| Value::Number(value.into()))
         .unwrap_or(Value::Null);
     object.insert("context_window".to_string(), context_window.clone());
-    object.insert("max_context_window".to_string(), context_window);
-    object.insert("input_modalities".to_string(), input_modalities(spec));
+    object.insert("contextWindow".to_string(), context_window.clone());
+    object.insert("max_context_window".to_string(), context_window.clone());
+    object.insert("maxContextWindow".to_string(), context_window);
+    let input_modalities = input_modalities(spec);
+    object.insert("input_modalities".to_string(), input_modalities.clone());
+    object.insert("inputModalities".to_string(), input_modalities);
     object.insert(
         "supports_search_tool".to_string(),
         Value::Bool(spec.capabilities.web_search),
     );
+    object.insert(
+        "supportsSearchTool".to_string(),
+        Value::Bool(spec.capabilities.web_search),
+    );
     Some(model)
+}
+
+pub fn build_provider_models_toml(specs: &[CodexModelCatalogSpec<'_>]) -> Option<String> {
+    let mut models = TomlArray::default();
+    for spec in specs {
+        let mut model = InlineTable::new();
+        model.insert("model", TomlValue::from(spec.model));
+        model.insert("id", TomlValue::from(spec.model));
+        model.insert("display_name", TomlValue::from(spec.model));
+        model.insert("displayName", TomlValue::from(spec.model));
+
+        if let Some(context_window) = spec.context_window {
+            let context_window = i64::try_from(context_window).unwrap_or(i64::MAX);
+            model.insert("context_window", TomlValue::from(context_window));
+            model.insert("contextWindow", TomlValue::from(context_window));
+            model.insert("max_context_window", TomlValue::from(context_window));
+            model.insert("maxContextWindow", TomlValue::from(context_window));
+        }
+
+        let modalities = toml_input_modalities(spec);
+        model.insert("input_modalities", TomlValue::Array(modalities.clone()));
+        model.insert("inputModalities", TomlValue::Array(modalities));
+        model.insert(
+            "supports_search_tool",
+            TomlValue::from(spec.capabilities.web_search),
+        );
+        model.insert(
+            "supportsSearchTool",
+            TomlValue::from(spec.capabilities.web_search),
+        );
+
+        models.push(TomlValue::InlineTable(model));
+    }
+
+    if models.is_empty() {
+        return None;
+    }
+    Some(TomlValue::Array(models).to_string())
 }
 
 fn input_modalities(spec: &CodexModelCatalogSpec<'_>) -> Value {
@@ -71,8 +123,20 @@ fn input_modalities(spec: &CodexModelCatalogSpec<'_>) -> Value {
     Value::Array(modalities)
 }
 
+fn toml_input_modalities(spec: &CodexModelCatalogSpec<'_>) -> TomlArray {
+    let mut modalities = TomlArray::default();
+    modalities.push("text");
+    if spec.capabilities.image_input {
+        modalities.push("image");
+    }
+    if spec.capabilities.file_input {
+        modalities.push("file");
+    }
+    modalities
+}
+
 fn load_bundled_model_template() -> Option<Value> {
-    let output = Command::new("codex")
+    let output = crate::process::env::silent_std_command("codex")
         .args(["debug", "models", "--bundled"])
         .output()
         .ok()?;

@@ -5,22 +5,37 @@
 //! platform scripts with a stable environment, and normalize all output into
 //! structured item reports for the onboarding UI.
 
+mod agent;
+mod channels;
+mod managed;
+mod plan;
+mod redact;
+mod script;
+
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Runtime, State};
-use tokio::io::AsyncReadExt;
-use tokio::process::Command;
 use tokio::task::JoinSet;
-use tokio::time::sleep;
 
-use crate::agent_detection;
+#[cfg(test)]
+use agent::agent_cli_npm_install_package;
+use agent::{agent_id_from_cli_item, execute_agent_cli_item, scan_agent_cli_item};
+use channels::run_channel_plugins_item;
+use managed::{
+    execute_managed_toolchain_item, item_uses_managed_dependency_dir, run_managed_npm_package_item,
+    scan_managed_npm_package_item, scan_managed_toolchain_item,
+};
+use plan::{
+    effective_item_dependencies, find_item, is_managed_mode, item_summary, plan_from_manifest,
+};
+use script::{run_script, ScriptOutput};
 
 const SETTINGS_TOML: &str = include_str!("../../../resources/startkit/settings.toml");
 const STARTKIT_PROGRESS_EVENT: &str = "startkit-progress";
@@ -28,13 +43,18 @@ const STARTKIT_COMPLETE_EVENT: &str = "startkit-complete";
 const STARTKIT_ITEM_SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 
 pub struct StartkitRunState {
+    active: Arc<Mutex<Option<Arc<StartkitRunControl>>>>,
+}
+
+struct StartkitRunControl {
+    run_id: String,
     cancelled: Arc<AtomicBool>,
 }
 
 impl Default for StartkitRunState {
     fn default() -> Self {
         Self {
-            cancelled: Arc::new(AtomicBool::new(false)),
+            active: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -302,6 +322,8 @@ pub struct StartkitScanReport {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartkitProgressEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
     pub id: String,
     pub label: String,
     pub status: StartkitItemStatus,
@@ -312,26 +334,8 @@ pub struct StartkitProgressEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartkitCompleteEvent {
+    pub run_id: String,
     pub status: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ScriptOutput {
-    status: String,
-    #[serde(default)]
-    version: Option<String>,
-    #[serde(default)]
-    latest_version: Option<String>,
-    #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
-    message: Option<String>,
-    #[serde(default)]
-    actions: Vec<String>,
-    #[serde(default)]
-    manual_command: Option<String>,
-    #[serde(default)]
-    manual_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -383,29 +387,60 @@ pub async fn start_startkit_install<R: Runtime>(
     state: State<'_, StartkitRunState>,
     settings: Value,
     choices: StartkitChoices,
+    run_id: Option<String>,
 ) -> Result<(), String> {
-    state.cancelled.store(false, Ordering::Relaxed);
     common::config::write_settings_json(&settings).map_err(|e| e.to_string())?;
 
-    let cancelled = Arc::clone(&state.cancelled);
+    let run_id = normalize_run_id(run_id);
+    let control = Arc::new(StartkitRunControl {
+        run_id: run_id.clone(),
+        cancelled: Arc::new(AtomicBool::new(false)),
+    });
+    {
+        let mut active = state
+            .active
+            .lock()
+            .map_err(|_| "startkit run state lock poisoned".to_string())?;
+        if let Some(previous) = active.replace(Arc::clone(&control)) {
+            previous.cancelled.store(true, Ordering::Relaxed);
+        }
+    }
+
+    let active = Arc::clone(&state.active);
     tauri::async_runtime::spawn(async move {
-        let status = match run_startkit_install(app.clone(), settings, choices, cancelled).await {
+        let status = match run_startkit_install(
+            app.clone(),
+            settings,
+            choices,
+            Arc::clone(&control.cancelled),
+            run_id.clone(),
+        )
+        .await
+        {
             Ok(status) => status,
             Err(err) => {
-                let _ = app.emit(
-                    STARTKIT_PROGRESS_EVENT,
-                    StartkitProgressEvent {
-                        id: "startkit".to_string(),
-                        label: "Startkit".to_string(),
-                        status: StartkitItemStatus::Error,
-                        message: Some(err.to_string()),
-                        report: None,
-                    },
-                );
+                if is_active_run(&active, &run_id) {
+                    let _ = app.emit(
+                        STARTKIT_PROGRESS_EVENT,
+                        StartkitProgressEvent {
+                            run_id: Some(run_id.clone()),
+                            id: "startkit".to_string(),
+                            label: "Startkit".to_string(),
+                            status: StartkitItemStatus::Error,
+                            message: Some(err.to_string()),
+                            report: None,
+                        },
+                    );
+                }
                 "error".to_string()
             }
         };
-        let _ = app.emit(STARTKIT_COMPLETE_EVENT, StartkitCompleteEvent { status });
+        if finish_active_run(&active, &run_id) {
+            let _ = app.emit(
+                STARTKIT_COMPLETE_EVENT,
+                StartkitCompleteEvent { run_id, status },
+            );
+        }
     });
 
     Ok(())
@@ -413,8 +448,44 @@ pub async fn start_startkit_install<R: Runtime>(
 
 #[tauri::command]
 pub async fn cancel_startkit_install(state: State<'_, StartkitRunState>) -> Result<(), String> {
-    state.cancelled.store(true, Ordering::Relaxed);
+    if let Some(control) = state
+        .active
+        .lock()
+        .map_err(|_| "startkit run state lock poisoned".to_string())?
+        .as_ref()
+    {
+        control.cancelled.store(true, Ordering::Relaxed);
+    }
     Ok(())
+}
+
+fn normalize_run_id(run_id: Option<String>) -> String {
+    run_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+}
+
+fn is_active_run(active: &Arc<Mutex<Option<Arc<StartkitRunControl>>>>, run_id: &str) -> bool {
+    active
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|control| control.run_id == run_id))
+        .unwrap_or(false)
+}
+
+fn finish_active_run(active: &Arc<Mutex<Option<Arc<StartkitRunControl>>>>, run_id: &str) -> bool {
+    let Ok(mut guard) = active.lock() else {
+        return false;
+    };
+    let matches = guard
+        .as_ref()
+        .map(|control| control.run_id == run_id)
+        .unwrap_or(false);
+    if matches {
+        *guard = None;
+    }
+    matches
 }
 
 pub fn manifest_summary() -> anyhow::Result<StartkitManifestSummary> {
@@ -497,7 +568,7 @@ pub(crate) async fn scan_tunnel_reports(
             settings_key: None,
         }]),
         "localtunnel" => {
-            if choices.toolchain_mode == "managed" {
+            if is_managed_mode(choices) {
                 scan_startkit_item_reports(
                     settings,
                     choices,
@@ -594,16 +665,27 @@ async fn scan_with_progress<R: Runtime>(
         if let Some(app) = app {
             emit_progress(
                 app,
+                None,
                 item,
                 StartkitItemStatus::Running,
                 Some("Checking".to_string()),
                 None,
             );
         }
-        let report = scan_item(&manifest, &paths, item, settings, choices, platform).await;
+        let report = scan_item_with_timeout(
+            &manifest,
+            &paths,
+            item,
+            settings,
+            choices,
+            platform,
+            STARTKIT_ITEM_SCAN_TIMEOUT,
+        )
+        .await;
         if let Some(app) = app {
             emit_progress(
                 app,
+                None,
                 item,
                 report.status.clone(),
                 report.message.clone(),
@@ -614,6 +696,28 @@ async fn scan_with_progress<R: Runtime>(
     }
 
     Ok(StartkitScanReport { plan, reports })
+}
+
+async fn scan_item_with_timeout(
+    manifest: &Manifest,
+    paths: &StartkitPaths,
+    item: &StartkitItem,
+    settings: &Value,
+    choices: &StartkitChoices,
+    platform: &str,
+    max_duration: Duration,
+) -> StartkitItemReport {
+    tokio::time::timeout(
+        max_duration,
+        scan_item(manifest, paths, item, settings, choices, platform),
+    )
+    .await
+    .unwrap_or_else(|_| StartkitItemReport {
+        status: StartkitItemStatus::Error,
+        message: Some("Check timed out".to_string()),
+        actions: Vec::new(),
+        ..base_report(item)
+    })
 }
 
 #[allow(dead_code)]
@@ -636,6 +740,11 @@ async fn execute_item_with_cancel(
     let platform = current_platform();
     let paths = StartkitPaths::new(startkit_root());
     let item = find_item(&manifest, item_id)?;
+    if let Some(report) =
+        execute_managed_toolchain_item(&manifest, item, choices, cancelled, progress).await?
+    {
+        return Ok(report);
+    }
     if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
         return execute_agent_cli_item(item, agent_id, choices, cancelled, progress).await;
     }
@@ -696,6 +805,7 @@ async fn run_startkit_install<R: Runtime>(
     settings: Value,
     choices: StartkitChoices,
     cancelled: Arc<AtomicBool>,
+    run_id: String,
 ) -> anyhow::Result<String> {
     let manifest = load_manifest()?;
     let platform = current_platform();
@@ -710,13 +820,14 @@ async fn run_startkit_install<R: Runtime>(
         }
 
         let item = find_item(&manifest, item_id)?;
-        if effective_item_dependencies(item)
+        if effective_item_dependencies(item, &choices, platform)
             .iter()
             .any(|dependency| blocked_item_ids.contains(*dependency))
         {
             blocked_item_ids.insert(item.id.clone());
             emit_progress(
                 &app,
+                Some(&run_id),
                 item,
                 StartkitItemStatus::Skipped,
                 Some("Skipped because a dependency is not ready".to_string()),
@@ -730,13 +841,13 @@ async fn run_startkit_install<R: Runtime>(
         }
 
         let report = if item.kind.as_deref() == Some("builtin_channel_plugins") {
-            run_channel_plugins_item(&app, item, &choices, &cancelled).await
+            run_channel_plugins_item(&app, Some(&run_id), item, &choices, &cancelled).await
         } else if item.kind.as_deref() == Some("managed_npm_package") {
-            run_managed_npm_package_item(&app, item, &cancelled).await
+            run_managed_npm_package_item(&app, Some(&run_id), item, &cancelled).await
         } else {
             let progress =
                 |item: &StartkitItem, status: StartkitItemStatus, message: Option<String>| {
-                    emit_progress(&app, item, status, message, None);
+                    emit_progress(&app, Some(&run_id), item, status, message, None);
                 };
             execute_item_with_cancel(
                 &settings,
@@ -762,6 +873,7 @@ async fn run_startkit_install<R: Runtime>(
                 }
                 emit_progress(
                     &app,
+                    Some(&run_id),
                     item,
                     report.status.clone(),
                     report.message.clone(),
@@ -773,6 +885,7 @@ async fn run_startkit_install<R: Runtime>(
                 blocked_item_ids.insert(item.id.clone());
                 emit_progress(
                     &app,
+                    Some(&run_id),
                     item,
                     StartkitItemStatus::Error,
                     Some(err.to_string()),
@@ -794,251 +907,6 @@ async fn run_startkit_install<R: Runtime>(
     .to_string())
 }
 
-async fn execute_agent_cli_item(
-    item: &StartkitItem,
-    agent_id: &str,
-    choices: &StartkitChoices,
-    cancelled: Option<&Arc<AtomicBool>>,
-    progress: Option<&(dyn Fn(&StartkitItem, StartkitItemStatus, Option<String>) + Sync)>,
-) -> anyhow::Result<StartkitItemReport> {
-    let before = scan_agent_cli_item(item, agent_id, choices).await;
-    if !before.status.needs_install() {
-        return Ok(before);
-    }
-
-    let Some(package) = agent_cli_npm_install_package(agent_id) else {
-        return Ok(StartkitItemReport {
-            status: StartkitItemStatus::Blocked,
-            message: Some("No automatic install action is available".to_string()),
-            ..base_report(item)
-        });
-    };
-
-    if let Some(progress) = progress {
-        progress(
-            item,
-            StartkitItemStatus::Running,
-            Some(format!("Installing {}", item.label)),
-        );
-    }
-
-    let log_progress = |line| {
-        if let Some(progress) = progress {
-            progress(item, StartkitItemStatus::Running, Some(line));
-        }
-    };
-    let is_cancelled = || {
-        cancelled
-            .map(|flag| flag.load(Ordering::Relaxed))
-            .unwrap_or(false)
-    };
-
-    let result = if choices.toolchain_mode == "managed" {
-        let install_dir = common::process::env::acp_agents_dir();
-        common::agent::auto_install_npm_package_in_dir_with_progress_and_cancel(
-            &package,
-            &install_dir,
-            log_progress,
-            is_cancelled,
-        )
-        .await
-    } else {
-        common::agent::auto_install_npm_global_package_with_progress_and_cancel(
-            &package,
-            log_progress,
-            is_cancelled,
-        )
-        .await
-    };
-
-    if let Err(error) = result {
-        return Ok(StartkitItemReport {
-            status: StartkitItemStatus::Error,
-            message: Some(error.to_string()),
-            ..base_report(item)
-        });
-    }
-
-    let after = scan_agent_cli_item(item, agent_id, choices).await;
-    if matches!(after.status, StartkitItemStatus::Ok) {
-        Ok(after)
-    } else {
-        Ok(StartkitItemReport {
-            status: StartkitItemStatus::Error,
-            message: Some(format!(
-                "{} install finished, but the CLI is still unavailable{}",
-                item.label,
-                after
-                    .message
-                    .as_deref()
-                    .map(|message| format!(": {message}"))
-                    .unwrap_or_default()
-            )),
-            ..base_report(item)
-        })
-    }
-}
-
-async fn run_channel_plugins_item<R: Runtime>(
-    app: &AppHandle<R>,
-    item: &StartkitItem,
-    choices: &StartkitChoices,
-    cancelled: &Arc<AtomicBool>,
-) -> anyhow::Result<StartkitItemReport> {
-    if choices.channels.is_empty() {
-        return Ok(StartkitItemReport {
-            status: StartkitItemStatus::Skipped,
-            message: Some("No channel plugins selected".to_string()),
-            ..base_report(item)
-        });
-    }
-
-    for channel_id in &choices.channels {
-        if cancelled.load(Ordering::Relaxed) {
-            return Ok(StartkitItemReport {
-                status: StartkitItemStatus::Skipped,
-                message: Some("Cancelled".to_string()),
-                ..base_report(item)
-            });
-        }
-        install_channel_plugin(app, channel_id, cancelled).await?;
-    }
-
-    Ok(StartkitItemReport {
-        status: StartkitItemStatus::Ok,
-        message: Some("Channel plugins are ready".to_string()),
-        actions: Vec::new(),
-        ..base_report(item)
-    })
-}
-
-async fn run_managed_npm_package_item<R: Runtime>(
-    app: &AppHandle<R>,
-    item: &StartkitItem,
-    cancelled: &Arc<AtomicBool>,
-) -> anyhow::Result<StartkitItemReport> {
-    let before = scan_managed_npm_package_item(item);
-    if !before.status.needs_install() {
-        return Ok(before);
-    }
-
-    let Some(package) = item.npm_package.as_deref() else {
-        return Ok(StartkitItemReport {
-            status: StartkitItemStatus::Blocked,
-            message: Some("No npm package is configured".to_string()),
-            ..base_report(item)
-        });
-    };
-
-    let install_dir = managed_item_dependency_dir(item)?;
-    emit_progress(
-        app,
-        item,
-        StartkitItemStatus::Running,
-        Some(format!("Installing {}", item.label)),
-        None,
-    );
-
-    common::agent::auto_install_npm_package_in_dir_with_progress_and_cancel(
-        package,
-        &install_dir,
-        |line| {
-            emit_progress(app, item, StartkitItemStatus::Running, Some(line), None);
-        },
-        || cancelled.load(Ordering::Relaxed),
-    )
-    .await?;
-
-    let after = scan_managed_npm_package_item(item);
-    if matches!(after.status, StartkitItemStatus::Ok) {
-        Ok(after)
-    } else {
-        Ok(StartkitItemReport {
-            status: StartkitItemStatus::Error,
-            message: Some(format!(
-                "{} install finished, but it is still unavailable",
-                item.label
-            )),
-            ..base_report(item)
-        })
-    }
-}
-
-async fn install_channel_plugin<R: Runtime>(
-    app: &AppHandle<R>,
-    channel_id: &str,
-    cancelled: &Arc<AtomicBool>,
-) -> anyhow::Result<()> {
-    let progress_id = format!("channels.plugins.{channel_id}");
-    if crate::onboarding::check_plugin_status(channel_id.to_string()) == "ready" {
-        emit_progress_event(
-            app,
-            progress_id,
-            channel_id.to_string(),
-            StartkitItemStatus::Ok,
-            Some(format!("{channel_id} plugin already installed")),
-            None,
-        );
-        return Ok(());
-    }
-
-    let plugin = common::resources::plugin_by_id(channel_id)
-        .ok_or_else(|| anyhow!("channel plugin '{channel_id}' not found in registry"))?;
-
-    emit_progress_event(
-        app,
-        progress_id.clone(),
-        plugin.name.clone(),
-        StartkitItemStatus::Running,
-        Some(format!("Installing {} plugin", plugin.name)),
-        None,
-    );
-
-    let result = crate::onboarding::plugin_install::run_install_inner_with_progress(
-        crate::onboarding::plugin_install::InstallPluginRequest {
-            plugin_id: channel_id.to_string(),
-            github_url: plugin.github.clone(),
-        },
-        |line| {
-            emit_progress_event(
-                app,
-                progress_id.clone(),
-                plugin.name.clone(),
-                StartkitItemStatus::Running,
-                Some(line),
-                None,
-            );
-        },
-        || cancelled.load(Ordering::Relaxed),
-    )
-    .await;
-
-    match result {
-        Ok(_) => {
-            emit_progress_event(
-                app,
-                progress_id,
-                plugin.name.clone(),
-                StartkitItemStatus::Ok,
-                Some("Plugin is installed".to_string()),
-                None,
-            );
-            Ok(())
-        }
-        Err(error) => {
-            emit_progress_event(
-                app,
-                progress_id,
-                plugin.name.clone(),
-                StartkitItemStatus::Error,
-                Some(error.to_string()),
-                None,
-            );
-            Err(error)
-        }
-    }
-}
-
 fn install_phase_message(item: &StartkitItem) -> String {
     match item.id.as_str() {
         "essentials.node" => "Downloading Node.js".to_string(),
@@ -1050,6 +918,7 @@ fn install_phase_message(item: &StartkitItem) -> String {
 
 fn emit_progress<R: Runtime>(
     app: &AppHandle<R>,
+    run_id: Option<&str>,
     item: &StartkitItem,
     status: StartkitItemStatus,
     message: Option<String>,
@@ -1057,6 +926,7 @@ fn emit_progress<R: Runtime>(
 ) {
     emit_progress_event(
         app,
+        run_id,
         item.id.clone(),
         item.label.clone(),
         status,
@@ -1067,6 +937,7 @@ fn emit_progress<R: Runtime>(
 
 fn emit_progress_event<R: Runtime>(
     app: &AppHandle<R>,
+    run_id: Option<&str>,
     id: String,
     label: String,
     status: StartkitItemStatus,
@@ -1076,6 +947,7 @@ fn emit_progress_event<R: Runtime>(
     let _ = app.emit(
         STARTKIT_PROGRESS_EVENT,
         StartkitProgressEvent {
+            run_id: run_id.map(str::to_string),
             id,
             label,
             status,
@@ -1093,6 +965,10 @@ async fn scan_item(
     choices: &StartkitChoices,
     platform: &str,
 ) -> StartkitItemReport {
+    if let Some(report) = scan_managed_toolchain_item(item, choices, platform).await {
+        return report;
+    }
+
     if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
         return scan_agent_cli_item(item, agent_id, choices).await;
     }
@@ -1163,138 +1039,6 @@ async fn scan_item(
     }
 }
 
-fn scan_managed_npm_package_item(item: &StartkitItem) -> StartkitItemReport {
-    let Some(package) = item.npm_package.as_deref() else {
-        return StartkitItemReport {
-            status: StartkitItemStatus::Blocked,
-            message: Some("No npm package is configured".to_string()),
-            ..base_report(item)
-        };
-    };
-    let bin_name = item
-        .program
-        .as_deref()
-        .map(str::to_string)
-        .unwrap_or_else(|| common::agent::npm_package_bin_name(package));
-    let Ok(install_dir) = managed_item_dependency_dir(item) else {
-        return StartkitItemReport {
-            status: StartkitItemStatus::Blocked,
-            message: Some("No managed dependency directory is configured".to_string()),
-            ..base_report(item)
-        };
-    };
-
-    if common::agent::npm_package_installed_in_dir(package, &bin_name, &install_dir) {
-        let bin_path = common::process::env::resolve_npm_bin_in_dir(&install_dir, &bin_name)
-            .ok()
-            .map(|path| path.to_string_lossy().to_string());
-        return StartkitItemReport {
-            status: StartkitItemStatus::Ok,
-            path: bin_path,
-            message: Some(format!("{} is ready", item.label)),
-            actions: Vec::new(),
-            ..base_report(item)
-        };
-    }
-
-    StartkitItemReport {
-        status: StartkitItemStatus::Missing,
-        message: Some(format!("{} will be installed", item.label)),
-        actions: vec!["install".to_string()],
-        ..base_report(item)
-    }
-}
-
-fn managed_item_dependency_dir(item: &StartkitItem) -> anyhow::Result<PathBuf> {
-    let dependency_id = item
-        .plugin_dependency
-        .as_deref()
-        .ok_or_else(|| anyhow!("managed item '{}' has no dependency id", item.id))?;
-    Ok(common::plugins::user_plugin_dependency_dir(dependency_id))
-}
-
-fn agent_cli_npm_install_package(agent_id: &str) -> Option<String> {
-    if !agent_detection::agent_uses_npm_install(agent_id) {
-        return None;
-    }
-    agent_detection::source_package(agent_id, "npm_global")
-}
-
-async fn scan_agent_cli_item(
-    item: &StartkitItem,
-    agent_id: &str,
-    choices: &StartkitChoices,
-) -> StartkitItemReport {
-    let selected = if let Some(candidate) =
-        agent_detection::configured_candidate_with_version(agent_id).await
-    {
-        Some(candidate)
-    } else {
-        agent_detection::scan_agent_and_persist(agent_id)
-            .await
-            .ok()
-            .and_then(|detection| {
-                agent_detection::preferred_startkit_candidate(
-                    agent_id,
-                    &detection,
-                    &choices.toolchain_mode,
-                )
-            })
-    };
-
-    match selected {
-        Some(candidate) => StartkitItemReport {
-            status: StartkitItemStatus::Ok,
-            version: candidate.version,
-            path: Some(candidate.path),
-            message: Some(format!(
-                "{} selected from {}",
-                item.label, candidate.source_label
-            )),
-            actions: Vec::new(),
-            ..base_report(item)
-        },
-        None => {
-            if agent_cli_npm_install_package(agent_id).is_some() {
-                let target = if choices.toolchain_mode == "managed" {
-                    "in VibeAround managed"
-                } else {
-                    "with npm"
-                };
-                return StartkitItemReport {
-                    status: StartkitItemStatus::Missing,
-                    message: Some(format!("{} will be installed {target}", item.label)),
-                    actions: vec!["install".to_string()],
-                    ..base_report(item)
-                };
-            }
-
-            apply_agent_manual_guidance(
-                StartkitItemReport {
-                    status: StartkitItemStatus::Blocked,
-                    message: Some(agent_missing_message(item, &choices.toolchain_mode)),
-                    actions: Vec::new(),
-                    ..base_report(item)
-                },
-                agent_id,
-            )
-        }
-    }
-}
-
-fn agent_missing_message(item: &StartkitItem, toolchain_mode: &str) -> String {
-    if toolchain_mode == "managed" {
-        return format!(
-            "{} does not have a VibeAround managed installer.",
-            item.label
-        );
-    }
-    format!(
-        "{} was not found in the system toolchain. Install it on this computer, then scan again.",
-        item.label
-    )
-}
-
 fn apply_manual_guidance(
     mut report: StartkitItemReport,
     item: &StartkitItem,
@@ -1319,16 +1063,6 @@ fn apply_manual_guidance(
     report.actions = vec!["manual".to_string()];
     report.manual_command = guidance.command;
     report.manual_url = guidance.url;
-    report
-}
-
-fn apply_agent_manual_guidance(
-    mut report: StartkitItemReport,
-    agent_id: &str,
-) -> StartkitItemReport {
-    report.actions = vec!["manual".to_string()];
-    report.manual_command = agent_detection::source_command_template(agent_id, "native", "install");
-    report.manual_url = manual_agent_url(agent_id).map(str::to_string);
     report
 }
 
@@ -1370,7 +1104,7 @@ fn manual_guidance_for_item(
                 url,
             })
         }
-        "tunnels.cloudflare.binary" if choices.toolchain_mode != "managed" => {
+        "tunnels.cloudflare.binary" if !is_managed_mode(choices) => {
             let command = match platform {
                 "macos" => Some("brew install cloudflared".to_string()),
                 "windows" => Some(
@@ -1388,20 +1122,6 @@ fn manual_guidance_for_item(
         }
         _ => None,
     }
-}
-
-fn manual_agent_url(agent_id: &str) -> Option<&'static str> {
-    match agent_id {
-        "cursor" => Some("https://cursor.com/cli"),
-        "kiro" => Some("https://kiro.dev/docs/cli/installation/"),
-        _ => None,
-    }
-}
-
-fn agent_id_from_cli_item(item_id: &str) -> Option<&str> {
-    item_id
-        .strip_prefix("agents.")
-        .and_then(|value| value.strip_suffix(".cli"))
 }
 
 fn scan_config_item(item: &StartkitItem, settings: &Value) -> StartkitItemReport {
@@ -1431,192 +1151,6 @@ fn scan_config_item(item: &StartkitItem, settings: &Value) -> StartkitItemReport
         },
         ..base_report(item)
     }
-}
-
-async fn run_script(
-    manifest: &Manifest,
-    paths: &StartkitPaths,
-    item: &StartkitItem,
-    choices: &StartkitChoices,
-    platform: &str,
-    script_path: &str,
-    script: &PlatformScript,
-    cancelled: Option<&Arc<AtomicBool>>,
-) -> anyhow::Result<ScriptOutput> {
-    let full_path = paths.root.join(script_path);
-    if !full_path.exists() {
-        bail!("script not found: {}", full_path.display());
-    }
-
-    let mut command = if platform == "windows" {
-        let mut cmd = Command::new("powershell.exe");
-        cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]);
-        cmd.arg(&full_path);
-        cmd
-    } else {
-        let mut cmd = Command::new("sh");
-        cmd.arg(&full_path);
-        cmd
-    };
-
-    command.args(&script.args);
-    command.env_clear();
-    command.envs(common::process::env::enriched_env().clone());
-    apply_startkit_env(&mut command, manifest, paths, item, choices)?;
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::piped());
-
-    let output = run_command_with_cancel(
-        command,
-        Duration::from_secs(manifest.runner.default_timeout_secs),
-        cancelled,
-    )
-    .await
-    .context("running startkit script")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let line = stdout
-        .lines()
-        .rev()
-        .find(|line| line.trim_start().starts_with('{'))
-        .ok_or_else(|| {
-            anyhow!(
-                "script did not emit JSON{}",
-                if stderr.trim().is_empty() {
-                    String::new()
-                } else {
-                    format!(": {}", redact(&stderr, &manifest.runner.log_redact_keys))
-                }
-            )
-        })?;
-
-    let parsed: ScriptOutput =
-        serde_json::from_str(line).with_context(|| format!("parsing script JSON: {line}"))?;
-    Ok(parsed)
-}
-
-async fn run_command_with_cancel(
-    mut command: Command,
-    max_duration: Duration,
-    cancelled: Option<&Arc<AtomicBool>>,
-) -> anyhow::Result<std::process::Output> {
-    let mut child = command.spawn().context("spawning startkit script")?;
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow!("startkit script stdout was not captured"))?;
-    let mut stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| anyhow!("startkit script stderr was not captured"))?;
-
-    let stdout_task = tokio::spawn(async move {
-        let mut buf = Vec::new();
-        stdout.read_to_end(&mut buf).await.map(|_| buf)
-    });
-    let stderr_task = tokio::spawn(async move {
-        let mut buf = Vec::new();
-        stderr.read_to_end(&mut buf).await.map(|_| buf)
-    });
-
-    let started = Instant::now();
-    let status = loop {
-        if cancelled
-            .map(|flag| flag.load(Ordering::Relaxed))
-            .unwrap_or(false)
-        {
-            let _ = child.kill().await;
-            bail!("cancelled");
-        }
-        if started.elapsed() >= max_duration {
-            let _ = child.kill().await;
-            bail!("startkit script timed out");
-        }
-        if let Some(status) = child.try_wait().context("polling startkit script")? {
-            break status;
-        }
-        sleep(Duration::from_millis(200)).await;
-    };
-
-    let stdout = stdout_task
-        .await
-        .context("joining startkit stdout reader")?
-        .context("reading startkit stdout")?;
-    let stderr = stderr_task
-        .await
-        .context("joining startkit stderr reader")?
-        .context("reading startkit stderr")?;
-
-    Ok(std::process::Output {
-        status,
-        stdout,
-        stderr,
-    })
-}
-
-fn apply_startkit_env(
-    command: &mut Command,
-    manifest: &Manifest,
-    paths: &StartkitPaths,
-    item: &StartkitItem,
-    choices: &StartkitChoices,
-) -> anyhow::Result<()> {
-    std::fs::create_dir_all(&paths.cache_dir).ok();
-
-    let source = manifest
-        .sources
-        .get(&choices.source)
-        .or_else(|| manifest.sources.get("global"))
-        .ok_or_else(|| anyhow!("startkit source '{}' not found", choices.source))?;
-
-    command.env("STARTKIT_HOME", &paths.home);
-    command.env("STARTKIT_ROOT", &paths.root);
-    command.env("STARTKIT_CACHE_DIR", &paths.cache_dir);
-    command.env("STARTKIT_SOURCE", &choices.source);
-    let managed_item_active =
-        item_uses_managed_dependency_dir(item) && choices.toolchain_mode == "managed";
-    command.env(
-        "STARTKIT_ITEM_MANAGED",
-        if managed_item_active { "true" } else { "false" },
-    );
-    command.env("STARTKIT_NPM_REGISTRY", &source.npm_registry);
-    command.env("STARTKIT_NODE_INDEX_URL", &source.node_index);
-    command.env("STARTKIT_NODE_DIST_BASE", &source.node_dist);
-    command.env(
-        "STARTKIT_CAN_INSTALL",
-        if item.install.is_some() && (!item.managed || managed_item_active) {
-            "true"
-        } else {
-            "false"
-        },
-    );
-    command.env("STARTKIT_ITEM_ID", &item.id);
-    if let Some(value) = &item.min_version {
-        command.env("STARTKIT_MIN_VERSION", value);
-    }
-    if let Some(value) = &item.program {
-        command.env("STARTKIT_PROGRAM", value);
-    }
-    if let Some(value) = &item.version_arg {
-        command.env("STARTKIT_VERSION_ARG", value);
-    }
-    if let Some(value) = &item.npm_package {
-        command.env("STARTKIT_NPM_PACKAGE", value);
-    }
-    if let Some(value) = &item.plugin_dependency {
-        let plugin_dir = common::plugins::user_plugin_dependency_dir(value);
-        let plugin_bin_dir = plugin_dir.join("bin");
-        std::fs::create_dir_all(&plugin_bin_dir).ok();
-        command.env("STARTKIT_PLUGIN_DIR", plugin_dir);
-        command.env("STARTKIT_PLUGIN_BIN_DIR", plugin_bin_dir);
-    }
-
-    Ok(())
-}
-
-fn item_uses_managed_dependency_dir(item: &StartkitItem) -> bool {
-    item.managed && item.plugin_dependency.is_some()
 }
 
 fn report_from_script(item: &StartkitItem, output: ScriptOutput) -> StartkitItemReport {
@@ -1651,177 +1185,6 @@ fn base_report(item: &StartkitItem) -> StartkitItemReport {
         secret: item.secret,
         settings_key: item.settings_key.clone(),
     }
-}
-
-fn item_summary(item: &StartkitItem) -> StartkitItemSummary {
-    StartkitItemSummary {
-        id: item.id.clone(),
-        label: item.label.clone(),
-        group: item.group.clone(),
-        category: item.category.clone(),
-        description: item.description.clone(),
-        severity: item.severity.clone(),
-        kind: item.kind.clone(),
-        managed: item.managed,
-        has_repair: item.repair.is_some(),
-        secret: item.secret,
-        settings_key: item.settings_key.clone(),
-    }
-}
-
-fn plan_from_manifest(
-    manifest: &Manifest,
-    choices: &StartkitChoices,
-    platform: &str,
-) -> anyhow::Result<StartkitPlan> {
-    let by_id: HashMap<&str, &StartkitItem> = manifest
-        .items
-        .iter()
-        .map(|item| (item.id.as_str(), item))
-        .collect();
-    let mut selected = HashSet::<String>::new();
-
-    for item in &manifest.items {
-        if !supports_platform(item, platform) {
-            continue;
-        }
-        if should_include(item, choices) {
-            add_with_deps(item, &by_id, platform, &mut selected)?;
-        }
-    }
-
-    let mut ordered = Vec::new();
-    let mut temporary = HashSet::new();
-    let mut permanent = HashSet::new();
-    for id in selected.iter() {
-        visit(
-            id,
-            &by_id,
-            platform,
-            &selected,
-            &mut temporary,
-            &mut permanent,
-            &mut ordered,
-        )?;
-    }
-
-    let items = ordered
-        .iter()
-        .map(|id| item_summary(find_item(manifest, id).expect("planned item exists")))
-        .collect();
-
-    Ok(StartkitPlan {
-        platform: platform.to_string(),
-        source: choices.source.clone(),
-        item_ids: ordered,
-        items,
-    })
-}
-
-fn add_with_deps(
-    item: &StartkitItem,
-    by_id: &HashMap<&str, &StartkitItem>,
-    platform: &str,
-    selected: &mut HashSet<String>,
-) -> anyhow::Result<()> {
-    selected.insert(item.id.clone());
-    for dep in effective_item_dependencies(item) {
-        let dep_item = by_id
-            .get(dep)
-            .ok_or_else(|| anyhow!("startkit item '{}' depends on missing '{}'", item.id, dep))?;
-        if !supports_platform(dep_item, platform) {
-            continue;
-        }
-        add_with_deps(dep_item, by_id, platform, selected)?;
-    }
-    Ok(())
-}
-
-fn visit(
-    id: &str,
-    by_id: &HashMap<&str, &StartkitItem>,
-    platform: &str,
-    selected: &HashSet<String>,
-    temporary: &mut HashSet<String>,
-    permanent: &mut HashSet<String>,
-    ordered: &mut Vec<String>,
-) -> anyhow::Result<()> {
-    if permanent.contains(id) {
-        return Ok(());
-    }
-    if !temporary.insert(id.to_string()) {
-        bail!("cycle in startkit item dependencies at '{id}'");
-    }
-    let item = by_id
-        .get(id)
-        .ok_or_else(|| anyhow!("planned startkit item missing: {id}"))?;
-    for dep in effective_item_dependencies(item) {
-        if selected.contains(dep) {
-            let dep_item = by_id.get(dep).ok_or_else(|| {
-                anyhow!("startkit item '{}' depends on missing '{}'", item.id, dep)
-            })?;
-            if supports_platform(dep_item, platform) {
-                visit(
-                    dep, by_id, platform, selected, temporary, permanent, ordered,
-                )?;
-            }
-        }
-    }
-    temporary.remove(id);
-    permanent.insert(id.to_string());
-    ordered.push(id.to_string());
-    Ok(())
-}
-
-fn effective_item_dependencies(item: &StartkitItem) -> Vec<&str> {
-    let mut deps = item
-        .depends_on
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>();
-    if let Some(agent_id) = agent_id_from_cli_item(&item.id) {
-        if agent_detection::agent_uses_npm_install(agent_id) && !deps.contains(&"essentials.node") {
-            deps.push("essentials.node");
-        }
-    }
-    deps
-}
-
-fn should_include(item: &StartkitItem, choices: &StartkitChoices) -> bool {
-    item.include_if.iter().any(|rule| match rule.as_str() {
-        "always" => true,
-        "agent:any" => !choices.agents.is_empty(),
-        "channels:any" => !choices.channels.is_empty(),
-        "tunnel:any" => choices.tunnel != "none",
-        "shell_path:true" => choices.shell_path,
-        "toolchain:system" => choices.toolchain_mode != "managed",
-        "toolchain:managed" => choices.toolchain_mode == "managed",
-        rule if rule.starts_with("managed-tunnel:") => {
-            let tunnel = &rule["managed-tunnel:".len()..];
-            choices.toolchain_mode == "managed" && choices.tunnel == tunnel
-        }
-        rule if rule.starts_with("agent:") => {
-            let agent = &rule["agent:".len()..];
-            choices.agents.iter().any(|id| id == agent)
-        }
-        rule if rule.starts_with("tunnel:") => {
-            let tunnel = &rule["tunnel:".len()..];
-            choices.tunnel == tunnel
-        }
-        _ => false,
-    })
-}
-
-fn supports_platform(item: &StartkitItem, platform: &str) -> bool {
-    item.platforms.is_empty() || item.platforms.iter().any(|p| p == platform)
-}
-
-fn find_item<'a>(manifest: &'a Manifest, id: &str) -> anyhow::Result<&'a StartkitItem> {
-    manifest
-        .items
-        .iter()
-        .find(|item| item.id == id)
-        .ok_or_else(|| anyhow!("unknown startkit item: {id}"))
 }
 
 fn settings_path_value<'a>(settings: &'a Value, key: &str) -> Option<&'a Value> {
@@ -1869,17 +1232,6 @@ fn startkit_root() -> PathBuf {
     }
 }
 
-fn redact(value: &str, keys: &[String]) -> String {
-    let mut out = value.to_string();
-    for key in keys {
-        if key.is_empty() {
-            continue;
-        }
-        out = out.replace(key, "***");
-    }
-    out
-}
-
 trait Pipe: Sized {
     fn pipe<T>(self, f: impl FnOnce(Self) -> T) -> T {
         f(self)
@@ -1893,8 +1245,12 @@ mod tests {
     use super::*;
 
     fn ids(choices: StartkitChoices) -> Vec<String> {
+        ids_for_platform(choices, "macos")
+    }
+
+    fn ids_for_platform(choices: StartkitChoices, platform: &str) -> Vec<String> {
         let manifest = load_manifest().unwrap();
-        plan_from_manifest(&manifest, &choices, "macos")
+        plan_from_manifest(&manifest, &choices, platform)
             .unwrap()
             .item_ids
     }
@@ -2111,6 +1467,41 @@ mod tests {
             toolchain_mode: "system".to_string(),
             shell_path: false,
         });
+
+        assert!(item_ids.contains(&"essentials.node".to_string()));
+        assert!(item_ids.contains(&"essentials.git".to_string()));
+        assert!(item_ids.contains(&"channels.plugins".to_string()));
+    }
+
+    #[test]
+    fn managed_channels_on_macos_do_not_pull_git() {
+        let item_ids = ids(StartkitChoices {
+            agents: Vec::new(),
+            tunnel: "none".to_string(),
+            channels: vec!["telegram".to_string()],
+            source: "global".to_string(),
+            toolchain_mode: "managed".to_string(),
+            shell_path: false,
+        });
+
+        assert!(item_ids.contains(&"essentials.node".to_string()));
+        assert!(!item_ids.contains(&"essentials.git".to_string()));
+        assert!(item_ids.contains(&"channels.plugins".to_string()));
+    }
+
+    #[test]
+    fn managed_channels_on_windows_include_portable_git() {
+        let item_ids = ids_for_platform(
+            StartkitChoices {
+                agents: Vec::new(),
+                tunnel: "none".to_string(),
+                channels: vec!["telegram".to_string()],
+                source: "global".to_string(),
+                toolchain_mode: "managed".to_string(),
+                shell_path: false,
+            },
+            "windows",
+        );
 
         assert!(item_ids.contains(&"essentials.node".to_string()));
         assert!(item_ids.contains(&"essentials.git".to_string()));

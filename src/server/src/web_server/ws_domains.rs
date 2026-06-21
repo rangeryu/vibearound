@@ -60,6 +60,7 @@ async fn build_channels(
         .map(|s| crate::api_types::ChannelRuntime {
             kind: s.kind,
             version: s.version,
+            plugin_dir: s.plugin_dir.map(|path| path.to_string_lossy().into_owned()),
             status: s.status.as_str(),
             reason: if s.reason.is_empty() {
                 None

@@ -21,6 +21,7 @@ pub const DEFAULT_PORT: u16 = 12358;
 
 /// Minimal default settings.json content, embedded at compile time.
 const DEFAULT_SETTINGS_JSON: &str = r#"{
+  "default_workspace": "~/.vibearound/workspaces",
   "workspaces": []
 }"#;
 
@@ -145,7 +146,9 @@ pub struct Config {
     pub cloudflare_hostname: Option<String>,
     pub toolchain_mode: ToolchainMode,
     // --- Workspaces ---
-    /// User-added project folders (not including the built-in ~/.vibearound/workspaces/).
+    /// Default workspace root for new agent sessions.
+    pub default_workspace: PathBuf,
+    /// User-added project folders.
     pub workspaces: Vec<PathBuf>,
     pub preview_base_url: Option<String>,
     pub tmux_detach_others: bool,
@@ -158,16 +161,18 @@ pub struct Config {
     /// Validated at load time — entries that don't resolve via
     /// `resources::agent_by_alias` are dropped.
     pub enabled_agents: Vec<String>,
-    // --- IM agent behavior ---
-    pub im_agent: ImAgentConfig,
     // --- Agent integrations ---
     pub integrations: AgentIntegrationsConfig,
     // --- Optional outbound HTTP proxy ---
     pub proxy: HttpProxyConfig,
     // --- API bridge behavior ---
     pub api_bridge: ApiBridgeConfig,
+    // --- Local ACP-to-API service ---
+    pub local_agent_api: LocalAgentApiConfig,
     // --- Host-side web search fallback ---
     pub search_tool: SearchToolConfig,
+    // --- Remote/IM channel defaults ---
+    pub remote: RemoteConfig,
     // --- Raw channels JSON (for dynamic plugin config) ---
     raw_channels: serde_json::Value,
 }
@@ -206,14 +211,14 @@ pub struct AgentIntegrationsConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ImAgentConfig {
-    pub auto_continue_last_session: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiBridgeConfig {
     pub retry_429: Retry429Config,
     pub replace_provider_web_search: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalAgentApiConfig {
+    pub enabled: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -222,6 +227,17 @@ pub struct SearchToolConfig {
     pub max_results: Option<usize>,
     pub search_context_size: Option<String>,
     pub sources: BTreeMap<String, SearchSourceConfig>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RemoteConfig {
+    pub channels: BTreeMap<String, RemoteChannelDefaults>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RemoteChannelDefaults {
+    pub agent_id: Option<String>,
+    pub profile_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -239,14 +255,6 @@ pub struct Retry429Config {
     pub delay_seconds: u64,
 }
 
-impl Default for ImAgentConfig {
-    fn default() -> Self {
-        Self {
-            auto_continue_last_session: true,
-        }
-    }
-}
-
 impl Default for AgentIntegrationsConfig {
     fn default() -> Self {
         Self {
@@ -262,6 +270,12 @@ impl Default for ApiBridgeConfig {
             retry_429: Retry429Config::default(),
             replace_provider_web_search: false,
         }
+    }
+}
+
+impl Default for LocalAgentApiConfig {
+    fn default() -> Self {
+        Self { enabled: false }
     }
 }
 
@@ -349,9 +363,8 @@ impl Config {
     }
 
     /// Resolve the workspace directory for an agent session.
-    /// The default workspace is fixed to ~/.vibearound/workspaces.
     pub fn resolve_workspace(&self, _agent_kind: &str) -> PathBuf {
-        builtin_workspaces_dir()
+        self.default_workspace.clone()
     }
 
     /// Resolve the default profile id for an agent alias/id.
@@ -365,9 +378,21 @@ impl Config {
             .filter(|s| !s.trim().is_empty())
     }
 
-    /// All available workspaces: the built-in root + user-added paths.
+    pub fn remote_channel_defaults(&self, channel_kind: &str) -> RemoteChannelDefaults {
+        self.remote
+            .channels
+            .get(channel_kind)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// All available workspaces: the default root, built-in root, and user-added paths.
     pub fn all_workspaces(&self) -> Vec<PathBuf> {
-        let mut all = vec![builtin_workspaces_dir()];
+        let builtin = builtin_workspaces_dir();
+        let mut all = vec![self.default_workspace.clone()];
+        if !all.contains(&builtin) {
+            all.push(builtin);
+        }
         for ws in &self.workspaces {
             if !all.contains(ws) {
                 all.push(ws.clone());
@@ -454,7 +479,14 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         .cloned()
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-    // --- Workspaces (new format) with backward compat for old working_dir ---
+    let default_workspace = root
+        .get("default_workspace")
+        .and_then(|v| v.as_str())
+        .map(|s| expand_home(s.trim()))
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(builtin_workspaces_dir);
+
+    // --- Workspaces ---
     let mut workspaces: Vec<PathBuf> = root
         .get("workspaces")
         .and_then(|v| v.as_array())
@@ -466,34 +498,7 @@ fn load_settings_from(path: &std::path::Path) -> Config {
                 .collect()
         })
         .unwrap_or_default();
-
-    // Backward compat: keep old workspace-like fields discoverable as regular
-    // workspaces, but the default workspace itself is fixed to the built-in root.
-    let mut add_workspace = |candidate: PathBuf| {
-        if !workspaces.contains(&candidate) {
-            workspaces.push(candidate);
-        }
-    };
-
-    if let Some(legacy_default) = root
-        .get("default_workspace")
-        .and_then(|v| v.as_str())
-        .map(|s| expand_home(s.trim()))
-        .filter(|p| !p.as_os_str().is_empty())
-    {
-        add_workspace(legacy_default);
-    }
-
-    if root.get("workspaces").is_none() {
-        if let Some(legacy) = root
-            .get("working_dir")
-            .and_then(|v| v.as_str())
-            .map(|s| expand_home(s.trim()))
-            .filter(|p| !p.as_os_str().is_empty())
-        {
-            add_workspace(legacy);
-        }
-    }
+    workspaces.retain(|workspace| workspace != &default_workspace);
 
     let preview_base_url = root
         .get("preview_base_url")
@@ -567,9 +572,10 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         })
         .unwrap_or_default();
 
-    let im_agent = load_im_agent_config(&root);
     let api_bridge = load_api_bridge_config(&root);
+    let local_agent_api = load_local_agent_api_config(&root);
     let search_tool = load_search_tool_config(&root);
+    let remote = load_remote_config(&root);
 
     let proxy = root
         .get("proxy")
@@ -605,32 +611,21 @@ fn load_settings_from(path: &std::path::Path) -> Config {
         cloudflare_tunnel_token,
         cloudflare_hostname,
         toolchain_mode,
+        default_workspace,
         workspaces,
         preview_base_url,
         tmux_detach_others,
         default_agent,
         default_profiles,
         enabled_agents,
-        im_agent,
         integrations,
         proxy,
         api_bridge,
+        local_agent_api,
         search_tool,
+        remote,
         raw_channels,
     }
-}
-
-fn load_im_agent_config(root: &serde_json::Value) -> ImAgentConfig {
-    root.get("im_agent")
-        .or_else(|| root.get("im").and_then(|im| im.get("agent")))
-        .and_then(|value| value.as_object())
-        .map(|settings| ImAgentConfig {
-            auto_continue_last_session: settings
-                .get("auto_continue_last_session")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(true),
-        })
-        .unwrap_or_default()
 }
 
 fn load_api_bridge_config(root: &serde_json::Value) -> ApiBridgeConfig {
@@ -649,6 +644,20 @@ fn load_api_bridge_config(root: &serde_json::Value) -> ApiBridgeConfig {
                 &["replace_provider_web_search", "replaceProviderWebSearch"],
             )
             .unwrap_or(false),
+        })
+        .unwrap_or_default()
+}
+
+fn load_local_agent_api_config(root: &serde_json::Value) -> LocalAgentApiConfig {
+    root.get("local_agent_api")
+        .or_else(|| root.get("localAgentApi"))
+        .or_else(|| root.get("local_api"))
+        .and_then(|value| value.as_object())
+        .map(|settings| LocalAgentApiConfig {
+            enabled: settings
+                .get("enabled")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false),
         })
         .unwrap_or_default()
 }
@@ -687,6 +696,46 @@ fn load_search_tool_config(root: &serde_json::Value) -> SearchToolConfig {
         max_results,
         search_context_size,
         sources,
+    }
+}
+
+fn load_remote_config(root: &serde_json::Value) -> RemoteConfig {
+    let channels = root
+        .get("remote")
+        .or_else(|| root.get("im_remote"))
+        .and_then(|value| value.get("channels"))
+        .and_then(|value| value.as_object())
+        .map(|channels| {
+            channels
+                .iter()
+                .filter_map(|(channel_kind, value)| {
+                    let channel_kind = channel_kind.trim();
+                    if channel_kind.is_empty() {
+                        return None;
+                    }
+                    let settings = value.as_object()?;
+                    Some((
+                        channel_kind.to_string(),
+                        load_remote_channel_defaults(settings),
+                    ))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+
+    RemoteConfig { channels }
+}
+
+fn load_remote_channel_defaults(
+    settings: &serde_json::Map<String, serde_json::Value>,
+) -> RemoteChannelDefaults {
+    let agent_id = string_setting(settings, &["agent_id", "agentId", "agent"])
+        .and_then(|agent| crate::resources::agent_by_alias(&agent).map(|def| def.id.clone()));
+    let profile_id = string_setting(settings, &["profile_id", "profileId", "profile"]);
+
+    RemoteChannelDefaults {
+        agent_id,
+        profile_id,
     }
 }
 
@@ -893,7 +942,7 @@ fn remove_workspace_from_settings_root(root: &mut serde_json::Value, path: &Path
         removed |= arr.len() != before_len;
     }
 
-    for key in ["default_workspace", "working_dir"] {
+    for key in ["working_dir"] {
         let should_remove = obj
             .get(key)
             .and_then(|value| value.as_str())
@@ -930,6 +979,7 @@ impl Default for Config {
             cloudflare_tunnel_token: None,
             cloudflare_hostname: None,
             toolchain_mode: ToolchainMode::System,
+            default_workspace: builtin_workspaces_dir(),
             workspaces: vec![],
             preview_base_url: None,
             tmux_detach_others: true,
@@ -939,11 +989,12 @@ impl Default for Config {
                 .iter()
                 .map(|a| a.id.clone())
                 .collect(),
-            im_agent: ImAgentConfig::default(),
             integrations: AgentIntegrationsConfig::default(),
             proxy: HttpProxyConfig::default(),
             api_bridge: ApiBridgeConfig::default(),
+            local_agent_api: LocalAgentApiConfig::default(),
             search_tool: SearchToolConfig::default(),
+            remote: RemoteConfig::default(),
             raw_channels: serde_json::Value::Object(serde_json::Map::new()),
         }
     }
@@ -1066,6 +1117,45 @@ mod tests {
     }
 
     #[test]
+    fn remote_channel_defaults_are_loaded() {
+        let dir = unique_test_dir("remote-defaults");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(
+            &path,
+            serde_json::json!({
+                "remote": {
+                    "channels": {
+                        "feishu": {
+                            "agentId": "codex",
+                            "profileId": "direct",
+                            "workspace": "/ignored"
+                        },
+                        "slack": {
+                            "agent": "does-not-exist"
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let config = load_settings_from(&path);
+
+        let feishu = config.remote_channel_defaults("feishu");
+        assert_eq!(feishu.agent_id.as_deref(), Some("codex"));
+        assert_eq!(feishu.profile_id.as_deref(), Some("direct"));
+        let slack = config.remote_channel_defaults("slack");
+        assert_eq!(slack.agent_id, None);
+        assert_eq!(
+            config.remote_channel_defaults("unknown"),
+            RemoteChannelDefaults::default()
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn integration_auto_install_defaults_to_enabled() {
         let dir = unique_test_dir("integrations-default");
         fs::create_dir_all(&dir).unwrap();
@@ -1110,6 +1200,32 @@ mod tests {
         assert_eq!(config.api_bridge.retry_429.max_retries, Some(10));
         assert_eq!(config.api_bridge.retry_429.delay_seconds, 10);
         assert!(!config.api_bridge.replace_provider_web_search);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn local_agent_api_defaults_to_disabled() {
+        let dir = unique_test_dir("local-agent-api-default");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, "{}").unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert!(!config.local_agent_api.enabled);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn local_agent_api_can_be_enabled() {
+        let dir = unique_test_dir("local-agent-api-enabled");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, r#"{ "local_agent_api": { "enabled": true } }"#).unwrap();
+
+        let config = load_settings_from(&path);
+
+        assert!(config.local_agent_api.enabled);
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1279,45 +1395,15 @@ mod tests {
     }
 
     #[test]
-    fn im_agent_auto_continue_defaults_to_enabled() {
-        let dir = unique_test_dir("im-agent-default");
+    fn default_workspace_setting_is_used_as_default() {
+        let dir = unique_test_dir("default-workspace");
         fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("settings.json");
-        fs::write(&path, "{}").unwrap();
-
-        let config = load_settings_from(&path);
-
-        assert!(config.im_agent.auto_continue_last_session);
-        fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn im_agent_auto_continue_can_be_disabled() {
-        let dir = unique_test_dir("im-agent-disabled");
-        fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("settings.json");
-        fs::write(
-            &path,
-            r#"{ "im_agent": { "auto_continue_last_session": false } }"#,
-        )
-        .unwrap();
-
-        let config = load_settings_from(&path);
-
-        assert!(!config.im_agent.auto_continue_last_session);
-        fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn default_workspace_setting_is_not_used_as_default() {
-        let dir = unique_test_dir("fixed-workspace");
-        fs::create_dir_all(&dir).unwrap();
-        let legacy_workspace = dir.join("legacy-default");
+        let default_workspace = dir.join("custom-default");
         let path = dir.join("settings.json");
         fs::write(
             &path,
             serde_json::json!({
-                "default_workspace": legacy_workspace.to_string_lossy().to_string()
+                "default_workspace": default_workspace.to_string_lossy().to_string()
             })
             .to_string(),
         )
@@ -1325,13 +1411,14 @@ mod tests {
 
         let config = load_settings_from(&path);
 
-        assert_eq!(config.resolve_workspace("codex"), builtin_workspaces_dir());
-        assert!(config.workspaces.contains(&legacy_workspace));
+        assert_eq!(config.resolve_workspace("codex"), default_workspace);
+        assert_eq!(config.default_workspace, default_workspace);
+        assert!(config.all_workspaces().contains(&default_workspace));
         fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn remove_workspace_cleans_current_and_legacy_settings() {
+    fn remove_workspace_cleans_workspaces_and_legacy_working_dir() {
         let dir = unique_test_dir("remove-workspace");
         fs::create_dir_all(&dir).unwrap();
         let workspace = dir.join("project-a");
@@ -1356,7 +1443,11 @@ mod tests {
             workspaces[0].as_str(),
             Some(other.to_string_lossy().as_ref())
         );
-        assert!(root.get("default_workspace").is_none());
+        assert_eq!(
+            root.get("default_workspace")
+                .and_then(|value| value.as_str()),
+            Some(workspace.to_string_lossy().as_ref())
+        );
         assert!(root.get("working_dir").is_none());
         fs::remove_dir_all(&dir).unwrap();
     }

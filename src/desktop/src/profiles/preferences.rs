@@ -46,6 +46,8 @@ pub struct LauncherPreferences {
     /// Global policy for wrapping OpenAI-compatible profile launches through
     /// VibeAround's local compatibility bridge.
     pub compatibility_bridge: terminal::CompatibilityBridgeMode,
+    /// Whether the sessionless local ACP-to-OpenAI/Anthropic API is exposed.
+    pub local_agent_api_enabled: bool,
     /// Per-profile connection choices for launch targets that can run via
     /// the local API bridge.
     pub profile_connections: agent_state::ProfileConnectionPreferences,
@@ -127,6 +129,7 @@ pub(super) fn launcher_preferences() -> LauncherPreferences {
         enabled_agents: cfg.enabled_agents.clone(),
         default_profiles,
         compatibility_bridge: terminal::read_compatibility_bridge_preference(),
+        local_agent_api_enabled: cfg.local_agent_api.enabled,
         profile_connections: merged_profile_connections(&agent_prefs),
     }
 }

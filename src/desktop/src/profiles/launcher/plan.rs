@@ -27,7 +27,6 @@ const LOCAL_BRIDGE_PROXY_ENV_KEYS: &[&str] = &[
 ];
 const VIBEAROUND_LAUNCH_ID_ENV: &str = "VIBEAROUND_LAUNCH_ID";
 const VIBEAROUND_LAUNCH_TARGET_ENV: &str = "VIBEAROUND_LAUNCH_TARGET";
-
 enum LaunchTarget<'a> {
     Profile {
         profile: &'a ProfileDef,
@@ -123,8 +122,9 @@ impl<'a> LaunchPlanBuilder<'a> {
                     agent_id,
                     &agent,
                     agent.pty_command_for_current_platform(),
-                ),
+                )?,
                 args: terminal_launch_args_for_agent(agent_id),
+                cleanup_paths: Vec::new(),
                 window_label: format!("{} (direct)", agent.display_name),
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(agent_id, &agent),
@@ -138,8 +138,9 @@ impl<'a> LaunchPlanBuilder<'a> {
         args.extend(resume_args);
         Ok(LaunchPlan {
             env: Vec::new(),
-            command: direct_launch_command_for_agent(agent_id, &agent, &command),
+            command: direct_launch_command_for_agent(agent_id, &agent, &command)?,
             args,
+            cleanup_paths: Vec::new(),
             window_label: format!("{} (resume)", agent.display_name),
             workspace,
             macos_app_probe: macos_app_probe_for_direct_agent(agent_id, &agent),
@@ -175,8 +176,9 @@ impl<'a> LaunchPlanBuilder<'a> {
                     agent_id,
                     &agent,
                     agent.pty_command_for_current_platform(),
-                ),
+                )?,
                 args,
+                cleanup_paths: Vec::new(),
                 window_label: profile.label.clone(),
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(agent_id, &agent),
@@ -196,8 +198,9 @@ impl<'a> LaunchPlanBuilder<'a> {
                     agent_id,
                     &agent,
                     agent.pty_command_for_current_platform(),
-                ),
+                )?,
                 args: Vec::new(),
+                cleanup_paths: Vec::new(),
                 window_label: profile.label.clone(),
                 workspace,
                 macos_app_probe: macos_app_probe_for_direct_agent(agent_id, &agent),
@@ -211,8 +214,9 @@ impl<'a> LaunchPlanBuilder<'a> {
 
         Ok(LaunchPlan {
             env,
-            command: launch_command_for_agent(agent_id, agent.pty_command_for_current_platform()),
+            command: launch_command_for_agent(agent_id, agent.pty_command_for_current_platform())?,
             args: command_args,
+            cleanup_paths: Vec::new(),
             window_label: profile.label.clone(),
             workspace,
             macos_app_probe: None,
@@ -241,8 +245,9 @@ impl<'a> LaunchPlanBuilder<'a> {
 
         Ok(LaunchPlan {
             env,
-            command: launch_command_for_agent(agent_id, &command),
+            command: launch_command_for_agent(agent_id, &command)?,
             args,
+            cleanup_paths: Vec::new(),
             window_label: format!("{} (resume)", profile.label),
             workspace,
             macos_app_probe: None,
@@ -294,10 +299,10 @@ fn direct_launch_command_for_agent(
     agent_id: &str,
     agent: &resources::AgentDef,
     fallback_command: &str,
-) -> String {
+) -> anyhow::Result<String> {
     if agent.direct_only {
         if let Some(command) = macos_configured_app_launch_command(agent_id) {
-            return command;
+            return Ok(command);
         }
     }
     launch_command_for_agent(agent_id, fallback_command)
@@ -354,13 +359,13 @@ fn start_process_name(command: &str) -> Option<String> {
 }
 
 #[cfg(not(test))]
-fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> String {
-    ::common::agent_detection::resolve_agent_command(agent_id, fallback_command)
+fn launch_command_for_agent(agent_id: &str, fallback_command: &str) -> anyhow::Result<String> {
+    ::common::agent_detection::resolve_agent_command_strict(agent_id, fallback_command)
 }
 
 #[cfg(test)]
-fn launch_command_for_agent(_agent_id: &str, fallback_command: &str) -> String {
-    fallback_command.to_string()
+fn launch_command_for_agent(_agent_id: &str, fallback_command: &str) -> anyhow::Result<String> {
+    Ok(fallback_command.to_string())
 }
 
 fn materialized_profile_env(
@@ -754,6 +759,31 @@ mod tests {
     }
 
     #[test]
+    fn claude_profile_launch_does_not_use_temporary_settings() {
+        let profile = minimax_anthropic_profile();
+        let plan = LaunchPlanBuilder::with_launch_id("launch-123")
+            .profile(&profile, "claude")
+            .build()
+            .expect("profile plan");
+
+        assert!(!plan.args.iter().any(|arg| arg == "--settings"));
+        assert!(!plan.args.iter().any(|arg| arg == "--setting-sources"));
+        assert!(plan.cleanup_paths.is_empty());
+    }
+
+    #[test]
+    fn claude_direct_launch_does_not_use_temporary_settings() {
+        let plan = LaunchPlanBuilder::with_launch_id("launch-123")
+            .direct("claude")
+            .build()
+            .expect("direct plan");
+
+        assert!(!plan.args.iter().any(|arg| arg == "--settings"));
+        assert!(!plan.args.iter().any(|arg| arg == "--setting-sources"));
+        assert!(plan.cleanup_paths.is_empty());
+    }
+
+    #[test]
     fn claude_desktop_profile_plan_uses_3p_config_without_terminal_args() {
         let profile = minimax_anthropic_profile();
         let root = std::env::temp_dir().join(format!(
@@ -811,7 +841,7 @@ mod tests {
             applied
                 .get("inferenceGatewayBaseUrl")
                 .and_then(serde_json::Value::as_str),
-            Some("http://127.0.0.1:12358/va/local-api/minimax-test/claude-anthropic/anthropic")
+            Some("http://127.0.0.1:12358/va/local-api/minimax-test/claude-desktop-anthropic/anthropic")
         );
         if cfg!(target_os = "macos") {
             assert_eq!(plan.macos_app_probe.as_deref(), Some("Claude"));

@@ -4,7 +4,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
 
 const DESKTOP_DETECTION_SCHEMA_VERSION: u32 = 1;
 
@@ -43,6 +42,48 @@ pub fn read_detected_desktop_apps() -> Option<DesktopAppDetectionFile> {
     let path = detected_desktop_apps_path();
     let contents = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&contents).ok()
+}
+
+pub fn refresh_known_agent_and_persist(
+    agent_id: &str,
+) -> anyhow::Result<Option<DesktopAppDetection>> {
+    let Some(agent) = common::resources::agent_by_id(agent_id) else {
+        return Ok(None);
+    };
+    if !agent.direct_only || !agent.supports_current_platform() {
+        return Ok(None);
+    }
+
+    let launch_command = agent.pty_command_for_current_platform().to_string();
+    let Some(app_name) = desktop_app_name(&launch_command) else {
+        return Ok(None);
+    };
+    let Some((path, source, source_label)) = known_desktop_app_entry(&app_name) else {
+        return Ok(None);
+    };
+
+    let detection = DesktopAppDetection {
+        installed: true,
+        launch_command,
+        entry: Some(DesktopAppEntry {
+            app_name,
+            path,
+            source,
+            source_label,
+        }),
+    };
+    let mut detected = read_detected_desktop_apps().unwrap_or_else(|| DesktopAppDetectionFile {
+        schema_version: DESKTOP_DETECTION_SCHEMA_VERSION,
+        platform: current_platform().to_string(),
+        scanned_at_unix_ms: now_unix_ms(),
+        apps: BTreeMap::new(),
+    });
+    detected.schema_version = DESKTOP_DETECTION_SCHEMA_VERSION;
+    detected.platform = current_platform().to_string();
+    detected.scanned_at_unix_ms = now_unix_ms();
+    detected.apps.insert(agent.id.clone(), detection.clone());
+    write_detected_desktop_apps(&detected)?;
+    Ok(Some(detection))
 }
 
 pub async fn scan_and_persist() -> anyhow::Result<DesktopAppDetectionFile> {
@@ -114,6 +155,30 @@ fn desktop_app_name(command: &str) -> Option<String> {
     None
 }
 
+fn known_desktop_app_entry(app_name: &str) -> Option<(String, String, String)> {
+    if cfg!(target_os = "macos") {
+        let path = macos_application_candidate_paths(app_name)
+            .into_iter()
+            .find(|path| path.is_dir())?;
+        return Some((
+            normalize_app_path(&path),
+            "macos_applications_dir".to_string(),
+            "macOS Applications directory".to_string(),
+        ));
+    }
+    if cfg!(windows) {
+        let path = windows_application_candidate_paths(app_name)
+            .into_iter()
+            .find(|path| path.is_file())?;
+        return Some((
+            path.to_string_lossy().to_string(),
+            "windows_known_location".to_string(),
+            "Windows known location".to_string(),
+        ));
+    }
+    None
+}
+
 async fn macos_application_entry(app_name: &str) -> Option<(String, String, String)> {
     for path in macos_application_candidate_paths(app_name) {
         if path.is_dir() {
@@ -141,14 +206,6 @@ async fn macos_application_entry(app_name: &str) -> Option<(String, String, Stri
 }
 
 async fn windows_application_entry(app_name: &str) -> Option<(String, String, String)> {
-    if let Some(app_id) = windows_start_app_id(app_name).await {
-        return Some((
-            app_id,
-            "windows_start_apps".to_string(),
-            "Windows Start Apps".to_string(),
-        ));
-    }
-
     if let Some(path) = windows_application_candidate_paths(app_name)
         .into_iter()
         .find(|path| path.is_file())
@@ -157,6 +214,14 @@ async fn windows_application_entry(app_name: &str) -> Option<(String, String, St
             path.to_string_lossy().to_string(),
             "windows_known_location".to_string(),
             "Windows known location".to_string(),
+        ));
+    }
+
+    if let Some(app_id) = windows_start_app_id(app_name).await {
+        return Some((
+            app_id,
+            "windows_start_apps".to_string(),
+            "Windows Start Apps".to_string(),
         ));
     }
 
@@ -261,7 +326,7 @@ async fn windows_start_app_id(app_name: &str) -> Option<String> {
 async fn command_stdout_line(command: &str, args: &[&str]) -> Option<String> {
     let output = tokio::time::timeout(
         Duration::from_secs(6),
-        Command::new(command).args(args).output(),
+        common::process::env::command(command).args(args).output(),
     )
     .await
     .ok()?

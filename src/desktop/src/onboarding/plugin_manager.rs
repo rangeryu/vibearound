@@ -116,6 +116,13 @@ async fn install_search_plugin(plugin_id: &str) -> Result<ManagedPluginSummary, 
     let plugin = resources::plugin_by_id(plugin_id)
         .filter(|plugin| plugin.is_kind("search"))
         .ok_or_else(|| format!("unknown search plugin '{plugin_id}'"))?;
+    let current = search_plugin_from_registry(plugin, false).await;
+    if matches!(
+        current.source.as_ref(),
+        Some(plugins::PluginSource::Project)
+    ) {
+        return Ok(current);
+    }
     run_install_inner(InstallPluginRequest {
         plugin_id: plugin.id.clone(),
         github_url: plugin.github.clone(),

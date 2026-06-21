@@ -8,12 +8,16 @@ pub use web_server::run_web_server;
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
 use tokio::sync::{mpsc, Notify};
 use tokio::task::{JoinHandle, JoinSet};
+
+#[cfg(windows)]
+use std::time::Duration;
 
 use common::auth::{self, AuthToken};
 use common::channels::{handle_channel_input, ChannelInput, ChannelManager, WebChannelManager};
@@ -26,6 +30,10 @@ use common::tunnels::{self, TunnelManager};
 use common::workspace::WorkspaceThreadManager;
 
 const CHANNEL_INPUT_WORKER_COUNT: usize = 64;
+#[cfg(windows)]
+const WEB_BIND_RETRY_ATTEMPTS: usize = 20;
+#[cfg(windows)]
+const WEB_BIND_RETRY_DELAY: Duration = Duration::from_millis(150);
 
 /// Unified daemon that starts and manages all VibeAround services.
 /// Both the server binary and the desktop (Tauri) binary use this.
@@ -125,6 +133,54 @@ fn channel_input_shard(input: &ChannelInput, shard_count: usize) -> usize {
     (hasher.finish() as usize) % shard_count.max(1)
 }
 
+async fn bind_web_listener(port: u16) -> anyhow::Result<tokio::net::TcpListener> {
+    #[cfg(windows)]
+    {
+        // During desktop restarts, Windows can keep the old listener handle
+        // alive briefly while aborted tasks or killed child processes finish
+        // releasing inherited handles. A short Windows-only retry turns that
+        // transient "first click fails, second click works" state into a
+        // single successful restart without changing macOS/Linux behavior.
+        for attempt in 0..WEB_BIND_RETRY_ATTEMPTS {
+            match web_server::bind_web_listener(port).await {
+                Ok(listener) => return Ok(listener),
+                Err(error)
+                    if error.kind() == ErrorKind::AddrInUse
+                        && attempt + 1 < WEB_BIND_RETRY_ATTEMPTS =>
+                {
+                    if attempt == 0 {
+                        tracing::info!(
+                            port,
+                            "web server port is still busy after restart; waiting before retry"
+                        );
+                    }
+                    tokio::time::sleep(WEB_BIND_RETRY_DELAY).await;
+                }
+                Err(error) => return Err(bind_web_listener_error(port, error)),
+            }
+        }
+        unreachable!("web bind retry loop should return");
+    }
+
+    #[cfg(not(windows))]
+    {
+        web_server::bind_web_listener(port)
+            .await
+            .map_err(|error| bind_web_listener_error(port, error))
+    }
+}
+
+fn bind_web_listener_error(port: u16, error: std::io::Error) -> anyhow::Error {
+    if error.kind() == ErrorKind::AddrInUse {
+        anyhow!(
+            "Port {} is still in use. Another VibeAround instance or a stale previous service may be holding it.",
+            port
+        )
+    } else {
+        anyhow!(error).context(format!("failed to bind web server port {}", port))
+    }
+}
+
 impl ServerDaemon {
     pub fn new(port: u16) -> Self {
         Self {
@@ -158,21 +214,13 @@ impl ServerDaemon {
     }
 
     pub async fn start_background(&self, dist_path: PathBuf) -> anyhow::Result<RunningDaemon> {
-        if tokio::net::TcpStream::connect(("127.0.0.1", self.port))
-            .await
-            .is_ok()
-        {
-            return Err(anyhow!(
-                "Port {} is already in use — another VibeAround instance may be running",
-                self.port
-            ));
-        }
-
-        // Self-heal: kill any leftover plugin/agent-ACP node processes from
+        // Self-heal: kill any leftover plugin/agent-ACP child processes from
         // a previous crashed run BEFORE we spawn our own. Cheap on the happy
         // path (no matches) and prevents phantom children from hogging ports
         // or auth sockets.
         child_registry::orphan_sweep();
+
+        let web_listener = bind_web_listener(self.port).await?;
 
         // Force a fresh config read on every daemon start — ensures the
         // in-memory cache reflects the latest settings.json (which may have
@@ -284,10 +332,9 @@ impl ServerDaemon {
         let web_search_runtime = search_runtime.clone();
         let web_search_available = host_search_available;
         let web_replace_provider_search = replace_provider_web_search;
-        let daemon_port = self.port;
         let web_handle = tokio::spawn(async move {
             run_web_server(
-                daemon_port,
+                web_listener,
                 dist_path,
                 web_tunnels,
                 web_pty,

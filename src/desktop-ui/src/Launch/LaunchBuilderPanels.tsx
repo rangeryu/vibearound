@@ -38,8 +38,6 @@ import {
   apiTypeProtocolDisplayLabel,
   canDeleteWorkspace,
   connectionAgentId,
-  isGlobalDefaultDirect,
-  isGlobalDefaultProfile,
   isBridgeAgent,
   isSortableWorkspace,
   profileAvailability,
@@ -51,7 +49,6 @@ import {
 import {
   DefaultBadge,
   DisabledMoreButton,
-  DirectProfileActionsMenu,
   DragHandle,
   ProfileActionsMenu,
   BridgeBadge,
@@ -153,7 +150,6 @@ export function ProfilePanel({
   profiles,
   onSelect,
   onSelectApiType,
-  onMakeDefault,
   onEditProfile,
   onDuplicateProfile,
   onConnectionSettings,
@@ -168,7 +164,6 @@ export function ProfilePanel({
   profiles: ProfileSummary[];
   onSelect: (choice: ProfileChoice) => void;
   onSelectApiType: (profile: ProfileSummary, apiType: string) => void;
-  onMakeDefault: (choice: ProfileChoice) => Promise<void>;
   onEditProfile: (profile: ProfileSummary) => void;
   onDuplicateProfile: (profile: ProfileSummary) => void;
   onConnectionSettings: (
@@ -181,7 +176,6 @@ export function ProfilePanel({
   busy: boolean;
 }) {
   const { t } = useI18n();
-  const directIsGlobalDefault = isGlobalDefaultDirect(prefs, agentId);
   const directActive = selected.kind === "direct";
 
   function handleProfileDragEnd(event: DragEndEvent) {
@@ -237,27 +231,21 @@ export function ProfilePanel({
               <span className="truncate text-[13px] font-semibold">
                 {t("Direct")}
               </span>
-              {directIsGlobalDefault && <DefaultBadge />}
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
               {t("Use existing CLI login")}
             </div>
           </div>
-          <div
-            className="flex shrink-0 flex-wrap justify-end gap-2"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <DirectProfileActionsMenu
-              isDefault={directIsGlobalDefault}
-              disabled={busy}
-              onMakeDefault={() => void onMakeDefault({ kind: "direct" })}
-            />
-          </div>
         </SelectableItemCard>
 
         <DragDropProvider onDragEnd={handleProfileDragEnd}>
           {profiles.map((profile, index) => {
-            const availability = profileAvailability(profile, agentId, prefs, t);
+            const availability = profileAvailability(
+              profile,
+              agentId,
+              prefs,
+              t,
+            );
             return (
               <SortableItem
                 key={profile.id}
@@ -271,22 +259,18 @@ export function ProfilePanel({
                     availability.launchable &&
                     selected.kind === "profile" &&
                     selected.profileId === profile.id;
-                  const globalDefaultForProfile = isGlobalDefaultProfile(
-                    prefs,
-                    agentId,
-                    profile.id,
-                  );
                   const connectionId = connectionAgentId(agentId);
-                  const connection =
-                    connectionId
-                      ? resolveProfileConnection(
-                          profile,
-                          prefs.profileConnections,
-                          agentConnectionDef(agentId),
-                        )
-                      : null;
+                  const connection = connectionId
+                    ? resolveProfileConnection(
+                        profile,
+                        prefs.profileConnections,
+                        agentConnectionDef(agentId),
+                      )
+                    : null;
                   const profileApiOptions =
-                    connection?.clientApiTypes.filter((client) => client.native) ?? [];
+                    connection?.clientApiTypes.filter(
+                      (client) => client.native,
+                    ) ?? [];
                   const profileApiSelectValue = profileApiOptions.some(
                     (client) => client.apiType === connection?.selectedApiType,
                   )
@@ -305,7 +289,9 @@ export function ProfilePanel({
                         label={t("Reorder {{label}}", { label: profile.label })}
                         disabled={busy}
                         disabledReason={
-                          busy ? t("Reordering unavailable while launching") : undefined
+                          busy
+                            ? t("Reordering unavailable while launching")
+                            : undefined
                         }
                         dragHandleRef={dragHandleRef}
                       />
@@ -324,7 +310,6 @@ export function ProfilePanel({
                           <span className="truncate text-[13px] font-semibold">
                             {profile.label}
                           </span>
-                          {globalDefaultForProfile && <DefaultBadge />}
                         </div>
                         {summary.bridge && (
                           <div className="mt-0.5">
@@ -333,7 +318,11 @@ export function ProfilePanel({
                         )}
                         <div
                           className="truncate text-[11px] text-muted-foreground"
-                          title={availability.launchable ? summary.route : availability.reason}
+                          title={
+                            availability.launchable
+                              ? summary.route
+                              : availability.reason
+                          }
                         >
                           {availability.launchable
                             ? summary.route
@@ -348,41 +337,38 @@ export function ProfilePanel({
                           connection.agent.supportedApiTypes.length > 1 &&
                           profileApiOptions.length > 0 &&
                           profileApiSelectValue && (
-                          <Select
-                            value={profileApiSelectValue}
-                            disabled={busy}
-                            onValueChange={(apiType) => onSelectApiType(profile, apiType)}
-                          >
-                            <SelectTrigger size="sm" className="h-7 w-[clamp(8rem,20vw,160px)] text-[11px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {profileApiOptions.map((option) => (
-                                <SelectItem
-                                  key={option.apiType}
-                                  value={option.apiType}
-                                  className="text-xs"
-                                >
-                                  {apiTypeProtocolDisplayLabel(option.apiType)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
+                            <Select
+                              value={profileApiSelectValue}
+                              disabled={busy}
+                              onValueChange={(apiType) =>
+                                onSelectApiType(profile, apiType)
+                              }
+                            >
+                              <SelectTrigger
+                                size="sm"
+                                className="h-7 w-[clamp(8rem,20vw,160px)] text-[11px]"
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {profileApiOptions.map((option) => (
+                                  <SelectItem
+                                    key={option.apiType}
+                                    value={option.apiType}
+                                    className="text-xs"
+                                  >
+                                    {apiTypeProtocolDisplayLabel(
+                                      option.apiType,
+                                    )}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         <ProfileActionsMenu
                           profile={profile}
                           bridgeAvailable={isBridgeAgent(agentId)}
                           disabled={busy}
-                          onMakeDefault={
-                            globalDefaultForProfile
-                              ? undefined
-                              : () =>
-                                  void onMakeDefault({
-                                    kind: "profile",
-                                    profileId: profile.id,
-                                  })
-                          }
-                          makeDefaultDisabled={busy || !availability.launchable}
                           onConnectionSettings={(profile) => {
                             const connectionId = connectionAgentId(agentId);
                             if (connectionId) {

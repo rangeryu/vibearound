@@ -8,7 +8,7 @@ mod profiles;
 mod startkit;
 mod tray;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, Runtime};
@@ -138,6 +138,49 @@ fn get_desktop_app_entries() -> Option<desktop_detection::DesktopAppDetectionFil
     desktop_detection::read_detected_desktop_apps()
 }
 
+#[tauri::command]
+fn check_selected_launch_entry() -> Result<bool, String> {
+    let cfg = common::config::ensure_loaded();
+    let prefs = common::agent_state::read_prefs();
+    let agent_id = common::agent_state::resolve_selected_agent(&prefs, &cfg);
+    let agent = common::resources::agent_by_alias(&agent_id)
+        .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
+
+    let configured_path = common::agent_state::resolve_agent_executable_path(&prefs, &agent.id);
+    let exists = if agent.direct_only {
+        configured_path.as_deref().is_some_and(Path::is_file)
+            || desktop_detection::refresh_known_agent_and_persist(&agent.id)
+                .map_err(|error| error.to_string())?
+                .is_some()
+            || selected_desktop_app_cached(&agent.id, configured_path.as_deref())
+    } else {
+        configured_path.as_deref().is_some_and(Path::is_file)
+            || common::agent_detection::selected_candidate(&agent.id)
+                .as_ref()
+                .is_some_and(|candidate| Path::new(&candidate.path).is_file())
+    };
+    Ok(exists)
+}
+
+fn selected_desktop_app_cached(agent_id: &str, configured_path: Option<&Path>) -> bool {
+    let Some(detected) = desktop_detection::read_detected_desktop_apps() else {
+        return false;
+    };
+    let Some(entry) = detected
+        .apps
+        .get(agent_id)
+        .and_then(|detection| detection.entry.as_ref())
+    else {
+        return false;
+    };
+    if entry.source == "windows_start_apps" {
+        return configured_path
+            .map(|path| path.to_string_lossy().eq_ignore_ascii_case(&entry.path))
+            .unwrap_or(true);
+    }
+    Path::new(&entry.path).is_file()
+}
+
 /// Open an HTTP URL in the user's default external browser.
 ///
 /// We can't use `window.open` from the desktop-ui because it creates a
@@ -175,6 +218,8 @@ fn main() {
     let port = common::config::DEFAULT_PORT;
     let daemon = Arc::new(server::ServerDaemon::new(port));
     let tunnels = daemon.tunnels();
+    #[cfg(windows)]
+    let graceful_exit_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     // Persist the auth token immediately so the desktop-ui (which runs in
     // a Tauri webview that starts rendering before the daemon has fully
@@ -217,6 +262,7 @@ fn main() {
             rescan_agent_entries,
             rescan_desktop_app_entries,
             get_desktop_app_entries,
+            check_selected_launch_entry,
             open_external_url,
             restart_services,
             set_ui_locale,
@@ -277,6 +323,7 @@ fn main() {
             profiles::launcher_remove_workspace,
             profiles::launcher_reorder_workspaces,
             profiles::launcher_set_compatibility_bridge,
+            profiles::launcher_set_local_agent_api_enabled,
             profiles::launcher_set_profile_connection,
         ])
         .setup({
@@ -355,17 +402,36 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building VibeAround")
-        .run(|_app, event| {
-            // On app exit — whether via Cmd-Q, dock quit, window close, or
-            // tray Quit — synchronously SIGKILL every registered child
-            // process. This is the last line of defense against orphaned
-            // plugin/agent processes; the graceful stop paths in
-            // RunningDaemon::stop also run but may be skipped entirely on
-            // abrupt exit (e.g. signal-driven shutdown before the async
-            // runtime has been able to drain its tasks).
-            if let tauri::RunEvent::Exit = event {
-                common::process::registry::ChildRegistry::global().kill_all();
-                common::previews::shutdown_kill_all_ports();
+        .run({
+            #[cfg(windows)]
+            let graceful_exit_started = Arc::clone(&graceful_exit_started);
+            move |app, event| {
+                #[cfg(windows)]
+                if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+                    if *code != Some(tauri::RESTART_EXIT_CODE)
+                        && !graceful_exit_started.swap(true, std::sync::atomic::Ordering::SeqCst)
+                    {
+                        api.prevent_exit();
+                        let app_handle = app.clone();
+                        let exit_code = code.unwrap_or(0);
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(error) = stop_daemon(&app_handle).await {
+                                tracing::warn!(
+                                    "[VibeAround] failed to stop daemon before exit: {}",
+                                    error
+                                );
+                            }
+                            app_handle.exit(exit_code);
+                        });
+                        return;
+                    }
+                }
+                // Final safety net for child processes if graceful daemon
+                // shutdown was skipped or interrupted.
+                if let tauri::RunEvent::Exit = event {
+                    common::process::registry::ChildRegistry::global().kill_all();
+                    common::previews::shutdown_kill_all_ports();
+                }
             }
         });
 }

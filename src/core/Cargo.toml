@@ -1,6 +1,6 @@
 [package]
 name = "common"
-version = "0.7.6"
+version = "0.7.7"
 description = "VibeAround shared logic: PTY, session registry, tunnel, headless CLI, IM (Telegram)"
 edition = "2021"
 rust-version = "1.82"
@@ -19,7 +19,7 @@ url = "2.5"
 async-trait = "0.1"
 rustls = "0.23"
 chrono = "0.4"
-agent-client-protocol = { version = "=0.11.1", features = ["unstable_session_resume", "unstable_session_usage"] }
+agent-client-protocol = { version = "=0.15.0", features = ["unstable_end_turn_token_usage"] }
 futures = "0.3"
 tokio-util = { version = "0.7", features = ["compat"] }
 anyhow = "1"
@@ -37,3 +37,8 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 include_dir = "0.7"
 shell-escape = "0.1"
+libc = "0.2"
+flate2 = "1.1"
+tar = "0.4"
+xz2 = "0.1"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }

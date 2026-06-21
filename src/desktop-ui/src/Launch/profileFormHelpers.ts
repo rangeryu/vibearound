@@ -258,9 +258,6 @@ export function shouldShowBaseUrl(
   overrides: ApiTypeOverrides,
 ): boolean {
   if (provider.id === "custom") return true;
-  if (provider.id === "mimo" && endpointId(endpoint).startsWith("token-plan")) {
-    return true;
-  }
   if (!endpoint.default_base_url) return true;
   return !!overrides.base_url && overrides.base_url !== endpoint.default_base_url;
 }
@@ -293,8 +290,15 @@ export function pruneOverrides(
     if (ov.endpoint_id && endpointOptions.length > 1) {
       trimmed.endpoint_id = ov.endpoint_id;
     }
-    if (requiresProfileModel(provider, ep) && ov.model && ov.model.length > 0) {
-      trimmed.model = ov.model;
+    if (ov.model && ov.model.length > 0) {
+      if (requiresProfileModel(provider, ep)) {
+        trimmed.model = ov.model;
+      } else if (
+        ep?.models.some((model) => model.id === ov.model) &&
+        ov.model !== ep.models[0]?.id
+      ) {
+        trimmed.model = ov.model;
+      }
     }
     if (
       canOverrideInputSupport(provider, ep) &&

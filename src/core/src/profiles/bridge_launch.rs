@@ -27,12 +27,7 @@ pub(super) fn render_bridge_launch(
         fake_model_id,
         bridge_models,
     )?;
-    let scope_agent_id = match launch_target {
-        "claude-desktop" => "claude",
-        "codex-desktop" => "codex",
-        _ => launch_target,
-    };
-    settings.scope = format!("{scope_agent_id}-{client_api_type}");
+    settings.scope = format!("{launch_target}-{client_api_type}");
     match launch_target {
         "claude" | "claude-desktop" => {
             Ok(render_claude_bridge_profile(profile, launch_id, settings))
@@ -336,6 +331,9 @@ fn render_codex_bridge_profile(
             contents: model_catalog_json,
         });
     }
+    if let Some(provider_models) = codex_metadata::build_provider_models_toml(&specs) {
+        push_provider_config_arg(&mut command_args, &provider_key, "models", &provider_models);
+    }
     push_provider_config_arg(
         &mut command_args,
         &provider_key,
@@ -353,6 +351,12 @@ fn render_codex_bridge_profile(
         &provider_key,
         "wire_api",
         &toml_string("responses"),
+    );
+    push_provider_config_arg(
+        &mut command_args,
+        &provider_key,
+        "supports_websockets",
+        "false",
     );
     push_provider_config_arg(
         &mut command_args,
@@ -587,6 +591,10 @@ mod tests {
             .command_args
             .iter()
             .any(|arg| arg == "model_context_window=1000000"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model_providers.dashscope.supports_websockets=false"));
     }
 
     #[test]
@@ -599,7 +607,7 @@ mod tests {
             "launch-test",
             "openai-responses",
             "anthropic",
-            Some("kimi-code"),
+            Some("kimi-for-coding"),
             None,
             &[],
         )
@@ -608,7 +616,7 @@ mod tests {
         assert!(rendered
             .command_args
             .iter()
-            .any(|arg| arg == "model='kimi-code'"));
+            .any(|arg| arg == "model='kimi-for-coding'"));
         assert!(rendered
             .command_args
             .iter()
@@ -626,7 +634,7 @@ mod tests {
         let catalog: Value =
             serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
         let model = &catalog["models"][0];
-        assert_eq!(model["slug"], "kimi-code");
+        assert_eq!(model["slug"], "kimi-for-coding");
         assert_eq!(model["context_window"], 256_000);
         assert_eq!(model["max_context_window"], 256_000);
     }
@@ -649,7 +657,7 @@ mod tests {
                     capabilities: Default::default(),
                 },
                 ProfileBridgeModelRoute {
-                    upstream_model: "qwen3.5-plus".to_string(),
+                    upstream_model: "qwen3.7-plus".to_string(),
                     agent_model: "gpt-5.1-mini".to_string(),
                     capabilities: Default::default(),
                 },
@@ -672,9 +680,66 @@ mod tests {
 
         assert_eq!(models.len(), 2);
         assert_eq!(models[0]["slug"], "gpt-5.1-codex");
+        assert_eq!(models[0]["model"], "gpt-5.1-codex");
+        assert_eq!(models[0]["id"], "gpt-5.1-codex");
+        assert_eq!(models[0]["displayName"], "gpt-5.1-codex");
         assert_eq!(models[0]["context_window"], 1_000_000);
+        assert_eq!(models[0]["contextWindow"], 1_000_000);
         assert_eq!(models[1]["slug"], "gpt-5.1-mini");
+        assert_eq!(models[1]["model"], "gpt-5.1-mini");
+        assert_eq!(models[1]["id"], "gpt-5.1-mini");
+        assert_eq!(models[1]["displayName"], "gpt-5.1-mini");
         assert_eq!(models[1]["context_window"], 1_000_000);
+        assert_eq!(models[1]["contextWindow"], 1_000_000);
+        assert!(rendered.command_args.iter().any(|arg| {
+            arg.starts_with("model_providers.dashscope.models=")
+                && arg.contains("model = \"gpt-5.1-codex\"")
+                && arg.contains("model = \"gpt-5.1-mini\"")
+                && arg.contains("contextWindow = 1000000")
+        }));
+    }
+
+    #[test]
+    fn codex_bridge_launch_includes_real_provider_model_metadata() {
+        let profile = dashscope_profile();
+        let rendered = render_bridge_launch(
+            &profile,
+            "codex",
+            "launch-test",
+            "openai-responses",
+            "openai-chat",
+            Some("qwen3.6-plus"),
+            None,
+            &[ProfileBridgeModelRoute {
+                upstream_model: "qwen3.6-plus".to_string(),
+                agent_model: "qwen3.6-plus".to_string(),
+                capabilities: Default::default(),
+            }],
+        )
+        .expect("codex bridge launch renders");
+
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model='qwen3.6-plus'"));
+        let catalog_file = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path == "codex-model-catalog-launch-test.json")
+            .expect("codex model catalog file");
+        let catalog: Value =
+            serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
+        let model = &catalog["models"][0];
+
+        assert_eq!(model["slug"], "qwen3.6-plus");
+        assert_eq!(model["model"], "qwen3.6-plus");
+        assert_eq!(model["id"], "qwen3.6-plus");
+        assert_eq!(model["contextWindow"], 1_000_000);
+        assert!(rendered.command_args.iter().any(|arg| {
+            arg.starts_with("model_providers.dashscope.models=")
+                && arg.contains("model = \"qwen3.6-plus\"")
+                && arg.contains("contextWindow = 1000000")
+        }));
     }
 
     #[test]
@@ -919,6 +984,39 @@ mod tests {
     }
 
     #[test]
+    fn codex_desktop_bridge_launch_uses_desktop_scope() {
+        let mut profile = gemini_profile();
+        profile.api_types = vec!["gemini".to_string()];
+        profile.overrides.clear();
+        profile.overrides.insert(
+            "gemini".to_string(),
+            ApiTypeOverrides {
+                endpoint_id: None,
+                base_url: None,
+                model: Some("gemini-3.1-pro".to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                capabilities: None,
+            },
+        );
+
+        let rendered = render_bridge_launch(
+            &profile,
+            "codex-desktop",
+            "launch-test",
+            "openai-responses",
+            "gemini",
+            None,
+            None,
+            &[],
+        )
+        .expect("codex desktop native gemini bridge launch renders");
+
+        assert!(rendered.command_args.iter().any(|arg| {
+            arg == "model_providers.gemini.base_url='http://127.0.0.1:12358/va/local-api/gemini-test/codex-desktop-openai-responses/gemini/v1'"
+        }));
+    }
+
+    #[test]
     fn oauth_bridge_launch_uses_local_dummy_key() {
         let mut profile = gemini_profile();
         profile.auth_mode = AuthMode::GoogleOauth;
@@ -996,7 +1094,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_desktop_bridge_launch_reuses_claude_scope() {
+    fn claude_desktop_bridge_launch_uses_desktop_scope() {
         let profile = dashscope_profile();
         let rendered = render_bridge_launch(
             &profile,
@@ -1016,12 +1114,12 @@ mod tests {
                 .iter()
                 .find(|(key, _)| key == "ANTHROPIC_BASE_URL")
                 .map(|(_, value)| value.as_str()),
-            Some("http://127.0.0.1:12358/va/local-api/dashscope-test/claude-anthropic/openai-chat")
+            Some("http://127.0.0.1:12358/va/local-api/dashscope-test/claude-desktop-anthropic/openai-chat")
         );
     }
 
     #[test]
-    fn codex_desktop_bridge_launch_reuses_codex_scope() {
+    fn codex_desktop_chat_bridge_launch_uses_desktop_scope() {
         let profile = deepseek_profile();
         let rendered = render_bridge_launch(
             &profile,
@@ -1036,7 +1134,7 @@ mod tests {
         .expect("codex desktop bridge launch renders");
 
         assert!(rendered.command_args.iter().any(|arg| {
-            arg == "model_providers.deepseek.base_url='http://127.0.0.1:12358/va/local-api/deepseek-test/codex-openai-responses/openai-chat/v1'"
+            arg == "model_providers.deepseek.base_url='http://127.0.0.1:12358/va/local-api/deepseek-test/codex-desktop-openai-responses/openai-chat/v1'"
         }));
     }
 

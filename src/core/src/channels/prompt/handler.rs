@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use agent_client_protocol::schema as acp;
+use agent_client_protocol::schema::v1 as acp;
 
 use crate::agent::launch::{normalize_launch_profile_id, DIRECT_PROFILE_ID};
 use crate::agent::AgentClientHandler;
@@ -15,8 +15,7 @@ use crate::channels::types::{
 };
 use crate::profiles::{self, connections};
 use crate::routing::RouteKey;
-use crate::workspace::context_transfer;
-use crate::workspace::manager::{PendingThreadSelection, ThreadChoice, WorkspaceSwitch};
+use crate::workspace::manager::ExternalSessionAttachMode;
 use crate::workspace::threads::runtime::{
     route_allows_startup_replay, ThreadRuntime, ThreadRuntimeState,
 };
@@ -24,6 +23,8 @@ use crate::workspace::threads::store::HostBinding;
 use crate::workspace::WorkspaceThreadManager;
 
 use super::send_system_text;
+
+const SESSION_LIST_LIMIT: usize = 5;
 
 pub(crate) async fn handle_prompt(
     workspace_threads: &Arc<WorkspaceThreadManager>,
@@ -36,39 +37,6 @@ pub(crate) async fn handle_prompt(
     if commands_enabled_for_route(&route) {
         if let Some(command) = parse_thread_command(&text) {
             return handle_command(workspace_threads, plugin_host, &route, command).await;
-        }
-    }
-
-    if commands_enabled_for_route(&route) {
-        match workspace_threads
-            .select_pending_thread(&route, &text)
-            .await
-            .map_err(internal_error)?
-        {
-            PendingThreadSelection::Selected(runtime) => {
-                start_runtime_and_notify(workspace_threads, &runtime, plugin_host, &route, true)
-                    .await?;
-                send_system_text(
-                    plugin_host,
-                    &route,
-                    &format!("Switched to thread {}.", runtime.state().await.thread_id),
-                )
-                .await;
-                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
-            }
-            PendingThreadSelection::Invalid { threads } => {
-                send_system_text(
-                    plugin_host,
-                    &route,
-                    &format!(
-                        "Invalid thread selection.\n{}",
-                        format_thread_choices("workspace", &threads)
-                    ),
-                )
-                .await;
-                return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
-            }
-            PendingThreadSelection::NoPending => {}
         }
     }
 
@@ -97,7 +65,7 @@ async fn handle_command(
     match command {
         ThreadCommand::New => {
             let runtime = workspace_threads
-                .create_thread_in_current_workspace(route)
+                .close_route_and_create_thread(route, Some("user started a new thread".to_string()))
                 .await
                 .map_err(internal_error)?;
             start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
@@ -134,16 +102,28 @@ async fn handle_command(
             };
             let agent_id =
                 crate::resources::resolve_agent_id(&handoff.agent_kind).map_err(invalid_params)?;
-            let runtime = workspace_threads
+            let runtime = match workspace_threads
                 .attach_external_session(
                     route,
                     agent_id.clone(),
                     handoff.profile_id,
                     handoff.session_id,
                     std::path::PathBuf::from(handoff.cwd),
+                    ExternalSessionAttachMode::ReuseOpenThread,
                 )
                 .await
-                .map_err(internal_error)?;
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    send_system_text(
+                        plugin_host,
+                        route,
+                        &format!("Could not pickup session: {:#}", error),
+                    )
+                    .await;
+                    return Ok(acp::PromptResponse::new(acp::StopReason::EndTurn));
+                }
+            };
             start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
             send_system_text(
                 plugin_host,
@@ -183,7 +163,7 @@ async fn handle_command(
                     plugin_host,
                     route,
                     &id,
-                    WorkspaceSwitchMode::IdOnly,
+                    WorkspaceTokenMode::IdOnly,
                 )
                 .await?;
             }
@@ -234,7 +214,7 @@ async fn handle_command(
                 plugin_host,
                 route,
                 &token,
-                WorkspaceSwitchMode::Legacy,
+                WorkspaceTokenMode::Legacy,
             )
             .await?;
         }
@@ -255,7 +235,7 @@ async fn handle_command(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WorkspaceSwitchMode {
+enum WorkspaceTokenMode {
     IdOnly,
     Legacy,
 }
@@ -265,36 +245,24 @@ async fn switch_workspace(
     plugin_host: &Arc<PluginHost>,
     route: &RouteKey,
     token: &str,
-    mode: WorkspaceSwitchMode,
+    mode: WorkspaceTokenMode,
 ) -> acp::Result<()> {
-    let switch = match mode {
-        WorkspaceSwitchMode::IdOnly => workspace_threads.switch_workspace_id(route, token).await,
-        WorkspaceSwitchMode::Legacy => workspace_threads.switch_workspace(route, token).await,
+    let runtime = match mode {
+        WorkspaceTokenMode::IdOnly => workspace_threads.switch_workspace_id(route, token).await,
+        WorkspaceTokenMode::Legacy => workspace_threads.switch_workspace(route, token).await,
     }
     .map_err(internal_error)?;
 
-    match switch {
-        WorkspaceSwitch::Started(runtime) => {
-            start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
-            send_system_text(
-                plugin_host,
-                route,
-                &format!(
-                    "Entered workspace and started thread {}.",
-                    runtime.state().await.thread_id
-                ),
-            )
-            .await;
-        }
-        WorkspaceSwitch::NeedsSelection { workspace, threads } => {
-            send_system_text(
-                plugin_host,
-                route,
-                &format_thread_choices(&workspace.name, &threads),
-            )
-            .await;
-        }
-    }
+    start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
+    send_system_text(
+        plugin_host,
+        route,
+        &format!(
+            "Entered workspace and started thread {}.",
+            runtime.state().await.thread_id
+        ),
+    )
+    .await;
     Ok(())
 }
 
@@ -306,79 +274,42 @@ async fn switch_host(
     profile: Option<String>,
 ) -> acp::Result<()> {
     let target = resolve_host_binding(agent, profile.as_deref()).map_err(invalid_params)?;
-    let runtime = workspace_threads
-        .resolve_route_runtime(route)
+    let active_runtime = workspace_threads
+        .active_route_runtime(route)
         .await
         .map_err(internal_error)?;
-    let before = runtime.state().await;
-    let package = if let Some(session_id) = before.session_id.as_deref() {
-        match context_transfer::capture(
-            route,
-            &before.workspace,
-            &before.workspace_id,
-            &before.thread_id,
-            &before.host_binding,
-            session_id,
-            &target,
-        )
-        .await
-        {
-            Ok(package) => Some(package),
-            Err(error) => {
-                send_system_text(
-                    plugin_host,
-                    route,
-                    &format!(
-                        "Context transfer failed; switching host without replay: {:#}",
-                        error
-                    ),
-                )
-                .await;
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    runtime
-        .switch_host(target.clone(), package.is_some())
-        .await?;
-    start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
-    if let Some(package) = package {
-        match context_transfer::bootstrap_prompt(&package) {
-            Ok(blocks) => {
-                let state = runtime.state().await;
-                let handler = bridge_handler(workspace_threads, plugin_host, &state);
-                if let Err(error) = runtime.prompt(route, blocks, handler).await {
-                    send_system_text(
-                        plugin_host,
-                        route,
-                        &format!(
-                            "Context transfer bootstrap failed after switching host: {}",
-                            error
-                        ),
-                    )
-                    .await;
-                }
-            }
-            Err(error) => {
-                send_system_text(
-                    plugin_host,
-                    route,
-                    &format!(
-                        "Context transfer bootstrap could not be prepared after switching host: {:#}",
-                        error
-                    ),
-                )
-                .await;
-            }
+    if let Some(runtime) = active_runtime {
+        if runtime.state().await.host_binding.agent_id == target.agent_id {
+            runtime
+                .switch_profile_preserving_session(target.clone())
+                .await?;
+            start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
+            send_system_text(
+                plugin_host,
+                route,
+                &format!(
+                    "Switched profile to {}.",
+                    target.profile_id.as_deref().unwrap_or(DIRECT_PROFILE_ID)
+                ),
+            )
+            .await;
+            return Ok(());
         }
     }
+
+    let runtime = workspace_threads
+        .create_thread_in_current_workspace_with_host(route, target.clone())
+        .await
+        .map_err(internal_error)?;
+    start_runtime_and_notify(workspace_threads, &runtime, plugin_host, route, true).await?;
     send_system_text(
         plugin_host,
         route,
-        &format!("Switched host to {}.", target.agent_id),
+        &format!(
+            "Switched agent to {} in new thread {}.",
+            target.agent_id,
+            runtime.state().await.thread_id
+        ),
     )
     .await;
     Ok(())
@@ -428,29 +359,50 @@ async fn switch_session(
         .collect();
     let session = match matches.as_slice() {
         [] => {
-            return Err(invalid_params(format!(
-                "session '{}' not found for current agent/workspace",
-                id
-            )))
+            send_system_text(
+                plugin_host,
+                route,
+                &format!(
+                    "Session '{}' was not found for the current agent/workspace.",
+                    id
+                ),
+            )
+            .await;
+            return Ok(());
         }
         [session] => session.clone(),
         _ => {
-            return Err(invalid_params(format!(
-                "session '{}' is ambiguous; use the full session id",
-                id
-            )))
+            send_system_text(
+                plugin_host,
+                route,
+                &format!("Session '{}' is ambiguous; use the full session id.", id),
+            )
+            .await;
+            return Ok(());
         }
     };
-    let resumed = workspace_threads
+    let resumed = match workspace_threads
         .attach_external_session(
             route,
             session.agent_id.clone(),
             state.host_binding.profile_id.clone(),
             session.session_id.clone(),
             PathBuf::from(&session.workspace),
+            ExternalSessionAttachMode::NewThread,
         )
         .await
-        .map_err(internal_error)?;
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            send_system_text(
+                plugin_host,
+                route,
+                &format!("Could not switch session: {:#}", error),
+            )
+            .await;
+            return Ok(());
+        }
+    };
     start_runtime_and_notify(workspace_threads, &resumed, plugin_host, route, true).await?;
     send_system_text(
         plugin_host,
@@ -977,7 +929,7 @@ async fn list_sessions_for_state(
     crate::launch_sessions::list_for_agent_workspace_with_archived_async(
         &state.host_binding.agent_id,
         &state.workspace,
-        25,
+        SESSION_LIST_LIMIT,
         false,
     )
     .await
@@ -1036,26 +988,6 @@ fn current_marker(current: bool) -> &'static str {
     } else {
         "-"
     }
-}
-
-fn format_thread_choices(workspace_name: &str, threads: &[ThreadChoice]) -> String {
-    let mut lines = vec![format!("Threads in {}:", workspace_name)];
-    for (index, thread) in threads.iter().enumerate() {
-        let title = thread
-            .first_user_prompt
-            .as_deref()
-            .filter(|prompt| !prompt.trim().is_empty())
-            .unwrap_or("(no first prompt yet)");
-        lines.push(format!(
-            "{}. {} · {} · {}",
-            index + 1,
-            thread.thread_id,
-            thread.host_binding.agent_id,
-            title
-        ));
-    }
-    lines.push("Reply with a number or thread id.".to_string());
-    lines.join("\n")
 }
 
 fn internal_error(error: anyhow::Error) -> acp::Error {

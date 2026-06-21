@@ -23,7 +23,7 @@ impl ChannelPluginManifest {
         let raw_config = config::ensure_loaded().channel_raw_config(&channel_kind)?;
         Some(Self {
             channel_kind,
-            version: plugin.manifest.version.clone(),
+            version: plugin.installed_version(),
             runtime: plugin.manifest.runtime.clone(),
             plugin_dir: plugin.dir.clone(),
             entry_path: plugin.entry_path(),

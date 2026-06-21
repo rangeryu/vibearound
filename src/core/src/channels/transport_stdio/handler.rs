@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use agent_client_protocol::schema as acp;
+use agent_client_protocol::schema::v1 as acp;
+use agent_client_protocol::schema::ProtocolVersion;
 
 use crate::proc_log;
 use crate::process::registry::ProcessKind;
@@ -68,7 +69,7 @@ impl PluginAgentHandler {
                 .into(),
         );
 
-        Ok(acp::InitializeResponse::new(acp::ProtocolVersion::V1)
+        Ok(acp::InitializeResponse::new(ProtocolVersion::V1)
             .agent_info(
                 acp::Implementation::new("vibearound-host", env!("CARGO_PKG_VERSION"))
                     .title("VibeAround"),

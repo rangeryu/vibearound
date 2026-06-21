@@ -1,6 +1,5 @@
 import { BrandIcon } from "@/components/brand-icon";
 import { cn } from "@/lib/utils";
-import { toneDot } from "./primitives";
 import type { Tone } from "./types";
 
 interface ServiceIconMeta {
@@ -100,4 +99,19 @@ export function AgentIconBadge({
       )}
     </span>
   );
+}
+
+function toneDot(tone: Tone) {
+  switch (tone) {
+    case "good":
+      return "bg-emerald-500";
+    case "busy":
+      return "bg-primary";
+    case "warning":
+      return "bg-amber-500";
+    case "danger":
+      return "bg-destructive";
+    case "muted":
+      return "bg-muted-foreground/40";
+  }
 }

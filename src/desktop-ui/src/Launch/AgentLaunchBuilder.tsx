@@ -42,20 +42,17 @@ import {
   removeLauncherWorkspace,
   reorderLauncherWorkspaces,
   reorderProfiles,
-  getDesktopAppEntries,
-  getAgentExecutableLatest,
+  getDesktopAppEntriesForAgents,
   getAgentExecutableResolution,
   updateLauncherAgent,
   setProfileConnection,
   setLauncherAgentExecutablePath,
   setLauncherAgentProfile,
   setLauncherAgentLaunchArgs,
-  setLauncherDefault,
   setLauncherSelectedAgent,
   setLauncherTerminal,
   setLauncherWorkspace,
   type AgentSummary,
-  type AgentExecutableLatest,
   type AgentExecutableResolution,
   type DesktopAppDetectionFile,
   type LaunchSessionSummary,
@@ -63,7 +60,6 @@ import {
   type WorkspaceOption,
 } from "./api";
 import { AgentLaunchSettingsDialog } from "./AgentLaunchSettingsDialog";
-import { agentLaunchArgCount } from "./agentLaunchArgs";
 import { buildProfileCopyDraft } from "./profileClone";
 import {
   agentLabel,
@@ -165,9 +161,9 @@ export function AgentLaunchBuilder({
   const [desktopAppEntries, setDesktopAppEntries] =
     useState<DesktopAppDetectionFile | null>(null);
   const [busy, setBusy] = useState(false);
-  const postLaunchSessionRefreshTimers = useRef<ReturnType<
-    typeof setTimeout
-  >[]>([]);
+  const postLaunchSessionRefreshTimers = useRef<
+    ReturnType<typeof setTimeout>[]
+  >([]);
 
   const enabledAgentKey = prefs?.enabledAgents.join("|") ?? "";
   const enabledAgents = useMemo(
@@ -184,11 +180,9 @@ export function AgentLaunchBuilder({
   }, [prefs, workspaceOptions, agentId]);
 
   useEffect(() => {
-    void Promise.all([
-      listAgents(),
-      getDesktopAppEntries().catch(() => null),
-    ])
-      .then(([items, desktopApps]) => {
+    void listAgents()
+      .then(async (items) => {
+        const desktopApps = await getDesktopAppEntriesForAgents(items);
         setDesktopAppEntries(desktopApps);
         const rank = new Map(AGENT_ORDER.map((id, index) => [id, index]));
         const installedDesktopAgents = new Set(
@@ -221,7 +215,7 @@ export function AgentLaunchBuilder({
       ? prefs.selectedAgent
       : agents.some((agent) => agent.id === prefs.defaultAgent)
         ? prefs.defaultAgent
-      : (agents[0]?.id ?? "");
+        : (agents[0]?.id ?? "");
     setAgentId(preferredAgent);
   }, [agentId, agents, prefs]);
 
@@ -261,7 +255,7 @@ export function AgentLaunchBuilder({
   }, [agentId, prefs, profileChoiceAgentId, profiles]);
 
   const refreshAgentExecutable = useCallback(
-    async (targetAgentId = agentId) => {
+    async (targetAgentId = agentId, scan = false) => {
       if (!targetAgentId) {
         setAgentExecutable(null);
         return;
@@ -273,7 +267,9 @@ export function AgentLaunchBuilder({
       }
       setAgentExecutableLoading(true);
       try {
-        const resolution = await getAgentExecutableResolution(targetAgentId);
+        const resolution = await getAgentExecutableResolution(targetAgentId, {
+          scan,
+        });
         if (targetAgentId === agentId) {
           setAgentExecutable(resolution);
         }
@@ -292,8 +288,15 @@ export function AgentLaunchBuilder({
   );
 
   useEffect(() => {
-    void refreshAgentExecutable(agentId);
-  }, [agentId, refreshAgentExecutable]);
+    setAgentExecutable(null);
+    setAgentExecutableLoading(false);
+    if (
+      agentId &&
+      !agents.find((agent) => agent.id === agentId)?.direct_only
+    ) {
+      void refreshAgentExecutable(agentId, false);
+    }
+  }, [agentId, agents, refreshAgentExecutable]);
 
   useEffect(() => {
     if (!prefs || !agentId) {
@@ -412,7 +415,11 @@ export function AgentLaunchBuilder({
     }
     let cancelled = false;
     setSessionsLoading(true);
-    void listLaunchSessions(agentId, currentAgentWorkspace, showArchivedSessions)
+    void listLaunchSessions(
+      agentId,
+      currentAgentWorkspace,
+      showArchivedSessions,
+    )
       .then((items) => {
         if (cancelled) return;
         setSessions(items);
@@ -480,7 +487,9 @@ export function AgentLaunchBuilder({
     sessionChoice,
     visibleSessions,
   );
-  const selectedSession = selectedAgentIsDirectOnly ? null : resolvedSelectedSession;
+  const selectedSession = selectedAgentIsDirectOnly
+    ? null
+    : resolvedSelectedSession;
   const selectionLaunchable = viewPrefs
     ? isSelectionLaunchable(profileChoice, selectedProfile, agentId, viewPrefs)
     : false;
@@ -538,10 +547,14 @@ export function AgentLaunchBuilder({
     }
   }
 
-  async function chooseProfileApiType(profile: ProfileSummary, apiType: string) {
+  async function chooseProfileApiType(
+    profile: ProfileSummary,
+    apiType: string,
+  ) {
     const connectionId = connectionAgentId(agentId);
     if (!viewPrefs || !connectionId) return;
-    const current = viewPrefs.profileConnections[profile.id]?.[connectionId] ?? {};
+    const current =
+      viewPrefs.profileConnections[profile.id]?.[connectionId] ?? {};
     onError(null);
     try {
       await setProfileConnection(profile.id, connectionId, {
@@ -600,23 +613,6 @@ export function AgentLaunchBuilder({
       await setLauncherWorkspace(path, agentId);
       await refreshPrefs();
       setSessionChoice(null);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function makeDefault(choice: ProfileChoice) {
-    setBusy(true);
-    onError(null);
-    try {
-      await setLauncherDefault(
-        agentId,
-        choice.kind === "profile" ? choice.profileId : null,
-      );
-      await refreshPrefs();
-      onToast(t("VibeAround default updated"));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -697,8 +693,9 @@ export function AgentLaunchBuilder({
       copiedProfileId = copiedProfile.id;
       const sourceConnections = prefs.profileConnections[profile.id] ?? {};
       const connectionCopies = Object.entries(sourceConnections)
-        .filter((entry): entry is [ConnectionAgentId, ProfileConnectionPreference] =>
-          Boolean(entry[1]),
+        .filter(
+          (entry): entry is [ConnectionAgentId, ProfileConnectionPreference] =>
+            Boolean(entry[1]),
         )
         .map(([connectionAgentId, preference]) =>
           setProfileConnection(
@@ -829,7 +826,7 @@ export function AgentLaunchBuilder({
     onError(null);
     try {
       await updateLauncherAgent(targetAgent.id, executablePath);
-      await refreshAgentExecutable(targetAgent.id);
+      await refreshAgentExecutable(targetAgent.id, false);
       onToast(t("Agent updated"));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
@@ -839,18 +836,10 @@ export function AgentLaunchBuilder({
     }
   }
 
-  const checkAgentExecutableLatest = useCallback(
-    async (executablePath: string): Promise<AgentExecutableLatest> => {
-      if (!pathAgent) throw new Error("No agent selected");
-      return getAgentExecutableLatest(pathAgent.id, executablePath);
-    },
-    [pathAgent],
-  );
-
   function openAgentPathDialog(agent: AgentSummary) {
     setPathAgent(agent);
     if (!agent.direct_only) {
-      void refreshAgentExecutable(agent.id);
+      void refreshAgentExecutable(agent.id, false);
     }
   }
 
@@ -879,11 +868,14 @@ export function AgentLaunchBuilder({
       };
   const sessionTitle = selectedSession?.title ?? t("New session");
   const selectedAgentPreference = viewPrefs.agentPreferences[agentId];
-  const terminalArgCount = agentLaunchArgCount(selectedAgentPreference);
+  const currentAgentExecutable =
+    agentExecutable?.agentId === agentId ? agentExecutable : null;
   const showLaunchControls = !selectedAgentIsDirectOnly;
   const desktopAppEntryForAgent = (targetAgentId: string) =>
     desktopAppEntries?.apps[targetAgentId]?.entry;
-  const desktopAppPathForAgent = (targetAgentId: string): string | undefined => {
+  const desktopAppPathForAgent = (
+    targetAgentId: string,
+  ): string | undefined => {
     const app = desktopAppEntries?.apps[targetAgentId];
     return app?.entry?.path ?? app?.launchCommand;
   };
@@ -902,11 +894,17 @@ export function AgentLaunchBuilder({
     selectedAgentPreference?.executablePath ??
     (selectedAgentIsDirectOnly
       ? desktopAppPathForAgent(agentId)
-      : agentExecutable?.selected?.path) ??
-    selectedAgent.pty_command;
-  const selectedExecutableLabel = selectedAgentIsDirectOnly
-    ? desktopAppLaunchTargetLabel(agentId, selectedExecutablePath)
-    : selectedExecutablePath;
+      : currentAgentExecutable?.selected?.path);
+  const selectedExecutableLabel = selectedExecutablePath
+    ? selectedAgentIsDirectOnly
+      ? desktopAppLaunchTargetLabel(agentId, selectedExecutablePath)
+      : executableDirectoryLabel(selectedExecutablePath)
+    : t("Agent path not found");
+  const selectedExecutableTitle = selectedExecutablePath
+    ? selectedAgentIsDirectOnly
+      ? selectedExecutableLabel
+      : selectedExecutablePath
+    : t("Agent path not found");
   const showClaudeDesktopDeveloperModeHint =
     agentId === "claude-desktop" && profileChoice.kind === "profile";
 
@@ -920,7 +918,6 @@ export function AgentLaunchBuilder({
                 key={agent.id}
                 agent={agent}
                 active={agent.id === agentId}
-                isDefault={viewPrefs.defaultAgent === agent.id}
                 onClick={() => void chooseAgent(agent.id)}
               />
             ))}
@@ -935,26 +932,19 @@ export function AgentLaunchBuilder({
                   <AgentSummaryHeader
                     agentId={agentId}
                     agentLabelText={selectedAgent.display_name}
-                    action={
+                    titleAction={
                       showLaunchControls ? (
-                        <div className="flex items-center gap-1.5 pt-1">
-                          {terminalArgCount > 0 && (
-                            <span className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                              {t("{{count}} args", { count: terminalArgCount })}
-                            </span>
-                          )}
-                          <TooltipButton
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            disabled={busy}
-                            aria-label={t("Agent settings")}
-                            title={t("Agent settings")}
-                            onClick={() => setSettingsAgent(selectedAgent)}
-                          >
-                            <Settings2 className="h-4 w-4" />
-                          </TooltipButton>
-                        </div>
+                        <TooltipButton
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={busy}
+                          aria-label={t("Agent settings")}
+                          title={t("Agent settings")}
+                          onClick={() => setSettingsAgent(selectedAgent)}
+                        >
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </TooltipButton>
                       ) : undefined
                     }
                   >
@@ -1004,7 +994,7 @@ export function AgentLaunchBuilder({
                         )}
                         <span
                           className="min-w-0 truncate font-mono [font-variant-ligatures:none]"
-                          title={selectedExecutableLabel}
+                          title={selectedExecutableTitle}
                         >
                           {!selectedAgentIsDirectOnly && agentExecutableLoading
                             ? t("Checking path")
@@ -1195,7 +1185,6 @@ export function AgentLaunchBuilder({
                 onSelectApiType={(profile, apiType) =>
                   void chooseProfileApiType(profile, apiType)
                 }
-                onMakeDefault={makeDefault}
                 onEditProfile={onEditProfile}
                 onDuplicateProfile={(profile) => void duplicateProfile(profile)}
                 onConnectionSettings={onConnectionSettings}
@@ -1238,7 +1227,9 @@ export function AgentLaunchBuilder({
         preference={
           pathAgent ? viewPrefs.agentPreferences[pathAgent.id] : undefined
         }
-        executableResolution={pathAgent?.id === agentId ? agentExecutable : null}
+        executableResolution={
+          pathAgent?.id === agentId ? currentAgentExecutable : null
+        }
         executableLoading={
           pathAgent?.id === agentId ? agentExecutableLoading : false
         }
@@ -1251,11 +1242,23 @@ export function AgentLaunchBuilder({
         onClose={() => setPathAgent(null)}
         onSaveExecutablePath={saveAgentExecutablePath}
         onRefreshExecutableResolution={() =>
-          pathAgent ? refreshAgentExecutable(pathAgent.id) : Promise.resolve()
+          pathAgent
+            ? refreshAgentExecutable(pathAgent.id, true)
+            : Promise.resolve()
         }
-        onCheckLatest={checkAgentExecutableLatest}
         onUpdateAgent={updateAgentExecutable}
       />
     </TooltipProvider>
   );
+}
+
+function executableDirectoryLabel(path: string): string {
+  const normalized = path.trim();
+  if (!normalized) return path;
+  const lastSlash = Math.max(
+    normalized.lastIndexOf("/"),
+    normalized.lastIndexOf("\\"),
+  );
+  if (lastSlash <= 0) return normalized;
+  return normalized.slice(0, lastSlash);
 }

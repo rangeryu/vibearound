@@ -99,22 +99,19 @@ fn write_config_if_changed(path: &Path, current: &str, next: String) -> anyhow::
 fn apply_overlay_to_string(current: &str, overlay: &CodexDesktopOverlay) -> String {
     let cleaned = cleanup_vibearound_blocks(current);
     let (body, restore_lines) = remove_conflicting_root_keys(&cleaned);
+    let (root_body, table_body) = split_root_and_table_body(&body);
     let mut sections = Vec::new();
     if !restore_lines.is_empty() {
         sections.push(render_restore_block(overlay, &restore_lines));
     }
     sections.push(render_active_block(overlay));
+    push_non_empty_section(&mut sections, &root_body);
     if !overlay.provider_entries.is_empty() {
-        sections.push(render_provider_block(overlay));
+        sections.push(render_provider_table(overlay));
     }
+    push_non_empty_section(&mut sections, &table_body);
 
-    let body = body.trim_start_matches('\n');
-    let mut out = sections.join("\n\n");
-    if !body.trim().is_empty() {
-        out.push_str("\n\n");
-        out.push_str(body);
-    }
-    ensure_trailing_newline(out)
+    ensure_trailing_newline(sections.join("\n\n"))
 }
 
 fn cleanup_vibearound_blocks(input: &str) -> String {
@@ -123,24 +120,92 @@ fn cleanup_vibearound_blocks(input: &str) -> String {
     let mut i = 0;
     while i < lines.len() {
         let Some(kind) = begin_block_kind(lines[i]) else {
+            if end_block_kind(lines[i]).is_some() {
+                i += 1;
+                continue;
+            }
             out.push(lines[i].to_string());
             i += 1;
             continue;
         };
 
         let Some(end_index) = find_end_block(&lines, i + 1, kind) else {
-            out.push(lines[i].to_string());
             i += 1;
             continue;
         };
 
-        if kind == OverlayBlock::Restore {
-            for line in &lines[i + 1..end_index] {
-                out.push(uncomment_restore_line(line));
+        match kind {
+            OverlayBlock::Restore => {
+                for line in &lines[i + 1..end_index] {
+                    out.push(uncomment_restore_line(line));
+                }
+            }
+            OverlayBlock::Active => {
+                out.extend(preserve_foreign_root_lines(&lines[i + 1..end_index]));
+            }
+            OverlayBlock::Provider => {
+                out.extend(cleanup_provider_block_lines(&lines[i + 1..end_index]));
             }
         }
         i = end_index + 1;
     }
+    remove_unmarked_vibearound_overlay(&ensure_trailing_newline(out.join("\n")))
+}
+
+fn preserve_foreign_root_lines(lines: &[&str]) -> Vec<String> {
+    lines
+        .iter()
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            if root_key_for_line(trimmed).is_some_and(|key| ROOT_KEYS.contains(&key)) {
+                return None;
+            }
+            if trimmed.is_empty() {
+                return None;
+            }
+            Some((*line).to_string())
+        })
+        .collect()
+}
+
+fn cleanup_provider_block_lines(lines: &[&str]) -> Vec<String> {
+    let cleaned = remove_unmarked_vibearound_overlay(&ensure_trailing_newline(lines.join("\n")));
+    cleaned
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn remove_unmarked_vibearound_overlay(input: &str) -> String {
+    let remove_root_keys = root_model_provider_is_vibearound(input);
+    let mut out = Vec::new();
+    let mut in_root = true;
+    let mut skip_table = false;
+
+    for line in input.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[') {
+            in_root = false;
+            skip_table = is_vibearound_model_provider_table(trimmed);
+            if skip_table {
+                continue;
+            }
+        } else if skip_table {
+            continue;
+        }
+
+        if in_root && remove_root_keys {
+            if let Some(key) = root_key_for_line(trimmed) {
+                if ROOT_KEYS.contains(&key) {
+                    continue;
+                }
+            }
+        }
+
+        out.push(line.to_string());
+    }
+
     ensure_trailing_newline(out.join("\n"))
 }
 
@@ -166,6 +231,35 @@ fn remove_conflicting_root_keys(input: &str) -> (String, Vec<String>) {
     }
 
     (ensure_trailing_newline(body.join("\n")), restore)
+}
+
+fn split_root_and_table_body(input: &str) -> (String, String) {
+    let mut root = Vec::new();
+    let mut tables = Vec::new();
+    let mut in_tables = false;
+
+    for line in input.lines() {
+        if line.trim_start().starts_with('[') {
+            in_tables = true;
+        }
+        if in_tables {
+            tables.push(line.to_string());
+        } else {
+            root.push(line.to_string());
+        }
+    }
+
+    (
+        ensure_trailing_newline(root.join("\n")),
+        ensure_trailing_newline(tables.join("\n")),
+    )
+}
+
+fn push_non_empty_section(sections: &mut Vec<String>, body: &str) {
+    let trimmed = body.trim_matches('\n');
+    if !trimmed.trim().is_empty() {
+        sections.push(trimmed.to_string());
+    }
 }
 
 impl CodexDesktopOverlay {
@@ -291,16 +385,14 @@ fn render_active_block(overlay: &CodexDesktopOverlay) -> String {
     lines.join("\n")
 }
 
-fn render_provider_block(overlay: &CodexDesktopOverlay) -> String {
-    let mut lines = vec![begin_marker(OverlayBlock::Provider, overlay)];
-    lines.push(format!("[model_providers.{}]", overlay.provider_id));
+fn render_provider_table(overlay: &CodexDesktopOverlay) -> String {
+    let mut lines = vec![format!("[model_providers.{}]", overlay.provider_id)];
     lines.extend(
         overlay
             .provider_entries
             .iter()
             .map(|(key, value)| format!("{key} = {value}")),
     );
-    lines.push(end_marker(OverlayBlock::Provider));
     lines.join("\n")
 }
 
@@ -333,6 +425,22 @@ fn begin_block_kind(line: &str) -> Option<OverlayBlock> {
     }
 }
 
+fn end_block_kind(line: &str) -> Option<OverlayBlock> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("# ") || !trimmed.contains(MARKER) || !trimmed.contains(" END ") {
+        return None;
+    }
+    if trimmed.contains(" END RESTORE") {
+        Some(OverlayBlock::Restore)
+    } else if trimmed.contains(" END ACTIVE") {
+        Some(OverlayBlock::Active)
+    } else if trimmed.contains(" END PROVIDER") {
+        Some(OverlayBlock::Provider)
+    } else {
+        None
+    }
+}
+
 fn find_end_block(lines: &[&str], start: usize, kind: OverlayBlock) -> Option<usize> {
     let end = end_marker(kind);
     lines
@@ -349,6 +457,47 @@ fn block_name(kind: OverlayBlock) -> &'static str {
         OverlayBlock::Active => "ACTIVE",
         OverlayBlock::Provider => "PROVIDER",
     }
+}
+
+fn root_model_provider_is_vibearound(input: &str) -> bool {
+    for line in input.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[') {
+            return false;
+        }
+        if root_key_for_line(trimmed) == Some("model_provider") {
+            let Some((_, value)) = trimmed.split_once('=') else {
+                continue;
+            };
+            return parse_toml_string(value.trim())
+                .as_deref()
+                .is_some_and(is_vibearound_provider_id);
+        }
+    }
+    false
+}
+
+fn is_vibearound_model_provider_table(trimmed: &str) -> bool {
+    let Some(table) = toml_table_name(trimmed) else {
+        return false;
+    };
+    let Some(provider_id) = table.strip_prefix("model_providers.") else {
+        return false;
+    };
+    let provider_id = provider_id.trim().trim_matches('"').trim_matches('\'');
+    is_vibearound_provider_id(provider_id)
+}
+
+fn is_vibearound_provider_id(value: &str) -> bool {
+    value.starts_with("vibearound_")
+}
+
+fn toml_table_name(trimmed: &str) -> Option<&str> {
+    if !trimmed.starts_with('[') || trimmed.starts_with("[[") {
+        return None;
+    }
+    let end = trimmed.find(']')?;
+    Some(trimmed[1..end].trim())
 }
 
 fn uncomment_restore_line(line: &str) -> String {
@@ -433,6 +582,8 @@ mod tests {
                 "-c".to_string(),
                 "model_providers.deepseek.wire_api='responses'".to_string(),
                 "-c".to_string(),
+                "model_providers.deepseek.supports_websockets=false".to_string(),
+                "-c".to_string(),
                 "model_providers.deepseek.env_key='OPENAI_API_KEY'".to_string(),
             ],
             config_env: None,
@@ -455,9 +606,38 @@ url = "http://127.0.0.1:12358/mcp"
         assert!(next.contains("# model = \"gpt-5-codex\""));
         assert!(next.contains("model_provider = 'vibearound_deepseek-main'"));
         assert!(next.contains("[model_providers.vibearound_deepseek-main]"));
+        assert!(!next.contains("BEGIN PROVIDER"));
+        assert!(!next.contains("END PROVIDER"));
+        assert!(next.contains("supports_websockets = false"));
         assert!(next.contains("experimental_bearer_token = 'sk-test'"));
         assert!(!next.contains("env_key = 'OPENAI_API_KEY'"));
         assert!(next.contains("[mcp_servers.local]\nurl = \"http://127.0.0.1:12358/mcp\""));
+    }
+
+    #[test]
+    fn overlay_keeps_existing_root_keys_before_provider_tables() {
+        let current = r#"notify = ["echo", "done"]
+
+[mcp_servers.local]
+url = "http://127.0.0.1:12358/mcp"
+"#;
+
+        let next = apply_overlay_to_string(current, &overlay());
+        let notify_index = next.find("notify = [\"echo\", \"done\"]").unwrap();
+        let provider_index = next
+            .find("[model_providers.vibearound_deepseek-main]")
+            .unwrap();
+        let mcp_index = next.find("[mcp_servers.local]").unwrap();
+        let parsed: toml::Value = toml::from_str(&next).expect("overlay remains valid TOML");
+        let provider = parsed
+            .get("model_providers")
+            .and_then(|providers| providers.get("vibearound_deepseek-main"))
+            .expect("managed provider exists");
+
+        assert!(notify_index < provider_index);
+        assert!(provider_index < mcp_index);
+        assert!(parsed.get("notify").is_some());
+        assert!(provider.get("notify").is_none());
     }
 
     #[test]
@@ -468,6 +648,150 @@ url = "http://127.0.0.1:12358/mcp"
         assert!(cleaned.contains("model = \"gpt-5-codex\""));
         assert!(!cleaned.contains(MARKER));
         assert!(!cleaned.contains("[model_providers.vibearound_deepseek-main]"));
+    }
+
+    #[test]
+    fn cleanup_removes_orphan_end_markers() {
+        let current = r#"notify = ["echo", "done"]
+# VIBEAROUND-CODEX-DESKTOP END PROVIDER
+
+[model_providers.openai]
+name = "OpenAI"
+"#;
+
+        let cleaned = cleanup_vibearound_blocks(current);
+
+        assert!(cleaned.contains("notify = [\"echo\", \"done\"]"));
+        assert!(cleaned.contains("[model_providers.openai]"));
+        assert!(!cleaned.contains(MARKER));
+    }
+
+    #[test]
+    fn cleanup_preserves_codex_notify_inserted_inside_provider_markers() {
+        let current = r#"# VIBEAROUND-CODEX-DESKTOP BEGIN ACTIVE run=stale profile=deepseek-main
+model = "deepseek-v4-pro"
+model_provider = "vibearound_deepseek-main"
+# VIBEAROUND-CODEX-DESKTOP END ACTIVE
+
+# VIBEAROUND-CODEX-DESKTOP BEGIN PROVIDER run=stale profile=deepseek-main
+notify = ["/Users/example/SkyComputerUseClient", "vibearound-profile-ended"]
+
+[model_providers.vibearound_deepseek-main]
+base_url = "http://127.0.0.1:12358/stale/v1"
+experimental_bearer_token = "sk-stale"
+supports_websockets = false
+wire_api = "responses"
+# VIBEAROUND-CODEX-DESKTOP END PROVIDER
+
+[marketplaces.openai-bundled]
+last_updated = "2026-06-21T07:38:57Z"
+"#;
+
+        let cleaned = cleanup_vibearound_blocks(current);
+        let parsed: toml::Value = toml::from_str(&cleaned).expect("cleaned config is valid TOML");
+
+        assert!(parsed.get("notify").is_some());
+        assert!(cleaned.contains("vibearound-profile-ended"));
+        assert!(cleaned.contains("[marketplaces.openai-bundled]"));
+        assert!(!cleaned.contains(MARKER));
+        assert!(!cleaned.contains("vibearound_deepseek-main"));
+        assert!(!cleaned.contains("sk-stale"));
+    }
+
+    #[test]
+    fn cleanup_preserves_codex_notify_inserted_inside_active_markers() {
+        let current = r#"# VIBEAROUND-CODEX-DESKTOP BEGIN ACTIVE run=stale profile=deepseek-main
+model = "deepseek-v4-pro"
+notify = ["/Users/example/SkyComputerUseClient", "vibearound-profile-ended"]
+model_provider = "vibearound_deepseek-main"
+# VIBEAROUND-CODEX-DESKTOP END ACTIVE
+
+[model_providers.openai]
+name = "OpenAI"
+"#;
+
+        let cleaned = cleanup_vibearound_blocks(current);
+        let parsed: toml::Value = toml::from_str(&cleaned).expect("cleaned config is valid TOML");
+
+        assert!(parsed.get("notify").is_some());
+        assert!(cleaned.contains("vibearound-profile-ended"));
+        assert!(cleaned.contains("[model_providers.openai]"));
+        assert!(!cleaned.contains(MARKER));
+        assert!(!cleaned.contains("model = \"deepseek-v4-pro\""));
+        assert!(!cleaned.contains("model_provider = \"vibearound_deepseek-main\""));
+    }
+
+    #[test]
+    fn cleanup_removes_orphan_begin_markers_and_unmarked_vibearound_provider() {
+        let current = r#"notify = ["echo", "done"]
+# VIBEAROUND-CODEX-DESKTOP BEGIN PROVIDER run=stale profile=deepseek-main
+
+[model_providers.vibearound_deepseek-main]
+base_url = "http://127.0.0.1:12358/stale/v1"
+experimental_bearer_token = "sk-stale"
+supports_websockets = false
+wire_api = "responses"
+
+[model_providers.openai]
+name = "OpenAI"
+"#;
+
+        let cleaned = cleanup_vibearound_blocks(current);
+
+        assert!(cleaned.contains("notify = [\"echo\", \"done\"]"));
+        assert!(cleaned.contains("[model_providers.openai]"));
+        assert!(!cleaned.contains(MARKER));
+        assert!(!cleaned.contains("vibearound_deepseek-main"));
+        assert!(!cleaned.contains("sk-stale"));
+    }
+
+    #[test]
+    fn cleanup_removes_unmarked_vibearound_root_overlay() {
+        let current = r#"notify = ["echo", "done"]
+model = "deepseek-v4-pro"
+model_provider = "vibearound_deepseek-main"
+model_reasoning_effort = "medium"
+model_context_window = 1000000
+model_catalog_json = "/Users/example/.vibearound/profile-state/deepseek/catalog.json"
+
+[model_providers.openai]
+name = "OpenAI"
+"#;
+
+        let cleaned = cleanup_vibearound_blocks(current);
+
+        assert!(cleaned.contains("notify = [\"echo\", \"done\"]"));
+        assert!(cleaned.contains("[model_providers.openai]"));
+        assert!(!cleaned.contains("model = \"deepseek-v4-pro\""));
+        assert!(!cleaned.contains("model_provider = \"vibearound_deepseek-main\""));
+        assert!(!cleaned.contains("model_reasoning_effort"));
+        assert!(!cleaned.contains("model_context_window"));
+        assert!(!cleaned.contains("model_catalog_json"));
+    }
+
+    #[test]
+    fn overlay_replaces_unmarked_stale_vibearound_provider() {
+        let current = r#"notify = ["echo", "done"]
+
+[model_providers.vibearound_deepseek-main]
+base_url = "http://127.0.0.1:12358/stale/v1"
+experimental_bearer_token = "sk-stale"
+supports_websockets = false
+wire_api = "responses"
+"#;
+
+        let next = apply_overlay_to_string(current, &overlay());
+
+        assert_eq!(
+            next.matches("[model_providers.vibearound_deepseek-main]")
+                .count(),
+            1
+        );
+        assert!(next.contains("notify = [\"echo\", \"done\"]"));
+        assert!(next.contains("base_url = 'https://api.deepseek.com/v1'"));
+        assert!(next.contains("experimental_bearer_token = 'sk-test'"));
+        assert!(!next.contains("sk-stale"));
+        assert!(!next.contains("12358/stale"));
     }
 
     #[test]

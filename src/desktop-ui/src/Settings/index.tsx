@@ -7,14 +7,17 @@ import {
   type ReactNode,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDirectoryDialog } from "@tauri-apps/plugin-dialog";
+import { WorkspacesResponseSchema } from "@va/client";
 import {
   AlertCircle,
   Bot,
   CheckCircle2,
+  Copy,
   Download,
   ExternalLink,
+  FolderOpen,
   Globe,
-  History,
   Loader2,
   MessageSquare,
   Network,
@@ -38,6 +41,7 @@ import type {
   DiscoveredChannelPlugin,
   PluginRegistryEntry,
   Settings as AppSettings,
+  ToolchainMode,
   TunnelSummary,
 } from "../Onboarding/types";
 import { apiFetch } from "../lib/api";
@@ -67,7 +71,14 @@ interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onServicesRestarted?: () => void;
+  initialTarget?: SettingsDialogTarget | null;
 }
+
+export type SettingsDialogTarget = {
+  tab: string;
+  pluginId?: string | null;
+  nonce?: number;
+};
 
 type Notice = {
   variant: "success" | "warning" | "error";
@@ -80,8 +91,8 @@ type SaveState =
   | "api-bridge"
   | "web-search"
   | "proxy"
+  | "general"
   | "im"
-  | "sessions"
   | "tunnel"
   | "tunnel-restart"
   | "uninstall-mcp"
@@ -168,6 +179,10 @@ const SEARCH_SOURCE_DEFS: Array<{ id: SearchSourceId; label: string }> = [
   { id: "brave", label: "Brave" },
 ];
 
+const SETTINGS_BUTTON_CLASS = "text-xs";
+const SETTINGS_INPUT_CLASS = "h-8 text-xs";
+const SETTINGS_SELECT_TRIGGER_CLASS = "h-8 text-xs";
+
 const SEARCH_CONTEXT_SIZE_OPTIONS: Array<{
   value: SearchContextSize;
   label: string;
@@ -181,6 +196,7 @@ export function SettingsDialog({
   open,
   onOpenChange,
   onServicesRestarted,
+  initialTarget,
 }: SettingsDialogProps) {
   const { locale, t } = useI18n();
   const [settings, setSettings] = useState<AppSettings>({});
@@ -196,8 +212,7 @@ export function SettingsDialog({
   const [enabledChannels, setEnabledChannels] = useState<Set<string>>(
     () => new Set(),
   );
-  const [imAutoContinueLastSession, setImAutoContinueLastSession] =
-    useState(true);
+  const [defaultWorkspace, setDefaultWorkspace] = useState("");
   const [mcpAutoInstall, setMcpAutoInstall] = useState(true);
   const [skillAutoInstall, setSkillAutoInstall] = useState(true);
   const [channelConfigs, setChannelConfigs] = useState<
@@ -211,6 +226,7 @@ export function SettingsDialog({
   const [proxyEnabled, setProxyEnabled] = useState(false);
   const [proxyHttp, setProxyHttp] = useState("");
   const [proxyNoProxy, setProxyNoProxy] = useState("");
+  const [toolchainMode, setToolchainMode] = useState<ToolchainMode>("system");
   const [retry429Enabled, setRetry429Enabled] = useState(true);
   const [retry429MaxRetries, setRetry429MaxRetries] = useState("10");
   const [retry429Unlimited, setRetry429Unlimited] = useState(false);
@@ -255,6 +271,7 @@ export function SettingsDialog({
   const [saving, setSaving] = useState<SaveState>("idle");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [settingsTab, setSettingsTab] = useState("general");
+  const [focusedImPluginId, setFocusedImPluginId] = useState<string | null>(null);
   const pluginUpdatesAutoCheckedRef = useRef(false);
   const apiBridgeRetryForm = useMemo<ApiBridgeRetryFormState>(
     () => ({
@@ -411,18 +428,20 @@ export function SettingsDialog({
     setSkillAutoInstall(integrations?.skill_auto_install ?? true);
   }, []);
 
-  const hydrateImAgent = useCallback((loadedSettings: AppSettings) => {
-    let imAgent: Record<string, unknown> = {};
-    if (isRecord(loadedSettings.im_agent)) {
-      imAgent = loadedSettings.im_agent;
-    } else {
-      const im = isRecord(loadedSettings.im) ? loadedSettings.im : {};
-      if (isRecord(im.agent)) imAgent = im.agent;
-    }
-    setImAutoContinueLastSession(
-      typeof imAgent.auto_continue_last_session === "boolean"
-        ? imAgent.auto_continue_last_session
-        : true,
+  const hydrateGeneral = useCallback((
+    loadedSettings: AppSettings,
+    effectiveDefaultWorkspace: string,
+  ) => {
+    setDefaultWorkspace(
+      typeof loadedSettings.default_workspace === "string" &&
+        loadedSettings.default_workspace.trim()
+        ? loadedSettings.default_workspace.trim()
+        : effectiveDefaultWorkspace,
+    );
+    setToolchainMode(
+      loadedSettings.startkit?.toolchain_mode === "managed"
+        ? "managed"
+        : "system",
     );
   }, []);
 
@@ -441,6 +460,7 @@ export function SettingsDialog({
         discovered,
         tunnelDefs,
         managedPluginDefs,
+        workspaceResponse,
       ] =
         await Promise.all([
           invoke<AppSettings>("get_settings"),
@@ -449,6 +469,10 @@ export function SettingsDialog({
           invoke<DiscoveredChannelPlugin[]>("list_channel_plugins"),
           invoke<TunnelSummary[]>("list_tunnels"),
           invoke<ManagedPluginSummary[]>("list_managed_plugins"),
+          apiFetch("/api/workspaces").then(async (response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return WorkspacesResponseSchema.parse(await response.json());
+          }),
         ]);
       const orderedAgents = orderAgents(agentDefs);
       setSettings(loadedSettings);
@@ -464,7 +488,7 @@ export function SettingsDialog({
       hydrateApiBridge(loadedSettings);
       hydrateSearchTool(loadedSettings);
       hydrateIntegrations(loadedSettings);
-      hydrateImAgent(loadedSettings);
+      hydrateGeneral(loadedSettings, workspaceResponse.default_workspace);
       setSettingsLoaded(true);
     } catch (error) {
       setNotice({
@@ -478,8 +502,8 @@ export function SettingsDialog({
     hydrateAgents,
     hydrateApiBridge,
     hydrateChannels,
+    hydrateGeneral,
     hydrateIntegrations,
-    hydrateImAgent,
     hydrateProxy,
     hydrateSearchTool,
     hydrateTunnel,
@@ -493,6 +517,20 @@ export function SettingsDialog({
     setSettingsTab(value);
     setNotice(null);
   }, []);
+
+  useEffect(() => {
+    if (!open || !initialTarget) return;
+    changeSettingsTab(initialTarget.tab);
+    setFocusedImPluginId(
+      initialTarget.tab === "im" ? initialTarget.pluginId ?? null : null,
+    );
+  }, [
+    changeSettingsTab,
+    initialTarget?.nonce,
+    initialTarget?.pluginId,
+    initialTarget?.tab,
+    open,
+  ]);
 
   const updateChannelConfig = useCallback(
     (pluginId: string, key: string, value: string) => {
@@ -927,20 +965,24 @@ export function SettingsDialog({
     onServicesRestarted,
   ]);
 
-  const applySessionSettings = useCallback(async () => {
-    setSaving("sessions");
+  const saveDefaultWorkspace = useCallback(async (workspacePath: string) => {
+    const workspace = workspacePath.trim();
+    if (!workspace) return;
+    setSaving("general");
     setNotice(null);
     try {
-      const nextSettings = buildSessionSettings({
+      const nextSettings = buildGeneralSettings({
         settings,
-        imAutoContinueLastSession,
+        defaultWorkspace: workspace,
+        toolchainMode,
       });
       await invoke("save_settings", { settings: nextSettings });
       setSettings(nextSettings);
       const response = await apiFetch("/api/settings/reload", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setDefaultWorkspace(workspace);
       onServicesRestarted?.();
-      setNotice({ variant: "success", message: "Session settings applied." });
+      setNotice({ variant: "success", message: "General settings applied." });
     } catch (error) {
       setNotice({
         variant: "error",
@@ -951,9 +993,63 @@ export function SettingsDialog({
     }
   }, [
     settings,
-    imAutoContinueLastSession,
+    toolchainMode,
     onServicesRestarted,
   ]);
+
+  const saveToolchainMode = useCallback(async (mode: ToolchainMode) => {
+    setToolchainMode(mode);
+    setSaving("general");
+    setNotice(null);
+    try {
+      const nextSettings = buildGeneralSettings({
+        settings,
+        defaultWorkspace,
+        toolchainMode: mode,
+      });
+      await invoke("save_settings", { settings: nextSettings });
+      setSettings(nextSettings);
+      const response = await apiFetch("/api/settings/reload", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      onServicesRestarted?.();
+      setNotice({ variant: "success", message: "General settings applied." });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSaving("idle");
+    }
+  }, [
+    settings,
+    defaultWorkspace,
+    onServicesRestarted,
+  ]);
+
+  const chooseDefaultWorkspace = useCallback(async () => {
+    const selected = await openDirectoryDialog({
+      directory: true,
+      multiple: false,
+      title: t("Choose Default Workspace"),
+    });
+    if (!selected) return;
+    const path = typeof selected === "string" ? selected : selected[0];
+    if (path) await saveDefaultWorkspace(path);
+  }, [saveDefaultWorkspace, t]);
+
+  const copyDefaultWorkspace = useCallback(async () => {
+    if (!defaultWorkspace) return;
+    try {
+      await navigator.clipboard.writeText(defaultWorkspace);
+      setNotice({ variant: "success", message: "Copied" });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [defaultWorkspace]);
 
   const saveTunnelSettings = useCallback(
     async (restart: boolean) => {
@@ -1056,13 +1152,6 @@ export function SettingsDialog({
                 {t("IM Channel")}
               </TabsTrigger>
               <TabsTrigger
-                value="sessions"
-                className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
-              >
-                <History className="h-3 w-3" />
-                {t("Sessions")}
-              </TabsTrigger>
-              <TabsTrigger
                 value="tunnel"
                 className="!h-8 w-full justify-start gap-2 px-2 text-sm data-[state=active]:border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none [&_svg:not([class*='size-'])]:!size-3.5"
               >
@@ -1096,6 +1185,76 @@ export function SettingsDialog({
                   <SettingsNotice notice={notice} />
                 </div>
                 <div className="rounded-md border border-border">
+                  <div className="space-y-3 border-b border-border px-4 py-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">
+                          {t("Default System Workspace")}
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {t("New launch and IM workspaces are created under this folder.")}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className={`self-end ${SETTINGS_BUTTON_CLASS}`}
+                        disabled={!canSubmit}
+                        onClick={() => void chooseDefaultWorkspace()}
+                      >
+                        {saving === "general" ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <FolderOpen className="h-3 w-3" />
+                        )}
+                        {saving === "general" ? t("Saving…") : t("Choose")}
+                      </Button>
+                    </div>
+                    <div className="flex w-full items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 shadow-xs">
+                      <div
+                        className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-left text-xs leading-5 text-foreground"
+                        title={defaultWorkspace}
+                      >
+                        {defaultWorkspace}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                        disabled={!defaultWorkspace}
+                        aria-label={t("Copy")}
+                        title={t("Copy")}
+                        onClick={() => void copyDefaultWorkspace()}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <SettingsActionRow
+                    label={t("Agent Toolchain")}
+                    description={t("Choose where VibeAround looks for agent CLIs when no manual executable path is set.")}
+                    action={
+                      <Select
+                        value={toolchainMode}
+                        onValueChange={(value) =>
+                          void saveToolchainMode(value as ToolchainMode)
+                        }
+                        disabled={saving !== "idle"}
+                      >
+                        <SelectTrigger className="h-8 w-48 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="system">{t("System")}</SelectItem>
+                          <SelectItem value="managed">
+                            {t("VibeAround managed")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    }
+                  />
                   <SettingsActionRow
                     label={t("Restart Services")}
                     description={t("Restart VibeAround runtime services after local changes.")}
@@ -1103,7 +1262,7 @@ export function SettingsDialog({
                       <Button
                         type="button"
                         size="sm"
-                        className="text-xs"
+                        className={SETTINGS_BUTTON_CLASS}
                         disabled={saving !== "idle"}
                         onClick={() => void restartServices()}
                       >
@@ -1122,7 +1281,7 @@ export function SettingsDialog({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="text-xs"
+                        className={SETTINGS_BUTTON_CLASS}
                         disabled={saving !== "idle"}
                         onClick={() => window.location.replace("/onboarding")}
                       >
@@ -1161,6 +1320,8 @@ export function SettingsDialog({
                       onStartAuth={(pluginId) => void startAuth(pluginId)}
                       onCancelAuth={(pluginId) => void cancelAuth(pluginId)}
                       switchSize="sm"
+                      compact
+                      focusPluginId={focusedImPluginId}
                       notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
@@ -1168,6 +1329,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void applyImSettings()}
                     >
@@ -1205,41 +1367,6 @@ export function SettingsDialog({
             </TabsContent>
 
             <TabsContent
-              value="sessions"
-              className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-            >
-              {loading ? (
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
-                  <LoadingBlock />
-                </div>
-              ) : (
-                <>
-                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-gutter:stable]">
-                    <SessionSettingsPanel
-                      imAutoContinueLastSession={imAutoContinueLastSession}
-                      onImAutoContinueLastSessionChange={
-                        setImAutoContinueLastSession
-                      }
-                      notice={<SettingsNotice notice={notice} />}
-                    />
-                  </div>
-                  <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!canSubmit}
-                      onClick={() => void applySessionSettings()}
-                    >
-                      {saving === "sessions"
-                        ? t("Applying…")
-                        : t("Apply Session Settings")}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </TabsContent>
-
-            <TabsContent
               value="agents"
               className="min-h-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
             >
@@ -1268,6 +1395,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void applyAgentSettings()}
                     >
@@ -1310,6 +1438,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit || !apiBridgeRetryFormKey}
                       onClick={() => void applyApiBridgeSettings()}
                     >
@@ -1358,6 +1487,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void applyWebSearchSettings()}
                     >
@@ -1395,6 +1525,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void applyProxySettings()}
                     >
@@ -1431,6 +1562,7 @@ export function SettingsDialog({
                       cfHostname={cfHostname}
                       onCfHostname={setCfHostname}
                       showProviderSelect
+                      compact
                       notice={<SettingsNotice notice={notice} />}
                     />
                   </div>
@@ -1439,6 +1571,7 @@ export function SettingsDialog({
                       type="button"
                       variant="outline"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void saveTunnelSettings(false)}
                     >
@@ -1447,6 +1580,7 @@ export function SettingsDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={SETTINGS_BUTTON_CLASS}
                       disabled={!canSubmit}
                       onClick={() => void saveTunnelSettings(true)}
                     >
@@ -1586,7 +1720,7 @@ function PluginsSettingsPanel({
           type="button"
           variant="outline"
           size="sm"
-          className="text-xs"
+          className={SETTINGS_BUTTON_CLASS}
           disabled={checkingUpdates}
           onClick={onCheckUpdates}
         >
@@ -1773,8 +1907,7 @@ function PluginInventoryCard({
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              className="h-8 w-8"
+              size="icon-sm"
               asChild
             >
               <a
@@ -1792,7 +1925,7 @@ function PluginInventoryCard({
               type="button"
               variant="outline"
               size="sm"
-              className="text-xs"
+              className={SETTINGS_BUTTON_CLASS}
               onClick={onConfigureSearch}
             >
               <SlidersHorizontal className="h-3 w-3" />
@@ -1803,7 +1936,7 @@ function PluginInventoryCard({
             type="button"
             variant={item.status === "outdated" ? "default" : "outline"}
             size="sm"
-            className="min-w-20 text-xs"
+            className={`min-w-20 ${SETTINGS_BUTTON_CLASS}`}
             disabled={installing || !canRunAction}
             onClick={() => onInstallPlugin(item.category, item.id)}
           >
@@ -1941,7 +2074,7 @@ function AgentSettingsPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="text-xs"
+              className={SETTINGS_BUTTON_CLASS}
               disabled={saving !== "idle"}
               onClick={onUninstallMcp}
             >
@@ -1958,7 +2091,7 @@ function AgentSettingsPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="text-xs"
+              className={SETTINGS_BUTTON_CLASS}
               disabled={saving !== "idle"}
               onClick={onUninstallSkills}
             >
@@ -2027,7 +2160,7 @@ function ProxySettingsPanel({
               value={proxyHttp}
               onChange={(event) => onProxyHttpChange(event.currentTarget.value)}
               placeholder="http://127.0.0.1:7890"
-              className="mt-1"
+              className={`mt-1 ${SETTINGS_INPUT_CLASS}`}
             />
           </label>
         </div>
@@ -2041,7 +2174,7 @@ function ProxySettingsPanel({
               value={proxyNoProxy}
               onChange={(event) => onProxyNoProxyChange(event.currentTarget.value)}
               placeholder="localhost,127.0.0.1,::1"
-              className="mt-1"
+              className={`mt-1 ${SETTINGS_INPUT_CLASS}`}
             />
             <span className="mt-1 block text-[11px] text-muted-foreground/70">
               {t("Comma-separated hosts, domains, or IPs that should connect directly.")}
@@ -2085,13 +2218,6 @@ function SearchToolSettingsPanel({
   notice?: ReactNode;
 }) {
   const { t } = useI18n();
-  const enabledSourceCount = SEARCH_SOURCE_DEFS.filter(
-    (source) => sources[source.id]?.enabled,
-  ).length;
-  const parsedMaxResults = Number.parseInt(maxResults, 10);
-  const totalResultLimit = Number.isFinite(parsedMaxResults)
-    ? enabledSourceCount * clampSearchMaxResults(parsedMaxResults)
-    : null;
   return (
     <div className="space-y-5">
       <div>
@@ -2133,7 +2259,7 @@ function SearchToolSettingsPanel({
               onChange={(event) =>
                 onMaxResultsChange(event.currentTarget.value)
               }
-              className="mt-1"
+              className={`mt-1 ${SETTINGS_INPUT_CLASS}`}
             />
             <span className="mt-1 block text-[11px] text-muted-foreground/70">
               {t("Applied to each enabled source, not the combined total.")}
@@ -2149,7 +2275,10 @@ function SearchToolSettingsPanel({
                 onSearchContextSizeChange(value as SearchContextSize)
               }
             >
-              <SelectTrigger className="mt-1 w-full">
+              <SelectTrigger
+                size="sm"
+                className={`mt-1 w-full ${SETTINGS_SELECT_TRIGGER_CLASS}`}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -2165,14 +2294,6 @@ function SearchToolSettingsPanel({
             </span>
           </label>
         </div>
-        <p className="mt-3 text-[11px] text-muted-foreground/70">
-          {totalResultLimit === null
-            ? t("Total results sent to the model can be enabled sources multiplied by this value.")
-            : t("With {{count}} enabled source(s), up to {{total}} search results can be sent to the model.", {
-                count: enabledSourceCount,
-                total: totalResultLimit,
-              })}
-        </p>
       </div>
       <div className="rounded-md border border-border">
         {SEARCH_SOURCE_DEFS.map((source) => {
@@ -2197,7 +2318,7 @@ function SearchToolSettingsPanel({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs"
+                      className={SETTINGS_BUTTON_CLASS}
                       onClick={() => onOpenTestResult(source.id)}
                     >
                       <ExternalLink className="h-3 w-3" />
@@ -2208,7 +2329,7 @@ function SearchToolSettingsPanel({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs"
+                    className={SETTINGS_BUTTON_CLASS}
                     disabled={!canTest}
                     onClick={() => onTestSource(source.id)}
                   >
@@ -2242,7 +2363,7 @@ function SearchToolSettingsPanel({
                       apiKey: event.currentTarget.value,
                     })
                   }
-                  className="mt-1"
+                  className={`mt-1 ${SETTINGS_INPUT_CLASS}`}
                 />
               </label>
               {error && (
@@ -2361,15 +2482,21 @@ function SearchSourceTestResultDialog({
                         {item.title || item.url}
                       </div>
                     </div>
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label={t("Open result")}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      asChild
                     >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={t("Open result")}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </Button>
                   </div>
                   <div className="mt-2 break-all font-mono text-[11px] leading-5 text-muted-foreground">
                     {item.url}
@@ -2461,7 +2588,7 @@ function ApiBridgeRetrySettingsPanel({
               onChange={(event) =>
                 onRetry429MaxRetriesChange(event.currentTarget.value)
               }
-              className="h-8 w-24 text-right"
+              className={`w-24 text-right ${SETTINGS_INPUT_CLASS}`}
               disabled={controlsDisabled || retry429Unlimited}
               aria-label={t("Max retries")}
             />
@@ -2492,53 +2619,11 @@ function ApiBridgeRetrySettingsPanel({
             onChange={(event) =>
               onRetry429DelaySecondsChange(event.currentTarget.value)
             }
-            className="h-8 w-24 justify-self-end text-right"
+            className={`w-24 justify-self-end text-right ${SETTINGS_INPUT_CLASS}`}
             disabled={controlsDisabled}
             aria-label={t("Delay seconds")}
           />
         </div>
-      </div>
-    </div>
-  );
-}
-
-function SessionSettingsPanel({
-  imAutoContinueLastSession,
-  onImAutoContinueLastSessionChange,
-  notice,
-}: {
-  imAutoContinueLastSession: boolean;
-  onImAutoContinueLastSessionChange: (value: boolean) => void;
-  notice?: ReactNode;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="flex items-center gap-2 text-base font-semibold">
-          <History className="h-4 w-4 text-primary" />
-          {t("Sessions")}
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("Configure how VibeAround restores active conversations.")}
-        </p>
-        {notice}
-      </div>
-      <div className="rounded-md border border-border">
-        <SettingsActionRow
-          label={t("Auto-continue IM Channel sessions")}
-          description={t(
-            "When an IM Channel message attaches to a thread, continue that thread's latest agent session without replaying old output.",
-          )}
-          action={
-            <Switch
-              checked={imAutoContinueLastSession}
-              onCheckedChange={onImAutoContinueLastSessionChange}
-              aria-label={t("Auto-continue IM Channel sessions")}
-              size="sm"
-            />
-          }
-        />
       </div>
     </div>
   );
@@ -2585,6 +2670,29 @@ function LoadingBlock() {
       {t("Loading…")}
     </p>
   );
+}
+
+function buildGeneralSettings({
+  settings,
+  defaultWorkspace,
+  toolchainMode,
+}: {
+  settings: AppSettings;
+  defaultWorkspace: string;
+  toolchainMode: ToolchainMode;
+}): AppSettings {
+  const result: AppSettings = { ...settings };
+  const workspace = defaultWorkspace.trim();
+  if (workspace) {
+    result.default_workspace = workspace;
+  } else {
+    delete result.default_workspace;
+  }
+  result.startkit = {
+    ...(isRecord(settings.startkit) ? settings.startkit : {}),
+    toolchain_mode: toolchainMode,
+  };
+  return result;
 }
 
 function buildAgentSettings({
@@ -2817,32 +2925,6 @@ function buildChannelSettings({
     result.channels = channels;
   } else {
     delete result.channels;
-  }
-
-  return result;
-}
-
-function buildSessionSettings({
-  settings,
-  imAutoContinueLastSession,
-}: {
-  settings: AppSettings;
-  imAutoContinueLastSession: boolean;
-}): AppSettings {
-  const result: AppSettings = { ...settings };
-  const imAgent = isRecord(settings.im_agent) ? { ...settings.im_agent } : {};
-  if (imAutoContinueLastSession) {
-    delete imAgent.auto_continue_last_session;
-    if (Object.keys(imAgent).length > 0) {
-      result.im_agent = imAgent as AppSettings["im_agent"];
-    } else {
-      delete result.im_agent;
-    }
-  } else {
-    result.im_agent = {
-      ...imAgent,
-      auto_continue_last_session: false,
-    };
   }
 
   return result;

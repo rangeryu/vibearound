@@ -176,18 +176,32 @@ pub async fn launcher_get_preferences() -> Result<LauncherPreferences, String> {
 #[tauri::command]
 pub async fn launcher_agent_executable_resolution(
     agent_id: String,
+    scan: Option<bool>,
 ) -> Result<AgentExecutableResolution, String> {
     let agent_id = resources::agent_by_alias(&agent_id)
         .map(|def| def.id.clone())
         .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
-    let detection = common::agent_detection::scan_agent_and_persist(&agent_id)
-        .await
-        .map_err(|error| error.to_string())?;
-    let configured = common::agent_detection::configured_candidate_with_version(&agent_id).await;
-    let mode = config::ensure_loaded().toolchain_mode.as_str();
-    let selected = configured.clone().or_else(|| {
-        common::agent_detection::preferred_startkit_candidate(&agent_id, &detection, mode)
-    });
+    let scan = scan.unwrap_or(false);
+    let config = config::ensure_loaded();
+    let availability = common::agent_availability::resolve_agent_availability(
+        &agent_id,
+        common::agent_availability::AgentAvailabilityRequest {
+            scan_policy: if scan {
+                common::agent_availability::AgentScanPolicy::Refresh
+            } else {
+                common::agent_availability::AgentScanPolicy::CacheOnly
+            },
+            toolchain_mode: config.toolchain_mode.as_str(),
+            candidate_preference:
+                common::agent_availability::AgentCandidatePreference::ToolchainMode,
+            include_configured_version: scan,
+        },
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    let detection = availability.detection;
+    let configured = availability.configured;
+    let selected = availability.selected;
     let configured_path =
         agent_state::resolve_agent_executable_path(&agent_state::read_prefs(), &agent_id)
             .map(|path| path.to_string_lossy().to_string());
@@ -265,9 +279,20 @@ pub async fn launcher_update_agent(
     let agent_id = resources::agent_by_alias(&agent_id)
         .map(|def| def.id.clone())
         .ok_or_else(|| format!("unknown agent: '{agent_id}'"))?;
-    let detection = common::agent_detection::scan_agent_and_persist(&agent_id)
-        .await
-        .map_err(|error| error.to_string())?;
+    let config = config::ensure_loaded();
+    let availability = common::agent_availability::resolve_agent_availability(
+        &agent_id,
+        common::agent_availability::AgentAvailabilityRequest {
+            scan_policy: common::agent_availability::AgentScanPolicy::Refresh,
+            toolchain_mode: config.toolchain_mode.as_str(),
+            candidate_preference:
+                common::agent_availability::AgentCandidatePreference::ToolchainMode,
+            include_configured_version: true,
+        },
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    let detection = availability.detection;
     let candidate = if let Some(path) = executable_path {
         let path = PathBuf::from(path.trim());
         if !path.is_file() {
@@ -281,13 +306,8 @@ pub async fn launcher_update_agent(
                 .map_err(|error| error.to_string())?
         }
     } else {
-        common::agent_detection::selected_candidate(&agent_id)
-            .or_else(|| {
-                common::agent_detection::startkit_candidate_for_mode(
-                    &agent_id,
-                    config::ensure_loaded().toolchain_mode.as_str(),
-                )
-            })
+        availability
+            .selected
             .ok_or_else(|| format!("no selected executable for '{agent_id}'"))?
     };
     let command =
@@ -624,6 +644,32 @@ pub fn launcher_set_compatibility_bridge(
 }
 
 #[tauri::command]
+pub fn launcher_set_local_agent_api_enabled(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    config::update_settings_json(|root| {
+        if !root.is_object() {
+            *root = serde_json::json!({});
+        }
+        let Some(root_obj) = root.as_object_mut() else {
+            return;
+        };
+        let entry = root_obj
+            .entry("local_agent_api".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        if !entry.is_object() {
+            *entry = serde_json::json!({});
+        }
+        if let Some(settings) = entry.as_object_mut() {
+            settings.insert("enabled".to_string(), serde_json::json!(enabled));
+        }
+    })?;
+    emit_launch_config_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn launcher_set_profile_connection(
     app: tauri::AppHandle,
     profile_id: String,
@@ -644,7 +690,9 @@ pub fn launcher_set_profile_connection(
 
 fn validate_connection_agent_id(agent_id: String) -> Result<String, String> {
     match agent_id.as_str() {
-        "claude" | "codex" | "gemini" | "opencode" | "pi" => Ok(agent_id),
+        "claude" | "claude-desktop" | "codex" | "codex-desktop" | "gemini" | "opencode" | "pi" => {
+            Ok(agent_id)
+        }
         other => Err(format!("unsupported connection target: '{other}'")),
     }
 }
@@ -740,7 +788,15 @@ mod tests {
 
     #[test]
     fn accepts_supported_profile_connection_targets() {
-        for agent_id in ["claude", "codex", "gemini", "opencode", "pi"] {
+        for agent_id in [
+            "claude",
+            "claude-desktop",
+            "codex",
+            "codex-desktop",
+            "gemini",
+            "opencode",
+            "pi",
+        ] {
             assert_eq!(
                 validate_connection_agent_id(agent_id.to_string()).unwrap(),
                 agent_id

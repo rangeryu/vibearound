@@ -1,19 +1,28 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
+  AlertCircle,
   CheckCircle2,
   Eye,
   EyeOff,
-  FileText,
+  FlaskConical,
   Globe,
-  Image as ImageIcon,
+  ListChecks,
   Loader2,
   LogIn,
-  Search,
+  Star,
 } from "lucide-react";
 import { useI18n } from "@va/i18n";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -61,6 +70,13 @@ import type {
 import type { ProviderSettings } from "./types";
 import { apiTypeLabel, apiTypeShort } from "./types";
 
+type ModelTestOutcome = { ok: boolean; message: string };
+type ModelTestStatus =
+  | { state: "idle" }
+  | { state: "testing" }
+  | { state: "success"; message: string }
+  | { state: "error"; message: string };
+
 interface FormBodyProps {
   provider: CatalogEntry;
   label: string;
@@ -79,6 +95,8 @@ interface FormBodyProps {
   setProviderSettings: (v: ProviderSettings) => void;
   revealKeys: Record<string, boolean>;
   setRevealKeys: (v: Record<string, boolean>) => void;
+  testingDisabled?: boolean;
+  onTestModel: (apiType: string, model: string) => Promise<ModelTestOutcome>;
 }
 
 export function FormBody({
@@ -99,6 +117,8 @@ export function FormBody({
   setProviderSettings,
   revealKeys,
   setRevealKeys,
+  testingDisabled,
+  onTestModel,
 }: FormBodyProps) {
   const { t } = useI18n();
   const endpointGroups = providerEndpointGroups(provider);
@@ -122,6 +142,9 @@ export function FormBody({
   const [googleStatus, setGoogleStatus] = useState<GoogleOAuthStatus | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
+  const [modelsDialogApiType, setModelsDialogApiType] = useState<string | null>(null);
+  const [selectedTestModels, setSelectedTestModels] = useState<Record<string, string[]>>({});
+  const [modelTestStatus, setModelTestStatus] = useState<Record<string, ModelTestStatus>>({});
   const authModeOptions = selectedAuthModes(
     provider,
     effectiveSelectedApiTypes,
@@ -229,6 +252,69 @@ export function FormBody({
     setAuthMode(defaultAuthMode(provider, apiTypes, nextOverrides, authMode));
   }
 
+  function modelDialogKey(apiType: string, endpoint: CatalogEntry["endpoints"][number]) {
+    return `${apiType}:${endpointId(endpoint)}`;
+  }
+
+  function modelStatusKey(
+    apiType: string,
+    endpoint: CatalogEntry["endpoints"][number],
+    model: string,
+  ) {
+    return `${modelDialogKey(apiType, endpoint)}:${model}`;
+  }
+
+  function openModelsDialog(
+    apiType: string,
+    endpoint: CatalogEntry["endpoints"][number],
+    selectedModel: string,
+  ) {
+    const key = modelDialogKey(apiType, endpoint);
+    setSelectedTestModels((current) => {
+      if (current[key]?.length) return current;
+      const initialModels = selectedModel
+        ? [selectedModel]
+        : endpoint.models[0]?.id
+          ? [endpoint.models[0].id]
+          : [];
+      return { ...current, [key]: initialModels };
+    });
+    setModelsDialogApiType(apiType);
+  }
+
+  async function testSelectedModels(
+    apiType: string,
+    endpoint: CatalogEntry["endpoints"][number],
+  ) {
+    const key = modelDialogKey(apiType, endpoint);
+    const models = selectedTestModels[key] ?? [];
+    for (const model of models) {
+      const statusKey = modelStatusKey(apiType, endpoint, model);
+      setModelTestStatus((current) => ({
+        ...current,
+        [statusKey]: { state: "testing" },
+      }));
+      const result = await onTestModel(apiType, model);
+      setModelTestStatus((current) => ({
+        ...current,
+        [statusKey]: result.ok
+          ? { state: "success", message: result.message }
+          : { state: "error", message: result.message },
+      }));
+    }
+  }
+
+  const modelsDialogEndpoint = modelsDialogApiType
+    ? selectedEndpoint(provider, modelsDialogApiType, overrides)
+    : null;
+  const modelsDialogOverride = modelsDialogApiType
+    ? (overrides[modelsDialogApiType] ?? {})
+    : {};
+  const modelsDialogSelectedModel =
+    modelsDialogApiType && modelsDialogEndpoint
+      ? modelsDialogOverride.model?.trim() || modelsDialogEndpoint.models[0]?.id || ""
+      : "";
+
   return (
     <div className="space-y-3">
       <FormSection title={t("Profile")}>
@@ -302,33 +388,21 @@ export function FormBody({
                 if (!ep) return null;
                 const ov = overrides[apiType] ?? {};
                 const endpointOptions = endpointsForApiType(provider, apiType);
-                const selectedModel =
-                  ov.model?.trim() || ep.models[0]?.id || "";
-                const selectedModelOption = findModelOption(
-                  ep.models,
-                  selectedModel,
-                );
                 return (
                   <div
                     key={apiType}
                     className="border border-border/60 rounded-md p-2.5 space-y-2"
                   >
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="font-mono px-1.5 py-0.5 rounded bg-muted">
-                        {apiTypeShort(apiType)}
-                      </span>
-                      <span className="text-muted-foreground/70">
-                        · {t(apiTypeLabel(apiType))}
-                      </span>
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono">
+                          {apiTypeShort(apiType)}
+                        </span>
+                        <span className="truncate text-muted-foreground/70">
+                          · {t(apiTypeLabel(apiType))}
+                        </span>
+                      </div>
                     </div>
-                    {selectedModel && !requiresProfileModel(provider, ep) && (
-                      <ModelMetadataRow
-                        label={t("Default model")}
-                        model={selectedModel}
-                        option={selectedModelOption}
-                        endpoint={ep}
-                      />
-                    )}
                     {!usesEndpointGroups && endpointOptions.length > 1 && (
                       <FieldRow label={t("Endpoint type")}>
                         <Select
@@ -431,14 +505,6 @@ export function FormBody({
                           placeholder={t("model id (e.g. gpt-4o, claude-sonnet-4-6)")}
                           className={MONO_INPUT_CLASS}
                         />
-                        {selectedModel && (
-                          <ModelMetadataRow
-                            label={t("Selected model")}
-                            model={selectedModel}
-                            option={selectedModelOption}
-                            endpoint={ep}
-                          />
-                        )}
                       </FieldRow>
                     )}
                     {canOverrideInputSupport(provider, ep) && (
@@ -519,12 +585,75 @@ export function FormBody({
             editable={apiKindsEditable}
             selectedApiTypes={effectiveSelectedApiTypes}
             setSelectedApiTypes={applySelectedApiTypes}
+            onOpenModels={
+              provider.id === "custom"
+                ? undefined
+                : (endpoint) => {
+                    const selectedModel =
+                      overrides[endpoint.api_type]?.model?.trim() ||
+                      endpoint.models[0]?.id ||
+                      "";
+                    openModelsDialog(endpoint.api_type, endpoint, selectedModel);
+                  }
+            }
           />
 
           <ProxyField
             checked={useSettingsProxy}
             onChange={setUseSettingsProxy}
           />
+
+          {modelsDialogApiType && modelsDialogEndpoint && (
+            <ModelCatalogDialog
+              provider={provider}
+              apiType={modelsDialogApiType}
+              endpoint={modelsDialogEndpoint}
+              baseUrl={
+                modelsDialogOverride.base_url?.trim() ||
+                modelsDialogEndpoint.default_base_url
+              }
+              selectedModel={modelsDialogSelectedModel}
+              checkedModels={
+                selectedTestModels[
+                  modelDialogKey(modelsDialogApiType, modelsDialogEndpoint)
+                ] ?? []
+              }
+              statuses={modelTestStatus}
+              statusKeyFor={(model) =>
+                modelStatusKey(modelsDialogApiType, modelsDialogEndpoint, model)
+              }
+              testingDisabled={!!testingDisabled}
+              onDefaultModelChange={(model) => {
+                const key = modelDialogKey(modelsDialogApiType, modelsDialogEndpoint);
+                const nextOverride: ApiTypeOverrides = {
+                  ...(overrides[modelsDialogApiType] ?? {}),
+                };
+                if (model === modelsDialogEndpoint.models[0]?.id) {
+                  delete nextOverride.model;
+                } else {
+                  nextOverride.model = model;
+                }
+                setOverrides({
+                  ...overrides,
+                  [modelsDialogApiType]: nextOverride,
+                });
+                setSelectedTestModels((current) => ({
+                  ...current,
+                  [key]: current[key]?.length ? current[key] : [model],
+                }));
+              }}
+              onCheckedModelsChange={(models) =>
+                setSelectedTestModels({
+                  ...selectedTestModels,
+                  [modelDialogKey(modelsDialogApiType, modelsDialogEndpoint)]: models,
+                })
+              }
+              onTestSelected={() =>
+                void testSelectedModels(modelsDialogApiType, modelsDialogEndpoint)
+              }
+              onClose={() => setModelsDialogApiType(null)}
+            />
+          )}
         </FormSection>
       )}
 
@@ -580,65 +709,6 @@ function EndpointGroupField({
   );
 }
 
-function ModelMetadataRow({
-  label,
-  model,
-  option,
-  endpoint,
-}: {
-  label: string;
-  model: string;
-  option: ModelDef | null;
-  endpoint: CatalogEntry["endpoints"][number];
-}) {
-  const { t } = useI18n();
-  const capabilities = mergedModelCapabilities(endpoint, option);
-  return (
-    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-      <span className="font-medium text-foreground">{label}</span>
-      <span className="max-w-full truncate rounded bg-muted px-1.5 py-0.5 font-mono">
-        {model}
-      </span>
-      <span className="rounded bg-muted px-1.5 py-0.5">
-        {option?.context_window
-          ? t("{{count}} context", { count: formatContextWindow(option.context_window) })
-          : option
-            ? t("Context unknown")
-            : t("Custom model metadata")}
-      </span>
-      {capabilities.image_input && (
-        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
-          <ImageIcon className="h-3 w-3" />
-          {t("images")}
-        </span>
-      )}
-      {capabilities.file_input && (
-        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
-          <FileText className="h-3 w-3" />
-          {t("files")}
-        </span>
-      )}
-      {capabilities.web_search && (
-        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
-          <Search className="h-3 w-3" />
-          {t("web search")}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function findModelOption(models: ModelDef[], model: string): ModelDef | null {
-  const modelId = model.trim();
-  if (!modelId) return null;
-  return (
-    models.find(
-      (option) =>
-        option.id === modelId || (option.aliases ?? []).some((alias) => alias === modelId),
-    ) ?? null
-  );
-}
-
 function mergedModelCapabilities(
   endpoint: CatalogEntry["endpoints"][number],
   option: ModelDef | null,
@@ -660,6 +730,220 @@ function formatContextWindow(value: number): string {
   if (value >= 1_000_000) return `${Math.round(value / 1_000_000)}M`;
   if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
   return String(value);
+}
+
+function ModelCatalogDialog({
+  provider,
+  apiType,
+  endpoint,
+  baseUrl,
+  selectedModel,
+  checkedModels,
+  statuses,
+  statusKeyFor,
+  testingDisabled,
+  onDefaultModelChange,
+  onCheckedModelsChange,
+  onTestSelected,
+  onClose,
+}: {
+  provider: CatalogEntry;
+  apiType: string;
+  endpoint: CatalogEntry["endpoints"][number];
+  baseUrl: string;
+  selectedModel: string;
+  checkedModels: string[];
+  statuses: Record<string, ModelTestStatus>;
+  statusKeyFor: (model: string) => string;
+  testingDisabled: boolean;
+  onDefaultModelChange: (model: string) => void;
+  onCheckedModelsChange: (models: string[]) => void;
+  onTestSelected: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const allModelIds = endpoint.models.map((model) => model.id);
+  const allChecked =
+    allModelIds.length > 0 &&
+    allModelIds.every((model) => checkedModels.includes(model));
+  const anyTesting = checkedModels.some(
+    (model) => statuses[statusKeyFor(model)]?.state === "testing",
+  );
+
+  function setChecked(model: string, checked: boolean) {
+    onCheckedModelsChange(
+      checked
+        ? Array.from(new Set([...checkedModels, model]))
+        : checkedModels.filter((candidate) => candidate !== model),
+    );
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="!flex max-h-[calc(100vh-64px)] w-[min(820px,calc(100vw-32px))] max-w-[calc(100vw-32px)] flex-col overflow-hidden p-0 sm:max-w-[min(820px,calc(100vw-32px))]">
+        <DialogHeader className="shrink-0 border-b border-border px-5 py-3 pr-12">
+          <DialogTitle className="flex min-w-0 flex-wrap items-center gap-2 text-base">
+            <span className="truncate">{provider.label}</span>
+            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
+              {apiTypeShort(apiType)}
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              · {t(apiTypeLabel(apiType))}
+            </span>
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {t("Provider model catalog and connection tests.")}
+          </DialogDescription>
+          <div className="min-w-0 truncate pt-1 font-mono text-xs text-muted-foreground">
+            {baseUrl || t("Endpoint URL required")}
+          </div>
+        </DialogHeader>
+
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-3 [scrollbar-gutter:stable]">
+          <div className="overflow-hidden rounded-md border border-border/70">
+            <div className="grid grid-cols-[44px_44px_minmax(180px,1fr)_76px_minmax(150px,1fr)_minmax(84px,120px)] items-center gap-2 border-b border-border/70 bg-muted/50 px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
+              <span>{t("Default")}</span>
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={(event) =>
+                  onCheckedModelsChange(event.target.checked ? allModelIds : [])
+                }
+                className="h-3.5 w-3.5 accent-primary"
+                aria-label={t("Select all")}
+              />
+              <span>{t("Model")}</span>
+              <span>{t("Context")}</span>
+              <span>{t("Capabilities")}</span>
+              <span>{t("Test")}</span>
+            </div>
+            {endpoint.models.map((model) => {
+              const checked = checkedModels.includes(model.id);
+              const status = statuses[statusKeyFor(model.id)] ?? { state: "idle" };
+              const capabilities = mergedModelCapabilities(endpoint, model);
+              return (
+                <div
+                  key={model.id}
+                  className={`grid min-h-10 grid-cols-[44px_44px_minmax(180px,1fr)_76px_minmax(150px,1fr)_minmax(84px,120px)] items-center gap-2 border-b border-border/50 px-2 py-1.5 text-xs last:border-b-0 ${
+                    checked ? "bg-primary/5" : "hover:bg-accent/30"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onDefaultModelChange(model.id)}
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md ${
+                      selectedModel === model.id
+                        ? "text-primary"
+                        : "text-muted-foreground/50 hover:bg-accent/40 hover:text-foreground"
+                    }`}
+                    title={t("Set default model")}
+                    aria-label={t("Set default model")}
+                  >
+                    <Star
+                      className="h-3.5 w-3.5"
+                      fill={selectedModel === model.id ? "currentColor" : "none"}
+                    />
+                  </button>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => setChecked(model.id, event.target.checked)}
+                    className="h-3.5 w-3.5 accent-primary"
+                    aria-label={t("Select model for testing")}
+                  />
+                  <span
+                    className={`min-w-0 truncate ${
+                      model.label ? "text-[12px]" : "font-mono text-[12px]"
+                    }`}
+                    title={model.id}
+                  >
+                    {model.label || model.id}
+                  </span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                    {model.context_window
+                      ? formatContextWindow(model.context_window)
+                      : "?"}
+                  </span>
+                  <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                    {capabilityText(capabilities, t)}
+                  </span>
+                  <ModelTestStatusBadge status={status} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <DialogFooter className="shrink-0 border-t border-border px-5 py-3 sm:justify-between">
+          <div className="flex min-w-0 items-center text-xs text-muted-foreground">
+            {t("{{count}} selected", { count: checkedModels.length })}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+              {t("Close")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={onTestSelected}
+              disabled={testingDisabled || anyTesting || checkedModels.length === 0}
+            >
+              {anyTesting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FlaskConical className="h-3.5 w-3.5" />
+              )}
+              {anyTesting ? t("Testing…") : t("Test selected")}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function capabilityText(
+  capabilities: ReturnType<typeof mergedModelCapabilities>,
+  t: (key: string, vars?: Record<string, string | number | null | undefined>) => string,
+) {
+  const items = [
+    capabilities.image_input ? t("images") : null,
+    capabilities.file_input ? t("files") : null,
+    capabilities.web_search ? t("web search") : null,
+  ].filter((item): item is string => !!item);
+  return items.length > 0 ? items.join(", ") : t("text");
+}
+
+function ModelTestStatusBadge({ status }: { status: ModelTestStatus }) {
+  const { t } = useI18n();
+  if (status.state === "testing") {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+        <span className="truncate">{t("Testing…")}</span>
+      </span>
+    );
+  }
+  if (status.state === "success") {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1 text-[11px] text-primary">
+        <CheckCircle2 className="h-3 w-3 shrink-0" />
+        <span className="truncate">{status.message}</span>
+      </span>
+    );
+  }
+  if (status.state === "error") {
+    return (
+      <span
+        className="inline-flex min-w-0 items-center gap-1 text-[11px] text-destructive"
+        title={status.message}
+      >
+        <AlertCircle className="h-3 w-3 shrink-0" />
+        <span className="truncate">{t("Failed")}</span>
+      </span>
+    );
+  }
+  return <span className="text-[11px] text-muted-foreground/50">-</span>;
 }
 
 function GoogleOAuthField({
@@ -849,11 +1133,13 @@ function ApiKindsField({
   editable,
   selectedApiTypes,
   setSelectedApiTypes,
+  onOpenModels,
 }: {
   endpoints: CatalogEntry["endpoints"];
   editable: boolean;
   selectedApiTypes: string[];
   setSelectedApiTypes: (v: string[]) => void;
+  onOpenModels?: (endpoint: CatalogEntry["endpoints"][number]) => void;
 }) {
   const { t } = useI18n();
 
@@ -865,11 +1151,12 @@ function ApiKindsField({
       <div className="flex flex-wrap gap-1.5">
         {endpoints.map((ep) => {
           const checked = selectedApiTypes.includes(ep.api_type);
+          const showModels = checked && ep.models.length > 0 && !!onOpenModels;
           if (editable) {
             return (
               <label
                 key={ep.api_type}
-                className={`h-8 flex items-center gap-2 px-2.5 border rounded-md cursor-pointer text-xs ${
+                className={`min-h-8 flex items-center gap-2 px-2.5 py-1 border rounded-md cursor-pointer text-xs ${
                   checked
                     ? "border-primary bg-primary/10"
                     : "border-border hover:bg-accent/30"
@@ -890,21 +1177,41 @@ function ApiKindsField({
                   className="h-3.5 w-3.5 accent-primary"
                 />
                 <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
-                <span className="text-muted-foreground/70">
-                  · {t(apiTypeLabel(ep.api_type))}
-                </span>
+                {showModels && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onOpenModels(ep);
+                    }}
+                    className="ml-1 inline-flex h-6 items-center gap-1 rounded border border-primary/30 bg-background/70 px-1.5 text-[11px] text-primary hover:bg-background"
+                  >
+                    <ListChecks className="h-3 w-3" />
+                    {t("Models")}
+                  </button>
+                )}
               </label>
             );
           }
           return (
             <div
               key={ep.api_type}
-              className="h-8 flex items-center gap-2 px-2.5 border border-primary bg-primary/10 rounded-md text-xs"
+              className="min-h-8 flex items-center gap-2 px-2.5 py-1 border border-primary bg-primary/10 rounded-md text-xs"
             >
               <span className="font-mono">{apiTypeShort(ep.api_type)}</span>
-              <span className="text-muted-foreground/70">
-                · {t(apiTypeLabel(ep.api_type))}
-              </span>
+              {showModels && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="ml-1 h-6 px-1.5 text-[11px]"
+                  onClick={() => onOpenModels(ep)}
+                >
+                  <ListChecks className="h-3 w-3" />
+                  {t("Models")}
+                </Button>
+              )}
             </div>
           );
         })}
