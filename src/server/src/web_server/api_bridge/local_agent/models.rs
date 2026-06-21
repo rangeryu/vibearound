@@ -47,10 +47,14 @@ fn local_agent_models_response(
     let data: Vec<_> = models
         .into_iter()
         .map(|model| {
+            let id = model.id;
             json!({
-                "id": model.id,
+                "id": id.clone(),
+                "model": id.clone(),
                 "object": "model",
                 "type": "model",
+                "display_name": id.clone(),
+                "displayName": id,
                 "owned_by": "vibearound-local-agent",
                 "created": 0,
                 "created_at": null,

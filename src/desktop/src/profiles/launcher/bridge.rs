@@ -81,6 +81,11 @@ fn apply_compatibility_bridge(
         &format!("{provider_key}.wire_api"),
         &codex::toml_string("responses"),
     );
+    codex::push_config_arg(
+        &mut rendered.command_args,
+        &format!("{provider_key}.supports_websockets"),
+        "false",
+    );
 
     Ok(())
 }

@@ -331,6 +331,9 @@ fn render_codex_bridge_profile(
             contents: model_catalog_json,
         });
     }
+    if let Some(provider_models) = codex_metadata::build_provider_models_toml(&specs) {
+        push_provider_config_arg(&mut command_args, &provider_key, "models", &provider_models);
+    }
     push_provider_config_arg(
         &mut command_args,
         &provider_key,
@@ -348,6 +351,12 @@ fn render_codex_bridge_profile(
         &provider_key,
         "wire_api",
         &toml_string("responses"),
+    );
+    push_provider_config_arg(
+        &mut command_args,
+        &provider_key,
+        "supports_websockets",
+        "false",
     );
     push_provider_config_arg(
         &mut command_args,
@@ -582,6 +591,10 @@ mod tests {
             .command_args
             .iter()
             .any(|arg| arg == "model_context_window=1000000"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model_providers.dashscope.supports_websockets=false"));
     }
 
     #[test]
@@ -667,9 +680,66 @@ mod tests {
 
         assert_eq!(models.len(), 2);
         assert_eq!(models[0]["slug"], "gpt-5.1-codex");
+        assert_eq!(models[0]["model"], "gpt-5.1-codex");
+        assert_eq!(models[0]["id"], "gpt-5.1-codex");
+        assert_eq!(models[0]["displayName"], "gpt-5.1-codex");
         assert_eq!(models[0]["context_window"], 1_000_000);
+        assert_eq!(models[0]["contextWindow"], 1_000_000);
         assert_eq!(models[1]["slug"], "gpt-5.1-mini");
+        assert_eq!(models[1]["model"], "gpt-5.1-mini");
+        assert_eq!(models[1]["id"], "gpt-5.1-mini");
+        assert_eq!(models[1]["displayName"], "gpt-5.1-mini");
         assert_eq!(models[1]["context_window"], 1_000_000);
+        assert_eq!(models[1]["contextWindow"], 1_000_000);
+        assert!(rendered.command_args.iter().any(|arg| {
+            arg.starts_with("model_providers.dashscope.models=")
+                && arg.contains("model = \"gpt-5.1-codex\"")
+                && arg.contains("model = \"gpt-5.1-mini\"")
+                && arg.contains("contextWindow = 1000000")
+        }));
+    }
+
+    #[test]
+    fn codex_bridge_launch_includes_real_provider_model_metadata() {
+        let profile = dashscope_profile();
+        let rendered = render_bridge_launch(
+            &profile,
+            "codex",
+            "launch-test",
+            "openai-responses",
+            "openai-chat",
+            Some("qwen3.6-plus"),
+            None,
+            &[ProfileBridgeModelRoute {
+                upstream_model: "qwen3.6-plus".to_string(),
+                agent_model: "qwen3.6-plus".to_string(),
+                capabilities: Default::default(),
+            }],
+        )
+        .expect("codex bridge launch renders");
+
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model='qwen3.6-plus'"));
+        let catalog_file = rendered
+            .settings_files
+            .iter()
+            .find(|settings_file| settings_file.rel_path == "codex-model-catalog-launch-test.json")
+            .expect("codex model catalog file");
+        let catalog: Value =
+            serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
+        let model = &catalog["models"][0];
+
+        assert_eq!(model["slug"], "qwen3.6-plus");
+        assert_eq!(model["model"], "qwen3.6-plus");
+        assert_eq!(model["id"], "qwen3.6-plus");
+        assert_eq!(model["contextWindow"], 1_000_000);
+        assert!(rendered.command_args.iter().any(|arg| {
+            arg.starts_with("model_providers.dashscope.models=")
+                && arg.contains("model = \"qwen3.6-plus\"")
+                && arg.contains("contextWindow = 1000000")
+        }));
     }
 
     #[test]
