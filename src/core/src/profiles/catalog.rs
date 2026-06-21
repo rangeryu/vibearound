@@ -412,7 +412,7 @@ pub fn custom() -> &'static ProviderCatalog {
                         settings_files: vec![
                             SettingsFileTemplate {
                                 rel_path: "config.toml".to_string(),
-                                template: "model = \"{{model}}\"\nmodel_provider = \"custom\"\nmodel_reasoning_effort = \"{{reasoning_effort}}\"\ndisable_response_storage = true\n\n[model_providers.custom]\nname = \"Custom\"\nbase_url = \"{{base_url}}\"\nwire_api = \"responses\"\nrequires_openai_auth = true\n".to_string(),
+                                template: "model = \"{{model}}\"\nmodel_provider = \"custom\"\nmodel_reasoning_effort = \"{{reasoning_effort}}\"\ndisable_response_storage = true\n\n[model_providers.custom]\nname = \"Custom\"\nbase_url = \"{{base_url}}\"\nwire_api = \"responses\"\nsupports_websockets = false\nrequires_openai_auth = true\n".to_string(),
                             },
                             SettingsFileTemplate {
                                 rel_path: "auth.json".to_string(),
@@ -449,7 +449,7 @@ pub fn custom() -> &'static ProviderCatalog {
                         settings_files: vec![
                             SettingsFileTemplate {
                                 rel_path: "config.toml".to_string(),
-                                template: "model = \"{{model}}\"\nmodel_provider = \"custom\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.custom]\nname = \"Custom\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nrequires_openai_auth = true\n".to_string(),
+                                template: "model = \"{{model}}\"\nmodel_provider = \"custom\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.custom]\nname = \"Custom\"\nbase_url = \"{{base_url}}\"\nwire_api = \"chat\"\nsupports_websockets = false\nrequires_openai_auth = true\n".to_string(),
                             },
                             SettingsFileTemplate {
                                 rel_path: "auth.json".to_string(),

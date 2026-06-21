@@ -320,6 +320,10 @@ fn command_args_for(launch_target: &str, ctx: &BTreeMap<String, String>) -> Vec<
         push_config(&format!("{provider_key}.wire_api"), toml_string(wire_api));
     }
     push_config(
+        &format!("{provider_key}.supports_websockets"),
+        "false".to_string(),
+    );
+    push_config(
         &format!("{provider_key}.env_key"),
         toml_string(codex_provider_env_key(provider_id)),
     );
@@ -328,7 +332,7 @@ fn command_args_for(launch_target: &str, ctx: &BTreeMap<String, String>) -> Vec<
 
 #[derive(Debug)]
 struct SelectedModelMetadata {
-    context_window: u64,
+    context_window: Option<u64>,
     capabilities: ContentCapabilities,
 }
 
@@ -337,10 +341,13 @@ fn selected_model_metadata(
     endpoint: &EndpointDef,
 ) -> Option<SelectedModelMetadata> {
     let model = ctx.get("model").filter(|value| !value.is_empty())?;
-    let model_def = catalog::find_model(endpoint, model)?;
+    let model_def = catalog::find_model(endpoint, model);
+    let capabilities = model_def
+        .map(|model_def| endpoint.capabilities.content.merge(&model_def.capabilities))
+        .unwrap_or_else(|| endpoint.capabilities.content.clone());
     Some(SelectedModelMetadata {
-        context_window: model_def.context_window?,
-        capabilities: endpoint.capabilities.content.merge(&model_def.capabilities),
+        context_window: model_def.and_then(|model_def| model_def.context_window),
+        capabilities,
     })
 }
 
@@ -364,12 +371,23 @@ fn add_codex_model_catalog(
     let spec = CodexModelCatalogSpec {
         model,
         provider_label,
-        context_window: Some(metadata.context_window),
+        context_window: metadata.context_window,
         capabilities: &metadata.capabilities,
     };
-    let Some(model_catalog_json) = codex_metadata::build_model_catalog_json(&[spec]) else {
+    let specs = [spec];
+    let Some(model_catalog_json) = codex_metadata::build_model_catalog_json(&specs) else {
         return Ok(());
     };
+
+    if let (Some(provider_id), Some(provider_models)) = (
+        ctx.get("provider_id").filter(|value| !value.is_empty()),
+        codex_metadata::build_provider_models_toml(&specs),
+    ) {
+        command_args.push("-c".to_string());
+        command_args.push(format!(
+            "model_providers.{provider_id}.models={provider_models}"
+        ));
+    }
 
     let rel_path = codex_model_catalog_rel_path(model);
     validate_rel_path(&rel_path)?;
@@ -759,6 +777,10 @@ mod tests {
         assert!(rendered
             .command_args
             .iter()
+            .any(|arg| arg == "model_providers.xai.supports_websockets=false"));
+        assert!(rendered
+            .command_args
+            .iter()
             .any(|arg| arg.starts_with("model_catalog_json='")));
         assert!(rendered.config_env.is_none());
 
@@ -771,12 +793,28 @@ mod tests {
             serde_json::from_str(&catalog_file.contents).expect("catalog json parses");
         let model = &catalog["models"][0];
         assert_eq!(model["slug"], "grok-4.3");
+        assert_eq!(model["model"], "grok-4.3");
+        assert_eq!(model["id"], "grok-4.3");
+        assert_eq!(model["display_name"], "grok-4.3");
+        assert_eq!(model["displayName"], "grok-4.3");
         assert_eq!(model["context_window"], 1_000_000);
+        assert_eq!(model["contextWindow"], 1_000_000);
         assert_eq!(model["max_context_window"], 1_000_000);
+        assert_eq!(model["maxContextWindow"], 1_000_000);
         assert_eq!(
             model["input_modalities"],
             serde_json::json!(["text", "image"])
         );
+        assert_eq!(
+            model["inputModalities"],
+            serde_json::json!(["text", "image"])
+        );
+        assert!(rendered.command_args.iter().any(|arg| {
+            arg.starts_with("model_providers.xai.models=")
+                && arg.contains("model = \"grok-4.3\"")
+                && arg.contains("contextWindow = 1000000")
+                && arg.contains("inputModalities = [\"text\", \"image\"]")
+        }));
     }
 
     #[test]
@@ -817,6 +855,10 @@ mod tests {
             .command_args
             .iter()
             .any(|arg| arg == "model_provider='xai'"));
+        assert!(rendered
+            .command_args
+            .iter()
+            .any(|arg| arg == "model_providers.xai.supports_websockets=false"));
         assert!(rendered
             .command_args
             .iter()

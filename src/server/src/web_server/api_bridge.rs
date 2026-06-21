@@ -767,17 +767,23 @@ pub(super) async fn models_handler(
             if metadata.file_input {
                 input_modalities.push("file");
             }
+            let context_window = metadata.context_window;
             json!({
                 "id": model.agent_model.as_str(),
+                "model": model.agent_model.as_str(),
                 "type": "model",
                 "object": "model",
                 "display_name": model.agent_model.as_str(),
+                "displayName": model.agent_model.as_str(),
                 "owned_by": upstream.profile.provider.as_str(),
                 "created": 0,
                 "created_at": null,
-                "context_window": metadata.context_window,
-                "max_context_window": metadata.context_window,
-                "input_modalities": input_modalities,
+                "context_window": context_window,
+                "contextWindow": context_window,
+                "max_context_window": context_window,
+                "maxContextWindow": context_window,
+                "input_modalities": input_modalities.clone(),
+                "inputModalities": input_modalities,
                 "capabilities": {
                     "image_input": metadata.image_input,
                     "file_input": metadata.file_input,
