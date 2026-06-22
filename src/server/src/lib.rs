@@ -12,13 +12,11 @@ use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use tokio::sync::{mpsc, Notify};
 use tokio::task::{JoinHandle, JoinSet};
-
-#[cfg(windows)]
-use std::time::Duration;
 
 use common::auth::{self, AuthToken};
 use common::channels::{handle_channel_input, ChannelInput, ChannelManager, WebChannelManager};
@@ -31,6 +29,7 @@ use common::tunnels::{self, TunnelManager};
 use common::workspace::WorkspaceThreadManager;
 
 const CHANNEL_INPUT_WORKER_COUNT: usize = 64;
+const WEB_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 #[cfg(windows)]
 const WEB_BIND_RETRY_ATTEMPTS: usize = 20;
 #[cfg(windows)]
@@ -61,6 +60,9 @@ pub struct RunningDaemon {
     /// Dropped sender = no wake-up ever, so we hold this for the life of
     /// `RunningDaemon` and signal on `stop()`.
     channel_input_shutdown: Arc<Notify>,
+    /// Signal to Axum so it can stop accepting new connections before the
+    /// web task is force-aborted.
+    web_shutdown: Arc<Notify>,
     /// Owned so `stop()` can wait for the dispatcher to exit.
     channel_input_handle: JoinHandle<()>,
 }
@@ -77,6 +79,7 @@ impl RunningDaemon {
             tunnels,
             pty,
             channel_input_shutdown,
+            web_shutdown,
             channel_input_handle,
             ..
         } = self;
@@ -103,8 +106,8 @@ impl RunningDaemon {
             let _ = pty_manager.delete_session(session_id);
         }
 
+        web_shutdown.notify_waiters();
         web_dispatch_handle.abort();
-        web_handle.abort();
         tunnel_handle.abort();
 
         // Wake the channel-input task and wait for it to exit.
@@ -112,9 +115,19 @@ impl RunningDaemon {
         channel_input_handle.abort();
         let _ = channel_input_handle.await;
 
+        // Let Axum close the listener cleanly, but do not let long-lived
+        // websocket clients hang daemon shutdown forever.
+        let mut web_handle = web_handle;
+        if tokio::time::timeout(WEB_SHUTDOWN_TIMEOUT, &mut web_handle)
+            .await
+            .is_err()
+        {
+            web_handle.abort();
+            let _ = web_handle.await;
+        }
+
         // Wait for aborted tasks so their sockets and child handles are
         // dropped before a hot restart probes/binds the same port.
-        let _ = web_handle.await;
         let _ = tunnel_handle.await;
         let _ = web_dispatch_handle.await;
 
@@ -132,6 +145,35 @@ fn channel_input_shard(input: &ChannelInput, shard_count: usize) -> usize {
     let mut hasher = DefaultHasher::new();
     route.hash(&mut hasher);
     (hasher.finish() as usize) % shard_count.max(1)
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::warn!(error = %error, "failed to install Ctrl+C handler");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "failed to install SIGTERM handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("received Ctrl+C"),
+        _ = terminate => tracing::info!("received SIGTERM"),
+    }
 }
 
 async fn bind_web_listener(port: u16) -> anyhow::Result<tokio::net::TcpListener> {
@@ -333,6 +375,8 @@ impl ServerDaemon {
         let web_search_runtime = search_runtime.clone();
         let web_search_available = host_search_available;
         let web_replace_provider_search = replace_provider_web_search;
+        let web_shutdown = Arc::new(Notify::new());
+        let web_shutdown_for_server = Arc::clone(&web_shutdown);
         let web_handle = tokio::spawn(async move {
             run_web_server(
                 web_listener,
@@ -345,6 +389,7 @@ impl ServerDaemon {
                 web_search_available,
                 web_replace_provider_search,
                 web_search_runtime,
+                web_shutdown_for_server,
             )
             .await
             .map_err(|e| e.to_string())
@@ -388,6 +433,7 @@ impl ServerDaemon {
             tunnels,
             pty,
             channel_input_shutdown,
+            web_shutdown,
             channel_input_handle,
         })
     }
@@ -404,12 +450,12 @@ impl ServerDaemon {
                 }
                 running.tunnel_handle.abort();
             }
-            _ = tokio::signal::ctrl_c() => {
+            _ = shutdown_signal() => {
                 tracing::info!("shutting down");
-                running.stop().await;
             }
         }
 
+        running.stop().await;
         Ok(())
     }
 }

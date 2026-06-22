@@ -22,6 +22,7 @@ use axum::Router;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Notify;
 use tower_http::services::ServeDir;
 
 use common::auth::AuthToken;
@@ -188,6 +189,7 @@ pub async fn run_web_server(
     host_search_available: bool,
     replace_provider_web_search: bool,
     search_runtime: Option<Arc<SearchToolRuntime>>,
+    shutdown: Arc<Notify>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     verify_web_dist(&dist_path)?;
     let web_dist = dist_path
@@ -479,6 +481,9 @@ pub async fn run_web_server(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(async move {
+        shutdown.notified().await;
+    })
     .await?;
     Ok(())
 }
