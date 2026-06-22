@@ -15,7 +15,11 @@ mod workspaces;
 
 pub use files::{download_chat_file_handler, upload_chat_file_handler};
 pub use previews::{delete_preview_handler, list_previews_handler};
-pub use profiles::list_profiles_handler;
+pub use profiles::{
+    create_model_profile_handler, delete_model_profile_handler, get_model_profile_handler,
+    list_model_profiles_handler, list_profiles_handler, reorder_model_profiles_handler,
+    update_model_profile_handler,
+};
 pub use runtime::{
     kill_agent_handler, kill_pty_handler, kill_tunnel_handler, list_agents_handler,
     list_agents_runtime_handler, list_channels_handler, list_tunnels_handler,

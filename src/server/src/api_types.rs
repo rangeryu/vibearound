@@ -19,9 +19,12 @@
 //! documented on each struct below so Python/Swift/curl consumers can
 //! derive their own schemas without reading the zod file.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use common::previews::PreviewSnapshot;
+use common::profiles::{catalog, AuthMode};
 use common::pty::{PtyRunState, PtyTool};
 use common::routing::RouteKey;
 
@@ -110,6 +113,34 @@ pub struct ProfileLaunchOption {
     pub label: String,
     pub provider: String,
     pub launch_targets: Vec<ProfileLaunchTarget>,
+}
+
+/// One user-managed model/API profile without credentials.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProfileSummary {
+    pub id: String,
+    pub label: String,
+    pub provider: String,
+    pub provider_label: String,
+    pub provider_icon: Option<String>,
+    pub auth_mode: AuthMode,
+    pub api_types: Vec<String>,
+    pub launch_targets: Vec<ModelProfileLaunchTarget>,
+    pub api_type_warnings: BTreeMap<String, String>,
+    pub api_type_models: BTreeMap<String, String>,
+    pub api_type_model_options: BTreeMap<String, Vec<catalog::ModelDef>>,
+    pub api_type_headers: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProfileLaunchTarget {
+    pub id: String,
+    pub label: String,
+    pub api_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 impl AgentInfo {
