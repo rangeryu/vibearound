@@ -19,11 +19,43 @@
 //! documented on each struct below so Python/Swift/curl consumers can
 //! derive their own schemas without reading the zod file.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use common::previews::PreviewSnapshot;
+use common::profiles::{catalog, AuthMode};
 use common::pty::{PtyRunState, PtyTool};
 use common::routing::RouteKey;
+
+/// `GET /api/service/health` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceHealthResponse {
+    pub ok: bool,
+    pub service: &'static str,
+    pub version: &'static str,
+}
+
+/// `GET /api/service/info` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceInfoResponse {
+    pub service: &'static str,
+    pub version: &'static str,
+    pub port: u16,
+    pub mode: &'static str,
+    pub auth_mode: &'static str,
+    pub data_dir: String,
+    pub settings_path: String,
+    pub web_dist_path: String,
+    pub host_search_available: bool,
+    pub replace_provider_web_search: bool,
+}
+
+/// `PUT /api/settings` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct SettingsWriteResponse {
+    pub ok: bool,
+}
 
 /// Per-agent display info returned under `AgentsConfig.agents`.
 ///
@@ -81,6 +113,89 @@ pub struct ProfileLaunchOption {
     pub label: String,
     pub provider: String,
     pub launch_targets: Vec<ProfileLaunchTarget>,
+}
+
+/// One user-managed model/API profile without credentials.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProfileSummary {
+    pub id: String,
+    pub label: String,
+    pub provider: String,
+    pub provider_label: String,
+    pub provider_icon: Option<String>,
+    pub auth_mode: AuthMode,
+    pub api_types: Vec<String>,
+    pub launch_targets: Vec<ModelProfileLaunchTarget>,
+    pub api_type_warnings: BTreeMap<String, String>,
+    pub api_type_models: BTreeMap<String, String>,
+    pub api_type_model_options: BTreeMap<String, Vec<catalog::ModelDef>>,
+    pub api_type_headers: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProfileLaunchTarget {
+    pub id: String,
+    pub label: String,
+    pub api_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+/// `GET /api/launcher/preferences` response.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherPreferencesResponse {
+    pub selected_agent: String,
+    pub default_agent: String,
+    pub default_profile_id: Option<String>,
+    pub enabled_agents: Vec<String>,
+    pub agent_preferences: BTreeMap<String, LauncherAgentPreferenceSummary>,
+    pub local_agent_api_enabled: bool,
+    pub profile_connections: common::agent_state::ProfileConnectionPreferences,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherAgentPreferenceSummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<String>,
+    #[serde(skip_serializing_if = "common::agent_state::AgentLaunchArgs::is_empty")]
+    pub launch_args: common::agent_state::AgentLaunchArgs,
+}
+
+/// One env assignment in a server-generated launch plan.
+#[derive(Debug, Clone, Serialize)]
+pub struct LaunchPlanEnvVar {
+    pub key: String,
+    pub value: String,
+}
+
+/// `POST /api/launcher/plan` response.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchPlanResponse {
+    pub launch_id: String,
+    pub agent_id: String,
+    pub profile_id: Option<String>,
+    pub launch_target: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: Vec<LaunchPlanEnvVar>,
+    pub cwd: String,
+    pub resume_session_id: Option<String>,
+    pub native_execution: bool,
+    pub display: LaunchPlanDisplay,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LaunchPlanDisplay {
+    pub title: String,
 }
 
 impl AgentInfo {

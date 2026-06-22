@@ -21,7 +21,6 @@ pub const DEFAULT_PORT: u16 = 12358;
 
 /// Minimal default settings.json content, embedded at compile time.
 const DEFAULT_SETTINGS_JSON: &str = r#"{
-  "default_workspace": "~/.vibearound/workspaces",
   "workspaces": []
 }"#;
 
@@ -36,7 +35,18 @@ pub fn home_dir() -> PathBuf {
 
 /// Data directory: ~/.vibearound
 pub fn data_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("VIBEAROUND_DATA_DIR") {
+        let path = path.trim();
+        if !path.is_empty() {
+            return expand_home(path);
+        }
+    }
     home_dir().join(".vibearound")
+}
+
+/// Path to the primary settings file.
+pub fn settings_path() -> PathBuf {
+    data_dir().join("settings.json")
 }
 
 /// Runtime state directory for append-only stores and other non-config data.
@@ -103,7 +113,7 @@ fn init_data_dir() {
         tracing::info!("[VibeAround] Failed to create data dir {:?}: {}", dir, e);
         return;
     }
-    let settings_path = dir.join("settings.json");
+    let settings_path = settings_path();
     if !settings_path.exists() {
         tracing::info!(
             "[VibeAround] Creating default settings.json at {:?}",
@@ -412,7 +422,7 @@ pub fn ensure_loaded() -> Arc<Config> {
     // Slow path: first call — initialize data dir, read from disk, cache.
     ensure_rustls_provider();
     init_data_dir();
-    let path = data_dir().join("settings.json");
+    let path = settings_path();
     let cfg = Arc::new(load_settings_from(&path));
     *CONFIG_CACHE.write() = Some(Arc::clone(&cfg));
     cfg
@@ -423,7 +433,7 @@ pub fn ensure_loaded() -> Arc<Config> {
 pub fn reload() -> Arc<Config> {
     ensure_rustls_provider();
     init_data_dir();
-    let path = data_dir().join("settings.json");
+    let path = settings_path();
     let cfg = Arc::new(load_settings_from(&path));
     *CONFIG_CACHE.write() = Some(Arc::clone(&cfg));
     cfg
@@ -876,7 +886,7 @@ pub fn builtin_workspaces_dir() -> PathBuf {
 /// Read + write settings.json (for API-driven updates).
 /// Automatically reloads the in-memory config cache after writing.
 pub fn update_settings_json(mutator: impl FnOnce(&mut serde_json::Value)) -> Result<(), String> {
-    let path = data_dir().join("settings.json");
+    let path = settings_path();
     let data = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string());
     let mut root: serde_json::Value = serde_json::from_str(&data).unwrap_or(serde_json::json!({}));
     mutator(&mut root);
@@ -908,8 +918,17 @@ pub fn write_settings_json(root: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
+/// Read the raw settings JSON file after ensuring the data directory exists.
+pub fn read_settings_json() -> Result<serde_json::Value, String> {
+    ensure_rustls_provider();
+    init_data_dir();
+    let path = settings_path();
+    let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&data).map_err(|e| e.to_string())
+}
+
 fn write_settings_json_locked(root: &serde_json::Value) -> Result<(), String> {
-    let path = data_dir().join("settings.json");
+    let path = settings_path();
     write_settings_json_to_path(&path, root)
 }
 
