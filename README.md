@@ -63,6 +63,14 @@ Pick an AI agent, model profile or API endpoint, and workspace. VibeAround launc
 | MCP and Skills | ❌ Not currently supported | ✅ Unified MCP and Skills management across supported apps |
 | Usage and cost tracking | 🚧 Roadmap | ✅ Built-in usage dashboard |
 
+## Known Issue
+
+### Why do I see `Unable to connect to API (ConnectionRefused)`?
+
+This usually means the agent is still reading API settings written by CC Switch or another config-switching tool. Those settings can point the agent to a local proxy that is no longer running, so the agent refuses the connection before VibeAround can route the request.
+
+Remove the conflicting fields from the corresponding agent config file, then launch the agent again from VibeAround. For Claude Code, check `~/.claude/settings.json` and remove stale provider fields such as an `env` block that sets a base URL, API key, or proxy endpoint. If you also have project-level Claude config files, check those as well.
+
 ## API Profiles & Bridge
 
 Use more model providers with the AI agents you prefer. Save provider keys, base URLs, models, and aliases as profiles; when an agent and a provider speak different API shapes, VibeAround's local bridge translates between them.
@@ -392,14 +400,6 @@ bun run dev
 ```
 
 Prerequisites: Rust 1.82+, Bun 1.3+, and Node.js 24 LTS recommended. macOS also needs Xcode command line tools; Linux needs the WebKitGTK/Tauri system dependencies for your distribution.
-
-## Known Issue
-
-### Why do I see `Unable to connect to API (ConnectionRefused)`?
-
-This usually means the agent is still reading API settings written by CC Switch or another config-switching tool. Those settings can point the agent to a local proxy that is no longer running, so the agent refuses the connection before VibeAround can route the request.
-
-Remove the conflicting fields from the corresponding agent config file, then launch the agent again from VibeAround. For Claude Code, check `~/.claude/settings.json` and remove stale provider fields such as an `env` block that sets a base URL, API key, or proxy endpoint. If you also have project-level Claude config files, check those as well.
 
 ## Documentation
 
