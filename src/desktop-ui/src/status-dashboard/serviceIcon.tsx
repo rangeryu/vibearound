@@ -11,6 +11,7 @@ const CHANNEL_ICONS: Record<string, ServiceIconMeta> = {
   dingtalk: { src: "/brand/channel-dingtalk.svg", fallback: "D" },
   discord: { src: "/brand/channel-discord.svg", fallback: "D" },
   feishu: { src: "/brand/channel-feishu.svg", fallback: "F" },
+  qqbot: { src: "/brand/channel-qqbot.png", fallback: "Q" },
   slack: { src: "/brand/channel-slack.svg", fallback: "S" },
   telegram: { src: "/brand/channel-telegram.svg", fallback: "T" },
   wechat: { src: "/brand/channel-wechat.svg", fallback: "W" },
