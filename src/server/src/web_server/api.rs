@@ -5,6 +5,7 @@
 //! grouped by feature area.
 
 mod files;
+mod launcher;
 mod previews;
 mod profiles;
 mod runtime;
@@ -14,6 +15,11 @@ mod settings;
 mod workspaces;
 
 pub use files::{download_chat_file_handler, upload_chat_file_handler};
+pub use launcher::{
+    get_launcher_preferences_handler, launcher_plan_handler, set_agent_launch_args_handler,
+    set_agent_profile_handler, set_default_launch_handler, set_local_agent_api_handler,
+    set_profile_connection_handler, set_selected_agent_handler,
+};
 pub use previews::{delete_preview_handler, list_previews_handler};
 pub use profiles::{
     create_model_profile_handler, delete_model_profile_handler, get_model_profile_handler,

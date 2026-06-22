@@ -143,6 +143,61 @@ pub struct ModelProfileLaunchTarget {
     pub warning: Option<String>,
 }
 
+/// `GET /api/launcher/preferences` response.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherPreferencesResponse {
+    pub selected_agent: String,
+    pub default_agent: String,
+    pub default_profile_id: Option<String>,
+    pub enabled_agents: Vec<String>,
+    pub agent_preferences: BTreeMap<String, LauncherAgentPreferenceSummary>,
+    pub local_agent_api_enabled: bool,
+    pub profile_connections: common::agent_state::ProfileConnectionPreferences,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherAgentPreferenceSummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<String>,
+    #[serde(skip_serializing_if = "common::agent_state::AgentLaunchArgs::is_empty")]
+    pub launch_args: common::agent_state::AgentLaunchArgs,
+}
+
+/// One env assignment in a server-generated launch plan.
+#[derive(Debug, Clone, Serialize)]
+pub struct LaunchPlanEnvVar {
+    pub key: String,
+    pub value: String,
+}
+
+/// `POST /api/launcher/plan` response.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchPlanResponse {
+    pub launch_id: String,
+    pub agent_id: String,
+    pub profile_id: Option<String>,
+    pub launch_target: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: Vec<LaunchPlanEnvVar>,
+    pub cwd: String,
+    pub resume_session_id: Option<String>,
+    pub native_execution: bool,
+    pub display: LaunchPlanDisplay,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LaunchPlanDisplay {
+    pub title: String,
+}
+
 impl AgentInfo {
     /// Build an `AgentInfo` for each of the given agent IDs by looking up
     /// the corresponding entry in `agents.json`. IDs with no matching

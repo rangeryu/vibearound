@@ -286,6 +286,35 @@ pub async fn run_web_server(
                 .put(api::update_model_profile_handler)
                 .delete(api::delete_model_profile_handler),
         )
+        .route(
+            "/api/launcher/preferences",
+            get(api::get_launcher_preferences_handler),
+        )
+        .route(
+            "/api/launcher/default-agent",
+            put(api::set_default_launch_handler),
+        )
+        .route(
+            "/api/launcher/agent-profile",
+            put(api::set_agent_profile_handler),
+        )
+        .route(
+            "/api/launcher/agent-launch-args",
+            put(api::set_agent_launch_args_handler),
+        )
+        .route(
+            "/api/launcher/selected-agent",
+            put(api::set_selected_agent_handler),
+        )
+        .route(
+            "/api/launcher/local-agent-api",
+            put(api::set_local_agent_api_handler),
+        )
+        .route(
+            "/api/launcher/profile-connection",
+            put(api::set_profile_connection_handler),
+        )
+        .route("/api/launcher/plan", post(api::launcher_plan_handler))
         .route("/ws", get(ws_pty::ws_handler))
         .route("/ws/chat", get(ws_chat::ws_chat_handler))
         .route("/ws/channels", get(ws_domains::ws_channels_handler))
