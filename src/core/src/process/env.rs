@@ -14,6 +14,9 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::OnceLock;
 
+#[cfg(unix)]
+use std::io::IsTerminal;
+
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
@@ -486,7 +489,14 @@ fn probe_enriched_env() -> HashMap<String, String> {
 
     #[cfg(unix)]
     {
-        if let Some(shell_env) = probe_unix_login_shell_env() {
+        if stdio_is_terminal() {
+            // Terminal-launched server/desktop dev sessions already inherit
+            // the user's shell environment. Avoid probing an interactive
+            // login shell here: zsh can briefly take terminal foreground
+            // control for job management, leaving Ctrl+C pointed at a dead
+            // process group after the probe exits.
+            enrich_unix_path_fallback(&mut env);
+        } else if let Some(shell_env) = probe_unix_login_shell_env() {
             // Shell env takes precedence (has user's full setup)
             env.extend(shell_env);
         } else {
@@ -546,6 +556,13 @@ pub fn set_path_value(env: &mut HashMap<String, String>, value: String) {
 #[cfg(not(windows))]
 pub fn set_path_value(env: &mut HashMap<String, String>, value: String) {
     env.insert(path_env_key().to_string(), value);
+}
+
+#[cfg(unix)]
+fn stdio_is_terminal() -> bool {
+    std::io::stdin().is_terminal()
+        || std::io::stdout().is_terminal()
+        || std::io::stderr().is_terminal()
 }
 
 /// Probe the user's login shell for their full environment.
