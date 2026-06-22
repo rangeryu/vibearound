@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { DragDropProvider, type DragEndEvent } from "@dnd-kit/react";
+import { isSortable } from "@dnd-kit/react/sortable";
 import {
   Bot,
   ChevronDown,
@@ -16,6 +25,7 @@ import { useI18n } from "@va/i18n";
 
 import { BrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
+import { DragHandle, SortableItem } from "./Launch/LaunchBuilderPrimitives";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,9 +69,13 @@ import {
   defaultChannelForm,
   formForAppDefault,
   formForChannel,
+  moveChannelOrder,
+  orderChannelIds,
   parseRemoteSettings,
+  readImChannelOrder,
   resolvedProfileIdForChannel,
   updateRemoteChannelForm,
+  writeImChannelOrder,
 } from "./remote-dashboard/settings";
 import {
   DIRECT_PROFILE,
@@ -103,8 +117,8 @@ export function RemoteDashboard({
     const ids = new Set<string>();
     channels.channels.forEach((channel) => ids.add(channel.kind));
     configuredChannelIdsFromSettings(settings, remoteSettings).forEach((id) => ids.add(id));
-    return [...ids].sort((a, b) => channelDisplayName(a).localeCompare(channelDisplayName(b)));
-  }, [channels.channels, remoteSettings.channels, settings.channels]);
+    return orderChannelIds([...ids].filter((id) => id !== "web"), readImChannelOrder(settings));
+  }, [channels.channels, remoteSettings.channels, settings]);
 
   const channelById = useMemo(
     () => new Map(channels.channels.map((channel) => [channel.kind, channel])),
@@ -180,6 +194,37 @@ export function RemoteDashboard({
     },
     [selectedChannelId],
   );
+
+  const persistChannelOrder = useCallback(
+    async (nextSettings: AppSettings) => {
+      try {
+        await invoke("save_settings", { settings: nextSettings });
+      } catch (error) {
+        setNotice({ variant: "error", message: formatErrorMessage(error) });
+      }
+    },
+    [],
+  );
+
+  const reorderChannel = useCallback(
+    (fromId: string, toId: string) => {
+      const nextOrder = moveChannelOrder(configuredChannelIds, fromId, toId);
+      const nextSettings = writeImChannelOrder(settings, nextOrder);
+      setSettings(nextSettings);
+      setNotice(null);
+      void persistChannelOrder(nextSettings);
+    },
+    [configuredChannelIds, persistChannelOrder, settings],
+  );
+
+  function handleChannelDragEnd(event: DragEndEvent) {
+    if (event.canceled) return;
+    const { source } = event.operation;
+    if (!isSortable(source) || source.initialIndex === source.index) return;
+    const from = configuredChannelIds[source.initialIndex];
+    const to = configuredChannelIds[source.index];
+    if (from && to) reorderChannel(from, to);
+  }
 
   const saveSelectedChannel = useCallback(async () => {
     if (!selectedChannelId) return;
@@ -325,37 +370,52 @@ export function RemoteDashboard({
                 {configuredChannelIds.length === 0 ? (
                   <EmptySidebarItem label={t("No messaging apps enabled")} />
                 ) : (
-                  configuredChannelIds.map((id) => {
-                    const channel = channelById.get(id);
-                    const presentation = channel
-                      ? channelPresentation(channel.status, t)
-                      : { label: t("Configured"), tone: "muted" as Tone };
-                    const form = formForChannel(remoteSettings, id);
-                    const summary = channelDefaultSummary({
-                      form,
-                      prefs,
-                      agentDefs,
-                      profiles,
-                      defaultAgent,
-                      t,
-                    });
-                    return (
-                      <SidebarButton
-                        key={id}
-                        active={selection?.kind === "channel" && selection.id === id}
-                        icon={
-                          <ServiceIconBadge
-                            id={id}
-                            kind="channel"
-                            tone={presentation.tone}
-                          />
-                        }
-                        title={channelDisplayName(id)}
-                        detail={summary}
-                        onClick={() => setSelection({ kind: "channel", id })}
-                      />
-                    );
-                  })
+                  <DragDropProvider onDragEnd={handleChannelDragEnd}>
+                    {configuredChannelIds.map((id, index) => {
+                      const channel = channelById.get(id);
+                      const presentation = channel
+                        ? channelPresentation(channel.status, t)
+                        : { label: t("Configured"), tone: "muted" as Tone };
+                      const form = formForChannel(remoteSettings, id);
+                      const summary = channelDefaultSummary({
+                        form,
+                        prefs,
+                        agentDefs,
+                        profiles,
+                        defaultAgent,
+                        t,
+                      });
+                      return (
+                        <SortableItem
+                          key={id}
+                          id={id}
+                          index={index}
+                          disabled={loadingSettings}
+                        >
+                          {({ dragHandleRef, isDragging }) => (
+                            <SidebarButton
+                              active={selection?.kind === "channel" && selection.id === id}
+                              dragHandleRef={dragHandleRef}
+                              isDragging={isDragging}
+                              reorderLabel={t("Reorder {{label}}", {
+                                label: channelDisplayName(id),
+                              })}
+                              icon={
+                                <ServiceIconBadge
+                                  id={id}
+                                  kind="channel"
+                                  tone={presentation.tone}
+                                />
+                              }
+                              title={channelDisplayName(id)}
+                              detail={summary}
+                              onClick={() => setSelection({ kind: "channel", id })}
+                            />
+                          )}
+                        </SortableItem>
+                      );
+                    })}
+                  </DragDropProvider>
                 )}
               </RemoteSidebarSection>
 
@@ -959,28 +1019,47 @@ function RemoteSidebarSection({
 
 function SidebarButton({
   active,
+  dragHandleRef,
+  isDragging = false,
+  reorderLabel,
   icon,
   title,
   detail,
   onClick,
 }: {
   active: boolean;
+  dragHandleRef?: Ref<HTMLSpanElement>;
+  isDragging?: boolean;
+  reorderLabel?: string;
   icon: ReactNode;
   title: string;
   detail: string;
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       className={cn(
         "flex min-h-[46px] w-full items-center gap-2 rounded-md border px-2 text-left transition-colors",
         active
           ? "border-primary bg-card shadow-[inset_3px_0_0_hsl(var(--primary))]"
           : "border-transparent hover:border-border hover:bg-card",
+        isDragging && "opacity-55",
       )}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onClick();
+      }}
     >
+      {reorderLabel && (
+        <DragHandle
+          label={reorderLabel}
+          dragHandleRef={dragHandleRef}
+        />
+      )}
       {icon}
       <span className="min-w-0 flex-1">
         <span className="block">
@@ -990,7 +1069,7 @@ function SidebarButton({
           {detail}
         </span>
       </span>
-    </button>
+    </div>
   );
 }
 

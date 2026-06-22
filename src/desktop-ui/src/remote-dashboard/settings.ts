@@ -10,6 +10,8 @@ import {
   type RemoteSettings,
 } from "./types";
 
+const INTERNAL_CHANNEL_IDS = new Set(["web"]);
+
 export function parseRemoteSettings(settings: AppSettings): RemoteSettings {
   const remote = isRecord(settings.remote) ? settings.remote : {};
   const channels = isRecord(remote.channels) ? remote.channels : {};
@@ -26,10 +28,73 @@ export function configuredChannelIdsFromSettings(
 ): string[] {
   const ids = new Set<string>();
   if (isRecord(settings.channels)) {
-    Object.keys(settings.channels).forEach((id) => ids.add(id));
+    Object.keys(settings.channels)
+      .filter(isUserFacingChannel)
+      .forEach((id) => ids.add(id));
   }
-  Object.keys(remote.channels ?? {}).forEach((id) => ids.add(id));
+  Object.keys(remote.channels ?? {})
+    .filter(isUserFacingChannel)
+    .forEach((id) => ids.add(id));
   return [...ids];
+}
+
+export function readImChannelOrder(settings: AppSettings): string[] {
+  const im = isRecord(settings.im) ? settings.im : {};
+  return uniqueStrings(Array.isArray(im.order) ? im.order : []);
+}
+
+export function orderChannelIds(channelIds: string[], order: string[]): string[] {
+  const rank = new Map(uniqueStrings(order).map((id, index) => [id, index]));
+  return [...channelIds].sort((left, right) => {
+    const leftRank = rank.get(left);
+    const rightRank = rank.get(right);
+    if (leftRank !== undefined && rightRank !== undefined) {
+      return leftRank - rightRank;
+    }
+    if (leftRank !== undefined) return -1;
+    if (rightRank !== undefined) return 1;
+    return channelDisplayName(left).localeCompare(channelDisplayName(right));
+  });
+}
+
+export function moveChannelOrder(
+  channelIds: string[],
+  fromId: string,
+  toId: string,
+): string[] {
+  if (fromId === toId) return channelIds;
+  const fromIndex = channelIds.indexOf(fromId);
+  const toIndex = channelIds.indexOf(toId);
+  if (fromIndex < 0 || toIndex < 0) return channelIds;
+  const next = [...channelIds];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next;
+}
+
+export function writeImChannelOrder(
+  settings: AppSettings,
+  order: string[],
+): AppSettings {
+  const result: AppSettings = { ...settings };
+  const im = isRecord(settings.im) ? { ...settings.im } : {};
+  const normalized = uniqueStrings(order);
+  if (normalized.length > 0) {
+    im.order = normalized;
+  } else {
+    delete im.order;
+  }
+
+  if (Object.keys(im).length > 0) {
+    result.im = im;
+  } else {
+    delete result.im;
+  }
+  return result;
+}
+
+function isUserFacingChannel(id: string): boolean {
+  return !INTERNAL_CHANNEL_IDS.has(id);
 }
 
 export function formForChannel(
@@ -130,6 +195,37 @@ export function resolvedProfileIdForChannel(
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function uniqueStrings(values: unknown[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+function channelDisplayName(kind: string) {
+  const known: Record<string, string> = {
+    dingtalk: "DingTalk",
+    discord: "Discord",
+    feishu: "Feishu",
+    qqbot: "QQ Bot",
+    slack: "Slack",
+    telegram: "Telegram",
+    wechat: "WeChat",
+    wecom: "WeCom",
+  };
+  return known[kind] ?? capitalize(kind);
+}
+
+function capitalize(value: string): string {
+  return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
