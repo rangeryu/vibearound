@@ -42,6 +42,11 @@ pub(crate) struct WorkspacePathBody {
 }
 
 #[derive(serde::Deserialize)]
+pub(crate) struct WorkspaceOrderBody {
+    paths: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
 pub(crate) struct CreateWorkspaceBody {
     name: String,
 }
@@ -173,6 +178,96 @@ pub async fn remove_workspace_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(serde_json::json!({ "removed": body.path })))
+}
+
+/// PUT /api/workspaces/order -- reorder registered user workspaces.
+pub async fn reorder_workspaces_handler(
+    Json(body): Json<WorkspaceOrderBody>,
+) -> Result<Json<crate::api_types::WorkspacesResponse>, (StatusCode, String)> {
+    let cfg = config::ensure_loaded();
+    let builtin = config::builtin_workspaces_dir();
+    let mut seen = std::collections::HashSet::new();
+    let mut ordered = Vec::new();
+
+    for path in body.paths {
+        let path = std::path::PathBuf::from(path);
+        if paths_equal(&path, &builtin) || paths_equal(&path, &cfg.default_workspace) {
+            continue;
+        }
+        if cfg
+            .workspaces
+            .iter()
+            .any(|workspace| paths_equal(workspace, &path))
+            && seen.insert(path.clone())
+        {
+            ordered.push(path);
+        }
+    }
+
+    for workspace in &cfg.workspaces {
+        if paths_equal(workspace, &builtin) || paths_equal(workspace, &cfg.default_workspace) {
+            continue;
+        }
+        if seen.insert(workspace.clone()) {
+            ordered.push(workspace.clone());
+        }
+    }
+
+    config::update_settings_json(|root| {
+        if !root.is_object() {
+            *root = serde_json::json!({});
+        }
+        if let Some(obj) = root.as_object_mut() {
+            obj.insert(
+                "workspaces".into(),
+                serde_json::Value::Array(
+                    ordered
+                        .iter()
+                        .map(|path| serde_json::Value::String(path.to_string_lossy().to_string()))
+                        .collect(),
+                ),
+            );
+        }
+    })
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    Ok(Json(workspaces_response()))
+}
+
+/// PUT /api/workspaces/default -- set the default workspace root.
+pub async fn set_default_workspace_handler(
+    Json(body): Json<WorkspacePathBody>,
+) -> Result<Json<crate::api_types::WorkspacesResponse>, (StatusCode, String)> {
+    let path = common::workspace::normalize_workspace_cwd(std::path::PathBuf::from(&body.path));
+    std::fs::create_dir_all(&path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let path_string = path.to_string_lossy().to_string();
+
+    config::update_settings_json(|root| {
+        if !root.is_object() {
+            *root = serde_json::json!({});
+        }
+        if let Some(obj) = root.as_object_mut() {
+            obj.insert(
+                "default_workspace".to_string(),
+                serde_json::Value::String(path_string.clone()),
+            );
+            if let Some(workspaces) = obj
+                .get_mut("workspaces")
+                .and_then(|value| value.as_array_mut())
+            {
+                workspaces.retain(|value| {
+                    value
+                        .as_str()
+                        .map(|candidate| !paths_equal(std::path::Path::new(candidate), &path))
+                        .unwrap_or(true)
+                });
+            }
+        }
+    })
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    Ok(Json(workspaces_response()))
 }
 
 fn paths_equal(left: &std::path::Path, right: &std::path::Path) -> bool {

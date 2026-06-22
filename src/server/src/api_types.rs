@@ -25,6 +25,35 @@ use common::previews::PreviewSnapshot;
 use common::pty::{PtyRunState, PtyTool};
 use common::routing::RouteKey;
 
+/// `GET /api/service/health` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceHealthResponse {
+    pub ok: bool,
+    pub service: &'static str,
+    pub version: &'static str,
+}
+
+/// `GET /api/service/info` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceInfoResponse {
+    pub service: &'static str,
+    pub version: &'static str,
+    pub port: u16,
+    pub mode: &'static str,
+    pub auth_mode: &'static str,
+    pub data_dir: String,
+    pub settings_path: String,
+    pub web_dist_path: String,
+    pub host_search_available: bool,
+    pub replace_provider_web_search: bool,
+}
+
+/// `PUT /api/settings` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct SettingsWriteResponse {
+    pub ok: bool,
+}
+
 /// Per-agent display info returned under `AgentsConfig.agents`.
 ///
 /// # Wire format (JSON)

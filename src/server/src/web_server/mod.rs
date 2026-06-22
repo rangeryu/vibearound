@@ -17,7 +17,7 @@ use axum::body::Body;
 use axum::extract::DefaultBodyLimit;
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, delete, get, post};
+use axum::routing::{any, delete, get, post, put};
 use axum::Router;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -230,6 +230,11 @@ pub async fn run_web_server(
     // opener (Tauri tray). The SPA then attaches `Authorization: Bearer` on
     // every subsequent API/WS call.
     let protected = Router::new()
+        .route("/api/service/info", get(api::info_handler))
+        .route(
+            "/api/settings",
+            get(api::get_settings_handler).put(api::put_settings_handler),
+        )
         .route(
             "/api/sessions",
             get(api::list_sessions_handler).post(api::create_session_handler),
@@ -310,6 +315,14 @@ pub async fn run_web_server(
             "/api/workspaces/remove",
             post(api::remove_workspace_handler),
         )
+        .route(
+            "/api/workspaces/order",
+            put(api::reorder_workspaces_handler),
+        )
+        .route(
+            "/api/workspaces/default",
+            put(api::set_default_workspace_handler),
+        )
         .route("/mcp", post(mcp::mcp_handler))
         .route_layer(axum::middleware::from_fn_with_state(
             auth_state.clone(),
@@ -388,6 +401,7 @@ pub async fn run_web_server(
 
     let public = Router::new()
         .merge(bridge_routes)
+        .route("/api/service/health", get(api::health_handler))
         // Pairing API: no auth required (pairing IS the auth flow).
         .route("/api/pair/start", post(pair::start_handler))
         .route("/api/pair/status", get(pair::status_handler))

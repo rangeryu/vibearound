@@ -1,6 +1,7 @@
 //! VibeAround server crate: Axum HTTP + WebSocket, and the unified ServerDaemon entry point.
 
 pub mod api_types;
+pub mod boot;
 pub mod openai_bridge;
 mod web_server;
 
