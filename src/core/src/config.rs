@@ -21,7 +21,6 @@ pub const DEFAULT_PORT: u16 = 12358;
 
 /// Minimal default settings.json content, embedded at compile time.
 const DEFAULT_SETTINGS_JSON: &str = r#"{
-  "default_workspace": "~/.vibearound/workspaces",
   "workspaces": []
 }"#;
 
