@@ -17,11 +17,12 @@ use axum::body::Body;
 use axum::extract::DefaultBodyLimit;
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, delete, get, post};
+use axum::routing::{any, delete, get, post, put};
 use axum::Router;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Notify;
 use tower_http::services::ServeDir;
 
 use common::auth::AuthToken;
@@ -188,6 +189,7 @@ pub async fn run_web_server(
     host_search_available: bool,
     replace_provider_web_search: bool,
     search_runtime: Option<Arc<SearchToolRuntime>>,
+    shutdown: Arc<Notify>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     verify_web_dist(&dist_path)?;
     let web_dist = dist_path
@@ -230,6 +232,11 @@ pub async fn run_web_server(
     // opener (Tauri tray). The SPA then attaches `Authorization: Bearer` on
     // every subsequent API/WS call.
     let protected = Router::new()
+        .route("/api/service/info", get(api::info_handler))
+        .route(
+            "/api/settings",
+            get(api::get_settings_handler).put(api::put_settings_handler),
+        )
         .route(
             "/api/sessions",
             get(api::list_sessions_handler).post(api::create_session_handler),
@@ -267,6 +274,49 @@ pub async fn run_web_server(
         .route("/api/tmux/sessions", get(api::list_tmux_sessions_handler))
         .route("/api/agents", get(api::list_agents_handler))
         .route("/api/profiles", get(api::list_profiles_handler))
+        .route(
+            "/api/model-profiles",
+            get(api::list_model_profiles_handler).post(api::create_model_profile_handler),
+        )
+        .route(
+            "/api/model-profiles/order",
+            put(api::reorder_model_profiles_handler),
+        )
+        .route(
+            "/api/model-profiles/{id}",
+            get(api::get_model_profile_handler)
+                .put(api::update_model_profile_handler)
+                .delete(api::delete_model_profile_handler),
+        )
+        .route(
+            "/api/launcher/preferences",
+            get(api::get_launcher_preferences_handler),
+        )
+        .route(
+            "/api/launcher/default-agent",
+            put(api::set_default_launch_handler),
+        )
+        .route(
+            "/api/launcher/agent-profile",
+            put(api::set_agent_profile_handler),
+        )
+        .route(
+            "/api/launcher/agent-launch-args",
+            put(api::set_agent_launch_args_handler),
+        )
+        .route(
+            "/api/launcher/selected-agent",
+            put(api::set_selected_agent_handler),
+        )
+        .route(
+            "/api/launcher/local-agent-api",
+            put(api::set_local_agent_api_handler),
+        )
+        .route(
+            "/api/launcher/profile-connection",
+            put(api::set_profile_connection_handler),
+        )
+        .route("/api/launcher/plan", post(api::launcher_plan_handler))
         .route("/ws", get(ws_pty::ws_handler))
         .route("/ws/chat", get(ws_chat::ws_chat_handler))
         .route("/ws/channels", get(ws_domains::ws_channels_handler))
@@ -309,6 +359,14 @@ pub async fn run_web_server(
         .route(
             "/api/workspaces/remove",
             post(api::remove_workspace_handler),
+        )
+        .route(
+            "/api/workspaces/order",
+            put(api::reorder_workspaces_handler),
+        )
+        .route(
+            "/api/workspaces/default",
+            put(api::set_default_workspace_handler),
         )
         .route("/mcp", post(mcp::mcp_handler))
         .route_layer(axum::middleware::from_fn_with_state(
@@ -388,6 +446,7 @@ pub async fn run_web_server(
 
     let public = Router::new()
         .merge(bridge_routes)
+        .route("/api/service/health", get(api::health_handler))
         // Pairing API: no auth required (pairing IS the auth flow).
         .route("/api/pair/start", post(pair::start_handler))
         .route("/api/pair/status", get(pair::status_handler))
@@ -422,6 +481,9 @@ pub async fn run_web_server(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(async move {
+        shutdown.notified().await;
+    })
     .await?;
     Ok(())
 }
