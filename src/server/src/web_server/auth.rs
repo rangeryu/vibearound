@@ -154,10 +154,15 @@ pub(crate) fn headers_have_allowed_ws_origin(
     port: u16,
     tunnel_urls: &[String],
 ) -> bool {
-    headers
+    let Some(origin) = headers
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok())
-        .is_none_or(|origin| dashboard_origin_allowed(origin, port, tunnel_urls))
+    else {
+        return true;
+    };
+
+    dashboard_origin_allowed(origin, port, tunnel_urls)
+        || origin_matches_request_host(origin, headers)
 }
 
 pub(crate) fn dashboard_origin_allowed(origin: &str, port: u16, tunnel_urls: &[String]) -> bool {
@@ -205,6 +210,54 @@ fn local_dashboard_origin_allowed(origin: &str, port: Option<u16>) -> bool {
                 && matches!(origin.host.as_str(), "localhost" | "127.0.0.1" | "::1")
         }
     }
+}
+
+fn origin_matches_request_host(origin: &str, headers: &HeaderMap) -> bool {
+    let Some(origin) = parse_origin(origin) else {
+        return false;
+    };
+    if !matches!(origin.scheme.as_str(), "http" | "https") {
+        return false;
+    }
+
+    headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_host_header)
+        .is_some_and(|host| {
+            origin.host == host.host && host.port.is_none_or(|port| origin.port == Some(port))
+        })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct HostParts {
+    host: String,
+    port: Option<u16>,
+}
+
+fn parse_host_header(value: &str) -> Option<HostParts> {
+    let value = value.trim().to_ascii_lowercase();
+    if value.is_empty() {
+        return None;
+    }
+
+    if let Some(rest) = value.strip_prefix('[') {
+        let (host, rest) = rest.split_once(']')?;
+        let port = rest
+            .strip_prefix(':')
+            .and_then(|port| port.parse::<u16>().ok());
+        return Some(HostParts {
+            host: host.to_string(),
+            port,
+        });
+    }
+
+    let (host, port) = match value.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => (host.to_string(), port.parse::<u16>().ok()),
+        _ => (value, None),
+    };
+
+    Some(HostParts { host, port })
 }
 
 #[derive(Debug, PartialEq, Eq)]
